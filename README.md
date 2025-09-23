@@ -10,6 +10,7 @@ wrapper for ClickHouse databases.
 To build `clickhouse_fdw`, just do this:
 
 ``` sh
+make clickhouse
 make
 make installcheck
 make install

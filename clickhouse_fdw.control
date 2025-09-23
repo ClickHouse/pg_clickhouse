@@ -1,0 +1,4 @@
+comment = 'foreign-data wrapper for remote ClickHouse servers'
+default_version = '2.0'
+module_pathname = 'clickhouse_fdw'
+relocatable = true
