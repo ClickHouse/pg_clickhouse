@@ -1,12 +1,12 @@
 EXTENSION    = $(shell grep -m 1 '"name":' META.json | \
                sed -e 's/[[:space:]]*"name":[[:space:]]*"\([^"]*\)",/\1/')
-EXTVERSION   = $(shell grep -m 1 '[[:space:]]\{8\}"version":' META.json | \
-               sed -e 's/[[:space:]]*"version":[[:space:]]*"\([^"]*\)",\{0,1\}/\1/')
+EXTVERSION   = $(shell grep -m 1 'default_version' clickhouse_fdw.control | \
+               sed -e "s/[[:space:]]*default_version[[:space:]]*=[[:space:]]*'\([^']*\)',\{0,1\}/\1/")
 DISTVERSION  = $(shell grep -m 1 '[[:space:]]\{3\}"version":' META.json | \
                sed -e 's/[[:space:]]*"version":[[:space:]]*"\([^"]*\)",\{0,1\}/\1/')
 
-DATA         = $(wildcard sql/*.sql)
-DOCS         = $(wildcard doc/*.md)
+DATA         = $(wildcard sql/$(EXTENSION)--*.sql)
+# DOCS         = $(wildcard doc/*.md)
 TESTS        = $(wildcard test/sql/*.sql)
 REGRESS      = $(patsubst test/sql/%.sql,%,$(TESTS))
 REGRESS_OPTS = --inputdir=test
@@ -38,7 +38,10 @@ EXTRA_CLEAN = build
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-all:
+all: sql/$(EXTENSION)--$(EXTVERSION).sql
+
+sql/$(EXTENSION)--$(EXTVERSION).sql: sql/$(EXTENSION).sql
+	cp $< $@
 
 clickhouse: build/clickhouse/libclickhouse-cpp-lib.a
 
