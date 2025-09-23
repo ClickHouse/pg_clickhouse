@@ -1,0 +1,14 @@
+results/
+*.so
+tmp/
+*.o
+regression.diffs
+regression.out
+/clickhouse_fdw-*
+/src/*.dylib
+/src/*.so
+/src/*.o
+/src/*.dll
+/src/*.bc
+.vscode/
+/build/
