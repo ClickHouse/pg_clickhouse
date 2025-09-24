@@ -7,13 +7,39 @@ clickhouse_fdw Postgres Extension
 This library contains the PostgreSQL extension `clickhouse_fdw` a foreign data
 wrapper for ClickHouse databases.
 
-To build `clickhouse_fdw`, just do this:
+## Installation
 
-``` sh
-make clickhouse
+### Compile From Source
+
+#### General Unix
+
+If you have PostgreSQL devel packages and curl devel packages installed, you
+should have `pg_config` and `curl-config` on your path, so you should be able
+to just run `make` (or `gmake`), then `make install`, then in your database
+`CREATE EXTENSION http`.
+
+#### Debian / Ubuntu / APT
+
+See [PostgreSQL Apt] for details on pulling from the PostgreSQL Apt repository.
+
+```sh
+sudo apt install \
+  postgresql-server-17 \
+  libcurl4-openssl-dev \
+  make \
+  cmake \
+  g++
 make
-make installcheck
-make install
+sudo make install
+```
+
+If your host has several PostgreSQL installations, you might need to specify
+the appropriate version of `pg_config`:
+
+```sh
+export PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config
+make
+sudo make install
 ```
 
 If you encounter an error such as:
@@ -46,19 +72,6 @@ to find it:
 env PG_CONFIG=/path/to/pg_config make && make installcheck && make install
 ```
 
-If you encounter an error such as:
-
-```
-ERROR:  must be owner of database regression
-```
-
-You need to run the test suite using a super user, such as the default
-"postgres" super user:
-
-``` sh
-make installcheck PGUSER=postgres
-```
-
 To install the extension in a custom prefix on PostgreSQL 18 or later, pass
 the `prefix` argument to `install` (but no other `make` targets):
 
@@ -73,6 +86,29 @@ parameters]:
 extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
+
+### Testing
+
+To run the test suite, once the extension has been installed, run
+
+```sh
+make installcheck
+```
+
+If you encounter an error such as:
+
+```
+ERROR:  must be owner of database regression
+```
+
+You need to run the test suite using a super user, such as the default
+"postgres" super user:
+
+``` sh
+make installcheck PGUSER=postgres
+```
+
+### Loading
 
 Once `clickhouse_fdw` is installed, you can add it to a database by connecting
 to a database as a super user and running:
@@ -89,17 +125,16 @@ CREATE SCHEMA env;
 CREATE EXTENSION clickhouse_fdw SCHEMA env;
 ```
 
-Dependencies
------------
+## Dependencies
 
 The `clickhouse_fdw` extension requires PostgreSQL 11 or higher and [libcurl]. Building the
 extension requires a compiler, GNU `make`, and [CMake].
 
-Copyright and License
----------------------
+## Copyright and License
 
 Copyright (c) 2025 ClickHouse.
 
   [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
   [libcurl]: https://curl.se/libcurl/ "libcurl — your network transfer library"
   [CMake]: https://cmake.org/ "CMake: A Powerful Software Build System"
+  [PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt

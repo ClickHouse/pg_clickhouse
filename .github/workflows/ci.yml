@@ -8,11 +8,12 @@ jobs:
   build:
     strategy:
       matrix:
-        pg: [18, 17, 16, 15, 14, 13, 12, 11]
+        pg: [18, 17, 16, 15, 14, 13]
     name: 🐘 PostgreSQL ${{ matrix.pg }}
     runs-on: ubuntu-latest
     container: pgxn/pgxn-tools
     steps:
-      - run: pg-start ${{ matrix.pg }}
+      - run: pg-start ${{ matrix.pg }} libcurl4-openssl-dev
       - uses: actions/checkout@v4
+        with: { submodules: true }
       - run: pg-build-test

@@ -10,3 +10,4 @@ regression.out
 /clickhouse_fdw-*
 .vscode/
 /build/
+/latest-changes.md
