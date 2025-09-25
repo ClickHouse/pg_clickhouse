@@ -13,7 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     container: pgxn/pgxn-tools
     steps:
-      - run: pg-start ${{ matrix.pg }} libcurl4-openssl-dev
-      - uses: actions/checkout@v4
+      - name: Start Postgres ${{ matrix.pg }}
+        run: pg-start ${{ matrix.pg }} libcurl4-openssl-dev
+      - name: Checkout the Repository
+        uses: actions/checkout@v4
         with: { submodules: true }
-      - run: pg-build-test
+      - name: Test DSO
+        run: pg-build-test
+      - name: Test Static
+        run: pg-build-test
+        env: { CH_BUILD: static }

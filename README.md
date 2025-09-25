@@ -29,8 +29,23 @@ sudo apt install \
   make \
   cmake \
   g++
+```
+
+### Compile and Install
+
+To build and install the ClickHouse dynamic library and `clickhouse_fdw`, run:
+
+```sh
 make
 sudo make install
+```
+
+To statically compile the ClickHouse library into `clickhouse_fdw`, pass
+`CH_BUILD=static`:
+
+```sh
+make CH_BUILD=static
+sudo make install CH_BUILD=static
 ```
 
 If your host has several PostgreSQL installations, you might need to specify
@@ -69,14 +84,16 @@ package management system such as RPM to install PostgreSQL, be sure that the
 to find it:
 
 ``` sh
-env PG_CONFIG=/path/to/pg_config make && make installcheck && make install
+export PG_CONFIG=/path/to/pg_config
+make
+sudo make install
 ```
 
 To install the extension in a custom prefix on PostgreSQL 18 or later, pass
 the `prefix` argument to `install` (but no other `make` targets):
 
 ```sh
-make install prefix=/usr/local/extras
+sudo make install prefix=/usr/local/extras
 ```
 
 Then ensure that the prefix is included in the following [`postgresql.conf`

@@ -22,14 +22,25 @@ CH_CPP_DIR = vendor/clickhouse-cpp
 CH_CPP_BUILD_DIR = $(CH_CPP_DIR)/build
 
 # List the clickhouse-cpp libraries we require.
-CH_CPP_LIBS = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib.a \
-  $(CH_CPP_BUILD_DIR)/contrib/cityhash/cityhash/libcityhash.a \
-  $(CH_CPP_BUILD_DIR)/contrib/absl/absl/libabsl_int128.a \
-  $(CH_CPP_BUILD_DIR)/contrib/lz4/lz4/liblz4.a \
-  $(CH_CPP_BUILD_DIR)/contrib/zstd/zstd/libzstdstatic.a
+CH_CPP_LIB = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib$(DLSUFFIX)
+CH_CPP_FLAGS = -D CMAKE_BUILD_TYPE=Release -D WITH_OPENSSL=ON
+
+# Are we statically compiling clickhouse-cpp into the extension or no?
+ifeq ($(CH_BUILD), static)
+# We'll need all the clickhouse-cpp static libraries.
+	CH_CPP_LIB = -Wl $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib.a
+	SHLIB_LINK = $(CH_CPP_BUILD_DIR)/contrib/cityhash/cityhash/libcityhash.a \
+	$(CH_CPP_BUILD_DIR)/contrib/absl/absl/libabsl_int128.a \
+	$(CH_CPP_BUILD_DIR)/contrib/lz4/lz4/liblz4.a \
+	$(CH_CPP_BUILD_DIR)/contrib/zstd/zstd/libzstdstatic.a
+else
+#   Build and install the shared library.
+	SHLIB_LINK = -Wl,-rpath,$(shell $(PG_CONFIG) --pkglibdir)/ -L$(CH_CPP_BUILD_DIR)/clickhouse -lclickhouse-cpp-lib
+	CH_CPP_FLAGS += -D BUILD_SHARED_LIBS=ON
+endif
 
 # We'll need the clickhouse-cpp libraries.
-SHLIB_LINK = $(CH_CPP_LIBS)
+SHLIB_LINK += $(CH_CPP_LIB)
 
 # Add include directories.
 PG_CPPFLAGS = -I./src/include -I$(CH_CPP_DIR) -I$(CH_CPP_DIR)/contrib/absl
@@ -60,17 +71,17 @@ COMPILE.cc.bc += $(PG_CPPFLAGS)
 COMPILE.cxx.bc += $(PG_CXXFLAGS)
 
 # shlib is the final output product: clickhouse-cpp and all .o dependencies.
-$(shlib): $(CH_CPP_LIBS) $(OBJS)
+$(shlib): $(CH_CPP_LIB) $(OBJS)
 
 # Clone clickhouse-cpp submodule.
 $(CH_CPP_DIR)/CMakeLists.txt:
 	git submodule update --init
 
-# Build the clickhouse-cpp libraries.
-$(CH_CPP_LIBS): export CXXFLAGS=-fPIC
-$(CH_CPP_LIBS): export CFLAGS=-fPIC
-$(CH_CPP_LIBS): $(CH_CPP_DIR)/CMakeLists.txt
-	cmake -B $(CH_CPP_BUILD_DIR) -S $(CH_CPP_DIR) -D CMAKE_BUILD_TYPE=Release -D WITH_OPENSSL=ON
+# Build clickhouse-cpp.
+$(CH_CPP_LIB): export CXXFLAGS=-fPIC
+$(CH_CPP_LIB): export CFLAGS=-fPIC
+$(CH_CPP_LIB): $(CH_CPP_DIR)/CMakeLists.txt
+	cmake -B $(CH_CPP_BUILD_DIR) -S $(CH_CPP_DIR) $(CH_CPP_FLAGS)
 	cmake --build $(CH_CPP_BUILD_DIR) --parallel $(nproc) --target all
 
 # Require the versioned SQL script.
@@ -78,6 +89,16 @@ all: sql/$(EXTENSION)--$(EXTVERSION).sql
 
 sql/$(EXTENSION)--$(EXTVERSION).sql: sql/$(EXTENSION).sql
 	cp $< $@
+
+# Configure the installation of the clickhouse-cpp library.
+ifeq ($(CH_BUILD), static)
+install-ch-cpp:
+else
+install-ch-cpp: $(CH_CPP_LIB) $(shlib)
+	$(install_bin) -m 755 $(CH_CPP_LIB) $(DESTDIR)$(pkglibdir)/
+endif
+
+install: install-ch-cpp
 
 # Build a PGXN distribution bundle.
 dist:
