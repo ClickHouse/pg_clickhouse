@@ -11,3 +11,6 @@ regression.out
 .vscode/
 /build/
 /latest-changes.md
+/src/fdw.c
+/sql/*--*.sql
+!/sql/*--*--*.sql

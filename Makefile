@@ -51,8 +51,8 @@ PG_CXXFLAGS = -std=c++17
 # Suppress annoying pre-c99 warning.
 PG_CFLAGS = -Wno-declaration-after-statement
 
-# Clean up the clickhouse-cpp build directory.
-EXTRA_CLEAN = $(CH_CPP_BUILD_DIR)
+# Clean up the clickhouse-cpp build directory and generated files.
+EXTRA_CLEAN = $(CH_CPP_BUILD_DIR) sql/$(EXTENSION)--$(EXTVERSION).sql src/fdw.c
 
 # Import PGXS.
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -87,11 +87,16 @@ $(CH_CPP_LIB): $(CH_CPP_DIR)/CMakeLists.txt
 	cmake -B $(CH_CPP_BUILD_DIR) -S $(CH_CPP_DIR) $(CH_CPP_FLAGS)
 	cmake --build $(CH_CPP_BUILD_DIR) --parallel $(nproc) --target all
 
-# Require the versioned SQL script.
-all: sql/$(EXTENSION)--$(EXTVERSION).sql
+# Require the versioned C source and SQL script.
+all: sql/$(EXTENSION)--$(EXTVERSION).sql src/fdw.c
 
+# Versioned SQL script.
 sql/$(EXTENSION)--$(EXTVERSION).sql: sql/$(EXTENSION).sql
 	cp $< $@
+
+# Versioned source file.
+src/fdw.c: src/fdw.c.in
+	sed -e 's,__VERSION__,$(EXTVERSION),g' $< > $@
 
 # Configure the installation of the clickhouse-cpp library.
 ifeq ($(CH_BUILD), static)
