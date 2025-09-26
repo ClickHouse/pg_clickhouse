@@ -31,7 +31,7 @@ sudo apt install \
   g++
 ```
 
-### Compile and Install
+#### Compile and Install
 
 To build and install the ClickHouse dynamic library and `clickhouse_fdw`, run:
 
@@ -104,7 +104,7 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-### Testing
+#### Testing
 
 To run the test suite, once the extension has been installed, run
 

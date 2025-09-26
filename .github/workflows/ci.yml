@@ -20,6 +20,8 @@ jobs:
         with: { submodules: true }
       - name: Test DSO
         run: pg-build-test
+      - name: Clean
+        run: make clean
       - name: Test Static
         run: pg-build-test
         env: { CH_BUILD: static }

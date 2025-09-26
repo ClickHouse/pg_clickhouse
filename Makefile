@@ -28,19 +28,16 @@ CH_CPP_FLAGS = -D CMAKE_BUILD_TYPE=Release -D WITH_OPENSSL=ON
 # Are we statically compiling clickhouse-cpp into the extension or no?
 ifeq ($(CH_BUILD), static)
 # We'll need all the clickhouse-cpp static libraries.
-	CH_CPP_LIB = -Wl $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib.a
+	CH_CPP_LIB = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib.a
 	SHLIB_LINK = $(CH_CPP_BUILD_DIR)/contrib/cityhash/cityhash/libcityhash.a \
 	$(CH_CPP_BUILD_DIR)/contrib/absl/absl/libabsl_int128.a \
 	$(CH_CPP_BUILD_DIR)/contrib/lz4/lz4/liblz4.a \
 	$(CH_CPP_BUILD_DIR)/contrib/zstd/zstd/libzstdstatic.a
 else
 #   Build and install the shared library.
-	SHLIB_LINK = -Wl,-rpath,$(shell $(PG_CONFIG) --pkglibdir)/ -L$(CH_CPP_BUILD_DIR)/clickhouse -lclickhouse-cpp-lib
+	SHLIB_LINK = -L$(CH_CPP_BUILD_DIR)/clickhouse -lclickhouse-cpp-lib
 	CH_CPP_FLAGS += -D BUILD_SHARED_LIBS=ON
 endif
-
-# We'll need the clickhouse-cpp libraries.
-SHLIB_LINK += $(CH_CPP_LIB)
 
 # Add include directories.
 PG_CPPFLAGS = -I./src/include -I$(CH_CPP_DIR) -I$(CH_CPP_DIR)/contrib/absl
@@ -61,6 +58,9 @@ EXTRA_CLEAN = $(CH_CPP_BUILD_DIR)
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
+# We'll need the clickhouse-cpp library and rpath so it can be found.
+SHLIB_LINK += -Wl,-rpath,$(pkglibdir)/ $(CH_CPP_LIB)
+
 # PostgresSQL 15 and earlier violate a C++ v17 storage specifier error.
 ifeq ($(shell test $(MAJORVERSION) -lt 16; echo $$?),0)
 	PG_CXXFLAGS += -Wno-register
@@ -76,6 +76,9 @@ $(shlib): $(CH_CPP_LIB) $(OBJS)
 # Clone clickhouse-cpp submodule.
 $(CH_CPP_DIR)/CMakeLists.txt:
 	git submodule update --init
+
+# Require the vendored clickhouse-cpp.
+$(OBJS): $(CH_CPP_DIR)/CMakeLists.txt
 
 # Build clickhouse-cpp.
 $(CH_CPP_LIB): export CXXFLAGS=-fPIC
