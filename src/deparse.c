@@ -3667,7 +3667,11 @@ appendOrderByClause(List *pathkeys, bool has_final_sort,
 
 		appendStringInfoString(buf, delim);
 		deparseExpr(em_expr, context);
+#if PG_VERSION_NUM >= 180000
+		if (pathkey->pk_cmptype == BTLessStrategyNumber)
+#else
 		if (pathkey->pk_strategy == BTLessStrategyNumber)
+#endif
 			appendStringInfoString(buf, " ASC");
 		else
 			appendStringInfoString(buf, " DESC");

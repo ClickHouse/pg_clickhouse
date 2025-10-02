@@ -24,7 +24,7 @@ See [PostgreSQL Apt] for details on pulling from the PostgreSQL Apt repository.
 
 ```sh
 sudo apt install \
-  postgresql-server-17 \
+  postgresql-server-18 \
   libcurl4-openssl-dev \
   uuid-dev \
   make \
@@ -53,7 +53,7 @@ If your host has several PostgreSQL installations, you might need to specify
 the appropriate version of `pg_config`:
 
 ```sh
-export PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config
+export PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config
 make
 sudo make install
 ```

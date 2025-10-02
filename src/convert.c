@@ -386,7 +386,7 @@ ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc)
 		outattname = NameStr(attout->attname);
 		curstate->outtype = attout->atttypid;
 
-		if (NameStr(indesc->attrs[0].attname)[0] == '\0')
+		if (NameStr(TupleDescAttr(indesc, 0)->attname)[0] == '\0')
 		{
 			Form_pg_attribute attin = TupleDescAttr(indesc, i);
 			curstate->intype = attin->atttypid;

@@ -22,11 +22,15 @@
 #include "utils/lsyscache.h"
 #include "utils/palloc.h"
 #include "utils/rel.h"
+#if PG_VERSION_NUM >= 140000
+#include "optimizer/appendinfo.h"
+#endif
 #if PG_VERSION_NUM >= 160000
 #include "varatt.h"
 #endif
-#if PG_VERSION_NUM >= 140000
-#include "optimizer/appendinfo.h"
+#if PG_VERSION_NUM >= 180000
+#include "commands/explain_format.h"
+#include "commands/explain_state.h"
 #endif
 
 // extension includes.
@@ -494,7 +498,11 @@ clickhouseGetForeignPaths(PlannerInfo *root,
 	CHFdwRelationInfo	*fpinfo = (CHFdwRelationInfo *) baserel->fdw_private;
 
 	path = create_foreignscan_path(root, baserel, NULL,
-		fpinfo->rows, fpinfo->startup_cost, fpinfo->total_cost,
+		fpinfo->rows,
+#if PG_VERSION_NUM >= 180000
+		0,
+#endif
+		fpinfo->startup_cost, fpinfo->total_cost,
 		NULL, NULL, NULL, NIL
 #if PG_VERSION_NUM >= 170000
 		, NIL
@@ -1829,6 +1837,9 @@ add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
 					 create_foreignscan_path(root, rel,
 											 NULL,
 											 rows,
+#if PG_VERSION_NUM >= 180000
+											 0,
+#endif
 											 startup_cost,
 											 total_cost,
 											 useful_pathkeys,
@@ -1843,6 +1854,9 @@ add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
 					 create_foreign_join_path(root, rel,
 											  NULL,
 											  rows,
+#if PG_VERSION_NUM >= 180000
+											 0,
+#endif
 											  startup_cost,
 											  total_cost,
 											  useful_pathkeys,
@@ -2005,6 +2019,9 @@ clickhouseGetForeignJoinPaths(PlannerInfo *root,
 										joinrel,
 										NULL,	/* default pathtarget */
 										rows,
+#if PG_VERSION_NUM >= 180000
+											 0,
+#endif
 										startup_cost,
 										total_cost,
 										NIL,	/* no pathkeys */
@@ -2379,6 +2396,9 @@ add_foreign_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
 										  grouped_rel,
 										  grouped_rel->reltarget,
 										  rows,
+#if PG_VERSION_NUM >= 180000
+											 0,
+#endif
 										  startup_cost,
 										  total_cost,
 										  NIL,	/* no pathkeys */
@@ -2520,6 +2540,9 @@ add_foreign_ordered_paths(PlannerInfo *root, RelOptInfo *input_rel,
 											 input_rel,
 											 root->upper_targets[UPPERREL_ORDERED],
 											 rows,
+#if PG_VERSION_NUM >= 180000
+											 0,
+#endif
 											 startup_cost,
 											 total_cost,
 											 root->sort_pathkeys,
@@ -2667,6 +2690,9 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 										   input_rel,
 										   root->upper_targets[UPPERREL_FINAL],
 										   1,
+#if PG_VERSION_NUM >= 180000
+											 0,
+#endif
 										   0,
 										   -10,
 										   pathkeys,

@@ -604,7 +604,7 @@ void ch_binary_column_append_data(ch_binary_insert_state * state, size_t colidx)
 		auto col = columns[colidx];
 
 		Datum val = state->values[colidx];
-		Oid valtype = state->outdesc->attrs[colidx].atttypid;
+		Oid valtype = TupleDescAttr(state->outdesc, colidx)->atttypid;
 		bool isnull = state->nulls[colidx];
 
 		column_append(col, val, valtype, isnull);
