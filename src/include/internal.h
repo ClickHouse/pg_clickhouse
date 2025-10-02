@@ -17,4 +17,4 @@ typedef struct ch_binary_connection_t
 	char			  *error;
 } ch_binary_connection_t;
 
-#endif
+#endif /* CLICKHOUSE_INTERNAL_H */

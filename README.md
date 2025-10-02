@@ -26,6 +26,7 @@ See [PostgreSQL Apt] for details on pulling from the PostgreSQL Apt repository.
 sudo apt install \
   postgresql-server-17 \
   libcurl4-openssl-dev \
+  uuid-dev \
   make \
   cmake \
   g++
@@ -53,6 +54,15 @@ the appropriate version of `pg_config`:
 
 ```sh
 export PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config
+make
+sudo make install
+```
+
+If `curl-config` is not in the path on you host, you can specify the path
+explicitly:
+
+```sh
+export CURL_CONFIG=/opt/homebrew/opt/curl/bin/curl-config
 make
 sudo make install
 ```
@@ -144,8 +154,9 @@ CREATE EXTENSION clickhouse_fdw SCHEMA env;
 
 ## Dependencies
 
-The `clickhouse_fdw` extension requires PostgreSQL 11 or higher and [libcurl]. Building the
-extension requires a compiler, GNU `make`, and [CMake].
+The `clickhouse_fdw` extension requires PostgreSQL 11 or higher, [libcurl],
+and [libuuid]. Building the extension requires a compiler, GNU `make`, and
+[CMake].
 
 ## Copyright and License
 
@@ -153,5 +164,6 @@ Copyright (c) 2025 ClickHouse.
 
   [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
   [libcurl]: https://curl.se/libcurl/ "libcurl — your network transfer library"
+  [libuuid]: https://linux.die.net/man/3/libuuid "libuuid - DCE compatible Universally Unique Identifier library"
   [CMake]: https://cmake.org/ "CMake: A Powerful Software Build System"
   [PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt

@@ -1,9 +1,6 @@
 #ifndef CLICKHOUSE_BINARY_H
 #define CLICKHOUSE_BINARY_H
 
-#include "postgres.h"
-#include "funcapi.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -92,4 +89,4 @@ void ch_binary_do_output_convertion(ch_binary_insert_state *insert_state,
 }
 #endif
 
-#endif
+#endif   /* CLICKHOUSE_BINARY_H */

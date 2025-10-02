@@ -12,10 +12,14 @@ REGRESS      = $(patsubst test/sql/%.sql,%,$(TESTS))
 REGRESS_OPTS = --inputdir=test
 PG_CONFIG   ?= pg_config
 MODULE_big   = $(EXTENSION)
+CURL_CONFIG ?= curl-config
 
 # Collect all the C++ and C files to compile into MODULE_big.
-OBJS = $(subst .cpp,.o, $(wildcard src/*.cpp src/*/*.cpp))
-OBJS += $(subst .c,.o, $(wildcard src/*.c src/*/*.c))
+OBJS = $(sort \
+    $(subst .cpp,.o, $(wildcard src/*.cpp src/*/*.cpp)) \
+    $(subst .c.in,.o, $(wildcard src/*.c.in src/*/*.c)) \
+    $(subst .c,.o, $(wildcard src/*.c src/*/*.c)) \
+)
 
 # clickhouse-cpp source and build directories.
 CH_CPP_DIR = vendor/clickhouse-cpp
@@ -43,13 +47,13 @@ endif
 PG_CPPFLAGS = -I./src/include -I$(CH_CPP_DIR) -I$(CH_CPP_DIR)/contrib/absl
 
 # Include other libraries compiled into clickhouse-cpp.
-PG_LDFLAGS = -lstdc++ -lssl -lcrypto
+PG_LDFLAGS = -lstdc++ -lssl -lcrypto $(shell $(CURL_CONFIG) --libs)
 
 # clickhouse-cpp requires C++ v17.
 PG_CXXFLAGS = -std=c++17
 
 # Suppress annoying pre-c99 warning.
-PG_CFLAGS = -Wno-declaration-after-statement
+PG_CFLAGS = -Wno-declaration-after-statement $(shell $(CURL_CONFIG) --cflags)
 
 # Clean up the clickhouse-cpp build directory and generated files.
 EXTRA_CLEAN = $(CH_CPP_BUILD_DIR) sql/$(EXTENSION)--$(EXTVERSION).sql src/fdw.c

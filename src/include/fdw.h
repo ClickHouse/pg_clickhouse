@@ -1,13 +1,18 @@
 /*-------------------------------------------------------------------------
  *
- * clickhouse_fdw.h
+ * fdw.h
  *		  Foreign-data wrapper for remote Clickhouse servers
  *
+ * Portions Copyright (c) 2012-2019, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2019-2022, Adjust GmbH
+ * Copyright (c) 2025, ClickHouse, Inc.
+ *
  * IDENTIFICATION
- *		  contrib/clickhouedb_fdw/clickhouse_fdw.h
+ *		  github.com/clickhouse/clickhouse_fdw/src/include/fdw.h
  *
  *-------------------------------------------------------------------------
  */
+
 #ifndef CLICKHOUSE_FDW_H
 #define CLICKHOUSE_FDW_H
 
@@ -18,12 +23,13 @@
 #include "nodes/execnodes.h"
 #include "optimizer/optimizer.h"
 #include "nodes/pathnodes.h"
+#include "access/heapam.h"
 
 #if PG_VERSION_NUM < 150000
 #define FirstUnpinnedObjectId FirstBootstrapObjectId
 #endif
 
-/* libclickhouse_link.c */
+/* pglink.c */
 typedef struct ch_cursor ch_cursor;
 typedef struct ch_cursor
 {
@@ -186,16 +192,20 @@ typedef struct CHFdwRelationInfo
 	char					ch_table_sign_field[NAMEDATALEN];
 } CHFdwRelationInfo;
 
-/* in clickhouse_fdw.c */
+/* in fdw.c */
 extern ForeignServer *chfdw_get_foreign_server(Relation rel);
+extern Expr *chfdw_find_em_expr_for_input_target(PlannerInfo *root,
+							  EquivalenceClass *ec,
+							  PathTarget *target);
+extern Expr *chfdw_find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel);
 
-/* in clickhousedb_connection.c */
+/* in connection.c */
 extern ch_connection chfdw_get_connection(UserMapping *user);
 extern void chfdw_exec_query(ch_connection conn, const char *query);
 extern void chfdw_report_error(int elevel, ch_connection conn,
                                bool clear, const char *sql);
 
-/* in clickhousedb_option.c */
+/* in option.c */
 extern void
 chfdw_extract_options(List *defelems, char **driver, char **host, int *port,
                          char **dbname, char **username, char **password);
@@ -212,10 +222,6 @@ extern bool chfdw_is_foreign_expr(PlannerInfo *root,
 extern char *chfdw_deparse_insert_sql(StringInfo buf, RangeTblEntry *rte,
                              Index rtindex, Relation rel,
                              List *targetAttrs);
-extern Expr *chfdw_find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel);
-extern Expr *chfdw_find_em_expr_for_input_target(PlannerInfo *root,
-							  EquivalenceClass *ec,
-							  PathTarget *target);
 extern List *chfdw_build_tlist_to_deparse(RelOptInfo *foreignrel);
 extern void chfdw_deparse_select_stmt_for_rel(StringInfo buf, PlannerInfo *root, RelOptInfo *rel,
 						List *tlist, List *remote_conds, List *pathkeys,
@@ -308,7 +314,6 @@ typedef struct CustomColumnInfo
 
 extern CustomObjectDef *chfdw_check_for_custom_function(Oid funcid);
 extern CustomObjectDef *chfdw_check_for_custom_type(Oid typeoid);
-extern void modifyCustomVar(CustomObjectDef *def, Node *node);
 extern void chfdw_apply_custom_table_options(CHFdwRelationInfo *fpinfo, Oid relid);
 extern CustomColumnInfo *chfdw_get_custom_column_info(Oid relid, uint16 varattno);
 extern CustomObjectDef *chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form);
