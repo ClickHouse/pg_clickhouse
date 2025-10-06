@@ -173,7 +173,7 @@ ch_http_response_t *ch_http_simple_query(ch_http_connection_t *conn, const char 
 	}
 	else if (errcode != CURLE_OK)
 	{
-		resp->http_status = 419; /* unlegal http status */
+		resp->http_status = 419; /* illegal http status */
 		resp->data = strdup(errbuffer);
 		resp->datasize = strlen(errbuffer);
 		return resp;

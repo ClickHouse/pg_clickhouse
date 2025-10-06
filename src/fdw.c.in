@@ -82,8 +82,9 @@ enum FdwScanPrivateIndex
  * Similarly, this enum describes what's kept in the fdw_private list for
  * a ModifyTable node referencing a postgres_fdw foreign table.  We store:
  *
- * 1) INSERT statement text to be sent to the remote server
- * 2) Integer list of target attribute numbers for INSERT
+ * 0) INSERT statement text to be sent to the remote server
+ * 1) Integer list of target attribute numbers for INSERT
+ * 2) String table name.
  */
 enum FdwModifyPrivateIndex
 {
@@ -92,7 +93,7 @@ enum FdwModifyPrivateIndex
 	/* Integer list of target attribute numbers for INSERT/UPDATE */
 	FdwModifyPrivateTargetAttnums,
 	/* Deparsed name of the result table */
-	FdwModifyPrivateTableName
+	FdwModifyPrivateTableName,
 };
 
 
@@ -1057,6 +1058,7 @@ clickhousePlanForeignModify(PlannerInfo *root,
 	switch (operation)
 	{
 	case CMD_INSERT:
+		// Write start of INSERT statement to &sql: INSERT INTO table (col list)
 		table_name = chfdw_deparse_insert_sql(&sql, rte, resultRelation, rel, targetAttrs);
 		break;
 	case CMD_UPDATE:
@@ -2829,8 +2831,13 @@ clickhouse_fdw_handler(PG_FUNCTION_ARGS)
 	/* Functions for updating foreign tables */
 	routine->PlanForeignModify = clickhousePlanForeignModify;
 	routine->BeginForeignModify = clickhouseBeginForeignModify;
-	routine->ExecForeignInsert = clickhouseExecForeignInsert;
 	routine->BeginForeignInsert = clickhouseBeginForeignInsert;
+	routine->ExecForeignInsert = clickhouseExecForeignInsert;
+
+	// TODO: Add support for ClickHouse 25.8 and later.
+	// routine->ExecForeignBatchInsert = XXX;
+	// routine->ExecForeignUpdate = XXX;
+	// routine->ExecForeignDelete = XXX;
 
 	routine->EndForeignInsert = clickhouseEndForeignInsert;
 	routine->EndForeignModify = clickhouseEndForeignInsert;

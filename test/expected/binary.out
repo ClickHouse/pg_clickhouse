@@ -1,0 +1,261 @@
+SET datestyle = 'ISO';
+CREATE SERVER loopback FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'regression', driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER loopback;
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS regression');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE DATABASE regression');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+-- integer types
+SELECT clickhouse_raw_query('CREATE TABLE regression.ints (
+    c1 Int8, c2 Int16, c3 Int32, c4 Int64,
+    c5 UInt8, c6 UInt16, c7 UInt32, c8 UInt64,
+    c9 Float32, c10 Float64
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('INSERT INTO regression.ints SELECT
+    number, number + 1, number + 2, number + 3, number + 4, number + 5,
+    number + 6, number + 7, number + 8.1, number + 9.2 FROM numbers(10);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+-- date and string types
+SELECT clickhouse_raw_query('CREATE TABLE regression.types (
+    c1 Date, c2 DateTime, c3 String, c4 FixedString(5), c5 UUID,
+    c6 Enum8(''one'' = 1, ''two'' = 2),
+    c7 Enum16(''one'' = 1, ''two'' = 2, ''three'' = 3)
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('INSERT INTO regression.types SELECT
+    addDays(toDate(''1990-01-01''), number),
+    addMinutes(addSeconds(addDays(toDateTime(''1990-01-01 10:00:00''), number), number), number),
+    format(''number {0}'', toString(number)),
+    format(''num {0}'', toString(number)),
+    format(''f4bf890f-f9dc-4332-ad5c-0c18e73f28e{0}'', toString(number)),
+    ''two'',
+    ''three''
+    FROM numbers(10);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+-- array types
+SELECT clickhouse_raw_query('CREATE TABLE regression.arrays (
+    c1 Array(Int), c2 Array(String)
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('INSERT INTO regression.arrays SELECT
+    [number, number + 1],
+    [format(''num{0}'', toString(number)), format(''num{0}'', toString(number + 1))]
+    FROM numbers(10);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE TABLE regression.tuples (
+    c1 Int8,
+    c2 Tuple(Int, String, Float32),
+    c3 UInt8
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('INSERT INTO regression.tuples SELECT
+    number,
+    (number, toString(number), number + 1.0),
+    number % 2
+    FROM numbers(10);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+CREATE FOREIGN TABLE fints (
+	c1 int2,
+	c2 int2,
+	c3 int,
+	c4 int8,
+	c5 int2,
+	c6 int,
+	c7 int8,
+	c8 int8,
+    c9 float4,
+    c10 float8
+) SERVER loopback OPTIONS (table_name 'ints');
+CREATE FOREIGN TABLE ftypes (
+	c1 date,
+	c2 timestamp without time zone,
+    c3 text,
+    c4 text,
+    c5 uuid,
+    c6 text, -- Enum8
+    c7 text  -- Enum16
+) SERVER loopback OPTIONS (table_name 'types');
+CREATE FOREIGN TABLE farrays (
+	c1 int[],
+    c2 text[]
+) SERVER loopback OPTIONS (table_name 'arrays');
+CREATE FOREIGN TABLE farrays2 (
+	c1 int8[],
+    c2 text[]
+) SERVER loopback OPTIONS (table_name 'arrays');
+CREATE TABLE tupformat(a int, b text, c float4);
+CREATE FOREIGN TABLE ftuples (
+    c1 int,
+    c2 tupformat,
+    c3 bool
+) SERVER loopback OPTIONS (table_name 'tuples');
+-- integers
+SELECT * FROM fints ORDER BY c1;
+ c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 |  c9  | c10  
+----+----+----+----+----+----+----+----+------+------
+  0 |  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8.1 |  9.2
+  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8 |  9.1 | 10.2
+  2 |  3 |  4 |  5 |  6 |  7 |  8 |  9 | 10.1 | 11.2
+  3 |  4 |  5 |  6 |  7 |  8 |  9 | 10 | 11.1 | 12.2
+  4 |  5 |  6 |  7 |  8 |  9 | 10 | 11 | 12.1 | 13.2
+  5 |  6 |  7 |  8 |  9 | 10 | 11 | 12 | 13.1 | 14.2
+  6 |  7 |  8 |  9 | 10 | 11 | 12 | 13 | 14.1 | 15.2
+  7 |  8 |  9 | 10 | 11 | 12 | 13 | 14 | 15.1 | 16.2
+  8 |  9 | 10 | 11 | 12 | 13 | 14 | 15 | 16.1 | 17.2
+  9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17.1 | 18.2
+(10 rows)
+
+SELECT c2, c1, c8, c3, c4, c7, c6, c5 FROM fints ORDER BY c1;
+ c2 | c1 | c8 | c3 | c4 | c7 | c6 | c5 
+----+----+----+----+----+----+----+----
+  1 |  0 |  7 |  2 |  3 |  6 |  5 |  4
+  2 |  1 |  8 |  3 |  4 |  7 |  6 |  5
+  3 |  2 |  9 |  4 |  5 |  8 |  7 |  6
+  4 |  3 | 10 |  5 |  6 |  9 |  8 |  7
+  5 |  4 | 11 |  6 |  7 | 10 |  9 |  8
+  6 |  5 | 12 |  7 |  8 | 11 | 10 |  9
+  7 |  6 | 13 |  8 |  9 | 12 | 11 | 10
+  8 |  7 | 14 |  9 | 10 | 13 | 12 | 11
+  9 |  8 | 15 | 10 | 11 | 14 | 13 | 12
+ 10 |  9 | 16 | 11 | 12 | 15 | 14 | 13
+(10 rows)
+
+SELECT a, b FROM (SELECT c1 * 10 as a, c8 * 11 as b FROM fints ORDER BY a LIMIT 2) t1;
+ a  | b  
+----+----
+  0 | 77
+ 10 | 88
+(2 rows)
+
+SELECT NULL FROM fints LIMIT 2;
+ ?column? 
+----------
+ 
+ 
+(2 rows)
+
+SELECT c2, NULL, c1, NULL FROM fints ORDER BY c2 LIMIT 2;
+ c2 | ?column? | c1 | ?column? 
+----+----------+----+----------
+  1 |          |  0 | 
+  2 |          |  1 | 
+(2 rows)
+
+-- types
+SELECT * FROM ftypes ORDER BY c1;
+     c1     |         c2          |    c3    |  c4   |                  c5                  | c6  |  c7   
+------------+---------------------+----------+-------+--------------------------------------+-----+-------
+ 1990-01-01 | 1990-01-01 10:00:00 | number 0 | num 0 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e0 | two | three
+ 1990-01-02 | 1990-01-02 10:01:01 | number 1 | num 1 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e1 | two | three
+ 1990-01-03 | 1990-01-03 10:02:02 | number 2 | num 2 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e2 | two | three
+ 1990-01-04 | 1990-01-04 10:03:03 | number 3 | num 3 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e3 | two | three
+ 1990-01-05 | 1990-01-05 10:04:04 | number 4 | num 4 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e4 | two | three
+ 1990-01-06 | 1990-01-06 10:05:05 | number 5 | num 5 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e5 | two | three
+ 1990-01-07 | 1990-01-07 10:06:06 | number 6 | num 6 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e6 | two | three
+ 1990-01-08 | 1990-01-08 10:07:07 | number 7 | num 7 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e7 | two | three
+ 1990-01-09 | 1990-01-09 10:08:08 | number 8 | num 8 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e8 | two | three
+ 1990-01-10 | 1990-01-10 10:09:09 | number 9 | num 9 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 | two | three
+(10 rows)
+
+SELECT c2, c1, c4, c3, c5, c7, c6 FROM ftypes ORDER BY c1;
+         c2          |     c1     |  c4   |    c3    |                  c5                  |  c7   | c6  
+---------------------+------------+-------+----------+--------------------------------------+-------+-----
+ 1990-01-01 10:00:00 | 1990-01-01 | num 0 | number 0 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e0 | three | two
+ 1990-01-02 10:01:01 | 1990-01-02 | num 1 | number 1 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e1 | three | two
+ 1990-01-03 10:02:02 | 1990-01-03 | num 2 | number 2 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e2 | three | two
+ 1990-01-04 10:03:03 | 1990-01-04 | num 3 | number 3 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e3 | three | two
+ 1990-01-05 10:04:04 | 1990-01-05 | num 4 | number 4 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e4 | three | two
+ 1990-01-06 10:05:05 | 1990-01-06 | num 5 | number 5 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e5 | three | two
+ 1990-01-07 10:06:06 | 1990-01-07 | num 6 | number 6 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e6 | three | two
+ 1990-01-08 10:07:07 | 1990-01-08 | num 7 | number 7 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e7 | three | two
+ 1990-01-09 10:08:08 | 1990-01-09 | num 8 | number 8 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e8 | three | two
+ 1990-01-10 10:09:09 | 1990-01-10 | num 9 | number 9 | f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 | three | two
+(10 rows)
+
+-- arrays
+SELECT * FROM farrays ORDER BY c1;
+   c1   |      c2      
+--------+--------------
+ {0,1}  | {num0,num1}
+ {1,2}  | {num1,num2}
+ {2,3}  | {num2,num3}
+ {3,4}  | {num3,num4}
+ {4,5}  | {num4,num5}
+ {5,6}  | {num5,num6}
+ {6,7}  | {num6,num7}
+ {7,8}  | {num7,num8}
+ {8,9}  | {num8,num9}
+ {9,10} | {num9,num10}
+(10 rows)
+
+SELECT * FROM farrays2 ORDER BY c1;
+ERROR:  clickhouse_fdw: could not cast value from integer[] to bigint[]
+-- tuples
+SELECT * FROM ftuples ORDER BY c1;
+ c1 |    c2    | c3 
+----+----------+----
+  0 | (0,0,1)  | f
+  1 | (1,1,2)  | t
+  2 | (2,2,3)  | f
+  3 | (3,3,4)  | t
+  4 | (4,4,5)  | f
+  5 | (5,5,6)  | t
+  6 | (6,6,7)  | f
+  7 | (7,7,8)  | t
+  8 | (8,8,9)  | f
+  9 | (9,9,10) | t
+(10 rows)
+
+DROP USER MAPPING FOR CURRENT_USER SERVER loopback;
+SELECT clickhouse_raw_query('DROP DATABASE regression');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+

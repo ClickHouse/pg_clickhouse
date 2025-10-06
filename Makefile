@@ -9,7 +9,7 @@ DATA         = $(wildcard sql/$(EXTENSION)--*.sql)
 # DOCS         = $(wildcard doc/*.md)
 TESTS        = $(wildcard test/sql/*.sql)
 REGRESS      = $(patsubst test/sql/%.sql,%,$(TESTS))
-REGRESS_OPTS = --inputdir=test
+REGRESS_OPTS = --inputdir=test --load-extension=$(EXTENSION)
 PG_CONFIG   ?= pg_config
 MODULE_big   = $(EXTENSION)
 CURL_CONFIG ?= curl-config
@@ -48,7 +48,7 @@ endif
 PG_CPPFLAGS = -I./src/include -I$(CH_CPP_DIR) -I$(CH_CPP_DIR)/contrib/absl
 
 # Include other libraries compiled into clickhouse-cpp.
-PG_LDFLAGS = -lstdc++ -lssl -lcrypto -luuid $(shell $(CURL_CONFIG) --libs)
+PG_LDFLAGS = -lstdc++ -lssl -lcrypto $(shell $(CURL_CONFIG) --libs)
 
 # clickhouse-cpp requires C++ v17.
 PG_CXXFLAGS = -std=c++17
@@ -58,6 +58,13 @@ PG_CFLAGS = -Wno-declaration-after-statement $(shell $(CURL_CONFIG) --cflags)
 
 # Clean up the clickhouse-cpp build directory and generated files.
 EXTRA_CLEAN = $(CH_CPP_BUILD_DIR) sql/$(EXTENSION)--$(EXTVERSION).sql src/fdw.c
+
+# We'll need libuuid except on darwin, where it's included in the OS.
+ifneq ($(OS),Windows_NT)
+ifneq ($(shell uname -s),Darwin)
+	PG_LDFLAGS += -luuid
+endif
+endif
 
 # Import PGXS.
 PGXS := $(shell $(PG_CONFIG) --pgxs)

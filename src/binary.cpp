@@ -846,20 +846,20 @@ nested_col:
 			}
 		}
 		break;
-		// case Type::Code::UUID: {
-		// 	/* we form char[16] from two uint64 numbers, and they should
-		// 	 * be big endian */
-		// 	UInt128 val = col->As<ColumnUUID>()->At(row);
-		// 	pg_uuid_t * uuid_val = (pg_uuid_t *)exc_palloc(sizeof(pg_uuid_t));
+		case Type::Code::UUID: {
+			/* we form char[16] from two uint64 numbers, and they should
+			 * be big endian */
+			auto val = col->As<ColumnUUID>()->At(row);
+			pg_uuid_t * uuid_val = (pg_uuid_t *)exc_palloc(sizeof(pg_uuid_t));
 
-		// 	val.first = HOST_TO_BIG_ENDIAN_64(val.first);
-		// 	val.second = HOST_TO_BIG_ENDIAN_64(val.second);
-		// 	memcpy(uuid_val->data, &val.first, 8);
-		// 	memcpy(uuid_val->data + 8, &val.second, 8);
+			val.first = HOST_TO_BIG_ENDIAN_64(val.first);
+			val.second = HOST_TO_BIG_ENDIAN_64(val.second);
+			memcpy(uuid_val->data, &val.first, 8);
+			memcpy(uuid_val->data + 8, &val.second, 8);
 
-		// 	ret = UUIDPGetDatum(uuid_val);
-		// 	*valtype = UUIDOID;
-		// }
+			ret = UUIDPGetDatum(uuid_val);
+			*valtype = UUIDOID;
+		}
 		break;
 		case Type::Code::Nullable: {
 			auto nullable = col->As<ColumnNullable>();

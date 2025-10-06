@@ -18,6 +18,8 @@ jobs:
       - name: Checkout the Repository
         uses: actions/checkout@v4
         with: { submodules: true }
+      - name: Start ClickHouse
+        run: .github/ubuntu/clickhouse.sh
       - name: Test DSO
         run: pg-build-test
       - name: Clean
