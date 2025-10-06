@@ -23,7 +23,7 @@ OBJS = $(sort \
 
 # clickhouse-cpp source and build directories.
 CH_CPP_DIR = vendor/clickhouse-cpp
-CH_CPP_BUILD_DIR = $(CH_CPP_DIR)/build
+CH_CPP_BUILD_DIR = vendor/_build
 
 # List the clickhouse-cpp libraries we require.
 CH_CPP_LIB = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib$(DLSUFFIX)
@@ -33,10 +33,11 @@ CH_CPP_FLAGS = -D CMAKE_BUILD_TYPE=Release -D WITH_OPENSSL=ON
 ifeq ($(CH_BUILD), static)
 # We'll need all the clickhouse-cpp static libraries.
 	CH_CPP_LIB = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib.a
-	SHLIB_LINK = $(CH_CPP_BUILD_DIR)/contrib/cityhash/cityhash/libcityhash.a \
-	$(CH_CPP_BUILD_DIR)/contrib/absl/absl/libabsl_int128.a \
-	$(CH_CPP_BUILD_DIR)/contrib/lz4/lz4/liblz4.a \
-	$(CH_CPP_BUILD_DIR)/contrib/zstd/zstd/libzstdstatic.a
+	SHLIB_LINK = $(CH_CPP_LIB) \
+	  $(CH_CPP_BUILD_DIR)/contrib/cityhash/cityhash/libcityhash.a \
+	  $(CH_CPP_BUILD_DIR)/contrib/absl/absl/libabsl_int128.a \
+	  $(CH_CPP_BUILD_DIR)/contrib/lz4/lz4/liblz4.a \
+	  $(CH_CPP_BUILD_DIR)/contrib/zstd/zstd/libzstdstatic.a
 else
 #   Build and install the shared library.
 	SHLIB_LINK = -L$(CH_CPP_BUILD_DIR)/clickhouse -lclickhouse-cpp-lib
@@ -47,12 +48,12 @@ endif
 PG_CPPFLAGS = -I./src/include -I$(CH_CPP_DIR) -I$(CH_CPP_DIR)/contrib/absl
 
 # Include other libraries compiled into clickhouse-cpp.
-PG_LDFLAGS = -lstdc++ -lssl -lcrypto $(shell $(CURL_CONFIG) --libs)
+PG_LDFLAGS = -lstdc++ -lssl -lcrypto -luuid $(shell $(CURL_CONFIG) --libs)
 
 # clickhouse-cpp requires C++ v17.
 PG_CXXFLAGS = -std=c++17
 
-# Suppress annoying pre-c99 warning.
+# Suppress annoying pre-c99 warning and include curl flags.
 PG_CFLAGS = -Wno-declaration-after-statement $(shell $(CURL_CONFIG) --cflags)
 
 # Clean up the clickhouse-cpp build directory and generated files.
@@ -106,8 +107,9 @@ src/fdw.c: src/fdw.c.in
 ifeq ($(CH_BUILD), static)
 install-ch-cpp:
 else
+# Copy all dynamic files; use -a to preserve symlinks.
 install-ch-cpp: $(CH_CPP_LIB) $(shlib)
-	$(install_bin) -m 755 $(CH_CPP_LIB) $(DESTDIR)$(pkglibdir)/
+	cp -a $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib*$(DLSUFFIX)* $(DESTDIR)$(pkglibdir)/
 endif
 
 install: install-ch-cpp

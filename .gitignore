@@ -9,7 +9,7 @@ regression.diffs
 regression.out
 /clickhouse_fdw-*
 .vscode/
-/build/
+_build/
 /latest-changes.md
 /src/fdw.c
 /sql/*--*.sql
