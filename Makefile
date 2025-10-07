@@ -13,6 +13,7 @@ REGRESS_OPTS = --inputdir=test --load-extension=$(EXTENSION)
 PG_CONFIG   ?= pg_config
 MODULE_big   = $(EXTENSION)
 CURL_CONFIG ?= curl-config
+OS 	        ?= $(shell uname -s)
 
 # Collect all the C++ and C files to compile into MODULE_big.
 OBJS = $(sort \
@@ -28,6 +29,13 @@ CH_CPP_BUILD_DIR = vendor/_build
 # List the clickhouse-cpp libraries we require.
 CH_CPP_LIB = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib$(DLSUFFIX)
 CH_CPP_FLAGS = -D CMAKE_BUILD_TYPE=Release -D WITH_OPENSSL=ON
+
+# Build static on Darwin by default.
+ifndef ($(CH_BUILD))
+ifeq ($(OS),Darwin)
+	CH_BUILD = static
+endif
+endif
 
 # Are we statically compiling clickhouse-cpp into the extension or no?
 ifeq ($(CH_BUILD), static)
@@ -56,15 +64,13 @@ PG_CXXFLAGS = -std=c++17
 # Suppress annoying pre-c99 warning and include curl flags.
 PG_CFLAGS = -Wno-declaration-after-statement $(shell $(CURL_CONFIG) --cflags)
 
-# Clean up the clickhouse-cpp build directory and generated files.
-EXTRA_CLEAN = $(CH_CPP_BUILD_DIR) sql/$(EXTENSION)--$(EXTVERSION).sql src/fdw.c
-
 # We'll need libuuid except on darwin, where it's included in the OS.
-ifneq ($(OS),Windows_NT)
-ifneq ($(shell uname -s),Darwin)
+ifneq ($(OS),Darwin)
 	PG_LDFLAGS += -luuid
 endif
-endif
+
+# Clean up the clickhouse-cpp build directory and generated files.
+EXTRA_CLEAN = $(CH_CPP_BUILD_DIR) sql/$(EXTENSION)--$(EXTVERSION).sql src/fdw.c
 
 # Import PGXS.
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -128,3 +134,16 @@ dist:
 # Generate a list of the changes just for the current version.
 latest-changes.md: Changes
 	perl -e 'while (<>) {last if /^(v?\Q${DISTVERSION}\E)/; } print "Changes for v${DISTVERSION}:\n"; while (<>) { last if /^\s*$$/; s/^\s+//; print }' Changes > $@
+
+# Run `make test` and copy all result files to test/expected/. Use for basic
+# test changes with the latest version of Postgres, but be aware that
+# alternate `_n.out` files will not be updated.
+#
+# DO NOT RUN UNLESS YOU'RE CERTAIN ALL YOUR TESTS ARE PASSING!
+.PHONY: results
+results:
+	$(MAKE) installcheck || true
+	rsync -rlpgovP results/ test/expected
+
+# Run make print-VARIABLE_NAME to print VARIABLE_NAME's flavor and value.
+print-%	: ; $(info $* is $(flavor $*) variable set to "$($*)") @true

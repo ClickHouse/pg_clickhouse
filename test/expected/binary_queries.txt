@@ -1,0 +1,6 @@
+ Versions | File
+----------|----------------------
+ 18       | binary_queries.out
+ 17       | binary_queries_1.out
+ 16       | binary_queries_2.out
+ 13-15    | binary_queries_3.out

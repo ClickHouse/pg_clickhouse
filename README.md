@@ -34,14 +34,16 @@ sudo apt install \
 
 #### Compile and Install
 
-To build and install the ClickHouse dynamic library and `clickhouse_fdw`, run:
+To build and install the ClickHouse library and `clickhouse_fdw`, run:
 
 ```sh
 make
 sudo make install
 ```
 
-To statically compile the ClickHouse library into `clickhouse_fdw`, pass
+By default `make` dynamically links the `clickhouse-cpp` library (except on
+macOS, where a dynamic `clickhouse-cpp` library is not yet supported). To
+statically compile the ClickHouse library into `clickhouse_fdw`, pass
 `CH_BUILD=static`:
 
 ```sh
