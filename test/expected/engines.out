@@ -1,0 +1,259 @@
+CREATE SERVER engines_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'engines_test');
+CREATE USER MAPPING FOR CURRENT_USER SERVER engines_loopback;
+SELECT clickhouse_raw_query('drop database if exists engines_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('create database engines_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	create table engines_test.t1 (a int, b int)
+	engine = MergeTree()
+	order by a');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	create table engines_test.t2 (a int, b AggregateFunction(sum, Int32))
+	engine = AggregatingMergeTree()
+	order by a');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	create table engines_test.t3 (a int, b Array(Int32), c Array(Int32))
+	engine = MergeTree()
+	order by a');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	insert into engines_test.t1 select number % 10, number from numbers(1, 100);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	insert into engines_test.t2 select number % 10 as a, sumState(toInt32(number)) as b from numbers(1, 100) group by a;');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	insert into engines_test.t3 select number % 10,
+		[1, number % 10 + 1], [1, 1] from numbers(1, 100);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	create materialized view engines_test.t1_aggr
+		engine=AggregatingMergeTree()
+		order by a populate as select a, sumState(b) as b from engines_test.t1 group by a;');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	create materialized view engines_test.t3_aggr
+		engine=AggregatingMergeTree()
+		order by a populate as select a, sumMapState(b, c) as b from engines_test.t3 group by a;');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	create table engines_test.t4 (a int,
+		b AggregateFunction(sum, Int32),
+		c AggregateFunction(sumMap, Array(Int32), Array(Int32)),
+		d SimpleAggregateFunction(sum, Int64))
+	engine = AggregatingMergeTree()
+	order by a');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+IMPORT FOREIGN SCHEMA "engines_test" FROM SERVER engines_loopback INTO public;
+\d+ t1
+                                       Foreign table "public.t1"
+ Column |  Type   | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
+--------+---------+-----------+----------+---------+-------------+---------+--------------+-------------
+ a      | integer |           | not null |         |             | plain   |              | 
+ b      | integer |           | not null |         |             | plain   |              | 
+Not-null constraints:
+    "t1_a_not_null" NOT NULL "a"
+    "t1_b_not_null" NOT NULL "b"
+Server: engines_loopback
+FDW options: (database 'engines_test', table_name 't1', engine 'MergeTree')
+
+\d+ t1_aggr
+                                            Foreign table "public.t1_aggr"
+ Column |  Type   | Collation | Nullable | Default |        FDW options        | Storage | Stats target | Description 
+--------+---------+-----------+----------+---------+---------------------------+---------+--------------+-------------
+ a      | integer |           | not null |         |                           | plain   |              | 
+ b      | integer |           | not null |         | (aggregatefunction 'sum') | plain   |              | 
+Not-null constraints:
+    "t1_aggr_a_not_null" NOT NULL "a"
+    "t1_aggr_b_not_null" NOT NULL "b"
+Server: engines_loopback
+FDW options: (database 'engines_test', table_name 't1_aggr', engine 'MaterializedView')
+
+\d+ t2
+                                              Foreign table "public.t2"
+ Column |  Type   | Collation | Nullable | Default |        FDW options        | Storage | Stats target | Description 
+--------+---------+-----------+----------+---------+---------------------------+---------+--------------+-------------
+ a      | integer |           | not null |         |                           | plain   |              | 
+ b      | integer |           | not null |         | (aggregatefunction 'sum') | plain   |              | 
+Not-null constraints:
+    "t2_a_not_null" NOT NULL "a"
+    "t2_b_not_null" NOT NULL "b"
+Server: engines_loopback
+FDW options: (database 'engines_test', table_name 't2', engine 'AggregatingMergeTree')
+
+\d+ t3
+                                         Foreign table "public.t3"
+ Column |   Type    | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
+--------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
+ a      | integer   |           | not null |         |             | plain    |              | 
+ b      | integer[] |           | not null |         |             | extended |              | 
+ c      | integer[] |           | not null |         |             | extended |              | 
+Not-null constraints:
+    "t3_a_not_null" NOT NULL "a"
+    "t3_b_not_null" NOT NULL "b"
+    "t3_c_not_null" NOT NULL "c"
+Server: engines_loopback
+FDW options: (database 'engines_test', table_name 't3', engine 'MergeTree')
+
+\d+ t3_aggr
+                                           Foreign table "public.t3_aggr"
+ Column |  Type   | Collation | Nullable | Default |       FDW options       | Storage | Stats target | Description 
+--------+---------+-----------+----------+---------+-------------------------+---------+--------------+-------------
+ a      | integer |           | not null |         |                         | plain   |              | 
+ b      | integer |           | not null |         | (aggregatefunction '1') | plain   |              | 
+Not-null constraints:
+    "t3_aggr_a_not_null" NOT NULL "a"
+    "t3_aggr_b_not_null" NOT NULL "b"
+Server: engines_loopback
+FDW options: (database 'engines_test', table_name 't3_aggr', engine 'MaterializedView')
+
+\d+ t4
+                                                 Foreign table "public.t4"
+ Column |  Type   | Collation | Nullable | Default |           FDW options           | Storage | Stats target | Description 
+--------+---------+-----------+----------+---------+---------------------------------+---------+--------------+-------------
+ a      | integer |           | not null |         |                                 | plain   |              | 
+ b      | integer |           | not null |         | (aggregatefunction 'sum')       | plain   |              | 
+ c      | integer |           | not null |         | (aggregatefunction '1')         | plain   |              | 
+ d      | bigint  |           | not null |         | (simpleaggregatefunction 'sum') | plain   |              | 
+Not-null constraints:
+    "t4_a_not_null" NOT NULL "a"
+    "t4_b_not_null" NOT NULL "b"
+    "t4_c_not_null" NOT NULL "c"
+    "t4_d_not_null" NOT NULL "d"
+Server: engines_loopback
+FDW options: (database 'engines_test', table_name 't4', engine 'AggregatingMergeTree')
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a, sum(b) FROM t1 GROUP BY a;
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Foreign Scan
+   Output: a, (sum(b))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT a, sum(b) FROM engines_test.t1 GROUP BY a
+(4 rows)
+
+SELECT a, sum(b) FROM t1 GROUP BY a ORDER BY a;
+ a | sum 
+---+-----
+ 0 | 550
+ 1 | 460
+ 2 | 470
+ 3 | 480
+ 4 | 490
+ 5 | 500
+ 6 | 510
+ 7 | 520
+ 8 | 530
+ 9 | 540
+(10 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a, sum(b) FROM t1_aggr GROUP BY a;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan
+   Output: a, (sum(b))
+   Relations: Aggregate on (t1_aggr)
+   Remote SQL: SELECT a, sumMerge(b) FROM engines_test.t1_aggr GROUP BY a
+(4 rows)
+
+SELECT a, sum(b) FROM t1_aggr GROUP BY a ORDER BY a;
+ a | sum 
+---+-----
+ 0 | 550
+ 1 | 460
+ 2 | 470
+ 3 | 480
+ 4 | 490
+ 5 | 500
+ 6 | 510
+ 7 | 520
+ 8 | 530
+ 9 | 540
+(10 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a, sum(b) FROM t2 GROUP BY a;
+                             QUERY PLAN                              
+---------------------------------------------------------------------
+ Foreign Scan
+   Output: a, (sum(b))
+   Relations: Aggregate on (t2)
+   Remote SQL: SELECT a, sumMerge(b) FROM engines_test.t2 GROUP BY a
+(4 rows)
+
+SELECT a, sum(b) FROM t2 GROUP BY a ORDER BY a;
+ a | sum 
+---+-----
+ 0 | 550
+ 1 | 460
+ 2 | 470
+ 3 | 480
+ 4 | 490
+ 5 | 500
+ 6 | 510
+ 7 | 520
+ 8 | 530
+ 9 | 540
+(10 rows)
+
+DROP USER MAPPING FOR CURRENT_USER SERVER engines_loopback;
+SELECT clickhouse_raw_query('DROP DATABASE engines_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP SERVER engines_loopback CASCADE;
+NOTICE:  drop cascades to 6 other objects
+DETAIL:  drop cascades to foreign table t1
+drop cascades to foreign table t1_aggr
+drop cascades to foreign table t2
+drop cascades to foreign table t3
+drop cascades to foreign table t3_aggr
+drop cascades to foreign table t4
