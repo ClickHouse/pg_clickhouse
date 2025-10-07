@@ -334,7 +334,7 @@ void ch_binary_prepare_insert(void * conn, char * query, ch_binary_insert_state 
 // 						chtype = col->As<ColumnLowCardinality>()->GetNestedType();
 // 					}
 
-// 					Oid pgtype = get_corr_postgres_type(chtype);
+// 					Oid pg_type = get_corr_postgres_type(chtype);
 
 // 					vec->push_back(clickhouse::CreateColumnByType(col->Type()->GetName()));
 // 					const char * colname = sample_block.GetColumnName(i).c_str();
@@ -343,7 +343,7 @@ void ch_binary_prepare_insert(void * conn, char * query, ch_binary_insert_state 
 // 					PG_TRY();
 // 					{
 // 						TupleDescInitEntry(
-// 							state->outdesc, (AttrNumber)i + 1, colname, pgtype, -1, 0);
+// 							state->outdesc, (AttrNumber)i + 1, colname, pg_type, -1, 0);
 // 					}
 // 					PG_CATCH();
 // 					{

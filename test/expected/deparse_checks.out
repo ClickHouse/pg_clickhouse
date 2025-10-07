@@ -1,0 +1,70 @@
+CREATE SERVER deparse_lookback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'deparse_test');
+CREATE USER MAPPING FOR CURRENT_USER SERVER deparse_lookback;
+SELECT clickhouse_raw_query('drop database if exists deparse_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('create database deparse_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	create table deparse_test.t1 (a int, b Int8)
+	engine = MergeTree()
+	order by a');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	insert into deparse_test.t1 select number % 10, number % 10 > 5 from numbers(1, 100);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+IMPORT FOREIGN SCHEMA "deparse_test" FROM SERVER deparse_lookback INTO public;
+\d+ t1
+                                        Foreign table "public.t1"
+ Column |   Type   | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
+--------+----------+-----------+----------+---------+-------------+---------+--------------+-------------
+ a      | integer  |           | not null |         |             | plain   |              | 
+ b      | smallint |           | not null |         |             | plain   |              | 
+Not-null constraints:
+    "t1_a_not_null" NOT NULL "a"
+    "t1_b_not_null" NOT NULL "b"
+Server: deparse_lookback
+FDW options: (database 'deparse_test', table_name 't1', engine 'MergeTree')
+
+ALTER TABLE t1 ALTER COLUMN b SET DATA TYPE bool;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT (CASE WHEN b THEN 1 ELSE 2 END) as g1, MAX(a) FROM t1 GROUP BY g1;
+                                                                              QUERY PLAN                                                                              
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (CASE WHEN b THEN 1 ELSE 2 END), (max(a))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT CASE WHEN b = 1 THEN toInt32(1) ELSE toInt32(2) END, max(a) FROM deparse_test.t1 GROUP BY (CASE WHEN b = 1 THEN toInt32(1) ELSE toInt32(2) END)
+(4 rows)
+
+SELECT (CASE WHEN b THEN 1 ELSE 2 END) as g1, MAX(a) FROM t1 GROUP BY g1;
+ g1 | max 
+----+-----
+  2 |   5
+  1 |   9
+(2 rows)
+
+DROP USER MAPPING FOR CURRENT_USER SERVER deparse_lookback;
+SELECT clickhouse_raw_query('DROP DATABASE deparse_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP SERVER deparse_lookback CASCADE;
+NOTICE:  drop cascades to foreign table t1
