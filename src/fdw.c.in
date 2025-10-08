@@ -180,7 +180,8 @@ typedef struct
  */
 PG_FUNCTION_INFO_V1(clickhouse_fdw_handler);
 PG_FUNCTION_INFO_V1(clickhouse_raw_query);
-PG_FUNCTION_INFO_V1(clickhouse_mock);
+PG_FUNCTION_INFO_V1(clickhouse_pushdown);
+PG_FUNCTION_INFO_V1(clickhouse_noop);
 extern PGDLLEXPORT void _PG_init(void);
 static double time_used = 0;
 
@@ -2863,8 +2864,24 @@ clickhouse_fdw_handler(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(routine);
 }
 
+/*
+ * No-op function to use for the final function of a variadic function that
+ * takes any number of values of any type.
+*/
 Datum
-clickhouse_mock(PG_FUNCTION_ARGS)
+clickhouse_noop(PG_FUNCTION_ARGS)
 {
-	elog(ERROR, "clickhouse_fdw: mocked function should be pushed down");
+	PG_RETURN_NULL();
+}
+
+/*
+ * Function that simply raises an exception reporting that the first argument
+ * should have been pushed down.
+*/
+Datum
+clickhouse_pushdown(PG_FUNCTION_ARGS)
+{
+	text* name = PG_GETARG_TEXT_PP(0);
+	elog(ERROR, "clickhouse_fdw: failed to push down %s",
+		text_to_cstring(name));
 }

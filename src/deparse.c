@@ -143,6 +143,7 @@ static void deparseRelabelType(RelabelType *node, deparse_expr_cxt *context);
 static void deparseBoolExpr(BoolExpr *node, deparse_expr_cxt *context);
 static void deparseNullTest(NullTest *node, deparse_expr_cxt *context);
 static void deparseArrayExpr(ArrayExpr *node, deparse_expr_cxt *context);
+static void deparseArrayList(ArrayExpr *node, deparse_expr_cxt *context);
 static void deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs,
 				 deparse_expr_cxt *context);
 static void appendOrderByClause(List *pathkeys, bool has_final_sort,
@@ -537,9 +538,6 @@ foreign_expr_walker(Node *node,
 			return false;
 
 		if (agg->aggdistinct && agg->aggfilter)
-			return false;
-
-		if (agg->aggvariadic)
 			return false;
 
 		/*
@@ -3260,13 +3258,31 @@ static void
 deparseArrayExpr(ArrayExpr *node, deparse_expr_cxt *context)
 {
 	StringInfo	buf = context->buf;
-	bool		first = true;
-	ListCell   *lc;
 
 	if (node->elements == NIL)
 		appendStringInfoString(buf, "CAST(");
 
 	appendStringInfoString(buf, "[");
+	deparseArrayList(node, context);
+	appendStringInfoChar(buf, ']');
+
+	/* If the array is empty, we need an explicit cast to the array type. */
+	if (node->elements == NIL)
+		appendStringInfo(buf, ", '%s')",
+			deparse_type_name(node->array_typeid, -1));
+}
+
+/*
+ * Deparse an array to a list, as in converting a variadic function call's
+ * array to the list of individual values.
+*/
+static void
+deparseArrayList(ArrayExpr *node, deparse_expr_cxt *context)
+{
+	StringInfo	buf = context->buf;
+	bool		first = true;
+	ListCell   *lc;
+
 	foreach(lc, node->elements)
 	{
 		if (!first)
@@ -3274,12 +3290,6 @@ deparseArrayExpr(ArrayExpr *node, deparse_expr_cxt *context)
 		deparseExpr(lfirst(lc), context);
 		first = false;
 	}
-	appendStringInfoChar(buf, ']');
-
-	/* If the array is empty, we need an explicit cast to the array type. */
-	if (node->elements == NIL)
-		appendStringInfo(buf, ", '%s')",
-			deparse_type_name(node->array_typeid, -1));
 }
 
 /*
@@ -3294,9 +3304,13 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	bool	aggfilter = false;
 	bool	sign_count_filter = false;
 	uint8	brcount = 1;
+	bool	use_variadic;
 
 	/* Only basic, non-split aggregation accepted. */
 	Assert(node->aggsplit == AGGSPLIT_SIMPLE);
+
+	/* Check if need to print expand VARIADIC (cf. ruleutils.c) */
+	use_variadic = node->aggvariadic;
 
 	/* Find aggregate name from aggfnoid which is a pg_proc entry */
 	cdef = context->func;
@@ -3346,7 +3360,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 			appendStringInfoString(buf, fpinfo->ch_table_sign_field);
 		else
 		{
-			/* default columns output */
+			/* default arguments output */
 			foreach (arg, node->args)
 			{
 				TargetEntry *tle = (TargetEntry *) lfirst(arg);
@@ -3360,7 +3374,16 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 
 				first = false;
 
-				deparseExpr((Expr *) n, context);
+				if (use_variadic && lnext(node->args, arg) == NULL)
+				{
+					// Convert variadic array to list of arguments.
+					Assert(nodeTag(node) == T_ArrayExpr);
+					deparseArrayList((ArrayExpr *) n, context);
+				}
+				else
+				{
+					deparseExpr((Expr *) n, context);
+				}
 			}
 
 			if (signMultiply)

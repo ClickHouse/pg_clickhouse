@@ -1,0 +1,501 @@
+SET datestyle = 'ISO';
+CREATE SERVER functions_loopback FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'functions_test', driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS functions_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE DATABASE functions_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+-- argMax, argMin
+SELECT clickhouse_raw_query($$
+	CREATE TABLE functions_test.t1 (a int, b int, c DateTime) ENGINE = MergeTree ORDER BY (a);
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+	INSERT INTO functions_test.t1 VALUES
+		(1, 1, '2019-01-01 10:00:00'),
+		(2, 2, '2019-01-02 10:00:00'),
+		(2, 2, '2019-01-02 11:00:00'),
+		(2, 3, '2019-01-02 10:00:00')
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+	drop dictionary if exists functions_test.t3_dict
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	create table functions_test.t3 (a Int32, b Nullable(Int32))
+	engine = MergeTree()
+	order by a');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE TABLE functions_test.t3_map (key1 Int32, key2 String,
+        val String) engine=TinyLog();');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE TABLE functions_test.t4 (val String) engine=TinyLog();');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+CREATE FOREIGN TABLE t1 (a int, b int, c timestamp) SERVER functions_loopback;
+CREATE FOREIGN TABLE t2 (a int, b int, c timestamp with time zone) SERVER functions_loopback OPTIONS (table_name 't1');
+CREATE FOREIGN TABLE t3 (a int, b int) SERVER functions_loopback;
+CREATE FOREIGN TABLE t3_map (key1 int, key2 text, val text) SERVER functions_loopback;
+CREATE FOREIGN TABLE t4 (val text) SERVER functions_loopback;
+SELECT clickhouse_raw_query($$
+	INSERT INTO functions_test.t3
+	SELECT number+1, number+2
+	  FROM numbers(10);
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+	INSERT INTO functions_test.t3_map
+	SELECT number+1, 'key'|| number+1, 'val' || number+1
+	  FROM numbers(10);
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+	INSERT INTO functions_test.t4
+	SELECT 'val' || number+1
+	  FROM numbers(2);
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+	create dictionary functions_test.t3_dict
+    (key1 Int32, key2 String, val String)
+    primary key key1, key2
+    source(clickhouse(host '127.0.0.1' port 9000 db 'functions_test' table 't3_map' user 'default' password ''))
+    layout(complex_key_hashed())
+    lifetime(10);
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+-- check coalesce((cast as Nullable...
+EXPLAIN (VERBOSE, COSTS OFF)
+	SELECT coalesce(a::text, b::text, c::text) FROM t1 GROUP BY a, b, c;
+                                                                         QUERY PLAN                                                                          
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: COALESCE((a)::text, (b)::text, (c)::text), a, b, c
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT COALESCE(CAST(a AS Nullable(String)), CAST(b AS Nullable(String)), CAST(c AS String)), a, b, c FROM functions_test.t1 GROUP BY a, b, c
+(4 rows)
+
+SELECT coalesce(a::text, b::text, c::text) FROM t1 GROUP BY a, b, c;
+ coalesce 
+----------
+ 2
+ 1
+ 2
+ 2
+(4 rows)
+
+-- check IN functions
+EXPLAIN (VERBOSE, COSTS OFF)
+	SELECT a, sum(b) FROM t1 WHERE a IN (1,2,3) GROUP BY a;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: a, (sum(b))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT a, sum(b) FROM functions_test.t1 WHERE ((a IN (1,2,3))) GROUP BY a
+(4 rows)
+
+SELECT a, sum(b) FROM t1 WHERE a IN (1,2,3) GROUP BY a;
+ a | sum 
+---+-----
+ 2 |   7
+ 1 |   1
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+	SELECT a, sum(b) FROM t1 WHERE a NOT IN (1,2,3) GROUP BY a;
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: a, (sum(b))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT a, sum(b) FROM functions_test.t1 WHERE ((a NOT IN (1,2,3))) GROUP BY a
+(4 rows)
+
+SELECT a, sum(b) FROM t1 WHERE a NOT IN (1,2,3) GROUP BY a;
+ a | sum 
+---+-----
+(0 rows)
+
+-- check argMin, argMax, uniqExact
+EXPLAIN (VERBOSE, COSTS OFF) SELECT argMin(a, b) FROM t1;
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Foreign Scan
+   Output: (argmin(a, b))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT argMin(a, b) FROM functions_test.t1
+(4 rows)
+
+SELECT argMin(a, b) FROM t1;
+ argmin 
+--------
+      1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT argMax(a, b) FROM t1;
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Foreign Scan
+   Output: (argmax(a, b))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT argMax(a, b) FROM functions_test.t1
+(4 rows)
+
+SELECT argMax(a, b) FROM t1;
+ argmax 
+--------
+      2
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT argMin(a, c) FROM t1;
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Foreign Scan
+   Output: (argmin(a, c))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT argMin(a, c) FROM functions_test.t1
+(4 rows)
+
+SELECT argMin(a, c) FROM t1;
+ argmin 
+--------
+      1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT argMax(a, c) FROM t1;
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Foreign Scan
+   Output: (argmax(a, c))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT argMax(a, c) FROM functions_test.t1
+(4 rows)
+
+SELECT argMax(a, c) FROM t1;
+ argmax 
+--------
+      2
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqExact(a) FROM t1;
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Foreign Scan
+   Output: (uniqexact(a))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT uniqExact(a) FROM functions_test.t1
+(4 rows)
+
+SELECT uniqExact(a) FROM t1;
+ uniqexact 
+-----------
+         2
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqExact(a) FILTER(WHERE b>1) FROM t1;
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan
+   Output: (uniqexact(a) FILTER (WHERE (b > 1)))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT uniqExactIf(a,(((b > 1)) > 0)) FROM functions_test.t1
+(4 rows)
+
+SELECT uniqExact(a) FILTER(WHERE b>1) FROM t1;
+ uniqexact 
+-----------
+         1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqExact(a, b) FROM t1;
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Foreign Scan
+   Output: (uniqexact(a, b))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT uniqExact(a, b) FROM functions_test.t1
+(4 rows)
+
+SELECT uniqExact(a, b) FROM t1;
+ uniqexact 
+-----------
+         3
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqExact(a, c) FROM t1;
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Foreign Scan
+   Output: (uniqexact(a, c))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT uniqExact(a, c) FROM functions_test.t1
+(4 rows)
+
+SELECT uniqExact(a, c) FROM t1;
+ uniqexact 
+-----------
+         3
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
+                                                                                  QUERY PLAN                                                                                  
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_trunc('dAy'::text, timezone('UTC'::text, c)))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT toStartOfDay(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toStartOfDay(toTimeZone(c, 'UTC'))) ORDER BY toStartOfDay(toTimeZone(c, 'UTC')) ASC
+(4 rows)
+
+SELECT date_trunc('day', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
+           d1           
+------------------------
+ 2019-01-01 00:00:00-08
+ 2019-01-02 00:00:00-08
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('day', c at time zone 'UTC') as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+                                                                                  QUERY PLAN                                                                                  
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_trunc('day'::text, timezone('UTC'::text, c)))
+   Relations: Aggregate on (t2)
+   Remote SQL: SELECT toStartOfDay(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toStartOfDay(toTimeZone(c, 'UTC'))) ORDER BY toStartOfDay(toTimeZone(c, 'UTC')) ASC
+(4 rows)
+
+SELECT date_trunc('day', c at time zone 'UTC') as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+         d1          
+---------------------
+ 2019-01-01 00:00:00
+ 2019-01-02 00:00:00
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('day'::text, timezone('UTC'::text, c)) as d1 FROM t1 GROUP BY d1 ORDER BY d1;
+                                                                                  QUERY PLAN                                                                                  
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_part('day'::text, timezone('UTC'::text, c)))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT toDayOfMonth(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toDayOfMonth(toTimeZone(c, 'UTC'))) ORDER BY toDayOfMonth(toTimeZone(c, 'UTC')) ASC
+(4 rows)
+
+SELECT date_part('day'::text, timezone('UTC'::text, c)) as d1 FROM t1 GROUP BY d1 ORDER BY d1;
+ d1 
+----
+  1
+  2
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('day'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+                                                                                  QUERY PLAN                                                                                  
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_part('day'::text, timezone('UTC'::text, c)))
+   Relations: Aggregate on (t2)
+   Remote SQL: SELECT toDayOfMonth(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toDayOfMonth(toTimeZone(c, 'UTC'))) ORDER BY toDayOfMonth(toTimeZone(c, 'UTC')) ASC
+(4 rows)
+
+SELECT date_part('day'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+ d1 
+----
+  1
+  2
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('doy'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+                                                                                QUERY PLAN                                                                                 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_part('doy'::text, timezone('UTC'::text, c)))
+   Relations: Aggregate on (t2)
+   Remote SQL: SELECT toDayOfYear(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toDayOfYear(toTimeZone(c, 'UTC'))) ORDER BY toDayOfYear(toTimeZone(c, 'UTC')) ASC
+(4 rows)
+
+SELECT date_part('doy'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+ d1 
+----
+  1
+  2
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('dow'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+                                                                                QUERY PLAN                                                                                 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_part('dow'::text, timezone('UTC'::text, c)))
+   Relations: Aggregate on (t2)
+   Remote SQL: SELECT toDayOfWeek(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toDayOfWeek(toTimeZone(c, 'UTC'))) ORDER BY toDayOfWeek(toTimeZone(c, 'UTC')) ASC
+(4 rows)
+
+SELECT date_part('dow'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+ d1 
+----
+  2
+  3
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('minuTe'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_part('minuTe'::text, timezone('UTC'::text, c)))
+   Relations: Aggregate on (t2)
+   Remote SQL: SELECT toMinute(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toMinute(toTimeZone(c, 'UTC'))) ORDER BY toMinute(toTimeZone(c, 'UTC')) ASC
+(4 rows)
+
+SELECT date_part('minuTe'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+ d1 
+----
+  0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('SeCond', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
+                                                                                                                QUERY PLAN                                                                                                                
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_trunc('SeCond'::text, timezone('UTC'::text, c)))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1)) FROM functions_test.t1 GROUP BY (toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1))) ORDER BY toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1)) ASC
+(4 rows)
+
+SELECT date_trunc('SeCond', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
+           d1           
+------------------------
+ 2019-01-01 10:00:00-08
+ 2019-01-02 10:00:00-08
+ 2019-01-02 11:00:00-08
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('ePoch'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+                                                                                      QUERY PLAN                                                                                       
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_part('ePoch'::text, timezone('UTC'::text, c)))
+   Relations: Aggregate on (t2)
+   Remote SQL: SELECT toUnixTimestamp(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toUnixTimestamp(toTimeZone(c, 'UTC'))) ORDER BY toUnixTimestamp(toTimeZone(c, 'UTC')) ASC
+(4 rows)
+
+SELECT date_part('ePoch'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
+     d1     
+------------
+ 1546336800
+ 1546423200
+ 1546426800
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ltrim(val) AS a, btrim(val) AS b, rtrim(val) AS c FROM t4 GROUP BY a,b,c ORDER BY a;
+                                                                           QUERY PLAN                                                                           
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (ltrim(val)), (btrim(val)), (rtrim(val))
+   Relations: Aggregate on (t4)
+   Remote SQL: SELECT ltrim(val), trimBoth(val), rtrim(val) FROM functions_test.t4 GROUP BY (ltrim(val)), (trimBoth(val)), (rtrim(val)) ORDER BY ltrim(val) ASC
+(4 rows)
+
+SELECT ltrim(val) AS a, btrim(val) AS b, rtrim(val) AS c FROM t4 GROUP BY a,b,c ORDER BY a;
+  a   |  b   |  c   
+------+------+------
+ val1 | val1 | val1
+ val2 | val2 | val2
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT strpos(val, 'val') AS a FROM t4 GROUP BY a ORDER BY a;
+                                                             QUERY PLAN                                                             
+------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (strpos(val, 'val'::text))
+   Relations: Aggregate on (t4)
+   Remote SQL: SELECT position(val, 'val') FROM functions_test.t4 GROUP BY (position(val, 'val')) ORDER BY position(val, 'val') ASC
+(4 rows)
+
+SELECT strpos(val, 'val') AS a FROM t4 GROUP BY a ORDER BY a;
+ a 
+---
+ 1
+(1 row)
+
+--- check dictGet
+-- dictGet is broken for now
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a, dictGet('functions_test.t3_dict', 'val', (a, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a;
+                                                                                                                QUERY PLAN                                                                                                                 
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: a, (dictget('functions_test.t3_dict'::text, 'val'::text, ROW(a, ('key'::text || (a)::text)))), (sum(b))
+   Relations: Aggregate on (t3)
+   Remote SQL: SELECT a, dictGet('functions_test.t3_dict', 'val', (a,('key' || CAST(a AS String)))), sum(b) FROM functions_test.t3 GROUP BY a, (dictGet('functions_test.t3_dict', 'val', (a,('key' || CAST(a AS String))))) ORDER BY a ASC
+(4 rows)
+
+-- SELECT a, dictGet('functions_test.t3_dict', 'val', (a, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a, dictGet('functions_test.t3_dict', 'val', (1, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a;
+                                                                                                                               QUERY PLAN                                                                                                                                
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: a, (dictget('functions_test.t3_dict'::text, 'val'::text, ROW(1, ('key'::text || (a)::text)))), (sum(b))
+   Relations: Aggregate on (t3)
+   Remote SQL: SELECT a, dictGet('functions_test.t3_dict', 'val', (cast(1 as Int32),('key' || CAST(a AS String)))), sum(b) FROM functions_test.t3 GROUP BY a, (dictGet('functions_test.t3_dict', 'val', (cast(1 as Int32),('key' || CAST(a AS String))))) ORDER BY a ASC
+(4 rows)
+
+-- SELECT a, dictGet('functions_test.t3_dict', 'val', (1, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a;
+DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
+SELECT clickhouse_raw_query('DROP DATABASE functions_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP SERVER functions_loopback CASCADE;
+NOTICE:  drop cascades to 5 other objects
+DETAIL:  drop cascades to foreign table t1
+drop cascades to foreign table t2
+drop cascades to foreign table t3
+drop cascades to foreign table t3_map
+drop cascades to foreign table t4

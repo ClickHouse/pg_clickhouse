@@ -1,0 +1,21 @@
+ Versions | File
+----------|----------------------
+ 18       | binary_queries.out
+ 17       | binary_queries_1.out
+ 16       | binary_queries_2.out
+ 13-15    | binary_queries_3.out
+
+ Versions | File
+----------|----------------------
+ 18       | deparse_checks.out
+ 13-17    | deparse_checks_1.out
+
+ Versions | File
+----------|---------------
+ 18       | engines.out
+ 13-17    | engines_1.out
+
+ Versions | File
+----------|---------------
+ 14-18    | functions.out
+ 13       | functions_1.out

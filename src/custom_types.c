@@ -275,7 +275,7 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 					strcpy(entry->custom_name, "argMin");
 				else if (strcmp(proname, "dictget") == 0)
 					strcpy(entry->custom_name, "dictGet");
-				else if (strcmp(proname, "uniq_exact") == 0)
+				else if (strcmp(proname, "uniqexact") == 0)
 					strcpy(entry->custom_name, "uniqExact");
 				else
 					strcpy(entry->custom_name, proname);
