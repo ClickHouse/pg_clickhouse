@@ -26,3 +26,8 @@
  17       | http_1.out
  16       | http_2.out
  13-15    | http_3.out
+
+ Versions | File
+----------|---------------------
+ 18       | import_schema.out
+ 13-17    | import_schema_1.out
