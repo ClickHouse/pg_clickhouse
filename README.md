@@ -5,7 +5,7 @@ clickhouse_fdw Postgres Extension
 [![Build Status](https://github.com/clickhouse/clickhouse_fdw/actions/workflows/ci.yml/badge.svg)](https://github.com/clickhouse/clickhouse_fdw/actions/workflows/ci.yml)
 
 This library contains the PostgreSQL extension `clickhouse_fdw` a foreign data
-wrapper for ClickHouse databases.
+wrapper for ClickHouse databases. It supports ClickHouse v22 and later.
 
 ## Installation
 

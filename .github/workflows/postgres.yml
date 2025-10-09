@@ -1,4 +1,4 @@
-name: ✅ CI
+name: 🐘 Postgres CI
 on:
   push:
   pull_request:
@@ -9,8 +9,11 @@ jobs:
     strategy:
       matrix:
         pg: [18, 17, 16, 15, 14, 13]
-    name: 🐘 PostgreSQL ${{ matrix.pg }}
-    runs-on: ubuntu-latest
+        os:
+          - { icon: 🐧, arch: amd64, on: ubuntu-latest }
+          # - { icon: 🐧, arch: arm64, on: ubuntu-24.04-arm } # XXX
+    name: 🐘 PostgreSQL ${{ matrix.pg }} ${{ matrix.os.icon }} ${{ matrix.os.arch }}
+    runs-on: ${{ matrix.os.on }}
     container: pgxn/pgxn-tools
     steps:
       - name: Start Postgres ${{ matrix.pg }}

@@ -82,7 +82,7 @@ $$);
 
 SELECT clickhouse_raw_query($$
 	INSERT INTO functions_test.t3_map
-	SELECT number+1, 'key'|| number+1, 'val' || number+1
+	SELECT toString(number+1), 'key' || toString(number+1), 'val' || toString(number+1)
 	  FROM numbers(10);
 $$);
  clickhouse_raw_query 
@@ -92,7 +92,7 @@ $$);
 
 SELECT clickhouse_raw_query($$
 	INSERT INTO functions_test.t4
-	SELECT 'val' || number+1
+	SELECT 'val' || toString(number+1)
 	  FROM numbers(2);
 $$);
  clickhouse_raw_query 

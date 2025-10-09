@@ -1,0 +1,99 @@
+#!/usr/bin/perl
+
+=head1 Name
+
+ch-version
+
+=head1 Synopsis
+
+   ❯ .github/ubuntu/ch-versions --lts --latest-stable --earliest 24
+   25.9.3.48-stable
+   25.8.10.7-lts
+   25.3.6.56-lts
+   24.8.14.39-lts
+   24.3.18.7-lts
+
+=head1 Description
+
+Download and sort the complete list of ClickHouse versions and print only the
+latest version of each major release (X.Y), in reverse version order. Each
+prints to a single line.
+
+=head2 Options
+
+=head3 C<--lts>
+
+  .github/ubuntu/ch-versions --lts
+
+Print only latest L<LTS|https://clickhouse.com/docs/faq/operations/production>
+(long-term support) releases.
+
+=head3 C<--latest-stable>
+
+  .github/ubuntu/ch-versions --lts --latest-stable
+
+Print the latest stable version even with C<--lts>, if there is a stable
+version since the latest lts release.
+
+=head3 C<--earliest>
+
+  .github/ubuntu/ch-versions --earliest 21.3
+
+Print no releases prior to this major version.
+
+=head3 C<--prefix>
+
+  .github/ubuntu/ch-versions --prefix '*   '
+
+Print this prefix before each release.
+
+=cut
+
+use strict;
+use warnings;
+use v5.32;
+use Getopt::Long;
+
+my %opt = (
+    lts           => 0,  # Only LTS release
+    latest_stable => 0,  # but include latest stable if newer than latest LTS
+    earliest      => 0,  # Omit earlier than this version.
+    prefix        => '', # Prefix each version with this string
+);
+
+GetOptions(
+    'latest-stable' => \$opt{latest_stable},
+    'lts!'          => \$opt{lts},
+    'earliest=s'    => \$opt{earliest},
+    'prefix=s'      => \$opt{prefix},
+);
+
+my $tsv_url = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv';
+
+# Fetch the versions and parse them into sortable strings.
+my %table;
+for (qx/curl -sL "$tsv_url"/) {
+    my ($release, $date) = split /\t/;
+    $release =~ s/^v//;
+    my ($version, $pkg) = split /-/ => $release;
+
+    my @v = split /\./ => $version;
+    my $string = join '.', map { sprintf "%03d", $_ } @v;
+    $table{$string} = ["$v[0].$v[1]", $version, $pkg];
+}
+
+my %seen;
+for my $string (reverse sort keys %table) {
+    my ($maj, $version, $pkg) = @{ $table{$string} };
+
+    # Stop after earliest.
+    last if $maj < $opt{earliest};
+
+    if ($opt{lts}) {
+        # Only print latest stable if it's wanted.
+        next if $pkg eq 'stable' && (!$opt{latest_stable} || %seen);
+    }
+
+    next if $seen{$maj}++;
+    say "$opt{prefix}$version-$pkg";
+}

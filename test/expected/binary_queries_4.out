@@ -1,0 +1,725 @@
+SET datestyle = 'ISO';
+CREATE SERVER binary_queries_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'binary_queries_test', driver 'binary');
+CREATE SERVER binary_queries_loopback2 FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'binary_queries_test', driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback;
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback2;
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS binary_queries_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE DATABASE binary_queries_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE TABLE binary_queries_test.t1
+	(c1 Int, c2 Int, c3 String, c4 Date, c5 Date, c6 String, c7 String, c8 String)
+	ENGINE = MergeTree PARTITION BY c4 ORDER BY (c1);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE TABLE binary_queries_test.t2 (c1 Int, c2 String)
+	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE TABLE binary_queries_test.t3 (c1 Int, c3 String)
+	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE TABLE binary_queries_test.t4 (c1 Int, c2 Int, c3 String)
+	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+CREATE FOREIGN TABLE ft1 (
+	c0 int,
+	c1 int NOT NULL,
+	c2 int NOT NULL,
+	c3 text,
+	c4 date,
+	c5 date,
+	c6 varchar(10),
+	c7 char(10) default 'ft1',
+	c8 text
+) SERVER binary_queries_loopback OPTIONS (table_name 't1');
+ALTER FOREIGN TABLE ft1 DROP COLUMN c0;
+CREATE FOREIGN TABLE ft2 (
+	c1 int NOT NULL,
+	c2 text NOT NULL
+) SERVER binary_queries_loopback OPTIONS (table_name 't2');
+CREATE FOREIGN TABLE ft4 (
+	c1 int NOT NULL,
+	c2 int NOT NULL,
+	c3 text
+) SERVER binary_queries_loopback OPTIONS (table_name 't4');
+CREATE FOREIGN TABLE ft5 (
+	c1 int NOT NULL,
+	c2 int NOT NULL,
+	c3 text
+) SERVER binary_queries_loopback OPTIONS (table_name 't4');
+CREATE FOREIGN TABLE ft6 (
+	c1 int NOT NULL,
+	c2 int NOT NULL,
+	c3 text
+) SERVER binary_queries_loopback2 OPTIONS (table_name 't4');
+select clickhouse_raw_query($$
+    INSERT INTO binary_queries_test.t1
+        SELECT number,
+               number % 10,
+               toString(number),
+               toDate('1990-01-01'),
+               toDate('1990-01-01'),
+               number % 10,
+               number % 10,
+               'foo'
+        FROM numbers(1, 110);$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+select clickhouse_raw_query($$
+    INSERT INTO binary_queries_test.t2
+        SELECT number,
+               concat('AAA', toString(number))
+        FROM numbers(1, 100);$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+select clickhouse_raw_query($$
+    INSERT INTO binary_queries_test.t4
+        SELECT number,
+               number + 1,
+               concat('AAA', toString(number))
+        FROM numbers(1, 100);$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+\set VERBOSITY terse
+SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work
+ c3 |     c4     
+----+------------
+ 1  | 1990-01-01
+(1 row)
+
+ALTER SERVER binary_queries_loopback OPTIONS (SET dbname 'no such database');
+SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should fail
+ERROR:  clickhouse_fdw: DB::Exception: Database `no such database` does not exist
+ALTER USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback OPTIONS (ADD user 'no such user');
+SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should fail
+ERROR:  clickhouse_fdw: connection error: DB::Exception: no such user: Authentication failed: password is incorrect, or there is no user with such name.
+ALTER SERVER binary_queries_loopback OPTIONS (SET dbname 'binary_queries_test');
+ALTER USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback OPTIONS (DROP user);
+SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work again
+ c3 |     c4     
+----+------------
+ 1  | 1990-01-01
+(1 row)
+
+\set VERBOSITY default
+ANALYZE ft1;
+EXPLAIN (COSTS OFF) SELECT * FROM ft1 ORDER BY c1 OFFSET 100 LIMIT 10;
+     QUERY PLAN      
+---------------------
+ Foreign Scan on ft1
+(1 row)
+
+SELECT * FROM ft1 ORDER BY c1 OFFSET 100 LIMIT 10;
+ c1  | c2 | c3  |     c4     |     c5     | c6 | c7 | c8  
+-----+----+-----+------------+------------+----+----+-----
+ 101 |  1 | 101 | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+ 102 |  2 | 102 | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+ 103 |  3 | 103 | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+ 104 |  4 | 104 | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+ 105 |  5 | 105 | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+ 106 |  6 | 106 | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+ 107 |  7 | 107 | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+ 108 |  8 | 108 | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+ 109 |  9 | 109 | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+ 110 |  0 | 110 | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+(10 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 ORDER BY t1.c1, t1.tableoid OFFSET 100 LIMIT 10;
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Limit
+   Output: c1, c2, c3, c4, c5, c6, c7, c8, tableoid
+   ->  Sort
+         Output: c1, c2, c3, c4, c5, c6, c7, c8, tableoid
+         Sort Key: t1.c1, t1.tableoid
+         ->  Foreign Scan on public.ft1 t1
+               Output: c1, c2, c3, c4, c5, c6, c7, c8, tableoid
+               Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1
+(8 rows)
+
+SELECT * FROM ft1 t1 ORDER BY t1.c1, t1.tableoid OFFSET 100 LIMIT 10;
+ c1  | c2 | c3  |     c4     |     c5     | c6 | c7 | c8  
+-----+----+-----+------------+------------+----+----+-----
+ 101 |  1 | 101 | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+ 102 |  2 | 102 | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+ 103 |  3 | 103 | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+ 104 |  4 | 104 | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+ 105 |  5 | 105 | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+ 106 |  6 | 106 | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+ 107 |  7 | 107 | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+ 108 |  8 | 108 | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+ 109 |  9 | 109 | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+ 110 |  0 | 110 | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+(10 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT t1 FROM ft1 t1 ORDER BY t1.c1 OFFSET 100 LIMIT 10;
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: t1.*, c1
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 ORDER BY c1 ASC LIMIT 10 OFFSET 100
+(3 rows)
+
+SELECT t1 FROM ft1 t1 ORDER BY t1.c1 OFFSET 100 LIMIT 10;
+                    t1                     
+-------------------------------------------
+ (101,1,101,1990-01-01,1990-01-01,1,1,foo)
+ (102,2,102,1990-01-01,1990-01-01,2,2,foo)
+ (103,3,103,1990-01-01,1990-01-01,3,3,foo)
+ (104,4,104,1990-01-01,1990-01-01,4,4,foo)
+ (105,5,105,1990-01-01,1990-01-01,5,5,foo)
+ (106,6,106,1990-01-01,1990-01-01,6,6,foo)
+ (107,7,107,1990-01-01,1990-01-01,7,7,foo)
+ (108,8,108,1990-01-01,1990-01-01,8,8,foo)
+ (109,9,109,1990-01-01,1990-01-01,9,9,foo)
+ (110,0,110,1990-01-01,1990-01-01,0,0,foo)
+(10 rows)
+
+SELECT * FROM ft1 WHERE false;
+ c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 
+----+----+----+----+----+----+----+----
+(0 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE t1.c1 = 101 AND t1.c6 = '1' AND t1.c7 >= '1';
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 WHERE ((c7 >= '1')) AND ((c1 = 101)) AND ((c6 = '1'))
+(3 rows)
+
+SELECT COUNT(*) FROM ft1 t1;
+ count 
+-------
+   110
+(1 row)
+
+SELECT * FROM ft1 t1 WHERE t1.c3 IN (SELECT c2 FROM ft2 t2 WHERE c1 <= 10) ORDER BY c1;
+ c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 
+----+----+----+----+----+----+----+----
+(0 rows)
+
+SELECT * FROM ft1 t1 WHERE t1.c3 = (SELECT MAX(c2) FROM ft2 t2) ORDER BY c1;
+ c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 
+----+----+----+----+----+----+----+----
+(0 rows)
+
+WITH t1 AS (SELECT * FROM ft1 WHERE c1 <= 10) SELECT t2.c1, t2.c2, t2.c2 FROM t1, ft2 t2 WHERE t1.c1 = t2.c1 ORDER BY t1.c1;
+ c1 |  c2   |  c2   
+----+-------+-------
+  1 | AAA1  | AAA1
+  2 | AAA2  | AAA2
+  3 | AAA3  | AAA3
+  4 | AAA4  | AAA4
+  5 | AAA5  | AAA5
+  6 | AAA6  | AAA6
+  7 | AAA7  | AAA7
+  8 | AAA8  | AAA8
+  9 | AAA9  | AAA9
+ 10 | AAA10 | AAA10
+(10 rows)
+
+SELECT 'fixed', NULL FROM ft1 t1 WHERE c1 = 1;
+ ?column? | ?column? 
+----------+----------
+ fixed    | 
+(1 row)
+
+SET enable_hashjoin TO false;
+SET enable_nestloop TO false;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT t1.c1, t2.c1 FROM ft2 t1 JOIN ft1 t2 ON (t1.c1 = t2.c1) OFFSET 100 LIMIT 10;
+                                                                      QUERY PLAN                                                                       
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: t1.c1, t2.c1
+   Relations: (ft2 t1) INNER JOIN (ft1 t2)
+   Remote SQL: SELECT r1.c1, r2.c1 FROM  binary_queries_test.t2 r1 ALL INNER JOIN binary_queries_test.t1 r2 ON (((r1.c1 = r2.c1))) LIMIT 10 OFFSET 100
+(4 rows)
+
+SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
+ c1 | c1 
+----+----
+  1 |  1
+  2 |  2
+  3 |  3
+  4 |  4
+  5 |  5
+  6 |  6
+  7 |  7
+  8 |  8
+  9 |  9
+ 10 | 10
+(10 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) OFFSET 100 LIMIT 10;
+                                                                      QUERY PLAN                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: t1.c1, t2.c1
+   Relations: (ft2 t1) LEFT JOIN (ft1 t2)
+   Remote SQL: SELECT r1.c1, r2.c1 FROM  binary_queries_test.t2 r1 ALL LEFT JOIN binary_queries_test.t1 r2 ON (((r1.c1 = r2.c1))) LIMIT 10 OFFSET 100
+(4 rows)
+
+EXPLAIN SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Limit  (cost=-0.99..-0.98 rows=1 width=1)
+   ->  Unique  (cost=-0.99..-0.98 rows=1 width=1)
+         ->  Sort  (cost=-0.99..-0.98 rows=1 width=1)
+               Sort Key: t1.c1, t2.c1
+               ->  Foreign Scan  (cost=1.00..-1.00 rows=1 width=1)
+                     Relations: (ft2 t1) LEFT JOIN (ft1 t2)
+(6 rows)
+
+SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
+ c1 | c1 
+----+----
+  1 |  1
+  2 |  2
+  3 |  3
+  4 |  4
+  5 |  5
+  6 |  6
+  7 |  7
+  8 |  8
+  9 |  9
+ 10 | 10
+(10 rows)
+
+RESET enable_hashjoin;
+RESET enable_nestloop;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE t1.c1 = 1;         -- Var, OpExpr(b), Const
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 WHERE ((c1 = 1))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE t1.c1 = 100 AND t1.c2 = 0; -- BoolExpr
+                                                    QUERY PLAN                                                     
+-------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 WHERE ((c1 = 100)) AND ((c2 = 0))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 IS NULL;        -- NullTest
+                QUERY PLAN                
+------------------------------------------
+ Result
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   One-Time Filter: false
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 IS NOT NULL;    -- NullTest
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE round(abs(c1), 0) = 1; -- FuncExpr
+                                                   QUERY PLAN                                                    
+-----------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 WHERE ((round(abs(c1), 0) = 1))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = -c1;          -- OpExpr(l)
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 WHERE ((c1 = (- c1)))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE 1 = factorial(c1);           -- OpExpr(r)
+                                                 QUERY PLAN                                                  
+-------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 WHERE ((1 = factorial(c1)))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE (c1 IS NOT NULL) IS DISTINCT FROM (c1 IS NOT NULL); -- DistinctExpr
+                                                                  QUERY PLAN                                                                  
+----------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 WHERE (((c1 IS NOT NULL) IS DISTINCT FROM (c1 IS NOT NULL)))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = ANY(ARRAY[c2, 1, c1 + 0]); -- ScalarArrayOpExpr
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 WHERE ((has([c2, 1, (c1 + 0)],c1)))
+(3 rows)
+
+SELECT * FROM ft1 t1 WHERE c1 = ANY(ARRAY[c2, 1, c1 + 0]) ORDER BY c1; -- ScalarArrayOpExpr
+ c1  | c2 | c3  |     c4     |     c5     | c6 | c7 | c8  
+-----+----+-----+------------+------------+----+----+-----
+   1 |  1 | 1   | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+   2 |  2 | 2   | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+   3 |  3 | 3   | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+   4 |  4 | 4   | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+   5 |  5 | 5   | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+   6 |  6 | 6   | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+   7 |  7 | 7   | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+   8 |  8 | 8   | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+   9 |  9 | 9   | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  10 |  0 | 10  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  11 |  1 | 11  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  12 |  2 | 12  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  13 |  3 | 13  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  14 |  4 | 14  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  15 |  5 | 15  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  16 |  6 | 16  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  17 |  7 | 17  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  18 |  8 | 18  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  19 |  9 | 19  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  20 |  0 | 20  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  21 |  1 | 21  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  22 |  2 | 22  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  23 |  3 | 23  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  24 |  4 | 24  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  25 |  5 | 25  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  26 |  6 | 26  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  27 |  7 | 27  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  28 |  8 | 28  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  29 |  9 | 29  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  30 |  0 | 30  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  31 |  1 | 31  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  32 |  2 | 32  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  33 |  3 | 33  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  34 |  4 | 34  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  35 |  5 | 35  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  36 |  6 | 36  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  37 |  7 | 37  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  38 |  8 | 38  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  39 |  9 | 39  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  40 |  0 | 40  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  41 |  1 | 41  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  42 |  2 | 42  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  43 |  3 | 43  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  44 |  4 | 44  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  45 |  5 | 45  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  46 |  6 | 46  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  47 |  7 | 47  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  48 |  8 | 48  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  49 |  9 | 49  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  50 |  0 | 50  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  51 |  1 | 51  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  52 |  2 | 52  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  53 |  3 | 53  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  54 |  4 | 54  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  55 |  5 | 55  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  56 |  6 | 56  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  57 |  7 | 57  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  58 |  8 | 58  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  59 |  9 | 59  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  60 |  0 | 60  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  61 |  1 | 61  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  62 |  2 | 62  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  63 |  3 | 63  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  64 |  4 | 64  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  65 |  5 | 65  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  66 |  6 | 66  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  67 |  7 | 67  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  68 |  8 | 68  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  69 |  9 | 69  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  70 |  0 | 70  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  71 |  1 | 71  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  72 |  2 | 72  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  73 |  3 | 73  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  74 |  4 | 74  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  75 |  5 | 75  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  76 |  6 | 76  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  77 |  7 | 77  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  78 |  8 | 78  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  79 |  9 | 79  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  80 |  0 | 80  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  81 |  1 | 81  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  82 |  2 | 82  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  83 |  3 | 83  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  84 |  4 | 84  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  85 |  5 | 85  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  86 |  6 | 86  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  87 |  7 | 87  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  88 |  8 | 88  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  89 |  9 | 89  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  90 |  0 | 90  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  91 |  1 | 91  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  92 |  2 | 92  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  93 |  3 | 93  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  94 |  4 | 94  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  95 |  5 | 95  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  96 |  6 | 96  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  97 |  7 | 97  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  98 |  8 | 98  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  99 |  9 | 99  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+ 100 |  0 | 100 | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+ 101 |  1 | 101 | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+ 102 |  2 | 102 | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+ 103 |  3 | 103 | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+ 104 |  4 | 104 | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+ 105 |  5 | 105 | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+ 106 |  6 | 106 | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+ 107 |  7 | 107 | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+ 108 |  8 | 108 | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+ 109 |  9 | 109 | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+ 110 |  0 | 110 | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+(110 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = (ARRAY[c1,c2,3])[1]; -- ArrayRef
+                                                    QUERY PLAN                                                     
+-------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 WHERE ((c1 = (([c1, c2, 3])[1])))
+(3 rows)
+
+SELECT * FROM ft1 t1 WHERE c1 = (ARRAY[c1,c2,3])[1] ORDER BY c1; -- ArrayRef
+ c1  | c2 | c3  |     c4     |     c5     | c6 | c7 | c8  
+-----+----+-----+------------+------------+----+----+-----
+   1 |  1 | 1   | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+   2 |  2 | 2   | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+   3 |  3 | 3   | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+   4 |  4 | 4   | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+   5 |  5 | 5   | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+   6 |  6 | 6   | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+   7 |  7 | 7   | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+   8 |  8 | 8   | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+   9 |  9 | 9   | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  10 |  0 | 10  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  11 |  1 | 11  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  12 |  2 | 12  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  13 |  3 | 13  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  14 |  4 | 14  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  15 |  5 | 15  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  16 |  6 | 16  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  17 |  7 | 17  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  18 |  8 | 18  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  19 |  9 | 19  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  20 |  0 | 20  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  21 |  1 | 21  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  22 |  2 | 22  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  23 |  3 | 23  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  24 |  4 | 24  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  25 |  5 | 25  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  26 |  6 | 26  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  27 |  7 | 27  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  28 |  8 | 28  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  29 |  9 | 29  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  30 |  0 | 30  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  31 |  1 | 31  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  32 |  2 | 32  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  33 |  3 | 33  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  34 |  4 | 34  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  35 |  5 | 35  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  36 |  6 | 36  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  37 |  7 | 37  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  38 |  8 | 38  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  39 |  9 | 39  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  40 |  0 | 40  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  41 |  1 | 41  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  42 |  2 | 42  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  43 |  3 | 43  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  44 |  4 | 44  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  45 |  5 | 45  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  46 |  6 | 46  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  47 |  7 | 47  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  48 |  8 | 48  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  49 |  9 | 49  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  50 |  0 | 50  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  51 |  1 | 51  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  52 |  2 | 52  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  53 |  3 | 53  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  54 |  4 | 54  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  55 |  5 | 55  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  56 |  6 | 56  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  57 |  7 | 57  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  58 |  8 | 58  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  59 |  9 | 59  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  60 |  0 | 60  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  61 |  1 | 61  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  62 |  2 | 62  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  63 |  3 | 63  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  64 |  4 | 64  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  65 |  5 | 65  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  66 |  6 | 66  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  67 |  7 | 67  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  68 |  8 | 68  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  69 |  9 | 69  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  70 |  0 | 70  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  71 |  1 | 71  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  72 |  2 | 72  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  73 |  3 | 73  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  74 |  4 | 74  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  75 |  5 | 75  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  76 |  6 | 76  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  77 |  7 | 77  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  78 |  8 | 78  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  79 |  9 | 79  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  80 |  0 | 80  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  81 |  1 | 81  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  82 |  2 | 82  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  83 |  3 | 83  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  84 |  4 | 84  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  85 |  5 | 85  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  86 |  6 | 86  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  87 |  7 | 87  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  88 |  8 | 88  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  89 |  9 | 89  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+  90 |  0 | 90  | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+  91 |  1 | 91  | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+  92 |  2 | 92  | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+  93 |  3 | 93  | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+  94 |  4 | 94  | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+  95 |  5 | 95  | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+  96 |  6 | 96  | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+  97 |  7 | 97  | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+  98 |  8 | 98  | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+  99 |  9 | 99  | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+ 100 |  0 | 100 | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+ 101 |  1 | 101 | 1990-01-01 | 1990-01-01 | 1  | 1  | foo
+ 102 |  2 | 102 | 1990-01-01 | 1990-01-01 | 2  | 2  | foo
+ 103 |  3 | 103 | 1990-01-01 | 1990-01-01 | 3  | 3  | foo
+ 104 |  4 | 104 | 1990-01-01 | 1990-01-01 | 4  | 4  | foo
+ 105 |  5 | 105 | 1990-01-01 | 1990-01-01 | 5  | 5  | foo
+ 106 |  6 | 106 | 1990-01-01 | 1990-01-01 | 6  | 6  | foo
+ 107 |  7 | 107 | 1990-01-01 | 1990-01-01 | 7  | 7  | foo
+ 108 |  8 | 108 | 1990-01-01 | 1990-01-01 | 8  | 8  | foo
+ 109 |  9 | 109 | 1990-01-01 | 1990-01-01 | 9  | 9  | foo
+ 110 |  0 | 110 | 1990-01-01 | 1990-01-01 | 0  | 0  | foo
+(110 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c6 = E'foo''s\\bar';  -- check special chars
+                                                  QUERY PLAN                                                   
+---------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 WHERE ((c6 = E'foo''s\\bar'))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c8 = 'foo';  -- can't be sent to remote
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM binary_queries_test.t1 WHERE ((c8 = 'foo'))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT (CASE WHEN c1 < 10 THEN 1 WHEN c1 < 50 THEN 2 ELSE 3 END) a,
+	sum(length(c2)) FROM ft2 GROUP BY a ORDER BY a;
+                                                                                                                                                                           QUERY PLAN                                                                                                                                                                           
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (CASE WHEN (c1 < 10) THEN 1 WHEN (c1 < 50) THEN 2 ELSE 3 END), (sum(length(c2)))
+   Relations: Aggregate on (ft2)
+   Remote SQL: SELECT CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END, sum(length(c2)) FROM binary_queries_test.t2 GROUP BY (CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END) ORDER BY CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END ASC
+(4 rows)
+
+SELECT (CASE WHEN c1 < 10 THEN 1 WHEN c1 < 50 THEN 2 ELSE 3 END) a,
+	sum(length(c2)) FROM ft2 GROUP BY a ORDER BY a;
+ a | sum 
+---+-----
+ 1 |  36
+ 2 | 200
+ 3 | 256
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT SUM(c1) FILTER (WHERE c1 < 20) FROM ft2;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(c1) FILTER (WHERE (c1 < 20)))
+   Relations: Aggregate on (ft2)
+   Remote SQL: SELECT sumIf(c1,(((c1 < 20)) > 0)) FROM binary_queries_test.t2
+(4 rows)
+
+SELECT SUM(c1) FILTER (WHERE c1 < 20) FROM ft2;
+ sum 
+-----
+ 190
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FROM ft2;
+                             QUERY PLAN                              
+---------------------------------------------------------------------
+ Foreign Scan
+   Output: (count(DISTINCT c1))
+   Relations: Aggregate on (ft2)
+   Remote SQL: SELECT count(DISTINCT c1) FROM binary_queries_test.t2
+(4 rows)
+
+SELECT COUNT(DISTINCT c1) FROM ft2;
+ count 
+-------
+   100
+(1 row)
+
+/* DISTINCT with IF */
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Aggregate
+   Output: count(DISTINCT c1) FILTER (WHERE (c1 < 20))
+   ->  Foreign Scan on public.ft2
+         Output: c1, c2
+         Remote SQL: SELECT c1 FROM binary_queries_test.t2 ORDER BY c1 ASC
+(5 rows)
+
+SELECT clickhouse_raw_query('DROP DATABASE binary_queries_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback2;
+DROP USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback;
+DROP SERVER binary_queries_loopback2 CASCADE;
+NOTICE:  drop cascades to foreign table ft6
+DROP SERVER binary_queries_loopback CASCADE;
+NOTICE:  drop cascades to 4 other objects
+DETAIL:  drop cascades to foreign table ft1
+drop cascades to foreign table ft2
+drop cascades to foreign table ft4
+drop cascades to foreign table ft5

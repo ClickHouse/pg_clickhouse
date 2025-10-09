@@ -1,0 +1,771 @@
+SET datestyle = 'ISO';
+CREATE SERVER http_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'http_test', driver 'http');
+CREATE SERVER http_loopback2 FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'http_test');
+CREATE USER MAPPING FOR CURRENT_USER SERVER http_loopback;
+CREATE USER MAPPING FOR CURRENT_USER SERVER http_loopback2;
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS http_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE DATABASE http_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE TABLE http_test.t1
+	(c1 Int, c2 Int, c3 String, c4 Date, c5 Date, c6 String, c7 String, c8 String)
+	ENGINE = MergeTree PARTITION BY c4 ORDER BY (c1);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE TABLE http_test.t2 (c1 Int, c2 String)
+	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE TABLE http_test.t3 (c1 Int, c3 String)
+	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE TABLE http_test.t4 (c1 Int, c2 Int, c3 String)
+	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('
+	CREATE TABLE http_test.tcopy
+		(c1 Int32, c2 Int64, c3 Date, c4 Nullable(DateTime), c5 DateTime, c6 String)
+	ENGINE = MergeTree
+	PARTITION BY c3
+	ORDER BY (c1, c2, c3);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+CREATE FOREIGN TABLE ft1 (
+	c0 int,
+	c1 int NOT NULL,
+	c2 int NOT NULL,
+	c3 text,
+	c4 date,
+	c5 date,
+	c6 varchar(10),
+	c7 char(10) default 'ft1',
+	c8 text
+) SERVER http_loopback OPTIONS (table_name 't1');
+ALTER FOREIGN TABLE ft1 DROP COLUMN c0;
+CREATE FOREIGN TABLE ft2 (
+	c1 int NOT NULL,
+	c2 text NOT NULL
+) SERVER http_loopback OPTIONS (table_name 't2');
+CREATE FOREIGN TABLE ft3 (
+	c1 int NOT NULL,
+	c3 text
+) SERVER http_loopback OPTIONS (table_name 't3');
+CREATE FOREIGN TABLE ft4 (
+	c1 int NOT NULL,
+	c2 int NOT NULL,
+	c3 text
+) SERVER http_loopback OPTIONS (table_name 't4');
+CREATE FOREIGN TABLE ft5 (
+	c1 int NOT NULL,
+	c2 int NOT NULL,
+	c3 text
+) SERVER http_loopback OPTIONS (table_name 't4');
+CREATE FOREIGN TABLE ft6 (
+	c1 int NOT NULL,
+	c2 int NOT NULL,
+	c3 text
+) SERVER http_loopback2 OPTIONS (table_name 't4');
+CREATE FOREIGN TABLE ftcopy (
+	c1 int,
+	c2 int8,
+	c3 date,
+	c4 timestamp without time zone,
+	c5 time,
+	c6 text
+) SERVER http_loopback OPTIONS (table_name 'tcopy');
+INSERT INTO ft1
+	SELECT id,
+	       id % 10,
+	       to_char(id, 'FM00000'),
+	       '1990-01-01',
+	       '1990-01-01',
+	       id % 10,
+	       id % 10,
+	       'foo'
+	FROM generate_series(1, 110) id;
+INSERT INTO ft2
+	SELECT id,
+	       'AAA' || to_char(id, 'FM000')
+	FROM generate_series(1, 100) id;
+INSERT INTO ft3 VALUES (1, E'lf\ntab\t\b\f\r');
+SELECT c3, (c3 = E'lf\ntab\t\b\f\r') AS true FROM ft3 WHERE c1 = 1;
+         c3         | true 
+--------------------+------
+ lf                +| t
+ tab     \x08\x0C\r | 
+(1 row)
+
+INSERT INTO ft3 VALUES (2, 'lf\ntab\t\b\f\r');
+SELECT c3, (c3 = 'lf\ntab\t\b\f\r') AS true FROM ft3 WHERE c1 = 2;
+       c3        | true 
+-----------------+------
+ lf\ntab\t\b\f\r | t
+(1 row)
+
+INSERT INTO ft4
+	SELECT id,
+	       id + 1,
+	       'AAA' || to_char(id, 'FM000')
+	FROM generate_series(1, 100) id;
+COPY ftcopy FROM stdin;
+INSERT INTO ftcopy VALUES
+	(3, 4, '1990-03-03', '1990-03-03 12:02:02', '12:02:02', 'val3'),
+	(4, 5, '1991-04-04', '1990-04-04 12:04:04', '12:02:04', 'val4'),
+	(5, 6, '1991-04-04', NULL, '12:02:05', 'val5');
+EXPLAIN (VERBOSE) SELECT * FROM ftcopy ORDER BY c1;
+                                    QUERY PLAN                                    
+----------------------------------------------------------------------------------
+ Foreign Scan on public.ftcopy  (cost=1.00..-0.50 rows=1 width=64)
+   Output: c1, c2, c3, c4, c5, c6
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6 FROM http_test.tcopy ORDER BY c1 ASC
+(3 rows)
+
+SELECT * FROM ftcopy ORDER BY c1;
+ c1 | c2 |     c3     |         c4          |    c5    |  c6  
+----+----+------------+---------------------+----------+------
+  1 |  2 | 1990-01-01 | 1990-01-01 10:01:02 | 10:01:02 | val1
+  2 |  3 | 1990-02-02 | 1990-02-02 11:02:03 | 11:01:02 | val2
+  3 |  4 | 1990-03-03 | 1990-03-03 12:02:02 | 12:02:02 | val3
+  4 |  5 | 1991-04-04 | 1990-04-04 12:04:04 | 12:02:04 | val4
+  5 |  6 | 1991-04-04 |                     | 12:02:05 | val5
+(5 rows)
+
+SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work
+  c3   |     c4     
+-------+------------
+ 00001 | 1990-01-01
+(1 row)
+
+ALTER SERVER http_loopback OPTIONS (SET dbname 'no such database');
+SELECT c3, c4 FROM ft1 ORDER BY c3, c1;  -- should fail
+ERROR:  clickhouse_fdw:Code: 81. DB::Exception: Database `no such database` doesn't exist. (UNKNOWN_DATABASE)
+QUERY:SELECT c1, c3, c4 FROM "no such database".t1 ORDER BY c3 ASC, c1 ASC
+ALTER USER MAPPING FOR CURRENT_USER SERVER http_loopback OPTIONS (ADD user 'no such user');
+SELECT c3, c4 FROM ft1 ORDER BY c3, c1;  -- should fail
+ERROR:  clickhouse_fdw:Code: 516. DB::Exception: no such user: Authentication failed: password is incorrect or there is no user with such name. (AUTHENTICATION_FAILED)
+QUERY:SELECT c1, c3, c4 FROM "no such database".t1 ORDER BY c3 ASC, c1 ASC
+ALTER SERVER http_loopback OPTIONS (SET dbname 'http_test');
+ALTER USER MAPPING FOR CURRENT_USER SERVER http_loopback OPTIONS (DROP user);
+SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work again
+  c3   |     c4     
+-------+------------
+ 00001 | 1990-01-01
+(1 row)
+
+ANALYZE ft1;
+EXPLAIN (COSTS OFF) SELECT * FROM ft1 ORDER BY c3, c1 OFFSET 100 LIMIT 10;
+     QUERY PLAN      
+---------------------
+ Foreign Scan on ft1
+(1 row)
+
+SELECT * FROM ft1 ORDER BY c3, c1 OFFSET 100 LIMIT 10;
+ c1  | c2 |  c3   |     c4     |     c5     | c6 |     c7     | c8  
+-----+----+-------+------------+------------+----+------------+-----
+ 101 |  1 | 00101 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+ 102 |  2 | 00102 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+ 103 |  3 | 00103 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+ 104 |  4 | 00104 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+ 105 |  5 | 00105 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+ 106 |  6 | 00106 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+ 107 |  7 | 00107 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+ 108 |  8 | 00108 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+ 109 |  9 | 00109 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+ 110 |  0 | 00110 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+(10 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 ORDER BY t1.c3, t1.c1, t1.tableoid OFFSET 100 LIMIT 10;
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Limit
+   Output: c1, c2, c3, c4, c5, c6, c7, c8, tableoid
+   ->  Sort
+         Output: c1, c2, c3, c4, c5, c6, c7, c8, tableoid
+         Sort Key: t1.c3, t1.c1, t1.tableoid
+         ->  Foreign Scan on public.ft1 t1
+               Output: c1, c2, c3, c4, c5, c6, c7, c8, tableoid
+               Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1
+(8 rows)
+
+SELECT * FROM ft1 t1 ORDER BY t1.c3, t1.c1, t1.tableoid OFFSET 100 LIMIT 10;
+ c1  | c2 |  c3   |     c4     |     c5     | c6 |     c7     | c8  
+-----+----+-------+------------+------------+----+------------+-----
+ 101 |  1 | 00101 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+ 102 |  2 | 00102 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+ 103 |  3 | 00103 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+ 104 |  4 | 00104 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+ 105 |  5 | 00105 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+ 106 |  6 | 00106 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+ 107 |  7 | 00107 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+ 108 |  8 | 00108 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+ 109 |  9 | 00109 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+ 110 |  0 | 00110 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+(10 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT t1 FROM ft1 t1 ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10;
+                                                    QUERY PLAN                                                     
+-------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: t1.*, c3, c1
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 ORDER BY c3 ASC, c1 ASC LIMIT 10 OFFSET 100
+(3 rows)
+
+SELECT t1 FROM ft1 t1 ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10;
+                           t1                           
+--------------------------------------------------------
+ (101,1,00101,1990-01-01,1990-01-01,1,"1         ",foo)
+ (102,2,00102,1990-01-01,1990-01-01,2,"2         ",foo)
+ (103,3,00103,1990-01-01,1990-01-01,3,"3         ",foo)
+ (104,4,00104,1990-01-01,1990-01-01,4,"4         ",foo)
+ (105,5,00105,1990-01-01,1990-01-01,5,"5         ",foo)
+ (106,6,00106,1990-01-01,1990-01-01,6,"6         ",foo)
+ (107,7,00107,1990-01-01,1990-01-01,7,"7         ",foo)
+ (108,8,00108,1990-01-01,1990-01-01,8,"8         ",foo)
+ (109,9,00109,1990-01-01,1990-01-01,9,"9         ",foo)
+ (110,0,00110,1990-01-01,1990-01-01,0,"0         ",foo)
+(10 rows)
+
+SELECT * FROM ft1 WHERE false;
+ c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 
+----+----+----+----+----+----+----+----
+(0 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE t1.c1 = 101 AND t1.c6 = '1' AND t1.c7 >= '1';
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c7 >= '1')) AND ((c1 = 101)) AND ((c6 = '1'))
+(3 rows)
+
+SELECT COUNT(*) FROM ft1 t1;
+ count 
+-------
+   110
+(1 row)
+
+SELECT * FROM ft1 t1 WHERE t1.c3 IN (SELECT c2 FROM ft2 t2 WHERE c1 <= 10) ORDER BY c1;
+ c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 
+----+----+----+----+----+----+----+----
+(0 rows)
+
+SELECT * FROM ft1 t1 WHERE t1.c3 = (SELECT MAX(c2) FROM ft2 t2) ORDER BY c1;
+ c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 
+----+----+----+----+----+----+----+----
+(0 rows)
+
+WITH t1 AS (SELECT * FROM ft1 WHERE c1 <= 10) SELECT t2.c1, t2.c2, t2.c2 FROM t1, ft2 t2 WHERE t1.c1 = t2.c1 ORDER BY t1.c1;
+ c1 |   c2   |   c2   
+----+--------+--------
+  1 | AAA001 | AAA001
+  2 | AAA002 | AAA002
+  3 | AAA003 | AAA003
+  4 | AAA004 | AAA004
+  5 | AAA005 | AAA005
+  6 | AAA006 | AAA006
+  7 | AAA007 | AAA007
+  8 | AAA008 | AAA008
+  9 | AAA009 | AAA009
+ 10 | AAA010 | AAA010
+(10 rows)
+
+SELECT 'fixed', NULL FROM ft1 t1 WHERE c1 = 1;
+ ?column? | ?column? 
+----------+----------
+ fixed    | 
+(1 row)
+
+SET enable_hashjoin TO false;
+SET enable_nestloop TO false;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT t1.c1, t2.c1 FROM ft2 t1 JOIN ft1 t2 ON (t1.c1 = t2.c1) OFFSET 100 LIMIT 10;
+                                                            QUERY PLAN                                                             
+-----------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: t1.c1, t2.c1
+   Relations: (ft2 t1) INNER JOIN (ft1 t2)
+   Remote SQL: SELECT r1.c1, r2.c1 FROM  http_test.t2 r1 ALL INNER JOIN http_test.t1 r2 ON (((r1.c1 = r2.c1))) LIMIT 10 OFFSET 100
+(4 rows)
+
+SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
+ c1 | c1 
+----+----
+  1 |  1
+  2 |  2
+  3 |  3
+  4 |  4
+  5 |  5
+  6 |  6
+  7 |  7
+  8 |  8
+  9 |  9
+ 10 | 10
+(10 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) OFFSET 100 LIMIT 10;
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: t1.c1, t2.c1
+   Relations: (ft2 t1) LEFT JOIN (ft1 t2)
+   Remote SQL: SELECT r1.c1, r2.c1 FROM  http_test.t2 r1 ALL LEFT JOIN http_test.t1 r2 ON (((r1.c1 = r2.c1))) LIMIT 10 OFFSET 100
+(4 rows)
+
+EXPLAIN SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Limit  (cost=-0.99..-0.98 rows=1 width=1)
+   ->  Unique  (cost=-0.99..-0.98 rows=1 width=1)
+         ->  Sort  (cost=-0.99..-0.98 rows=1 width=1)
+               Sort Key: t1.c1, t2.c1
+               ->  Foreign Scan  (cost=1.00..-1.00 rows=1 width=1)
+                     Relations: (ft2 t1) LEFT JOIN (ft1 t2)
+(6 rows)
+
+SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
+ c1 | c1 
+----+----
+  1 |  1
+  2 |  2
+  3 |  3
+  4 |  4
+  5 |  5
+  6 |  6
+  7 |  7
+  8 |  8
+  9 |  9
+ 10 | 10
+(10 rows)
+
+RESET enable_hashjoin;
+RESET enable_nestloop;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE t1.c1 = 1;         -- Var, OpExpr(b), Const
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c1 = 1))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE t1.c1 = 100 AND t1.c2 = 0; -- BoolExpr
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c1 = 100)) AND ((c2 = 0))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 IS NULL;        -- NullTest
+                QUERY PLAN                
+------------------------------------------
+ Result
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   One-Time Filter: false
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 IS NOT NULL;    -- NullTest
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE round(abs(c1), 0) = 1; -- FuncExpr
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((round(abs(c1), 0) = 1))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = -c1;          -- OpExpr(l)
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c1 = (- c1)))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE 1 = factorial(c1);           -- OpExpr(r)
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((1 = factorial(c1)))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE (c1 IS NOT NULL) IS DISTINCT FROM (c1 IS NOT NULL); -- DistinctExpr
+                                                             QUERY PLAN                                                             
+------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE (((c1 IS NOT NULL) IS DISTINCT FROM (c1 IS NOT NULL)))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = ANY(ARRAY[c2, 1, c1 + 0]); -- ScalarArrayOpExpr
+                                                QUERY PLAN                                                 
+-----------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((has([c2, 1, (c1 + 0)],c1)))
+(3 rows)
+
+SELECT * FROM ft1 t1 WHERE c1 = ANY(ARRAY[c2, 1, c1 + 0]) ORDER BY c1; -- ScalarArrayOpExpr
+ c1  | c2 |  c3   |     c4     |     c5     | c6 |     c7     | c8  
+-----+----+-------+------------+------------+----+------------+-----
+   1 |  1 | 00001 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+   2 |  2 | 00002 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+   3 |  3 | 00003 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+   4 |  4 | 00004 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+   5 |  5 | 00005 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+   6 |  6 | 00006 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+   7 |  7 | 00007 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+   8 |  8 | 00008 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+   9 |  9 | 00009 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  10 |  0 | 00010 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  11 |  1 | 00011 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  12 |  2 | 00012 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  13 |  3 | 00013 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  14 |  4 | 00014 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  15 |  5 | 00015 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  16 |  6 | 00016 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  17 |  7 | 00017 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  18 |  8 | 00018 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  19 |  9 | 00019 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  20 |  0 | 00020 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  21 |  1 | 00021 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  22 |  2 | 00022 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  23 |  3 | 00023 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  24 |  4 | 00024 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  25 |  5 | 00025 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  26 |  6 | 00026 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  27 |  7 | 00027 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  28 |  8 | 00028 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  29 |  9 | 00029 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  30 |  0 | 00030 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  31 |  1 | 00031 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  32 |  2 | 00032 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  33 |  3 | 00033 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  34 |  4 | 00034 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  35 |  5 | 00035 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  36 |  6 | 00036 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  37 |  7 | 00037 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  38 |  8 | 00038 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  39 |  9 | 00039 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  40 |  0 | 00040 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  41 |  1 | 00041 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  42 |  2 | 00042 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  43 |  3 | 00043 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  44 |  4 | 00044 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  45 |  5 | 00045 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  46 |  6 | 00046 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  47 |  7 | 00047 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  48 |  8 | 00048 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  49 |  9 | 00049 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  50 |  0 | 00050 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  51 |  1 | 00051 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  52 |  2 | 00052 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  53 |  3 | 00053 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  54 |  4 | 00054 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  55 |  5 | 00055 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  56 |  6 | 00056 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  57 |  7 | 00057 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  58 |  8 | 00058 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  59 |  9 | 00059 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  60 |  0 | 00060 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  61 |  1 | 00061 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  62 |  2 | 00062 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  63 |  3 | 00063 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  64 |  4 | 00064 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  65 |  5 | 00065 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  66 |  6 | 00066 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  67 |  7 | 00067 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  68 |  8 | 00068 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  69 |  9 | 00069 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  70 |  0 | 00070 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  71 |  1 | 00071 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  72 |  2 | 00072 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  73 |  3 | 00073 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  74 |  4 | 00074 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  75 |  5 | 00075 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  76 |  6 | 00076 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  77 |  7 | 00077 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  78 |  8 | 00078 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  79 |  9 | 00079 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  80 |  0 | 00080 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  81 |  1 | 00081 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  82 |  2 | 00082 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  83 |  3 | 00083 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  84 |  4 | 00084 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  85 |  5 | 00085 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  86 |  6 | 00086 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  87 |  7 | 00087 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  88 |  8 | 00088 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  89 |  9 | 00089 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  90 |  0 | 00090 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  91 |  1 | 00091 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  92 |  2 | 00092 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  93 |  3 | 00093 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  94 |  4 | 00094 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  95 |  5 | 00095 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  96 |  6 | 00096 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  97 |  7 | 00097 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  98 |  8 | 00098 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  99 |  9 | 00099 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+ 100 |  0 | 00100 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+ 101 |  1 | 00101 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+ 102 |  2 | 00102 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+ 103 |  3 | 00103 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+ 104 |  4 | 00104 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+ 105 |  5 | 00105 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+ 106 |  6 | 00106 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+ 107 |  7 | 00107 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+ 108 |  8 | 00108 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+ 109 |  9 | 00109 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+ 110 |  0 | 00110 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+(110 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = (ARRAY[c1,c2,3])[1]; -- ArrayRef
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c1 = (([c1, c2, 3])[1])))
+(3 rows)
+
+SELECT * FROM ft1 t1 WHERE c1 = (ARRAY[c1,c2,3])[1] ORDER BY c1; -- ArrayRef
+ c1  | c2 |  c3   |     c4     |     c5     | c6 |     c7     | c8  
+-----+----+-------+------------+------------+----+------------+-----
+   1 |  1 | 00001 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+   2 |  2 | 00002 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+   3 |  3 | 00003 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+   4 |  4 | 00004 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+   5 |  5 | 00005 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+   6 |  6 | 00006 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+   7 |  7 | 00007 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+   8 |  8 | 00008 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+   9 |  9 | 00009 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  10 |  0 | 00010 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  11 |  1 | 00011 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  12 |  2 | 00012 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  13 |  3 | 00013 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  14 |  4 | 00014 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  15 |  5 | 00015 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  16 |  6 | 00016 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  17 |  7 | 00017 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  18 |  8 | 00018 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  19 |  9 | 00019 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  20 |  0 | 00020 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  21 |  1 | 00021 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  22 |  2 | 00022 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  23 |  3 | 00023 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  24 |  4 | 00024 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  25 |  5 | 00025 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  26 |  6 | 00026 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  27 |  7 | 00027 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  28 |  8 | 00028 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  29 |  9 | 00029 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  30 |  0 | 00030 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  31 |  1 | 00031 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  32 |  2 | 00032 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  33 |  3 | 00033 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  34 |  4 | 00034 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  35 |  5 | 00035 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  36 |  6 | 00036 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  37 |  7 | 00037 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  38 |  8 | 00038 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  39 |  9 | 00039 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  40 |  0 | 00040 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  41 |  1 | 00041 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  42 |  2 | 00042 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  43 |  3 | 00043 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  44 |  4 | 00044 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  45 |  5 | 00045 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  46 |  6 | 00046 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  47 |  7 | 00047 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  48 |  8 | 00048 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  49 |  9 | 00049 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  50 |  0 | 00050 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  51 |  1 | 00051 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  52 |  2 | 00052 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  53 |  3 | 00053 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  54 |  4 | 00054 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  55 |  5 | 00055 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  56 |  6 | 00056 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  57 |  7 | 00057 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  58 |  8 | 00058 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  59 |  9 | 00059 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  60 |  0 | 00060 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  61 |  1 | 00061 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  62 |  2 | 00062 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  63 |  3 | 00063 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  64 |  4 | 00064 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  65 |  5 | 00065 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  66 |  6 | 00066 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  67 |  7 | 00067 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  68 |  8 | 00068 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  69 |  9 | 00069 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  70 |  0 | 00070 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  71 |  1 | 00071 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  72 |  2 | 00072 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  73 |  3 | 00073 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  74 |  4 | 00074 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  75 |  5 | 00075 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  76 |  6 | 00076 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  77 |  7 | 00077 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  78 |  8 | 00078 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  79 |  9 | 00079 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  80 |  0 | 00080 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  81 |  1 | 00081 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  82 |  2 | 00082 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  83 |  3 | 00083 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  84 |  4 | 00084 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  85 |  5 | 00085 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  86 |  6 | 00086 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  87 |  7 | 00087 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  88 |  8 | 00088 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  89 |  9 | 00089 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+  90 |  0 | 00090 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+  91 |  1 | 00091 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+  92 |  2 | 00092 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+  93 |  3 | 00093 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+  94 |  4 | 00094 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+  95 |  5 | 00095 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+  96 |  6 | 00096 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+  97 |  7 | 00097 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+  98 |  8 | 00098 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+  99 |  9 | 00099 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+ 100 |  0 | 00100 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+ 101 |  1 | 00101 | 1990-01-01 | 1990-01-01 | 1  | 1          | foo
+ 102 |  2 | 00102 | 1990-01-01 | 1990-01-01 | 2  | 2          | foo
+ 103 |  3 | 00103 | 1990-01-01 | 1990-01-01 | 3  | 3          | foo
+ 104 |  4 | 00104 | 1990-01-01 | 1990-01-01 | 4  | 4          | foo
+ 105 |  5 | 00105 | 1990-01-01 | 1990-01-01 | 5  | 5          | foo
+ 106 |  6 | 00106 | 1990-01-01 | 1990-01-01 | 6  | 6          | foo
+ 107 |  7 | 00107 | 1990-01-01 | 1990-01-01 | 7  | 7          | foo
+ 108 |  8 | 00108 | 1990-01-01 | 1990-01-01 | 8  | 8          | foo
+ 109 |  9 | 00109 | 1990-01-01 | 1990-01-01 | 9  | 9          | foo
+ 110 |  0 | 00110 | 1990-01-01 | 1990-01-01 | 0  | 0          | foo
+(110 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c6 = E'foo''s\\bar';  -- check special chars
+                                             QUERY PLAN                                              
+-----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c6 = E'foo''s\\bar'))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c8 = 'foo';  -- can't be sent to remote
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c8 = 'foo'))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT (CASE WHEN c1 < 10 THEN 1 WHEN c1 < 50 THEN 2 ELSE 3 END) a,
+	sum(length(c2)) FROM ft2 GROUP BY a ORDER BY a;
+                                                                                                                                                                      QUERY PLAN                                                                                                                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (CASE WHEN (c1 < 10) THEN 1 WHEN (c1 < 50) THEN 2 ELSE 3 END), (sum(length(c2)))
+   Relations: Aggregate on (ft2)
+   Remote SQL: SELECT CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END, sum(length(c2)) FROM http_test.t2 GROUP BY (CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END) ORDER BY CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END ASC
+(4 rows)
+
+SELECT (CASE WHEN c1 < 10 THEN 1 WHEN c1 < 50 THEN 2 ELSE 3 END) a,
+	sum(length(c2)) FROM ft2 GROUP BY a ORDER BY a;
+ a | sum 
+---+-----
+ 1 |  54
+ 2 | 240
+ 3 | 306
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT SUM(c1) FILTER (WHERE c1 < 20) FROM ft2;
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(c1) FILTER (WHERE (c1 < 20)))
+   Relations: Aggregate on (ft2)
+   Remote SQL: SELECT sumIf(c1,(((c1 < 20)) > 0)) FROM http_test.t2
+(4 rows)
+
+SELECT SUM(c1) FILTER (WHERE c1 < 20) FROM ft2;
+ sum 
+-----
+ 190
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FROM ft2;
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Foreign Scan
+   Output: (count(DISTINCT c1))
+   Relations: Aggregate on (ft2)
+   Remote SQL: SELECT count(DISTINCT c1) FROM http_test.t2
+(4 rows)
+
+SELECT COUNT(DISTINCT c1) FROM ft2;
+ count 
+-------
+   100
+(1 row)
+
+/* DISTINCT with IF */
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Aggregate
+   Output: count(DISTINCT c1) FILTER (WHERE (c1 < 20))
+   ->  Foreign Scan on public.ft2
+         Output: c1, c2
+         Remote SQL: SELECT c1 FROM http_test.t2 ORDER BY c1 ASC
+(5 rows)
+
+DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback2;
+DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback;
+SELECT clickhouse_raw_query('DROP DATABASE http_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP SERVER http_loopback2 CASCADE;
+NOTICE:  drop cascades to foreign table ft6
+DROP SERVER http_loopback CASCADE;
+NOTICE:  drop cascades to 6 other objects
+DETAIL:  drop cascades to foreign table ft1
+drop cascades to foreign table ft2
+drop cascades to foreign table ft3
+drop cascades to foreign table ft4
+drop cascades to foreign table ft5
+drop cascades to foreign table ftcopy

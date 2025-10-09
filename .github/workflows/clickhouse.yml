@@ -1,0 +1,41 @@
+name: 🏠 ClickHouse CI
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron:  '0 13 10 * *' # Monthly at 13:00 on the tenth
+jobs:
+  build:
+    strategy:
+      matrix:
+        # Test latest version and all LTS releases.
+        # .github/ubuntu/ch-versions --lts --latest-stable --earliest 22  --prefix '          - ' | pbcopy
+        ch:
+          - 25.9.3.48-stable
+          - 25.8.10.7-lts
+          - 25.3.6.56-lts
+          - 24.8.14.39-lts
+          - 24.3.18.7-lts
+          - 23.8.16.40-lts
+          - 23.3.22.3-lts
+          - 22.8.21.38-lts
+          - 22.3.20.29-lts
+    name: 🏠 ClickHouse ${{ matrix.ch }}
+    runs-on: ubuntu-latest
+    container: pgxn/pgxn-tools
+    steps:
+      - name: Start Postgres
+        run: pg-start 18 libcurl4-openssl-dev uuid-dev
+      - name: Checkout the Repository
+        uses: actions/checkout@v4
+        with: { submodules: true }
+      - name: Start ClickHouse
+        env: { CH_RELEASE: "${{ matrix.ch }}" }
+        run: .github/ubuntu/clickhouse.sh
+      - name: Test DSO
+        run: pg-build-test
+      - name: Clean
+        run: make clean
+      - name: Test Static
+        run: pg-build-test
+        env: { CH_BUILD: static }
