@@ -33,7 +33,6 @@ for pkg in clickhouse-common-static clickhouse-server; do
         # Prior to v22, the server package supported all architectures.
         ARCH=all
     fi
-    echo "${base_url}/${pkg}_${CH_VERSION}_${ARCH}.deb"
     curl -sLo "${pkg}.deb" "${base_url}/${pkg}_${CH_VERSION}_${ARCH}.deb"
     dpkg -i "${pkg}.deb"
     rm "${pkg}.deb"

@@ -77,7 +77,7 @@ PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
 # We'll need the clickhouse-cpp library and rpath so it can be found.
-SHLIB_LINK += -Wl,-rpath,$(pkglibdir)/ $(CH_CPP_LIB)
+SHLIB_LINK += -Wl,-rpath,$(pkglibdir)/
 
 # PostgresSQL 15 and earlier violate a C++ v17 storage specifier error.
 ifeq ($(shell test $(MAJORVERSION) -lt 16; echo $$?),0)

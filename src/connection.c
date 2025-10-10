@@ -45,7 +45,7 @@ clickhouse_connect(ForeignServer *server, UserMapping *user)
 	char	   *driver = "http";
 
 	/* default settings */
-	ch_connection_details	details = {"127.0.0.1", 8123, NULL, NULL, "default"};
+	ch_connection_details	details = {"127.0.0.1", 0, NULL, NULL, "default"};
 
 	chfdw_extract_options(server->options, &driver, &details.host,
 		&details.port, &details.dbname, &details.username, &details.password);
@@ -58,9 +58,6 @@ clickhouse_connect(ForeignServer *server, UserMapping *user)
 	}
 	else if (strcmp(driver, "binary") == 0)
 	{
-		if (details.port == 8123)
-			details.port = 9000;
-
 		return chfdw_binary_connect(&details);
 	}
 	else

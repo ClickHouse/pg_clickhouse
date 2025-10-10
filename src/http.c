@@ -50,6 +50,10 @@ static size_t write_data(void *contents, size_t size, size_t nmemb, void *userp)
 	return realsize;
 }
 
+#define CLICKHOUSE_PORT 8123
+#define CLICKHOUSE_TLS_PORT 8443
+#define HTTP_TLS_PORT 443
+
 ch_http_connection_t *ch_http_connection(char *host, int port, char *username, char *password)
 {
 	int n;
@@ -64,6 +68,9 @@ ch_http_connection_t *ch_http_connection(char *host, int port, char *username, c
 	conn->curl = curl_easy_init();
 	if (!conn->curl)
 		goto cleanup;
+
+	if (!port)
+		port = ch_is_cloud_host(host) ? CLICKHOUSE_TLS_PORT : CLICKHOUSE_PORT;
 
 	len += strlen(host) + snprintf(NULL, 0, "%d", port);
 
@@ -81,19 +88,21 @@ ch_http_connection_t *ch_http_connection(char *host, int port, char *username, c
 	if (!connstring)
 		goto cleanup;
 
+	char *scheme = port == CLICKHOUSE_TLS_PORT || port == HTTP_TLS_PORT ? "https" : "http";
+
 	if (username && password)
 	{
-		n = snprintf(connstring, len, "http://%s:%s@%s:%d/", username, password, host, port);
+		n = snprintf(connstring, len, "%s://%s:%s@%s:%d/", scheme, username, password, host, port);
 		curl_free(username);
 		curl_free(password);
 	}
 	else if (username)
 	{
-		n = snprintf(connstring, len, "http://%s@%s:%d/", username, host, port);
+		n = snprintf(connstring, len, "%s://%s@%s:%d/", scheme, username, host, port);
 		curl_free(username);
 	}
 	else
-		n = snprintf(connstring, len, "http://%s:%d/", host, port);
+		n = snprintf(connstring, len, "%s://%s:%d/", scheme, host, port);
 
 	if (n < 0)
 		goto cleanup;

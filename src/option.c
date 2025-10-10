@@ -27,7 +27,6 @@
 
 static char *DEFAULT_DBNAME = "default";
 
-
 /*
  * Describes the valid options for objects that this wrapper uses.
  */
@@ -46,7 +45,7 @@ typedef struct ChFdwOption
 static ChFdwOption *clickhouse_fdw_options;
 
 /*
- * Valid options for clickhouseclient.
+ * Valid options for clickhouse client.
  * Allocated and filled in InitChFdwOptions.
  */
 static const ChFdwOption ch_options[] =

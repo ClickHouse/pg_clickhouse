@@ -102,6 +102,8 @@ void * exc_palloc0(Size size)
 	return ret;
 }
 
+#define CLICKHOUSE_SECURE_PORT 9440
+
 ch_binary_connection_t * ch_binary_connect(
 	char * host, int port, char * database, char * user, char * password, char ** error)
 {
@@ -113,8 +115,11 @@ ch_binary_connection_t * ch_binary_connect(
 		options = new ClientOptions();
 		options->SetPingBeforeQuery(true);
 
-		if (host)
+		if (host) {
 			options->SetHost(std::string(host));
+			if (!port && ch_is_cloud_host(host))
+				options->SetPort(CLICKHOUSE_SECURE_PORT);
+		}
 		if (port)
 			options->SetPort(port);
 		if (database)
@@ -123,6 +128,8 @@ ch_binary_connection_t * ch_binary_connect(
 			options->SetUser(std::string(user));
 		if (password)
 			options->SetPassword(std::string(password));
+		if (options->port == CLICKHOUSE_SECURE_PORT)
+			options->SetSSLOptions(ClientOptions::SSLOptions());
 
 		//options->SetRethrowException(false);
 		conn = new ch_binary_connection_t();

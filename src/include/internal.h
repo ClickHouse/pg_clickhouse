@@ -17,4 +17,10 @@ typedef struct ch_binary_connection_t
 	char			  *error;
 } ch_binary_connection_t;
 
+/*
+ * Check whether the given string matches a ClickHouse Cloud host name.
+ */
+extern int ch_is_cloud_host(const char *host);
+int ends_with(const char *s, const char *suffix);
+
 #endif /* CLICKHOUSE_INTERNAL_H */
