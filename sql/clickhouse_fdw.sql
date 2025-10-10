@@ -21,9 +21,8 @@ CREATE FOREIGN DATA WRAPPER clickhouse_fdw
 	HANDLER clickhouse_fdw_handler
 	VALIDATOR clickhouse_fdw_validator;
 
--- Function used for by functions and aggregates to fall back on when pushdown
---fails. The first argument should describe the operation that should have
---been pushed down.
+-- Function used by functions when pushdown fails. The first argument should
+-- describe the operation that should have been pushed down.
 CREATE FUNCTION clickhouse_pushdown(TEXT, VARIADIC "any") RETURNS TEXT
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
@@ -37,7 +36,12 @@ LANGUAGE C STRICT;
 -- Create error-raising argMax aggregate that should be pushed down to
 -- ClickHouse.
 CREATE FUNCTION ch_argmax(anyelement, anyelement, anycompatible)
-RETURNS anyelement AS $$ SELECT clickhouse_pushdown('aggregate argMax()') $$
+RETURNS anyelement AS $$
+BEGIN
+    RAISE 'clickhouse_fdw: failed to push down aggregate argMax()'
+    USING ERRCODE = 'fdw_error';
+END;
+$$
 LANGUAGE 'plpgsql' IMMUTABLE;
 
 CREATE AGGREGATE argMax(anyelement, anycompatible)
@@ -49,7 +53,12 @@ CREATE AGGREGATE argMax(anyelement, anycompatible)
 -- Create error-raising argMin aggregate that should be pushed down to
 -- ClickHouse.
 CREATE FUNCTION ch_argmin(anyelement, anyelement, anycompatible)
-RETURNS anyelement AS $$ SELECT clickhouse_pushdown('aggregate argMin()') $$
+RETURNS anyelement AS $$
+BEGIN
+    RAISE 'clickhouse_fdw: failed to push down aggregate argMin()'
+    USING ERRCODE = 'fdw_error';
+END;
+$$
 LANGUAGE 'plpgsql' IMMUTABLE;
 
 CREATE AGGREGATE argMin(anyelement, anycompatible)
@@ -88,5 +97,5 @@ CREATE AGGREGATE uniqExact(VARIADIC "any")
 -- Create error-raising dictGet function that should be pushed down to
 -- ClickHouse.
 CREATE FUNCTION dictGet(text, text, anyelement)
-RETURNS TEXT AS $$ SELECT clickhouse_pushdown('dictGet()') $$
-LANGUAGE 'plpgsql' IMMUTABLE;
+RETURNS TEXT AS $$ SELECT clickhouse_pushdown('dictGet()', 1) $$
+LANGUAGE 'sql' IMMUTABLE;

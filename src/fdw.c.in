@@ -2882,6 +2882,8 @@ Datum
 clickhouse_pushdown(PG_FUNCTION_ARGS)
 {
 	text* name = PG_GETARG_TEXT_PP(0);
-	elog(ERROR, "clickhouse_fdw: failed to push down %s",
-		text_to_cstring(name));
+	ereport(ERROR,
+		errcode(ERRCODE_FDW_ERROR),
+		errmsg("clickhouse_fdw: failed to push down %s", text_to_cstring(name))
+	);
 }
