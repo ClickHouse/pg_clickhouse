@@ -160,9 +160,18 @@ The `clickhouse_fdw` extension requires PostgreSQL 11 or higher, [libcurl],
 and [libuuid]. Building the extension requires a compiler, GNU `make`, and
 [CMake].
 
-## Copyright and License
+## Authors
 
-Copyright (c) 2025 ClickHouse.
+*   [Ildus Kurbangaliev](https://github.com/ildus)
+*   [Ibrar Ahmed](www.linkedin.com/in/ibrarahmed74)
+*   [David E. Wheeler](https://justatheory.com/)
+
+## Copyright
+
+*   Portions Copyright (c) 2025 ClickHouse
+*   Portions Copyright (c) 2019-2023, Adjust GmbH
+*   Portions Copyright (c) 2019 Percona
+*   Portions Copyright (c) 2012-2019, PostgreSQL Global Development Group
 
   [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
   [libcurl]: https://curl.se/libcurl/ "libcurl — your network transfer library"

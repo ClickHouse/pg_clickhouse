@@ -24,17 +24,39 @@ BEGIN
         'SELECT argMin(d, b) FROM agg_test',
         'SELECT argMin(d, c) FROM agg_test',
 
+        'SELECT uniq(a) FROM agg_test',
+        'SELECT uniq(a, b) FROM agg_test',
+        'SELECT uniq(a, b, c) FROM agg_test',
+        'SELECT uniq(a, b, c, d) FROM agg_test',
+
         'SELECT uniqExact(a) FROM agg_test',
         'SELECT uniqExact(a, b) FROM agg_test',
         'SELECT uniqExact(a, b, c) FROM agg_test',
         'SELECT uniqExact(a, b, c, d) FROM agg_test',
 
-        -- Functions
-        $$ SELECT clickhouse_pushdown('hello', 1) $$,
-        $$ SELECT clickhouse_pushdown('goodbye', true) $$,
+        'SELECT uniqCombined(a) FROM agg_test',
+        'SELECT uniqCombined(a, b) FROM agg_test',
+        'SELECT uniqCombined(a, b, c) FROM agg_test',
+        'SELECT uniqCombined(a, b, c, d) FROM agg_test',
 
-        $$ SELECT dictGet('', '', '{"x": true}'::json) $$,
-        $$ SELECT dictGet('a', 'b', ARRAY[1]) $$,
+        'SELECT uniqCombined64(a) FROM agg_test',
+        'SELECT uniqCombined64(a, b) FROM agg_test',
+        'SELECT uniqCombined64(a, b, c) FROM agg_test',
+        'SELECT uniqCombined64(a, b, c, d) FROM agg_test',
+
+        'SELECT uniqHLL12(a) FROM agg_test',
+        'SELECT uniqHLL12(a, b) FROM agg_test',
+        'SELECT uniqHLL12(a, b, c) FROM agg_test',
+        'SELECT uniqHLL12(a, b, c, d) FROM agg_test',
+
+        'SELECT uniqTheta(a) FROM agg_test',
+        'SELECT uniqTheta(a, b) FROM agg_test',
+        'SELECT uniqTheta(a, b, c) FROM agg_test',
+        'SELECT uniqTheta(a, b, c, d) FROM agg_test',
+
+        -- Functions
+        $$ SELECT ch_push_agg_text('hello', 1) $$,
+        $$ SELECT ch_push_agg_text('goodbye', true) $$,
 
         $$ SELECT ch_argmax('x'::text, 'x'::text, 3) $$,
         $$ SELECT ch_argmax(3, 3, true) $$,
@@ -42,7 +64,13 @@ BEGIN
 
         $$ SELECT ch_argmin('x'::text, 'x'::text, 3) $$,
         $$ SELECT ch_argmin(3, 3, true) $$,
-        $$ SELECT ch_argmin(true, false, now()) $$
+        $$ SELECT ch_argmin(true, false, now()) $$,
+
+        $$ SELECT ch_push_func_text('hello') $$,
+        $$ SELECT ch_push_func_text('goodbye') $$,
+
+        $$ SELECT dictGet('', '', '{"x": true}'::json) $$,
+        $$ SELECT dictGet('a', 'b', ARRAY[1]) $$
     ] LOOP
         BEGIN
             EXECUTE q;

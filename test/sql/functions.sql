@@ -92,9 +92,34 @@ SELECT uniqExact(a) FROM t1;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqExact(a) FILTER(WHERE b>1) FROM t1;
 SELECT uniqExact(a) FILTER(WHERE b>1) FROM t1;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqExact(a, b) FROM t1;
+SELECT uniq(a, b) FROM t1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniq(a, c) FROM t1;
+SELECT uniq(a, c) FROM t1;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqExact(a, b) FROM t1;
 SELECT uniqExact(a, b) FROM t1;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqExact(a, c) FROM t1;
 SELECT uniqExact(a, c) FROM t1;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqCombined(a, b) FROM t1;
+SELECT uniqCombined(a, b) FROM t1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqCombined(a, c) FROM t1;
+SELECT uniqCombined(a, c) FROM t1;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqCombined64(a, b) FROM t1;
+SELECT uniqCombined64(a, b) FROM t1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqCombined64(a, c) FROM t1;
+SELECT uniqCombined64(a, c) FROM t1;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqHLL12(a, b) FROM t1;
+SELECT uniqHLL12(a, b) FROM t1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqHLL12(a, c) FROM t1;
+SELECT uniqHLL12(a, c) FROM t1;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqTheta(a, b) FROM t1;
+SELECT uniqTheta(a, b) FROM t1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqTheta(a, c) FROM t1;
+SELECT uniqTheta(a, c) FROM t1;
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
 SELECT date_trunc('day', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
@@ -130,12 +155,11 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT strpos(val, 'val') AS a FROM t4 GROUP BY a O
 SELECT strpos(val, 'val') AS a FROM t4 GROUP BY a ORDER BY a;
 
 --- check dictGet
--- dictGet is broken for now
 EXPLAIN (VERBOSE, COSTS OFF) SELECT a, dictGet('functions_test.t3_dict', 'val', (a, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a;
--- SELECT a, dictGet('functions_test.t3_dict', 'val', (a, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a;
+SELECT a, dictGet('functions_test.t3_dict', 'val', (a, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a LIMIT 3;
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT a, dictGet('functions_test.t3_dict', 'val', (1, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a;
--- SELECT a, dictGet('functions_test.t3_dict', 'val', (1, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a;
+SELECT a, dictGet('functions_test.t3_dict', 'val', (1, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a LIMIT 3;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE functions_test');
