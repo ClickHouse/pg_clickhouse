@@ -1,28 +1,35 @@
-name: 🚀 Release
-on:
-  push:
-    tags: [v*]
+name: 🚀 Bundle & Release
+on: [push, pull_request]
 jobs:
   release:
     name: Release on GitHub and PGXN
     runs-on: ubuntu-latest
     container: pgxn/pgxn-tools
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      PGXN_USERNAME: ${{ secrets.PGXN_USERNAME }}
-      PGXN_PASSWORD: ${{ secrets.PGXN_PASSWORD }}
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
-        with: { submodules: true }
+      - name: Start Postgres
+        run: pg-start 18 libcurl4-openssl-dev uuid-dev
+      - name: Start ClickHouse
+        env: { CH_RELEASE: "${{ matrix.ch }}" }
+        run: .github/ubuntu/clickhouse.sh
       - name: Bundle the Release
+        env: { GIT_ARCHIVE_CMD: archive-all }
         id: bundle
         run: pgxn-bundle
+      - name: Test the Bundle
+        env: { PGUSER: postgres }
+        run: make dist-test
       - name: Release on PGXN
+        if: startsWith( github.ref, 'refs/tags/v' )
+        env:
+          PGXN_USERNAME: ${{ secrets.PGXN_USERNAME }}
+          PGXN_PASSWORD: ${{ secrets.PGXN_PASSWORD }}
         run: pgxn-release
       - name: Generate Release Changes
         run: make latest-changes.md
       - name: Create GitHub Release
+        if: startsWith( github.ref, 'refs/tags/v' )
         uses: softprops/action-gh-release@v2
         with:
           name: "Release ${{ github.ref_name }}"

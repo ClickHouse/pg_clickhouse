@@ -128,8 +128,16 @@ endif
 install: install-ch-cpp
 
 # Build a PGXN distribution bundle.
-dist:
-	git archive --format zip --prefix=$(EXTENSION)-$(DISTVERSION)/ -o $(EXTENSION)-$(DISTVERSION).zip HEAD
+dist: $(EXTENSION)-$(DISTVERSION).zip
+
+$(EXTENSION)-$(DISTVERSION).zip:
+	git archive-all -v --prefix "$(EXTENSION)-$(DISTVERSION)/" --force-submodules $(EXTENSION)-$(DISTVERSION).zip
+
+# Test the PGXN distribution.
+dist-test: $(EXTENSION)-$(DISTVERSION).zip
+	unzip $(EXTENSION)-$(DISTVERSION).zip
+	cd $(EXTENSION)-$(DISTVERSION)
+	make && make install && make installcheck
 
 # Generate a list of the changes just for the current version.
 latest-changes.md: Changes
