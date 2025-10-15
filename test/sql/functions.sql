@@ -30,12 +30,24 @@ SELECT clickhouse_raw_query('
 SELECT clickhouse_raw_query('CREATE TABLE functions_test.t3_map (key1 Int32, key2 String,
         val String) engine=TinyLog();');
 SELECT clickhouse_raw_query('CREATE TABLE functions_test.t4 (val String) engine=TinyLog();');
+SELECT clickhouse_raw_query('CREATE TABLE functions_test.t5 (ts DateTime) engine=TinyLog();');
+
+SELECT clickhouse_raw_query($$
+	INSERT INTO functions_test.t5 VALUES
+		('2025-10-15T20:12:25'),
+		('2026-11-16T32:13:26'),
+		('2027-12-17T22:14:27'),
+		('2028-01-18T23:15:28'),
+		('2029-02-19T01:16:29'),
+		('2030-03-20T02:16:30')
+$$);
 
 CREATE FOREIGN TABLE t1 (a int, b int, c timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t2 (a int, b int, c timestamp with time zone) SERVER functions_loopback OPTIONS (table_name 't1');
 CREATE FOREIGN TABLE t3 (a int, b int) SERVER functions_loopback;
 CREATE FOREIGN TABLE t3_map (key1 int, key2 text, val text) SERVER functions_loopback;
 CREATE FOREIGN TABLE t4 (val text) SERVER functions_loopback;
+CREATE FOREIGN TABLE t5 (ts timestamp) SERVER functions_loopback;
 
 SELECT clickhouse_raw_query($$
 	INSERT INTO functions_test.t3
@@ -160,6 +172,54 @@ SELECT a, dictGet('functions_test.t3_dict', 'val', (a, 'key' || a::text)) as val
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT a, dictGet('functions_test.t3_dict', 'val', (1, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a;
 SELECT a, dictGet('functions_test.t3_dict', 'val', (1, 'key' || a::text)) as val, sum(b) FROM t3 GROUP BY a, val ORDER BY a LIMIT 3;
+
+-- Check date_part mappings.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('year', ts) = '2023';
+SELECT ts FROM t5 WHERE date_part('year', ts) = '2027';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('month', ts) = '11';
+SELECT ts FROM t5 WHERE date_part('month', ts) = '11';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('day', ts) = '18';
+SELECT ts FROM t5 WHERE date_part('day', ts) = '18';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('hour', ts) = '20';
+SELECT ts FROM t5 WHERE date_part('hour', ts) = '20';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('minute', ts) = '16';
+SELECT ts FROM t5 WHERE date_part('minute', ts) = '16';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('second', ts) = '26';
+SELECT ts FROM t5 WHERE date_part('second', ts) = '26';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('doy', ts) = '351';
+SELECT ts FROM t5 WHERE date_part('doy', ts) = '351';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
+SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('quarter', ts) = '1';
+SELECT ts FROM t5 WHERE date_part('quarter', ts) = '1';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('isoyear', ts) = '2025';
+SELECT ts FROM t5 WHERE date_part('isoyear', ts) = '2025';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('week', ts) = '47';
+SELECT ts FROM t5 WHERE date_part('week', ts) = '47';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('epoch', ts) > '1866158180';
+SELECT ts FROM t5 WHERE date_part('epoch', ts) > '1866158180';
+
+-- Check date_trunc mappings.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('year', ts) = '2026-01-01'::date;
+SELECT ts FROM t5 WHERE date_trunc('year', ts) = '2026-01-01'::date;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('month', ts) = '2027-12-01'::date;
+SELECT ts FROM t5 WHERE date_trunc('month', ts) = '2027-12-01'::date;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('day', ts) = '2028-01-18'::date;
+SELECT ts FROM t5 WHERE date_trunc('day', ts) = '2028-01-18'::date;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('hour', ts) = '2029-02-19T01:00:00';
+SELECT ts FROM t5 WHERE date_trunc('hour', ts) = '2029-02-19T01:00:00';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('minute', ts) = '2025-10-15T20:12:00';
+SELECT ts FROM t5 WHERE date_trunc('minute', ts) = '2025-10-15T20:12:00';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('second', ts) = '2027-12-17T22:14:27';
+SELECT ts FROM t5 WHERE date_trunc('second', ts) = '2027-12-17T22:14:27';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('week', ts) = '2028-01-17'::date;
+SELECT ts FROM t5 WHERE date_trunc('week', ts) = '2028-01-17'::date;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('quarter', ts) = '2027-10-01'::date;
+SELECT ts FROM t5 WHERE date_trunc('quarter', ts) = '2027-10-01'::date;
+
+-- check regexp_like.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE regexp_like('^val\d', val);
+SELECT val FROM t4 WHERE regexp_like('^val\d', val);
 
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE functions_test');

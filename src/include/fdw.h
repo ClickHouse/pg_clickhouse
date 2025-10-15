@@ -282,7 +282,8 @@ typedef enum {
 	CF_AJBOOL_OUT,
 	CF_HSTORE_FETCHVAL,		/* -> operation on hstore */
 	CF_INTARRAY_IDX,
-	CF_CH_FUNCTION		/* adapted clickhouse function */
+	CF_CH_FUNCTION,		/* adapted clickhouse function */
+	CF_MATCH,		/* regexp_match function */
 } custom_object_type;
 
 typedef enum {

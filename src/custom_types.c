@@ -19,18 +19,20 @@
 
 #include "fdw.h"
 
-// in PostgreSQL 14 source code those variables has other names,
-// see postgres/src/backend/utils/fmgroids.h
-#define F_TIMESTAMP_TRUNC 2020
-#define F_TIMESTAMP_PART 2021
-#define F_TIMESTAMPTZ_TRUNC 1217
-#define F_TIMESTAMP_ZONE 2069
-#define F_TIMESTAMPTZ_ZONE 1159
-#define F_TIMESTAMPTZ_PART 1171
-#define F_ARRAY_POSITION 3277
+// Prior to PostgreSQL 14 these variables had other names or were undefined.
+// See postgres/include/server/utils/fmgroids.h
+#if PG_VERSION_NUM < 140000
+#define F_DATE_TRUNC_TEXT_TIMESTAMP F_TIMESTAMP_TRUNC
+#define F_DATE_PART_TEXT_TIMESTAMP F_TIMESTAMP_PART
+#define F_DATE_TRUNC_TEXT_TIMESTAMPTZ F_TIMESTAMPTZ_TRUNC
+#define F_TIMEZONE_TEXT_TIMESTAMP F_TIMESTAMP_ZONE
+#define F_TIMEZONE_TEXT_TIMESTAMPTZ F_TIMESTAMPTZ_ZONE
+#define F_DATE_PART_TEXT_TIMESTAMPTZ F_TIMESTAMPTZ_PART
+#define F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE F_ARRAY_POSITION
+#define F_BTRIM_TEXT_TEXT F_BTRIM
+#define F_BTRIM_TEXT F_BTRIM1
 #define F_STRPOS 868
-#define F_BTRIM 884
-#define F_BTRIM1 885
+#endif
 
 static HTAB *custom_objects_cache = NULL;
 static HTAB *custom_columns_cache = NULL;
@@ -96,16 +98,19 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 	{
 		switch (funcid)
 		{
-			case F_TIMESTAMP_TRUNC:
-			case F_TIMESTAMPTZ_TRUNC:
-			case F_TIMESTAMP_ZONE:
-			case F_TIMESTAMPTZ_ZONE:
-			case F_TIMESTAMP_PART:
-			case F_TIMESTAMPTZ_PART:
-			case F_ARRAY_POSITION:
+			case F_DATE_TRUNC_TEXT_TIMESTAMP:
+			case F_DATE_TRUNC_TEXT_TIMESTAMPTZ:
+			case F_TIMEZONE_TEXT_TIMESTAMP:
+			case F_TIMEZONE_TEXT_TIMESTAMPTZ:
+			case F_DATE_PART_TEXT_TIMESTAMP:
+			case F_DATE_PART_TEXT_TIMESTAMPTZ:
+			case F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE:
 			case F_STRPOS:
-			case F_BTRIM:
-			case F_BTRIM1:
+			case F_BTRIM_TEXT_TEXT:
+			case F_BTRIM_TEXT:
+#if PG_VERSION_NUM >= 150000
+			case F_REGEXP_LIKE_TEXT_TEXT:
+#endif
 				special_builtin = true;
 				break;
 			default:
@@ -128,34 +133,34 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 
 		switch (funcid)
 		{
-			case F_TIMESTAMPTZ_TRUNC:
-			case F_TIMESTAMP_TRUNC:
+			case F_DATE_TRUNC_TEXT_TIMESTAMPTZ:
+			case F_DATE_TRUNC_TEXT_TIMESTAMP:
 			{
 				entry->cf_type = CF_DATE_TRUNC;
 				entry->custom_name[0] = '\1';
 				break;
 			}
-			case F_TIMESTAMPTZ_PART:
-			case F_TIMESTAMP_PART:
+			case F_DATE_PART_TEXT_TIMESTAMPTZ:
+			case F_DATE_PART_TEXT_TIMESTAMP:
 			{
 				entry->cf_type = CF_DATE_PART;
 				entry->custom_name[0] = '\1';
 				break;
 			}
-			case F_TIMESTAMP_ZONE:
-			case F_TIMESTAMPTZ_ZONE:
+			case F_TIMEZONE_TEXT_TIMESTAMP:
+			case F_TIMEZONE_TEXT_TIMESTAMPTZ:
 			{
 				entry->cf_type = CF_TIMEZONE;
 				strcpy(entry->custom_name, "toTimeZone");
 				break;
 			}
-			case F_ARRAY_POSITION:
+			case F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE:
 			{
 				strcpy(entry->custom_name, "indexOf");
 				break;
 			}
-			case F_BTRIM:
-			case F_BTRIM1:
+			case F_BTRIM_TEXT_TEXT:
+			case F_BTRIM_TEXT:
 			{
 				strcpy(entry->custom_name, "trimBoth");
 				break;
@@ -165,6 +170,14 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 				strcpy(entry->custom_name, "position");
 				break;
 			}
+#if PG_VERSION_NUM >= 150000
+			case F_REGEXP_LIKE_TEXT_TEXT:
+			{
+				entry->cf_type = CF_MATCH;
+				strcpy(entry->custom_name, "match");
+				break;
+			}
+#endif
 		}
 
 		if (special_builtin)

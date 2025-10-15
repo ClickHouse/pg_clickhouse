@@ -65,11 +65,32 @@ SELECT clickhouse_raw_query('CREATE TABLE functions_test.t4 (val String) engine=
  
 (1 row)
 
+SELECT clickhouse_raw_query('CREATE TABLE functions_test.t5 (ts DateTime) engine=TinyLog();');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+	INSERT INTO functions_test.t5 VALUES
+		('2025-10-15T20:12:25'),
+		('2026-11-16T32:13:26'),
+		('2027-12-17T22:14:27'),
+		('2028-01-18T23:15:28'),
+		('2029-02-19T01:16:29'),
+		('2030-03-20T02:16:30')
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
 CREATE FOREIGN TABLE t1 (a int, b int, c timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t2 (a int, b int, c timestamp with time zone) SERVER functions_loopback OPTIONS (table_name 't1');
 CREATE FOREIGN TABLE t3 (a int, b int) SERVER functions_loopback;
 CREATE FOREIGN TABLE t3_map (key1 int, key2 text, val text) SERVER functions_loopback;
 CREATE FOREIGN TABLE t4 (val text) SERVER functions_loopback;
+CREATE FOREIGN TABLE t5 (ts timestamp) SERVER functions_loopback;
 SELECT clickhouse_raw_query($$
 	INSERT INTO functions_test.t3
 	SELECT number+1, number+2
@@ -441,7 +462,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d
                                                                                   QUERY PLAN                                                                                  
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
-   Output: (date_trunc('dAy'::text, timezone('UTC'::text, c)))
+   Output: (date_trunc('dAy'::text, (c AT TIME ZONE 'UTC'::text)))
    Relations: Aggregate on (t1)
    Remote SQL: SELECT toStartOfDay(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toStartOfDay(toTimeZone(c, 'UTC'))) ORDER BY toStartOfDay(toTimeZone(c, 'UTC')) ASC
 (4 rows)
@@ -457,7 +478,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('day', c at time zone 'UTC') as d
                                                                                   QUERY PLAN                                                                                  
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
-   Output: (date_trunc('day'::text, timezone('UTC'::text, c)))
+   Output: (date_trunc('day'::text, (c AT TIME ZONE 'UTC'::text)))
    Relations: Aggregate on (t2)
    Remote SQL: SELECT toStartOfDay(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toStartOfDay(toTimeZone(c, 'UTC'))) ORDER BY toStartOfDay(toTimeZone(c, 'UTC')) ASC
 (4 rows)
@@ -552,7 +573,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('SeCond', c at time zone 'UTC') a
                                                                                                                 QUERY PLAN                                                                                                                
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
-   Output: (date_trunc('SeCond'::text, timezone('UTC'::text, c)))
+   Output: (date_trunc('SeCond'::text, (c AT TIME ZONE 'UTC'::text)))
    Relations: Aggregate on (t1)
    Remote SQL: SELECT toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1)) FROM functions_test.t1 GROUP BY (toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1))) ORDER BY toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1)) ASC
 (4 rows)
@@ -648,6 +669,304 @@ SELECT a, dictGet('functions_test.t3_dict', 'val', (1, 'key' || a::text)) as val
  3 |      |   4
 (3 rows)
 
+-- Check date_part mappings.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('year', ts) = '2023';
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(ts) = 2023))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('year', ts) = '2027';
+         ts          
+---------------------
+ 2027-12-17 22:14:27
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('month', ts) = '11';
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(ts) = 11))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('month', ts) = '11';
+         ts          
+---------------------
+ 2026-11-17 08:13:26
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('day', ts) = '18';
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(ts) = 18))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('day', ts) = '18';
+         ts          
+---------------------
+ 2028-01-18 23:15:28
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('hour', ts) = '20';
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toHour(ts) = 20))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('hour', ts) = '20';
+         ts          
+---------------------
+ 2025-10-15 20:12:25
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('minute', ts) = '16';
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMinute(ts) = 16))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('minute', ts) = '16';
+         ts          
+---------------------
+ 2029-02-19 01:16:29
+ 2030-03-20 02:16:30
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('second', ts) = '26';
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toSecond(ts) = 26))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('second', ts) = '26';
+         ts          
+---------------------
+ 2026-11-17 08:13:26
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('doy', ts) = '351';
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfYear(ts) = 351))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('doy', ts) = '351';
+         ts          
+---------------------
+ 2027-12-17 22:14:27
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfWeek(ts) = 2))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
+         ts          
+---------------------
+ 2026-11-17 08:13:26
+ 2028-01-18 23:15:28
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('quarter', ts) = '1';
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toQuarter(ts) = 1))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('quarter', ts) = '1';
+         ts          
+---------------------
+ 2028-01-18 23:15:28
+ 2029-02-19 01:16:29
+ 2030-03-20 02:16:30
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('isoyear', ts) = '2025';
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOYear(ts) = 2025))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('isoyear', ts) = '2025';
+         ts          
+---------------------
+ 2025-10-15 20:12:25
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('week', ts) = '47';
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOWeek(ts) = 47))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('week', ts) = '47';
+         ts          
+---------------------
+ 2026-11-17 08:13:26
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('epoch', ts) > '1866158180';
+                                        QUERY PLAN                                         
+-------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toUnixTimestamp(ts) > 1866158180))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('epoch', ts) > '1866158180';
+         ts          
+---------------------
+ 2029-02-19 01:16:29
+ 2030-03-20 02:16:30
+(2 rows)
+
+-- Check date_trunc mappings.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('year', ts) = '2026-01-01'::date;
+                                        QUERY PLAN                                         
+-------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfYear(ts) = '2026-01-01'))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_trunc('year', ts) = '2026-01-01'::date;
+         ts          
+---------------------
+ 2026-11-17 08:13:26
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('month', ts) = '2027-12-01'::date;
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfMonth(ts) = '2027-12-01'))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_trunc('month', ts) = '2027-12-01'::date;
+         ts          
+---------------------
+ 2027-12-17 22:14:27
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('day', ts) = '2028-01-18'::date;
+                                        QUERY PLAN                                        
+------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfDay(ts) = '2028-01-18'))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_trunc('day', ts) = '2028-01-18'::date;
+         ts          
+---------------------
+ 2028-01-18 23:15:28
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('hour', ts) = '2029-02-19T01:00:00';
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfHour(ts) = '2029-02-19 01:00:00'))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_trunc('hour', ts) = '2029-02-19T01:00:00';
+         ts          
+---------------------
+ 2029-02-19 01:16:29
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('minute', ts) = '2025-10-15T20:12:00';
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfMinute(ts) = '2025-10-15 20:12:00'))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_trunc('minute', ts) = '2025-10-15T20:12:00';
+         ts          
+---------------------
+ 2025-10-15 20:12:25
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('second', ts) = '2027-12-17T22:14:27';
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfSecond(toDateTime64(ts, 1)) = '2027-12-17 22:14:27'))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_trunc('second', ts) = '2027-12-17T22:14:27';
+         ts          
+---------------------
+ 2027-12-17 22:14:27
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('week', ts) = '2028-01-17'::date;
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonday(ts) = '2028-01-17'))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_trunc('week', ts) = '2028-01-17'::date;
+         ts          
+---------------------
+ 2028-01-18 23:15:28
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('quarter', ts) = '2027-10-01'::date;
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfQuarter(ts) = '2027-10-01'))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_trunc('quarter', ts) = '2027-10-01'::date;
+         ts          
+---------------------
+ 2027-12-17 22:14:27
+(1 row)
+
+-- check regexp_like.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE regexp_like('^val\d', val);
+ERROR:  function regexp_like(unknown, text) does not exist
+LINE 1: ...AIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE regexp_lik...
+                                                             ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+SELECT val FROM t4 WHERE regexp_like('^val\d', val);
+ERROR:  function regexp_like(unknown, text) does not exist
+LINE 1: SELECT val FROM t4 WHERE regexp_like('^val\d', val);
+                                 ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE functions_test');
  clickhouse_raw_query 
@@ -656,9 +975,10 @@ SELECT clickhouse_raw_query('DROP DATABASE functions_test');
 (1 row)
 
 DROP SERVER functions_loopback CASCADE;
-NOTICE:  drop cascades to 5 other objects
+NOTICE:  drop cascades to 6 other objects
 DETAIL:  drop cascades to foreign table t1
 drop cascades to foreign table t2
 drop cascades to foreign table t3
 drop cascades to foreign table t3_map
 drop cascades to foreign table t4
+drop cascades to foreign table t5

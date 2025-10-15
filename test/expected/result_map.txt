@@ -53,8 +53,9 @@ functions.sql
 
  Postgres | File
 ----------|---------------
- 14-18    | functions.out
- 13       | functions_1.out
+ 15-18    | functions.out
+ 14       | functions_1.out
+ 13       | functions_2.out
 
  ClickHouse | File
 ------------|---------------

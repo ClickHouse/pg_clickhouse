@@ -676,11 +676,11 @@ SELECT * FROM ft1 t1 WHERE c1 = (ARRAY[c1,c2,3])[1] ORDER BY c1; -- ArrayRef
 (110 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c6 = E'foo''s\\bar';  -- check special chars
-                                             QUERY PLAN                                              
------------------------------------------------------------------------------------------------------
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
  Foreign Scan on public.ft1 t1
    Output: c1, c2, c3, c4, c5, c6, c7, c8
-   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c6 = E'foo''s\\bar'))
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c6 = 'foo''s\\bar'))
 (3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c8 = 'foo';  -- can't be sent to remote

@@ -1782,16 +1782,6 @@ deparseStringLiteral(StringInfo buf, const char *val, bool quote)
 {
 	const char *valptr;
 
-	/*
-	 * Rather than making assumptions about the remote server's value of
-	 * standard_conforming_strings, always use E'foo' syntax if there are any
-	 * backslashes.  This will fail on remote servers before 8.1, but those
-	 * are long out of support.
-	 */
-	if (strchr(val, '\\') != NULL)
-	{
-		appendStringInfoChar(buf, ESCAPE_STRING_SYNTAX);
-	}
 	if (quote)
 		appendStringInfoChar(buf, '\'');
 	for (valptr = val; *valptr; valptr++)
@@ -2610,6 +2600,7 @@ deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
 		if (!context->func)
 			appendStringInfoChar(buf, ')');
 	}
+
 	appendStringInfoChar(buf, '(');
 	if (cdef && cdef->cf_type == CF_AJTIME_DAY_DIFF)
 	{
@@ -2620,7 +2611,7 @@ deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
 		appendStringInfoString(buf, ") / 86400)");
 		return;
 	}
-	else if (cdef && cdef->cf_type == CF_TIMEZONE)
+	else if (cdef && (cdef->cf_type == CF_TIMEZONE || cdef->cf_type == CF_MATCH))
 	{
 		deparseExpr((Expr *) list_nth(node->args, 1), context);
 		appendStringInfoString(buf, ", ");

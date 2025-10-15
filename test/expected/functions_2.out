@@ -462,7 +462,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d
                                                                                   QUERY PLAN                                                                                  
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
-   Output: (date_trunc('dAy'::text, (c AT TIME ZONE 'UTC'::text)))
+   Output: (date_trunc('dAy'::text, timezone('UTC'::text, c)))
    Relations: Aggregate on (t1)
    Remote SQL: SELECT toStartOfDay(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toStartOfDay(toTimeZone(c, 'UTC'))) ORDER BY toStartOfDay(toTimeZone(c, 'UTC')) ASC
 (4 rows)
@@ -478,7 +478,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('day', c at time zone 'UTC') as d
                                                                                   QUERY PLAN                                                                                  
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
-   Output: (date_trunc('day'::text, (c AT TIME ZONE 'UTC'::text)))
+   Output: (date_trunc('day'::text, timezone('UTC'::text, c)))
    Relations: Aggregate on (t2)
    Remote SQL: SELECT toStartOfDay(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toStartOfDay(toTimeZone(c, 'UTC'))) ORDER BY toStartOfDay(toTimeZone(c, 'UTC')) ASC
 (4 rows)
@@ -573,7 +573,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('SeCond', c at time zone 'UTC') a
                                                                                                                 QUERY PLAN                                                                                                                
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
-   Output: (date_trunc('SeCond'::text, (c AT TIME ZONE 'UTC'::text)))
+   Output: (date_trunc('SeCond'::text, timezone('UTC'::text, c)))
    Relations: Aggregate on (t1)
    Remote SQL: SELECT toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1)) FROM functions_test.t1 GROUP BY (toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1))) ORDER BY toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1)) ASC
 (4 rows)
@@ -958,20 +958,15 @@ SELECT ts FROM t5 WHERE date_trunc('quarter', ts) = '2027-10-01'::date;
 
 -- check regexp_like.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE regexp_like('^val\d', val);
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
- Foreign Scan on public.t4
-   Output: val
-   Remote SQL: SELECT val FROM functions_test.t4 WHERE (match(val, '^val\\d'))
-(3 rows)
-
+ERROR:  function regexp_like(unknown, text) does not exist
+LINE 1: ...AIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE regexp_lik...
+                                                             ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT val FROM t4 WHERE regexp_like('^val\d', val);
- val  
-------
- val1
- val2
-(2 rows)
-
+ERROR:  function regexp_like(unknown, text) does not exist
+LINE 1: SELECT val FROM t4 WHERE regexp_like('^val\d', val);
+                                 ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE functions_test');
  clickhouse_raw_query 
