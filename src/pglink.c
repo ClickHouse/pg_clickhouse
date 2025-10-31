@@ -316,6 +316,9 @@ chfdw_http_fetch_raw_data(ch_cursor *cursor)
 static void
 extend_insert_query(ch_http_insert_state *state, TupleTableSlot *slot)
 {
+#ifdef USE_ASSERT_CHECKING
+	int			pindex = 0;
+#endif
 	bool first = true;
 
 	if (state->sql.len == 0)
@@ -343,6 +346,9 @@ extend_insert_query(ch_http_insert_state *state, TupleTableSlot *slot)
 			if (isnull)
 			{
 				appendStringInfoString(&state->sql, "\\N");
+#ifdef USE_ASSERT_CHECKING
+				pindex++;
+#endif
 				continue;
 			}
 
@@ -424,6 +430,9 @@ extend_insert_query(ch_http_insert_state *state, TupleTableSlot *slot)
 								errmsg("cannot convert constant value to clickhouse value"),
 								errhint("Constant value data type: %u", type)));
 			}
+#ifdef USE_ASSERT_CHECKING
+			pindex++;
+#endif
 		}
 		appendStringInfoChar(&state->sql, '\n');
 
