@@ -3296,6 +3296,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	bool	sign_count_filter = false;
 	uint8	brcount = 1;
 	bool	use_variadic;
+	bool 	omit_star;
 
 	/* Only basic, non-split aggregation accepted. */
 	Assert(node->aggsplit == AGGSPLIT_SIMPLE);
@@ -3306,6 +3307,18 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	/* Find aggregate name from aggfnoid which is a pg_proc entry */
 	cdef = context->func;
 	context->func = appendFunctionName(node->aggfnoid, context);
+
+	/* Omit * for COUNT(*) but not COUNT(DISTINCT *)
+	 * https://github.com/ClickHouse/clickhouse_fdw/issues/25
+	 * To be fixed in ClickHouse 25.11, so can be omitted once relased.
+	 * https://github.com/ClickHouse/ClickHouse/pull/89373
+	 *
+	 * XXX Once ClickHouse has made a release fixing this issue, consider
+	 * adding the Client::ServerInfo struct returned from
+	 * Client::GetServerInfo() to deparse_expr_cxt so we can allow * to be
+	 * passed through for the fixed version.
+	 */
+	omit_star = node->aggstar && node->aggfilter && node->aggdistinct == NIL && strcmp(buf->data, "count");
 
 	/* 'If' part */
 	if (context->func && context->func->cf_type == CF_SIGN_COUNT && !node->aggstar)
@@ -3334,7 +3347,8 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 			Assert(fpinfo && fpinfo->ch_table_engine == CH_COLLAPSING_MERGE_TREE);
 			appendStringInfoString(buf, fpinfo->ch_table_sign_field);
 		}
-		else
+		// Omit * for COUNT(*) but not COUNT(DISTINCT *).
+		else if (!omit_star)
 			appendStringInfoChar(buf, '*');
 	}
 	else
@@ -3389,7 +3403,9 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	/* Add 'If' part condition */
 	if (aggfilter)
 	{
-		appendStringInfoChar(buf, ',');
+		// No argument output for COUNT(*).
+		if (!omit_star)
+			appendStringInfoChar(buf, ',');
 
 		if (node->aggfilter)
 		{

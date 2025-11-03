@@ -181,6 +181,11 @@ SELECT COUNT(DISTINCT c1) FROM ft2;
 
 /* DISTINCT with IF */
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
+SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
+
+/* https://github.com/ClickHouse/clickhouse_fdw/issues/25 */
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(*) FILTER (WHERE c1 < 20) FROM ft2;
+SELECT COUNT(*) FILTER (WHERE c1 < 10) FROM ft2;
 
 SELECT clickhouse_raw_query('DROP DATABASE binary_queries_test');
 

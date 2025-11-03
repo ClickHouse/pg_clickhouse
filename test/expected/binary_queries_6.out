@@ -707,6 +707,28 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FR
          Remote SQL: SELECT c1 FROM binary_queries_test.t2 ORDER BY c1 ASC
 (5 rows)
 
+SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
+ count 
+-------
+    19
+(1 row)
+
+/* https://github.com/ClickHouse/clickhouse_fdw/issues/25 */
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(*) FILTER (WHERE c1 < 20) FROM ft2;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Foreign Scan
+   Output: (count(*) FILTER (WHERE (c1 < 20)))
+   Relations: Aggregate on (ft2)
+   Remote SQL: SELECT countIf((((c1 < 20)) > 0)) FROM binary_queries_test.t2
+(4 rows)
+
+SELECT COUNT(*) FILTER (WHERE c1 < 10) FROM ft2;
+ count 
+-------
+     9
+(1 row)
+
 SELECT clickhouse_raw_query('DROP DATABASE binary_queries_test');
  clickhouse_raw_query 
 ----------------------
