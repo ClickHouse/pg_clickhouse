@@ -843,6 +843,266 @@ SELECT ts FROM t5 WHERE date_part('epoch', ts) > '1866158180';
  2030-03-20 02:16:30
 (2 rows)
 
+-- Check date_part from date.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('year', ts::date) = 2027;
+                                                           QUERY PLAN                                                           
+--------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 2027))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('year', ts::date) = 2027;
+         ts          
+---------------------
+ 2027-12-17 22:14:27
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('month', ts::date) = 11;
+                                                          QUERY PLAN                                                           
+-------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 11))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('month', ts::date) = 11;
+         ts          
+---------------------
+ 2026-11-17 08:13:26
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('day', ts::date) = 18;
+                                                             QUERY PLAN                                                             
+------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 18))
+(3 rows)
+
+SELECT ts FROM t5 WHERE date_part('day', ts::date) = 18;
+         ts          
+---------------------
+ 2028-01-18 23:15:28
+(1 row)
+
+-- Check EXTRACT mappings.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(year FROM ts) = 2027;
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(ts) = 2027))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(year FROM ts) = 2027;
+         ts          
+---------------------
+ 2027-12-17 22:14:27
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(month FROM ts) = 11;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(ts) = 11))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(month FROM ts) = 11;
+         ts          
+---------------------
+ 2026-11-17 08:13:26
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(day FROM ts) = 18;
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(ts) = 18))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(day FROM ts) = 18;
+         ts          
+---------------------
+ 2028-01-18 23:15:28
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(hour FROM ts) = 20;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toHour(ts) = 20))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(hour FROM ts) = 20;
+         ts          
+---------------------
+ 2025-10-15 20:12:25
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(minute FROM ts) = 16;
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMinute(ts) = 16))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(minute FROM ts) = 16;
+         ts          
+---------------------
+ 2029-02-19 01:16:29
+ 2030-03-20 02:16:30
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(second FROM ts) = 26;
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toSecond(ts) = 26))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(second FROM ts) = 26;
+         ts          
+---------------------
+ 2026-11-17 08:13:26
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(doy FROM ts) = 351;
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfYear(ts) = 351))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(doy FROM ts) = 351;
+         ts          
+---------------------
+ 2027-12-17 22:14:27
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(dow FROM ts) = 2;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfWeek(ts) = 2))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(dow FROM ts) = 2;
+         ts          
+---------------------
+ 2026-11-17 08:13:26
+ 2028-01-18 23:15:28
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(quarter FROM ts) = 1;
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toQuarter(ts) = 1))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(quarter FROM ts) = 1;
+         ts          
+---------------------
+ 2028-01-18 23:15:28
+ 2029-02-19 01:16:29
+ 2030-03-20 02:16:30
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(isoyear FROM ts) = 2025;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOYear(ts) = 2025))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(isoyear FROM ts) = 2025;
+         ts          
+---------------------
+ 2025-10-15 20:12:25
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(week FROM ts) = 47;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOWeek(ts) = 47))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(week FROM ts) = 47;
+         ts          
+---------------------
+ 2026-11-17 08:13:26
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(epoch FROM ts) > 1866158180;
+                                        QUERY PLAN                                         
+-------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toUnixTimestamp(ts) > 1866158180))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(epoch FROM ts) > 1866158180;
+         ts          
+---------------------
+ 2029-02-19 01:16:29
+ 2030-03-20 02:16:30
+(2 rows)
+
+-- Check extract from date.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(year FROM ts::date) = 2027;
+                                                           QUERY PLAN                                                           
+--------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 2027))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(year FROM ts::date) = 2027;
+         ts          
+---------------------
+ 2027-12-17 22:14:27
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(month FROM ts::date) = 11;
+                                                          QUERY PLAN                                                           
+-------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 11))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(month FROM ts::date) = 11;
+         ts          
+---------------------
+ 2026-11-17 08:13:26
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(day FROM ts::date) = 18;
+                                                             QUERY PLAN                                                             
+------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 18))
+(3 rows)
+
+SELECT ts FROM t5 WHERE EXTRACT(day FROM ts::date) = 18;
+         ts          
+---------------------
+ 2028-01-18 23:15:28
+(1 row)
+
 -- Check date_trunc mappings.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('year', ts) = '2026-01-01'::date;
                                         QUERY PLAN                                         

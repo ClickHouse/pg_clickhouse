@@ -32,7 +32,14 @@
 #define F_BTRIM_TEXT_TEXT F_BTRIM
 #define F_BTRIM_TEXT F_BTRIM1
 #define F_STRPOS 868
+#define F_DATE_PART_TEXT_DATE 1384
+// Prior to Postgres 14 EXTRACT mapped directly to DATE_PART.
+// https://github.com/postgres/postgres/commit/a2da77cdb466
+#define F_EXTRACT_TEXT_TIMESTAMP 6202
+#define F_EXTRACT_TEXT_TIMESTAMPTZ 6203
+#define F_EXTRACT_TEXT_DATE 6199
 #endif
+
 
 static HTAB *custom_objects_cache = NULL;
 static HTAB *custom_columns_cache = NULL;
@@ -104,6 +111,10 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 			case F_TIMEZONE_TEXT_TIMESTAMPTZ:
 			case F_DATE_PART_TEXT_TIMESTAMP:
 			case F_DATE_PART_TEXT_TIMESTAMPTZ:
+			case F_DATE_PART_TEXT_DATE:
+			case F_EXTRACT_TEXT_TIMESTAMP:
+			case F_EXTRACT_TEXT_TIMESTAMPTZ:
+			case F_EXTRACT_TEXT_DATE:
 			case F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE:
 			case F_STRPOS:
 			case F_BTRIM_TEXT_TEXT:
@@ -142,6 +153,10 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 			}
 			case F_DATE_PART_TEXT_TIMESTAMPTZ:
 			case F_DATE_PART_TEXT_TIMESTAMP:
+			case F_DATE_PART_TEXT_DATE:
+			case F_EXTRACT_TEXT_TIMESTAMP:
+			case F_EXTRACT_TEXT_TIMESTAMPTZ:
+			case F_EXTRACT_TEXT_DATE:
 			{
 				entry->cf_type = CF_DATE_PART;
 				entry->custom_name[0] = '\1';
