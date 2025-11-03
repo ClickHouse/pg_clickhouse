@@ -6,7 +6,7 @@ CREATE USER MAPPING FOR CURRENT_USER SERVER http_loopback;
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_loopback2;
 
 SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS http_test');
-SELECT clickhouse_raw_query('CREATE DATABASE http_test');
+SELECT clickhouse_raw_query('CREATE DATABASE http_test', '');
 SELECT clickhouse_raw_query('CREATE TABLE http_test.t1
 	(c1 Int, c2 Int, c3 String, c4 Date, c5 Date, c6 String, c7 String, c8 String)
 	ENGINE = MergeTree PARTITION BY c4 ORDER BY (c1);

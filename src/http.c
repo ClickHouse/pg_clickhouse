@@ -69,6 +69,8 @@ ch_http_connection_t *ch_http_connection(char *host, int port, char *username, c
 	if (!conn->curl)
 		goto cleanup;
 
+	if (!host || !*host) host = "localhost";
+
 	if (!port)
 		port = ch_is_cloud_host(host) ? CLICKHOUSE_TLS_PORT : CLICKHOUSE_PORT;
 

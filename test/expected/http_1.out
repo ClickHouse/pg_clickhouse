@@ -9,7 +9,7 @@ SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS http_test');
  
 (1 row)
 
-SELECT clickhouse_raw_query('CREATE DATABASE http_test');
+SELECT clickhouse_raw_query('CREATE DATABASE http_test', '');
  clickhouse_raw_query 
 ----------------------
  
