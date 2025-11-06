@@ -817,8 +817,12 @@ parse_type(char *colname, char *typepart, bool *is_nullable, List **options)
 				 strncmp(typepart, "SimpleAggregateFunction", strlen("SimpleAggregateFunction")) == 0)
 		{
 			char *pos2 = strstr(pos, ",");
-			if (pos2 == NULL)
+			if (pos2 == NULL) {
+				// Detect COUNT with no params.
+				if (strncmp(insidebr, "count", strlen("count")) == 0)
+					return "BIGINT";
 				elog(ERROR, "clickhouse_fdw: expected comma in AggregateFunction");
+			}
 
 			char *func = pnstrdup(pos + 1, strstr(pos + 1, ",") - pos - 1);
 

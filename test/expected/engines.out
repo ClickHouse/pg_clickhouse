@@ -83,7 +83,8 @@ SELECT clickhouse_raw_query('
 	create table engines_test.t4 (a int,
 		b AggregateFunction(sum, Int32),
 		c AggregateFunction(sumMap, Array(Int32), Array(Int32)),
-		d SimpleAggregateFunction(sum, Int64))
+		d SimpleAggregateFunction(sum, Int64),
+		e AggregateFunction(count))
 	engine = AggregatingMergeTree()
 	order by a');
  clickhouse_raw_query 
@@ -162,11 +163,13 @@ FDW options: (database 'engines_test', table_name 't3_aggr', engine 'Materialize
  b      | integer |           | not null |         | (aggregatefunction 'sum')       | plain   |              | 
  c      | integer |           | not null |         | (aggregatefunction '1')         | plain   |              | 
  d      | bigint  |           | not null |         | (simpleaggregatefunction 'sum') | plain   |              | 
+ e      | bigint  |           | not null |         |                                 | plain   |              | 
 Not-null constraints:
     "t4_a_not_null" NOT NULL "a"
     "t4_b_not_null" NOT NULL "b"
     "t4_c_not_null" NOT NULL "c"
     "t4_d_not_null" NOT NULL "d"
+    "t4_e_not_null" NOT NULL "e"
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't4', engine 'AggregatingMergeTree')
 

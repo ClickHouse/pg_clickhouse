@@ -42,7 +42,8 @@ SELECT clickhouse_raw_query('
 	create table engines_test.t4 (a int,
 		b AggregateFunction(sum, Int32),
 		c AggregateFunction(sumMap, Array(Int32), Array(Int32)),
-		d SimpleAggregateFunction(sum, Int64))
+		d SimpleAggregateFunction(sum, Int64),
+		e AggregateFunction(count))
 	engine = AggregatingMergeTree()
 	order by a');
 
