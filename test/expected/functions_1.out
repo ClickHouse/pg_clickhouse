@@ -14,7 +14,6 @@ SELECT clickhouse_raw_query('CREATE DATABASE functions_test');
  
 (1 row)
 
--- argMax, argMin
 SELECT clickhouse_raw_query($$
 	CREATE TABLE functions_test.t1 (a int, b int, c DateTime) ENGINE = MergeTree ORDER BY (a);
 $$);
@@ -187,7 +186,7 @@ SELECT a, sum(b) FROM t1 WHERE a NOT IN (1,2,3) GROUP BY a;
 ---+-----
 (0 rows)
 
--- check argMin, argMax, uniqExact
+-- check aggregates.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT argMin(a, b) FROM t1;
                         QUERY PLAN                        
 ----------------------------------------------------------
@@ -456,6 +455,66 @@ SELECT uniqTheta(a, c) FROM t1;
  uniqtheta 
 -----------
          3
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantile(params(0.25), a) FROM t1;
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ Foreign Scan
+   Output: (quantile(params(0.25), a))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT quantile(0.25)(a) FROM functions_test.t1
+(4 rows)
+
+SELECT quantile(params(0.25), a) FROM t1;
+ quantile 
+----------
+     1.75
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantile(a) FROM t1;
+                       QUERY PLAN                        
+---------------------------------------------------------
+ Foreign Scan
+   Output: (quantile(a))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT quantile(a) FROM functions_test.t1
+(4 rows)
+
+SELECT quantile(a) FROM t1;
+ quantile 
+----------
+        2
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantileExact(params(0.75), a) FROM t1;
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Foreign Scan
+   Output: (quantileexact(params(0.75), a))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT quantileExact(0.75)(a) FROM functions_test.t1
+(4 rows)
+
+SELECT quantileExact(params(0.75), a) FROM t1;
+ quantileexact 
+---------------
+             2
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantileExact(a) FROM t1;
+                          QUERY PLAN                          
+--------------------------------------------------------------
+ Foreign Scan
+   Output: (quantileexact(a))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT quantileExact(a) FROM functions_test.t1
+(4 rows)
+
+SELECT quantileExact(a) FROM t1;
+ quantileexact 
+---------------
+             2
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;

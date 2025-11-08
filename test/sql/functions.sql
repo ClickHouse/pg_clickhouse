@@ -6,7 +6,6 @@ CREATE USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS functions_test');
 SELECT clickhouse_raw_query('CREATE DATABASE functions_test');
 
--- argMax, argMin
 SELECT clickhouse_raw_query($$
 	CREATE TABLE functions_test.t1 (a int, b int, c DateTime) ENGINE = MergeTree ORDER BY (a);
 $$);
@@ -90,7 +89,7 @@ EXPLAIN (VERBOSE, COSTS OFF)
 	SELECT a, sum(b) FROM t1 WHERE a NOT IN (1,2,3) GROUP BY a;
 SELECT a, sum(b) FROM t1 WHERE a NOT IN (1,2,3) GROUP BY a;
 
--- check argMin, argMax, uniqExact
+-- check aggregates.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT argMin(a, b) FROM t1;
 SELECT argMin(a, b) FROM t1;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT argMax(a, b) FROM t1;
@@ -132,6 +131,16 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqTheta(a, b) FROM t1;
 SELECT uniqTheta(a, b) FROM t1;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqTheta(a, c) FROM t1;
 SELECT uniqTheta(a, c) FROM t1;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantile(params(0.25), a) FROM t1;
+SELECT quantile(params(0.25), a) FROM t1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantile(a) FROM t1;
+SELECT quantile(a) FROM t1;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantileExact(params(0.75), a) FROM t1;
+SELECT quantileExact(params(0.75), a) FROM t1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantileExact(a) FROM t1;
+SELECT quantileExact(a) FROM t1;
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
 SELECT date_trunc('day', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;

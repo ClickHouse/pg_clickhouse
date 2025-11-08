@@ -39,6 +39,10 @@
 #define F_EXTRACT_TEXT_TIMESTAMPTZ 6203
 #define F_EXTRACT_TEXT_DATE 6199
 #endif
+// regexp_like was added in Postgres 15; Mock it for earlier versions.
+#if PG_VERSION_NUM < 150000
+#define F_REGEXP_LIKE_TEXT_TEXT 6263
+#endif
 
 
 static HTAB *custom_objects_cache = NULL;
@@ -119,9 +123,7 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 			case F_STRPOS:
 			case F_BTRIM_TEXT_TEXT:
 			case F_BTRIM_TEXT:
-#if PG_VERSION_NUM >= 150000
 			case F_REGEXP_LIKE_TEXT_TEXT:
-#endif
 				special_builtin = true;
 				break;
 			default:
@@ -141,7 +143,6 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 		entry = hash_search(custom_objects_cache, (void *) &funcid, HASH_ENTER, NULL);
 		entry->cf_oid = funcid;
 		init_custom_entry(entry);
-
 		switch (funcid)
 		{
 			case F_DATE_TRUNC_TEXT_TIMESTAMPTZ:
@@ -185,14 +186,12 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 				strcpy(entry->custom_name, "position");
 				break;
 			}
-#if PG_VERSION_NUM >= 150000
 			case F_REGEXP_LIKE_TEXT_TEXT:
 			{
 				entry->cf_type = CF_MATCH;
 				strcpy(entry->custom_name, "match");
 				break;
 			}
-#endif
 		}
 
 		if (special_builtin)
@@ -313,6 +312,10 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 					strcpy(entry->custom_name, "uniqTheta");
 				else if (strcmp(proname, "dictget") == 0)
 					strcpy(entry->custom_name, "dictGet");
+				else if (strcmp(proname, "params") == 0)
+					entry->custom_name[0] = '\1'; // Will have no function name.
+				else if (strcmp(proname, "quantileexact") == 0)
+					strcpy(entry->custom_name, "quantileExact");
 				else
 					strcpy(entry->custom_name, proname);
 			}
@@ -322,6 +325,19 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 	}
 
 	return entry;
+}
+
+FuncExpr * ch_get_params_function(TargetEntry *tle)
+{
+	Node	   *n = (Node *) tle->expr;
+	if (nodeTag(n) != T_FuncExpr) return NULL;
+
+	FuncExpr   *fe = (FuncExpr *) n;
+	Oid extoid = getExtensionOfObject(ProcedureRelationId, fe->funcid);
+	if (strcmp(get_extension_name(extoid), "clickhouse_fdw") != 0) return NULL;
+	if (strcmp(get_func_name(fe->funcid), "params") != 0) return NULL;
+
+	return fe;
 }
 
 static Oid

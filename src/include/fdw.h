@@ -314,6 +314,7 @@ typedef struct CustomColumnInfo
 } CustomColumnInfo;
 
 extern CustomObjectDef *chfdw_check_for_custom_function(Oid funcid);
+extern FuncExpr * ch_get_params_function(TargetEntry *tle);
 extern CustomObjectDef *chfdw_check_for_custom_type(Oid typeoid);
 extern void chfdw_apply_custom_table_options(CHFdwRelationInfo *fpinfo, Oid relid);
 extern CustomColumnInfo *chfdw_get_custom_column_info(Oid relid, uint16 varattno);

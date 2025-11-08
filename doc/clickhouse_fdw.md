@@ -13,8 +13,6 @@ This library contains a single PostgreSQL extension, a [foreign data wrapper]
 for [ClickHouse] databases. It supports PostgreSQL 13 and higher and
 ClickHouse 22 and higher.
 
-
-
 ## Usage
 
 ### Functions
@@ -124,6 +122,26 @@ any of these functions cannot be pushed down they will raise an exception.
 *   [uniqExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqexact)
 *   [uniqHLL12](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqhll12)
 *   [uniqTheta](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqthetasketch)
+*   [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
+*   [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
+
+#### Parametric Aggregates
+
+To pass parameters to ClickHouse [Parametric aggregate functions], pass a call
+to the special `params()` function as the first argument. For example, a
+ClickHouse query such as
+
+```sql
+SELECT quantile(0.25)(val) FROM t;
+```
+
+Should be written in PostgreSQL as:
+
+```sql
+SELECT quantile(params(0.25), val) FROM t;
+```
+
+Omit `params()` to get the default value, where relevant.
 
 ## Authors
 
@@ -141,3 +159,4 @@ any of these functions cannot be pushed down they will raise an exception.
   [foreign data wrapper]: https://www.postgresql.org/docs/current/fdwhandler.html
     "PostgreSQL Docs: Writing a Foreign Data Wrapper"
   [ClickHouse]: https://clickhouse.com/clickhouse
+  [Parametric aggregate functions]: https://clickhouse.com/docs/sql-reference/aggregate-functions/parametric-functions

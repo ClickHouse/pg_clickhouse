@@ -81,10 +81,9 @@ typedef struct deparse_expr_cxt
 	StringInfo	buf;			/* output buffer to append to */
 	List	  **params_list;	/* exprs that will become remote Params */
 	CustomObjectDef	*func;		/* custom function deparse */
-	void		*func_arg;		/* custom function context args */
 	CHFdwRelationInfo *fpinfo;	/* fdw relation info */
 	bool		interval_op;
-	bool		array_as_tuple;
+	bool		array_as_tuple; /* determines array output format */
 } deparse_expr_cxt;
 
 #define REL_ALIAS_PREFIX	"r"
@@ -3297,6 +3296,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	uint8	brcount = 1;
 	bool	use_variadic;
 	bool 	omit_star;
+	int 	first_arg = 0;
 
 	/* Only basic, non-split aggregation accepted. */
 	Assert(node->aggsplit == AGGSPLIT_SIMPLE);
@@ -3307,6 +3307,18 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	/* Find aggregate name from aggfnoid which is a pg_proc entry */
 	cdef = context->func;
 	context->func = appendFunctionName(node->aggfnoid, context);
+
+	// Emit params list if first arg is params() function.
+	if (context->func && context->func->cf_type == CF_CH_FUNCTION && list_length(node->args) > 0)
+	{
+		FuncExpr *fe = ch_get_params_function((TargetEntry *) linitial(node->args));
+		if (fe)
+		{
+			// Deparse params first.
+			deparseFuncExpr(fe, context);
+			first_arg = 1;
+		}
+	}
 
 	/* Omit * for COUNT(*) but not COUNT(DISTINCT *)
 	 * https://github.com/ClickHouse/clickhouse_fdw/issues/25
@@ -3366,7 +3378,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 		else
 		{
 			/* default arguments output */
-			foreach (arg, node->args)
+			for_each_from (arg, node->args, first_arg)
 			{
 				TargetEntry *tle = (TargetEntry *) lfirst(arg);
 				Node	   *n = (Node *) tle->expr;
@@ -3382,7 +3394,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 				if (use_variadic && lnext(node->args, arg) == NULL)
 				{
 					// Convert variadic array to list of arguments.
-					Assert(nodeTag(node) == T_ArrayExpr);
+					Assert(nodeTag(n) == T_ArrayExpr);
 					deparseArrayList((ArrayExpr *) n, context);
 				}
 				else
