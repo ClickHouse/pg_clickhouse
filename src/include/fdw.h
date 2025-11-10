@@ -313,6 +313,7 @@ typedef struct CustomColumnInfo
 	char	signfield[NAMEDATALEN];
 } CustomColumnInfo;
 
+extern bool chfdw_check_for_builtin_ordered_aggregate(Oid funcid);
 extern CustomObjectDef *chfdw_check_for_custom_function(Oid funcid);
 extern FuncExpr * ch_get_params_function(TargetEntry *tle);
 extern CustomObjectDef *chfdw_check_for_custom_type(Oid typeoid);

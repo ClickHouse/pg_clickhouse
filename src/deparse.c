@@ -18,6 +18,7 @@
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/sysattr.h"
+#include "catalog/pg_aggregate.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
@@ -532,8 +533,9 @@ foreign_expr_walker(Node *node,
 		if (!chfdw_is_shippable(agg->aggfnoid, ProcedureRelationId, fpinfo, NULL))
 			return false;
 
-		/* Features that ClickHouse doesn't support */
-		if (agg->aggorder)
+			/* Features that ClickHouse doesn't support */
+		if (AGGKIND_IS_ORDERED_SET(agg->aggkind)
+			&& !chfdw_check_for_builtin_ordered_aggregate(agg->aggfnoid))
 			return false;
 
 		if (agg->aggdistinct && agg->aggfilter)
@@ -3283,6 +3285,67 @@ deparseArrayList(ArrayExpr *node, deparse_expr_cxt *context)
 }
 
 /*
+ * Detect DESC, USING <OPERATOR> and NULLS FIRST / NULLS LAST parts
+ * of an ORDER BY clause and raise an exception a appropriate, since
+ * they're not (yet) supported by ClickHouse aggregates.
+ */
+static void
+appendAggOrderBySuffix(Oid sortop, Oid sortcoltype, bool nulls_first,
+						deparse_expr_cxt *context)
+{
+	// StringInfo	buf = context->buf;
+	TypeCacheEntry *typentry;
+
+	/* See whether operator is default < or > for sort expr's datatype. */
+	typentry = lookup_type_cache(sortcoltype,
+								 TYPECACHE_LT_OPR | TYPECACHE_GT_OPR);
+
+	if (sortop == typentry->lt_opr)
+		// appendStringInfoString(buf, " ASC");
+		; // Okay.
+	else if (sortop == typentry->gt_opr)
+		// appendStringInfoString(buf, " DESC");
+		elog(ERROR, "clickhouse_fdw: ClickHouse does not support \"DESC\" in aggregate expressions");
+	else
+		elog(ERROR, "clickhouse_fdw: ClickHouse does not support \"USING\" in aggregate expressions");
+
+	if (nulls_first)
+		// appendStringInfoString(buf, " NULLS FIRST");
+		elog(ERROR, "clickhouse_fdw: ClickHouse does not support \"NULLS FIRST\" in aggregate expressions");
+	// else // Okay unless DESC support added.
+		// appendStringInfoString(buf, " NULLS LAST");
+}
+
+
+/*
+ * Append ORDER BY arguments to aggregate function arguments.
+ */
+static void
+appendAggOrderBy(List *orderList, List *targetList, deparse_expr_cxt *context)
+{
+	StringInfo	buf = context->buf;
+	ListCell   *lc;
+	bool		first = true;
+
+	foreach(lc, orderList)
+	{
+		SortGroupClause *srt = (SortGroupClause *) lfirst(lc);
+		Node	   *sortexpr;
+
+		if (!first)
+			appendStringInfoString(buf, ", ");
+		first = false;
+
+		/* Deparse the sort expression proper. */
+		sortexpr = deparseSortGroupClause(srt->tleSortGroupRef, targetList,
+										  false, context);
+		/* Add decoration as needed. */
+		appendAggOrderBySuffix(srt->sortop, exprType(sortexpr), srt->nulls_first,
+								context);
+	}
+}
+
+/*
  * Deparse an Aggref node.
  */
 static void
@@ -3295,7 +3358,6 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	bool	sign_count_filter = false;
 	uint8	brcount = 1;
 	bool	use_variadic;
-	bool 	omit_star;
 	int 	first_arg = 0;
 
 	/* Only basic, non-split aggregation accepted. */
@@ -3320,18 +3382,6 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 		}
 	}
 
-	/* Omit * for COUNT(*) but not COUNT(DISTINCT *)
-	 * https://github.com/ClickHouse/clickhouse_fdw/issues/25
-	 * To be fixed in ClickHouse 25.11, so can be omitted once relased.
-	 * https://github.com/ClickHouse/ClickHouse/pull/89373
-	 *
-	 * XXX Once ClickHouse has made a release fixing this issue, consider
-	 * adding the Client::ServerInfo struct returned from
-	 * Client::GetServerInfo() to deparse_expr_cxt so we can allow * to be
-	 * passed through for the fixed version.
-	 */
-	omit_star = node->aggstar && node->aggfilter && node->aggdistinct == NIL && strcmp(buf->data, "count");
-
 	/* 'If' part */
 	if (context->func && context->func->cf_type == CF_SIGN_COUNT && !node->aggstar)
 		sign_count_filter = true;
@@ -3351,111 +3401,147 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	/* Add DISTINCT */
 	appendStringInfoString(buf, (node->aggdistinct != NIL) ? "DISTINCT " : "");
 
-	/* aggstar can be set only in zero-argument aggregates */
-	if (node->aggstar)
+	if (AGGKIND_IS_ORDERED_SET(node->aggkind))
 	{
-		if (context->func && context->func->cf_type == CF_SIGN_COUNT)
+		/* Add WITHIN GROUP (ORDER BY ..) */
+		ListCell   *arg;
+		bool		first = true;
+
+		Assert(!node->aggvariadic);
+		Assert(node->aggorder != NIL);
+
+		foreach(arg, node->aggdirectargs)
 		{
-			Assert(fpinfo && fpinfo->ch_table_engine == CH_COLLAPSING_MERGE_TREE);
-			appendStringInfoString(buf, fpinfo->ch_table_sign_field);
+			if (!first)
+				appendStringInfoString(buf, ", ");
+			first = false;
+
+			deparseExpr((Expr *) lfirst(arg), context);
 		}
-		// Omit * for COUNT(*) but not COUNT(DISTINCT *).
-		else if (!omit_star)
-			appendStringInfoChar(buf, '*');
+
+		appendStringInfoChar(buf, ')');
+		appendAggOrderBy(node->aggorder, node->args, context);
 	}
 	else
 	{
-		ListCell   *arg;
-		bool		first = true;
-		bool		signMultiply = (context->func &&
-						(context->func->cf_type == CF_SIGN_AVG ||
-						 context->func->cf_type == CF_SIGN_SUM));
+		/* Omit * for COUNT(*) but not COUNT(DISTINCT *)
+		* https://github.com/ClickHouse/clickhouse_fdw/issues/25
+		* To be fixed in ClickHouse 25.11, so can be omitted once relased.
+		* https://github.com/ClickHouse/ClickHouse/pull/89373
+		*
+		* XXX Once ClickHouse has made a release fixing this issue, consider
+		* adding the Client::ServerInfo struct returned from
+		* Client::GetServerInfo() to deparse_expr_cxt so we can allow * to be
+		* passed through for the fixed version.
+		*/
+		bool omit_star = false;
 
-		/* Add all the arguments */
-		if (sign_count_filter)
-			/* in case if COUNT(col) we should get countIf(sign, col is not null) */
-			appendStringInfoString(buf, fpinfo->ch_table_sign_field);
-		else
+		/* aggstar can be set only in zero-argument aggregates */
+		if (node->aggstar)
 		{
-			/* default arguments output */
-			for_each_from (arg, node->args, first_arg)
+			omit_star = node->aggfilter && node->aggdistinct == NIL && strcmp(buf->data, "count");
+			if (context->func && context->func->cf_type == CF_SIGN_COUNT)
 			{
-				TargetEntry *tle = (TargetEntry *) lfirst(arg);
-				Node	   *n = (Node *) tle->expr;
-
-				if (tle->resjunk)
-					continue;
-
-				if (!first)
-					appendStringInfoString(buf, ", ");
-
-				first = false;
-
-				if (use_variadic && lnext(node->args, arg) == NULL)
-				{
-					// Convert variadic array to list of arguments.
-					Assert(nodeTag(n) == T_ArrayExpr);
-					deparseArrayList((ArrayExpr *) n, context);
-				}
-				else
-				{
-					deparseExpr((Expr *) n, context);
-				}
-			}
-
-			if (signMultiply)
-			{
-				Assert(fpinfo->ch_table_engine == CH_COLLAPSING_MERGE_TREE);
-				appendStringInfoString(buf, " * ");
+				Assert(fpinfo && fpinfo->ch_table_engine == CH_COLLAPSING_MERGE_TREE);
 				appendStringInfoString(buf, fpinfo->ch_table_sign_field);
 			}
+			// Omit * for COUNT(*) but not COUNT(DISTINCT *).
+			else if (!omit_star)
+				appendStringInfoChar(buf, '*');
 		}
-	}
-
-	/* Add 'If' part condition */
-	if (aggfilter)
-	{
-		// No argument output for COUNT(*).
-		if (!omit_star)
-			appendStringInfoChar(buf, ',');
-
-		if (node->aggfilter)
+		else
 		{
-			appendStringInfoString(buf, "((");
-			deparseExpr((Expr *) node->aggfilter, context);
-			appendStringInfoString(buf, ") > 0)");
+			ListCell   *arg;
+			bool		first = true;
+			bool		signMultiply = (context->func &&
+							(context->func->cf_type == CF_SIGN_AVG ||
+								context->func->cf_type == CF_SIGN_SUM));
+
+			/* Add all the arguments */
+			if (sign_count_filter)
+				/* in case if COUNT(col) we should get countIf(sign, col is not null) */
+				appendStringInfoString(buf, fpinfo->ch_table_sign_field);
+			else
+			{
+				/* default arguments output */
+				for_each_from (arg, node->args, first_arg)
+				{
+					TargetEntry *tle = (TargetEntry *) lfirst(arg);
+					Node	   *n = (Node *) tle->expr;
+
+					if (tle->resjunk)
+						continue;
+
+					if (!first)
+						appendStringInfoString(buf, ", ");
+
+					first = false;
+
+					if (use_variadic && lnext(node->args, arg) == NULL)
+					{
+						// Convert variadic array to list of arguments.
+						Assert(nodeTag(n) == T_ArrayExpr);
+						deparseArrayList((ArrayExpr *) n, context);
+					}
+					else
+					{
+						deparseExpr((Expr *) n, context);
+					}
+				}
+
+				if (signMultiply)
+				{
+					Assert(fpinfo->ch_table_engine == CH_COLLAPSING_MERGE_TREE);
+					appendStringInfoString(buf, " * ");
+					appendStringInfoString(buf, fpinfo->ch_table_sign_field);
+				}
+			}
 		}
 
-		if (sign_count_filter)
+		/* Add 'If' part condition */
+		if (aggfilter)
 		{
+			// No argument output for COUNT(*).
+			if (!omit_star)
+				appendStringInfoChar(buf, ',');
+
 			if (node->aggfilter)
-				appendStringInfoString(buf, " AND ");
+			{
+				appendStringInfoString(buf, "((");
+				deparseExpr((Expr *) node->aggfilter, context);
+				appendStringInfoString(buf, ") > 0)");
+			}
 
-			appendStringInfoChar(buf, '(');
-			deparseExpr((Expr *) ((TargetEntry *) linitial(node->args))->expr, context);
-			appendStringInfoString(buf, ") IS NOT NULL");
+			if (sign_count_filter)
+			{
+				if (node->aggfilter)
+					appendStringInfoString(buf, " AND ");
+
+				appendStringInfoChar(buf, '(');
+				deparseExpr((Expr *) ((TargetEntry *) linitial(node->args))->expr, context);
+				appendStringInfoString(buf, ") IS NOT NULL");
+			}
 		}
-	}
 
-	while (brcount--)
-		appendStringInfoChar(buf, ')');
+		while (brcount--)
+			appendStringInfoChar(buf, ')');
 
-	/* AVG stuff */
-	if (context->func && context->func->cf_type == CF_SIGN_AVG)
-	{
-		appendStringInfoString(buf, " / sumIf(");
-		appendStringInfoString(buf, fpinfo->ch_table_sign_field);
-		appendStringInfoChar(buf, ',');
-		if (node->aggfilter)
+		/* AVG stuff */
+		if (context->func && context->func->cf_type == CF_SIGN_AVG)
 		{
-			deparseExpr((Expr *) node->aggfilter, context);
-			appendStringInfoString(buf, " AND ");
+			appendStringInfoString(buf, " / sumIf(");
+			appendStringInfoString(buf, fpinfo->ch_table_sign_field);
+			appendStringInfoChar(buf, ',');
+			if (node->aggfilter)
+			{
+				deparseExpr((Expr *) node->aggfilter, context);
+				appendStringInfoString(buf, " AND ");
+			}
+			deparseExpr((Expr *) ((TargetEntry *) linitial(node->args))->expr, context);
+			appendStringInfoString(buf, " IS NOT NULL");
+			appendStringInfoChar(buf, ')');
 		}
-		deparseExpr((Expr *) ((TargetEntry *) linitial(node->args))->expr, context);
-		appendStringInfoString(buf, " IS NOT NULL");
-		appendStringInfoChar(buf, ')');
 	}
-
 	/* original */
 	context->func = cdef;
 }

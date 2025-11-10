@@ -33,6 +33,9 @@
 #define F_BTRIM_TEXT F_BTRIM1
 #define F_STRPOS 868
 #define F_DATE_PART_TEXT_DATE 1384
+#define F_PERCENTILE_CONT_FLOAT8_FLOAT8 3974
+#define F_PERCENTILE_CONT_FLOAT8_INTERVAL 3976
+
 // Prior to Postgres 14 EXTRACT mapped directly to DATE_PART.
 // https://github.com/postgres/postgres/commit/a2da77cdb466
 #define F_EXTRACT_TEXT_TIMESTAMP 6202
@@ -100,6 +103,21 @@ init_custom_entry(CustomObjectDef *entry)
 	entry->rowfunc = InvalidOid;
 }
 
+/*
+ * Return true if ordered aggregate funcid maps to a parameterized ClickHouse
+ * aggregate function.
+ */
+inline bool chfdw_check_for_builtin_ordered_aggregate(Oid funcid)
+{
+	switch (funcid) {
+		// Ordered aggregates that map to ClickHouse functions.
+		case F_PERCENTILE_CONT_FLOAT8_FLOAT8:
+		case F_PERCENTILE_CONT_FLOAT8_INTERVAL:
+			return true;
+	}
+	return false;
+}
+
 CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 {
 	bool special_builtin = false;
@@ -124,6 +142,8 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 			case F_BTRIM_TEXT_TEXT:
 			case F_BTRIM_TEXT:
 			case F_REGEXP_LIKE_TEXT_TEXT:
+			case F_PERCENTILE_CONT_FLOAT8_FLOAT8:
+			case F_PERCENTILE_CONT_FLOAT8_INTERVAL:
 				special_builtin = true;
 				break;
 			default:
@@ -190,6 +210,12 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 			{
 				entry->cf_type = CF_MATCH;
 				strcpy(entry->custom_name, "match");
+				break;
+			}
+			case F_PERCENTILE_CONT_FLOAT8_FLOAT8:
+			case F_PERCENTILE_CONT_FLOAT8_INTERVAL:
+			{
+				strcpy(entry->custom_name, "quantile");
 				break;
 			}
 		}

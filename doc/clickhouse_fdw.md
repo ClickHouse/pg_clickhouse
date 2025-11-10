@@ -110,6 +110,34 @@ cannot be pushed down they will raise an exception.
 
 ### Pushdown Aggregates
 
+These PostgreSQL aggregate functions pushdown to ClickHouse.
+
+*   [count](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/count)
+
+### Pushdown Ordered Set Aggregates
+
+These PostgreSQL [ordered-set aggregate functions] map to ClickHouse
+[Parametric aggregate functions] by passing their *direct argument* as a
+parameter and their `ORDER BY` expressions as arguments. For example, this
+PostgreSQL query:
+
+```sql
+SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
+```
+
+Maps to this ClickHouse query:
+
+```sql
+SELECT quantile(0.25)(a) FROM t1;
+```
+
+Note that the non-default `ORDER BY` suffixes `DESC` and `NULLS FIRST`
+are not supported and will raise an error.
+
+*   `percentile_cont(double)` => [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
+
+### Custom Aggregates
+
 These custom aggregate functions created by `clickhouse_fdw` provide pushdown
 for select ClickHouse aggregate functions with no PostgreSQL equivalents. If
 any of these functions cannot be pushed down they will raise an exception.
@@ -159,4 +187,5 @@ Omit `params()` to get the default value, where relevant.
   [foreign data wrapper]: https://www.postgresql.org/docs/current/fdwhandler.html
     "PostgreSQL Docs: Writing a Foreign Data Wrapper"
   [ClickHouse]: https://clickhouse.com/clickhouse
+  [ordered-set aggregate functions]: https://www.postgresql.org/docs/current/functions-aggregate.html#FUNCTIONS-ORDEREDSET-TABLE
   [Parametric aggregate functions]: https://clickhouse.com/docs/sql-reference/aggregate-functions/parametric-functions

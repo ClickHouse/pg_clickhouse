@@ -142,6 +142,15 @@ SELECT quantileExact(params(0.75), a) FROM t1;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT quantileExact(a) FROM t1;
 SELECT quantileExact(a) FROM t1;
 
+EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
+SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
+SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
+SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a NULLS LAST) FROM t1;
+SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a DESC) FROM t1;
+SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a NULLS FIRST) FROM t1;
+SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a USING >) FROM t1;
+
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
 SELECT date_trunc('day', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
 
