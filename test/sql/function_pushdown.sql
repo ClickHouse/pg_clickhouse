@@ -66,12 +66,17 @@ BEGIN
         $$ SELECT ch_argmin(3, 3, true) $$,
         $$ SELECT ch_argmin(true, false, now()) $$,
 
-        $$ SELECT ch_push_func_text('hello') $$,
-        $$ SELECT ch_push_func_text('goodbye') $$,
-
         $$ SELECT dictGet('', '', '{"x": true}'::json) $$,
-        $$ SELECT dictGet('a', 'b', ARRAY[1]) $$
-    ] LOOP
+        $$ SELECT dictGet('a', 'b', ARRAY[1]) $$,
+
+        $$ SELECT params(1) $$,
+        $$ SELECT params(1, 98.6, 'foo', false) $$,
+
+        $$ SELECT quantile(1) $$,
+        $$ SELECT quantile('x') $$,
+        $$ SELECT quantileExact(42) $$,
+        $$ SELECT quantileExact(98.6) $$
+   ] LOOP
         BEGIN
             EXECUTE q;
             RAISE NOTICE '`%`: did not fail', q;

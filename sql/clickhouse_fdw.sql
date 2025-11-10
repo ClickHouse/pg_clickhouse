@@ -24,31 +24,25 @@ CREATE FOREIGN DATA WRAPPER clickhouse_fdw
 -- Function used for parametric aggregate parameters.
 CREATE TYPE params AS ();
 CREATE FUNCTION params(VARIADIC "any") RETURNS params
-AS 'MODULE_PATHNAME', 'clickhouse_func_push_fail'
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
 LANGUAGE C STRICT;
 
 -- Function used by variadic aggregate functions when pushdown fails. The
 -- first argument should describe the operation that should have been pushed
 -- down.
 CREATE FUNCTION ch_push_agg_text(TEXT, VARIADIC "any") RETURNS TEXT
-AS 'MODULE_PATHNAME', 'clickhouse_func_push_fail'
-LANGUAGE C STRICT;
-
--- Function used by TEXT-returning functions when pushdown fails. The
--- argument should describe the operation that should have been pushed down.
-CREATE FUNCTION ch_push_func_text(TEXT) RETURNS TEXT
-AS 'MODULE_PATHNAME', 'clickhouse_func_push_fail'
+AS 'MODULE_PATHNAME', 'clickhouse_op_push_fail'
 LANGUAGE C STRICT;
 
 -- Function used by parametric aggregates that take an array for the
 -- parameters plus an item of any type.
 CREATE FUNCTION ch_param_any_text(TEXT, params, "any") RETURNS TEXT
-AS 'MODULE_PATHNAME', 'clickhouse_func_push_fail'
+AS 'MODULE_PATHNAME', 'clickhouse_op_push_fail'
 LANGUAGE C STRICT;
 
 -- Function used by aggregates that take a single value of any type.
 CREATE FUNCTION ch_any_text(TEXT, "any") RETURNS TEXT
-AS 'MODULE_PATHNAME', 'clickhouse_func_push_fail'
+AS 'MODULE_PATHNAME', 'clickhouse_op_push_fail'
 LANGUAGE C STRICT;
 
 -- No-op functions used for aggregate final functions that specific types.
@@ -190,6 +184,6 @@ CREATE AGGREGATE uniqTheta(VARIADIC "any")
 */
 
 -- Create error-raising functions that should be pushed down to ClickHouse.
-CREATE FUNCTION dictGet(TEXT, TEXT, ANYELEMENT)
-RETURNS TEXT AS $$ SELECT ch_push_func_text('dictGet()') $$
-LANGUAGE 'sql' IMMUTABLE;
+CREATE FUNCTION dictGet(TEXT, TEXT, ANYELEMENT) RETURNS TEXT
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C STRICT;

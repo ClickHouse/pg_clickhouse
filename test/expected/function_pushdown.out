@@ -44,7 +44,11 @@ NOTICE:   SELECT ch_argmax(true, false, now()) : HV000 - clickhouse_fdw: failed 
 NOTICE:   SELECT ch_argmin('x'::text, 'x'::text, 3) : HV000 - clickhouse_fdw: failed to push down aggregate argMin()
 NOTICE:   SELECT ch_argmin(3, 3, true) : HV000 - clickhouse_fdw: failed to push down aggregate argMin()
 NOTICE:   SELECT ch_argmin(true, false, now()) : HV000 - clickhouse_fdw: failed to push down aggregate argMin()
-NOTICE:   SELECT ch_push_func_text('hello') : HV000 - clickhouse_fdw: failed to push down hello
-NOTICE:   SELECT ch_push_func_text('goodbye') : HV000 - clickhouse_fdw: failed to push down goodbye
-NOTICE:   SELECT dictGet('', '', '{"x": true}'::json) : HV000 - clickhouse_fdw: failed to push down dictGet()
-NOTICE:   SELECT dictGet('a', 'b', ARRAY[1]) : HV000 - clickhouse_fdw: failed to push down dictGet()
+NOTICE:   SELECT dictGet('', '', '{"x": true}'::json) : HV000 - clickhouse_fdw: failed to push down dictget()
+NOTICE:   SELECT dictGet('a', 'b', ARRAY[1]) : HV000 - clickhouse_fdw: failed to push down dictget()
+NOTICE:   SELECT params(1) : HV000 - clickhouse_fdw: failed to push down params()
+NOTICE:   SELECT params(1, 98.6, 'foo', false) : HV000 - clickhouse_fdw: failed to push down params()
+NOTICE:   SELECT quantile(1) : HV000 - clickhouse_fdw: failed to push down aggregate quantile()
+NOTICE:   SELECT quantile('x') : HV000 - clickhouse_fdw: failed to push down aggregate quantile()
+NOTICE:   SELECT quantileExact(42) : HV000 - clickhouse_fdw: failed to push down aggregate quantileExact()
+NOTICE:   SELECT quantileExact(98.6) : HV000 - clickhouse_fdw: failed to push down aggregate quantileExact()

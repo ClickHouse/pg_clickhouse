@@ -180,7 +180,8 @@ typedef struct
  */
 PG_FUNCTION_INFO_V1(clickhouse_fdw_handler);
 PG_FUNCTION_INFO_V1(clickhouse_raw_query);
-PG_FUNCTION_INFO_V1(clickhouse_func_push_fail);
+PG_FUNCTION_INFO_V1(clickhouse_op_push_fail);
+PG_FUNCTION_INFO_V1(clickhouse_push_fail);
 PG_FUNCTION_INFO_V1(clickhouse_noop);
 extern PGDLLEXPORT void _PG_init(void);
 static double time_used = 0;
@@ -2875,15 +2876,29 @@ clickhouse_noop(PG_FUNCTION_ARGS)
 }
 
 /*
- * Function that simply raises an exception reporting that the first argument
- * should have been pushed down.
+ * Function that simply raises an exception reporting that the operation
+ * described by the first argument should have been pushed down.
 */
 Datum
-clickhouse_func_push_fail(PG_FUNCTION_ARGS)
+clickhouse_op_push_fail(PG_FUNCTION_ARGS)
 {
 	text* name = PG_GETARG_TEXT_PP(0);
 	ereport(ERROR,
 		errcode(ERRCODE_FDW_ERROR),
 		errmsg("clickhouse_fdw: failed to push down %s", text_to_cstring(name))
+	);
+}
+
+/*
+ * Function that simply raises an exception reporting that the function should
+ * have been pushed down.
+*/
+Datum
+clickhouse_push_fail(PG_FUNCTION_ARGS)
+{
+	char *name = get_func_name(fcinfo->flinfo->fn_oid);
+	ereport(ERROR,
+		errcode(ERRCODE_FDW_ERROR),
+		errmsg("clickhouse_fdw: failed to push down %s()", name)
 	);
 }
