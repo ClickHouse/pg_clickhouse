@@ -146,6 +146,9 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY
 SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
 SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
+SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
+
 SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a NULLS LAST) FROM t1;
 SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a DESC) FROM t1;
 SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a NULLS FIRST) FROM t1;

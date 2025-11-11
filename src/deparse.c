@@ -85,6 +85,7 @@ typedef struct deparse_expr_cxt
 	CHFdwRelationInfo *fpinfo;	/* fdw relation info */
 	bool		interval_op;
 	bool		array_as_tuple; /* determines array output format */
+	bool        no_sort_parens; /* determines sort group clause format */
 } deparse_expr_cxt;
 
 #define REL_ALIAS_PREFIX	"r"
@@ -943,6 +944,7 @@ chfdw_deparse_select_stmt_for_rel(StringInfo buf, PlannerInfo *root, RelOptInfo 
 	context.func = NULL;
 	context.interval_op = false;
 	context.array_as_tuple = false;
+	context.no_sort_parens = false;
 
 	/* Construct SELECT clause */
 	deparseSelectSql(tlist, is_subquery, retrieved_attrs, &context);
@@ -1427,6 +1429,7 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 			context.func = NULL;
 			context.interval_op = false;
 			context.array_as_tuple = false;
+			context.no_sort_parens = false;
 
 			appendStringInfoChar(buf, '(');
 			appendConditions(fpinfo->joinclauses, &context);
@@ -3398,12 +3401,12 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 
 	appendStringInfoChar(buf, '(');
 
-	/* Add DISTINCT */
-	appendStringInfoString(buf, (node->aggdistinct != NIL) ? "DISTINCT " : "");
+	/* Explained below. */
+	bool omit_star = false;
 
 	if (AGGKIND_IS_ORDERED_SET(node->aggkind))
 	{
-		/* Add WITHIN GROUP (ORDER BY ..) */
+		/* Emit direct args as ClickHouse parameterized args. */
 		ListCell   *arg;
 		bool		first = true;
 
@@ -3419,26 +3422,31 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 			deparseExpr((Expr *) lfirst(arg), context);
 		}
 
-		appendStringInfoChar(buf, ')');
+		/* Close parameter args and start regular args. */
+		appendStringInfoString(buf, ")(");
+		/* Emit `WITHIN GROUP (ORDER BY ..)` args with no cloding paren. */
+		context->no_sort_parens = true;
 		appendAggOrderBy(node->aggorder, node->args, context);
+		context->no_sort_parens = false;
 	}
 	else
 	{
-		/* Omit * for COUNT(*) but not COUNT(DISTINCT *)
-		* https://github.com/ClickHouse/clickhouse_fdw/issues/25
-		* To be fixed in ClickHouse 25.11, so can be omitted once relased.
-		* https://github.com/ClickHouse/ClickHouse/pull/89373
-		*
-		* XXX Once ClickHouse has made a release fixing this issue, consider
-		* adding the Client::ServerInfo struct returned from
-		* Client::GetServerInfo() to deparse_expr_cxt so we can allow * to be
-		* passed through for the fixed version.
-		*/
-		bool omit_star = false;
+		/* Add DISTINCT */
+		if (node->aggdistinct != NIL)  appendStringInfoString(buf, "DISTINCT ");
 
 		/* aggstar can be set only in zero-argument aggregates */
 		if (node->aggstar)
 		{
+			/* Omit * for COUNT(*) but not COUNT(DISTINCT *)
+			* https://github.com/ClickHouse/clickhouse_fdw/issues/25
+			* To be fixed in ClickHouse 25.11, so can be omitted once relased.
+			* https://github.com/ClickHouse/ClickHouse/pull/89373
+			*
+			* XXX Once ClickHouse has made a release fixing this issue, consider
+			* adding the Client::ServerInfo struct returned from
+			* Client::GetServerInfo() to deparse_expr_cxt so we can allow * to be
+			* passed through for the fixed version.
+			*/
 			omit_star = node->aggfilter && node->aggdistinct == NIL && strcmp(buf->data, "count");
 			if (context->func && context->func->cf_type == CF_SIGN_COUNT)
 			{
@@ -3497,51 +3505,52 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 				}
 			}
 		}
+	}
 
-		/* Add 'If' part condition */
-		if (aggfilter)
+	/* Add 'If' part condition */
+	if (aggfilter)
+	{
+		// No argument output for COUNT(*).
+		if (!omit_star)
+			appendStringInfoChar(buf, ',');
+
+		if (node->aggfilter)
 		{
-			// No argument output for COUNT(*).
-			if (!omit_star)
-				appendStringInfoChar(buf, ',');
-
-			if (node->aggfilter)
-			{
-				appendStringInfoString(buf, "((");
-				deparseExpr((Expr *) node->aggfilter, context);
-				appendStringInfoString(buf, ") > 0)");
-			}
-
-			if (sign_count_filter)
-			{
-				if (node->aggfilter)
-					appendStringInfoString(buf, " AND ");
-
-				appendStringInfoChar(buf, '(');
-				deparseExpr((Expr *) ((TargetEntry *) linitial(node->args))->expr, context);
-				appendStringInfoString(buf, ") IS NOT NULL");
-			}
+			appendStringInfoString(buf, "((");
+			deparseExpr((Expr *) node->aggfilter, context);
+			appendStringInfoString(buf, ") > 0)");
 		}
 
-		while (brcount--)
-			appendStringInfoChar(buf, ')');
-
-		/* AVG stuff */
-		if (context->func && context->func->cf_type == CF_SIGN_AVG)
+		if (sign_count_filter)
 		{
-			appendStringInfoString(buf, " / sumIf(");
-			appendStringInfoString(buf, fpinfo->ch_table_sign_field);
-			appendStringInfoChar(buf, ',');
 			if (node->aggfilter)
-			{
-				deparseExpr((Expr *) node->aggfilter, context);
 				appendStringInfoString(buf, " AND ");
-			}
+
+			appendStringInfoChar(buf, '(');
 			deparseExpr((Expr *) ((TargetEntry *) linitial(node->args))->expr, context);
-			appendStringInfoString(buf, " IS NOT NULL");
-			appendStringInfoChar(buf, ')');
+			appendStringInfoString(buf, ") IS NOT NULL");
 		}
 	}
+
+	while (brcount--)
+		appendStringInfoChar(buf, ')');
+
+	/* AVG stuff */
+	if (context->func && context->func->cf_type == CF_SIGN_AVG)
+	{
+		appendStringInfoString(buf, " / sumIf(");
+		appendStringInfoString(buf, fpinfo->ch_table_sign_field);
+		appendStringInfoChar(buf, ',');
+		if (node->aggfilter)
+		{
+			deparseExpr((Expr *) node->aggfilter, context);
+			appendStringInfoString(buf, " AND ");
+		}
+		deparseExpr((Expr *) ((TargetEntry *) linitial(node->args))->expr, context);
+		appendStringInfoString(buf, " IS NOT NULL");
+		appendStringInfoChar(buf, ')');
+	}
+
 	/* original */
 	context->func = cdef;
 }
@@ -3924,7 +3933,7 @@ deparseSortGroupClause(Index ref, List *tlist, bool force_colno,
 		 */
 		deparseConst((Const *) expr, context, 1);
 	}
-	else if (!expr || IsA(expr, Var))
+	else if (!expr || IsA(expr, Var) || context->no_sort_parens)
 	{
 		deparseExpr(expr, context);
 	}

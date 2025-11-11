@@ -547,6 +547,21 @@ SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone(
       1546426260
 (1 row)
 
+EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (percentile_cont('0.25'::double precision) WITHIN GROUP (ORDER BY ((a)::double precision)) FILTER (WHERE (b = 1)))
+   Relations: Aggregate on (t1)
+   Remote SQL: SELECT quantileIf(0.25)(a,(((b = 1)) > 0)) FROM functions_test.t1
+(4 rows)
+
+SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
+ percentile_cont 
+-----------------
+               1
+(1 row)
+
 SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a NULLS LAST) FROM t1;
  percentile_cont 
 -----------------
