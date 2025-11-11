@@ -190,11 +190,15 @@ again:
 	else if (resp->http_status != 200)
 	{
 		char *error = pnstrdup(resp->data, resp->datasize);
+		long status =  resp->http_status;
 		ch_http_response_free(resp);
 
-		ereport(ERROR,
-				(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-				 errmsg("clickhouse_fdw:%s\nQUERY:%.10000s", format_error(error), query)));
+		ereport(ERROR, (
+			errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+			errmsg("clickhouse_fdw: %s", format_error(error)),
+			status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query),
+			errcontext("HTTP status code: %li", status)
+		));
 	}
 
 	/* we could not control properly deallocation of libclickhouse memory, so
@@ -238,12 +242,15 @@ http_simple_insert(void *conn, const char *query)
 	if (resp->http_status != 200)
 	{
 		char *error = pnstrdup(resp->data, resp->datasize);
+		long status =  resp->http_status;
 		ch_http_response_free(resp);
 
-		ereport(ERROR,
-				(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-				 errmsg("clickhouse_fdw:%s", format_error(error)),
-				 errdetail("query: %.1024s", query)));
+		ereport(ERROR, (
+			errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+			errmsg("clickhouse_fdw: %s", format_error(error)),
+			status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query),
+			errcontext("HTTP status code: %li", status)
+		));
 	}
 
 	ch_http_response_free(resp);
@@ -518,10 +525,11 @@ binary_simple_query(void *conn, const char *query)
 	{
 		char *error = pstrdup(resp->error);
 		ch_binary_response_free(resp);
-
-		ereport(ERROR,
-				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-				 errmsg("clickhouse_fdw: %s", error)));
+		ereport(ERROR, (
+			errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+			errmsg("clickhouse_fdw: %s", error),
+			errdetail_internal("Remote Query: %.64000s", query)
+		));
 	}
 
 	tempcxt = AllocSetContextCreate(PortalContext, "clickhouse_fdw cursor",
@@ -580,7 +588,7 @@ binary_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc,
 			goto ok;
 		}
 		else
-			elog(ERROR, "clickhouse_fdw: unexpected state: atttributes "
+			elog(ERROR, "clickhouse_fdw: unexpected state: attributes "
 					"count == 0 and haven't got NULL in the response");
 	}
 	else if (attcount != state->resp->columns_count)

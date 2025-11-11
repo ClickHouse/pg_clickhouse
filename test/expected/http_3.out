@@ -165,12 +165,13 @@ SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work
 
 ALTER SERVER http_loopback OPTIONS (SET dbname 'no such database');
 SELECT c3, c4 FROM ft1 ORDER BY c3, c1;  -- should fail
-ERROR:  clickhouse_fdw:Code: 81. DB::Exception: Database `no such database` does not exist. (UNKNOWN_DATABASE)
-QUERY:SELECT c1, c3, c4 FROM "no such database".t1 ORDER BY c3 ASC, c1 ASC
+ERROR:  clickhouse_fdw: Code: 81. DB::Exception: Database `no such database` does not exist. (UNKNOWN_DATABASE)
+DETAIL:  Remote Query: SELECT c1, c3, c4 FROM "no such database".t1 ORDER BY c3 ASC, c1 ASC
+CONTEXT:  HTTP status code: 404
 ALTER USER MAPPING FOR CURRENT_USER SERVER http_loopback OPTIONS (ADD user 'no such user');
 SELECT c3, c4 FROM ft1 ORDER BY c3, c1;  -- should fail
-ERROR:  clickhouse_fdw:Code: 516. DB::Exception: no such user: Authentication failed: password is incorrect, or there is no user with such name. (AUTHENTICATION_FAILED)
-QUERY:SELECT c1, c3, c4 FROM "no such database".t1 ORDER BY c3 ASC, c1 ASC
+ERROR:  clickhouse_fdw: Code: 516. DB::Exception: no such user: Authentication failed: password is incorrect, or there is no user with such name. (AUTHENTICATION_FAILED)
+CONTEXT:  HTTP status code: 403
 ALTER SERVER http_loopback OPTIONS (SET dbname 'http_test');
 ALTER USER MAPPING FOR CURRENT_USER SERVER http_loopback OPTIONS (DROP user);
 SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work again
