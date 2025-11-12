@@ -3362,6 +3362,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	uint8	brcount = 1;
 	bool	use_variadic;
 	int 	first_arg = 0;
+	char    *name = get_func_name(node->aggfnoid);
 
 	/* Only basic, non-split aggregation accepted. */
 	Assert(node->aggsplit == AGGSPLIT_SIMPLE);
@@ -3447,7 +3448,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 			* Client::GetServerInfo() to deparse_expr_cxt so we can allow * to be
 			* passed through for the fixed version.
 			*/
-			omit_star = node->aggfilter && node->aggdistinct == NIL && strcmp(buf->data, "count");
+			omit_star = node->aggfilter && node->aggdistinct == NIL && !strcmp(name, "count");
 			if (context->func && context->func->cf_type == CF_SIGN_COUNT)
 			{
 				Assert(fpinfo && fpinfo->ch_table_engine == CH_COLLAPSING_MERGE_TREE);
