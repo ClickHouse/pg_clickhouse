@@ -43,7 +43,8 @@ SELECT clickhouse_raw_query('
 		b AggregateFunction(sum, Int32),
 		c AggregateFunction(sumMap, Array(Int32), Array(Int32)),
 		d SimpleAggregateFunction(sum, Int64),
-		e AggregateFunction(count))
+		e AggregateFunction(count),
+		f AggregateFunction(quantile, Int32))
 	engine = AggregatingMergeTree()
 	order by a');
 
@@ -63,6 +64,12 @@ SELECT a, sum(b) FROM t1_aggr GROUP BY a ORDER BY a;
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT a, sum(b) FROM t2 GROUP BY a;
 SELECT a, sum(b) FROM t2 GROUP BY a ORDER BY a;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a, percentile_cont(0.75) WITHIN GROUP (ORDER BY f) FROM t4 GROUP BY a;
+SELECT a, percentile_cont(0.75) WITHIN GROUP (ORDER BY f) FROM t4 GROUP BY a;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a, percentile_cont(0.75) WITHIN GROUP (ORDER BY f) / sum(d) FROM t4 GROUP BY a;
+SELECT a, percentile_cont(0.75) WITHIN GROUP (ORDER BY f) / sum(d) FROM t4 GROUP BY a;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER engines_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE engines_test');

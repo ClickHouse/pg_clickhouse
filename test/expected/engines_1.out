@@ -84,7 +84,8 @@ SELECT clickhouse_raw_query('
 		b AggregateFunction(sum, Int32),
 		c AggregateFunction(sumMap, Array(Int32), Array(Int32)),
 		d SimpleAggregateFunction(sum, Int64),
-		e AggregateFunction(count))
+		e AggregateFunction(count),
+		f AggregateFunction(quantile, Int32))
 	engine = AggregatingMergeTree()
 	order by a');
  clickhouse_raw_query 
@@ -148,6 +149,7 @@ FDW options: (database 'engines_test', table_name 't3_aggr', engine 'Materialize
  c      | integer |           | not null |         | (aggregatefunction '1')         | plain   |              | 
  d      | bigint  |           | not null |         | (simpleaggregatefunction 'sum') | plain   |              | 
  e      | bigint  |           | not null |         |                                 | plain   |              | 
+ f      | integer |           | not null |         | (aggregatefunction 'quantile')  | plain   |              | 
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't4', engine 'AggregatingMergeTree')
 
@@ -222,6 +224,34 @@ SELECT a, sum(b) FROM t2 GROUP BY a ORDER BY a;
  8 | 530
  9 | 540
 (10 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a, percentile_cont(0.75) WITHIN GROUP (ORDER BY f) FROM t4 GROUP BY a;
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: a, (percentile_cont('0.75'::double precision) WITHIN GROUP (ORDER BY ((f)::double precision)))
+   Relations: Aggregate on (t4)
+   Remote SQL: SELECT a, quantileMerge(0.75)(f) FROM engines_test.t4 GROUP BY a
+(4 rows)
+
+SELECT a, percentile_cont(0.75) WITHIN GROUP (ORDER BY f) FROM t4 GROUP BY a;
+ a | percentile_cont 
+---+-----------------
+(0 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a, percentile_cont(0.75) WITHIN GROUP (ORDER BY f) / sum(d) FROM t4 GROUP BY a;
+                                                               QUERY PLAN                                                                
+-----------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: a, ((percentile_cont('0.75'::double precision) WITHIN GROUP (ORDER BY ((f)::double precision)) / (sum(d))::double precision))
+   Relations: Aggregate on (t4)
+   Remote SQL: SELECT a, (quantileMerge(0.75)(f) / sum(d)) FROM engines_test.t4 GROUP BY a
+(4 rows)
+
+SELECT a, percentile_cont(0.75) WITHIN GROUP (ORDER BY f) / sum(d) FROM t4 GROUP BY a;
+ a | ?column? 
+---+----------
+(0 rows)
 
 DROP USER MAPPING FOR CURRENT_USER SERVER engines_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE engines_test');

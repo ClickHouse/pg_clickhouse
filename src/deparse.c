@@ -293,7 +293,7 @@ foreign_expr_walker(Node *node,
 {
 	bool		check_type = true;
 	CHFdwRelationInfo *fpinfo;
-	foreign_loc_cxt inner_cxt;
+	foreign_loc_cxt inner_cxt = {false};
 
 	/* Need do nothing for empty subexpressions */
 	if (node == NULL)
@@ -335,6 +335,11 @@ foreign_expr_walker(Node *node,
 			rte = planner_rt_fetch(var->varno, glob_cxt->root);
 			cinfo = chfdw_get_custom_column_info(rte->relid, var->varattno);
 
+			/*
+			 * If this T_Var column is an aggregate function column, tell the
+			 * outer context as much, so that it propagates to its parent
+			 * `T_Aggref`, if any.
+			 */
 			if (cinfo && cinfo->is_AggregateFunction == CF_AGGR_FUNC)
 				outer_cxt->found_AggregateFunction = true;
 		}
@@ -559,12 +564,20 @@ foreign_expr_walker(Node *node,
 				n = (Node *) tle->expr;
 			}
 
+			/*
+			 * Walk the inner node and determine if the inner T_Var is an
+			 * AggregateFunction. If so, we'll append "Merge" to the function
+			 * call in deparseAggref.
+			*/
 			inner_cxt.found_AggregateFunction = false;
 			if (!foreign_expr_walker(n, glob_cxt, &inner_cxt))
 				return false;
 
 			if (inner_cxt.found_AggregateFunction)
 				agg->location = -2;
+
+			/* Prevent propagating to earlier nodes. */
+			inner_cxt.found_AggregateFunction = false;
 		}
 
 		/* Check aggregate filter */
@@ -643,7 +656,9 @@ foreign_expr_walker(Node *node,
 		return false;
 	}
 
-	/* It looks OK */
+	/* It looks OK; propagate found_AggregateFunction to the previous node. */
+	if (inner_cxt.found_AggregateFunction)
+		outer_cxt->found_AggregateFunction = true;
 	return true;
 }
 

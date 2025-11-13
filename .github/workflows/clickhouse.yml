@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         # Test latest version and all LTS releases.
         # .github/ubuntu/ch-versions --lts --latest-stable --earliest 22  --prefix '          - ' | pbcopy
