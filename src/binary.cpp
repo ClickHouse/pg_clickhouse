@@ -181,9 +181,11 @@ ch_binary_response_t * ch_binary_simple_query(
 	{
 		resp = new ch_binary_response_t();
 		values = new std::vector<std::vector<clickhouse::ColumnRef>>();
-
-		client->SelectCancelable(
-			std::string(query), [&resp, &values, &check_cancel](const Block & block) {
+		client->Select(
+			clickhouse::Query(query).SetQuerySettings(QuerySettings{
+				/* Enable SQL compatibility. */
+				{"join_use_nulls", QuerySettingsField{ "1", 1 }},
+			}).OnDataCancelable([&resp, &values, &check_cancel](const Block & block) {
 				if (check_cancel && check_cancel())
 				{
 					set_resp_error(resp, "query was canceled");
@@ -210,7 +212,8 @@ ch_binary_response_t * ch_binary_simple_query(
 
 				values->push_back(std::move(vec));
 				return true;
-			});
+			})
+		);
 
 		resp->values = (void *)values;
 	}

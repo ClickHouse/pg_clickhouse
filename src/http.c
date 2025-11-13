@@ -147,9 +147,12 @@ ch_http_response_t *ch_http_simple_query(ch_http_connection_t *conn, const char 
 
 	assert(conn && conn->curl);
 
-	/* construct url */
-	url = malloc(conn->base_url_len + 37 + 12 /* query_id + ?query_id= */);
-	sprintf(url, "%s?query_id=%s", conn->base_url, resp->query_id);
+	/* Enable SQL compatibility. */
+	const char *params = "join_use_nulls=1";
+
+	/* construct url: query_id + ?query_id= + params */
+	url = malloc(conn->base_url_len + 37 + 12 + strlen(params));
+	sprintf(url, "%s?query_id=%s&%s", conn->base_url, resp->query_id, params);
 
 	/* constant */
 	errbuffer[0] = '\0';
