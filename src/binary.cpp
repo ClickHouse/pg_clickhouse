@@ -914,7 +914,9 @@ nested_col:
         }
         break;
 		default:
-			throw std::runtime_error("unsupported type in binary protocol");
+			throw std::runtime_error(
+				"unsupported type "+std::string(Type::TypeName(type_code)) +" in binary protocol"
+			);
 	}
 
 	return ret;

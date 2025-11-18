@@ -10,12 +10,13 @@ SELECT clickhouse_raw_query('CREATE DATABASE binary_test');
 SELECT clickhouse_raw_query('CREATE TABLE binary_test.ints (
     c1 Int8, c2 Int16, c3 Int32, c4 Int64,
     c5 UInt8, c6 UInt16, c7 UInt32, c8 UInt64,
-    c9 Float32, c10 Float64
+    c9 Float32, c10 Float64, c11 Bool
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
 SELECT clickhouse_raw_query('INSERT INTO binary_test.ints SELECT
     number, number + 1, number + 2, number + 3, number + 4, number + 5,
-    number + 6, number + 7, number + 8.1, number + 9.2 FROM numbers(10);');
+    number + 6, number + 7, number + 8.1, number + 9.2, cast(number % 2 as Bool)
+    FROM numbers(10);');
 
 -- date and string types
 SELECT clickhouse_raw_query('CREATE TABLE binary_test.types (
@@ -66,7 +67,8 @@ CREATE FOREIGN TABLE fints (
 	c7 int8,
 	c8 int8,
     c9 float4,
-    c10 float8
+    c10 float8,
+    c11 bool
 ) SERVER binary_loopback OPTIONS (table_name 'ints');
 
 CREATE FOREIGN TABLE ftypes (

@@ -23,7 +23,7 @@ SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.ints (
 (1 row)
 
 SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.uints (
-    c1 UInt8, c2 UInt16, c3 UInt32, c4 UInt64
+    c1 UInt8, c2 UInt16, c3 UInt32, c4 UInt64, c5 Bool
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
  clickhouse_raw_query 
@@ -68,7 +68,6 @@ SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.arrays (
 (1 row)
 
 IMPORT FOREIGN SCHEMA "binary_inserts_test" FROM SERVER binary_inserts_loopback INTO public;
-NOTICE:  pg_clickhouse: ClickHouse <UInt8> type was translated to <INT2> type for column "c1", change it to BOOLEAN if needed
 /* ints */
 INSERT INTO ints
 	SELECT i, i + 1, i + 2, i+ 3 FROM generate_series(1, 3) i;
@@ -113,13 +112,13 @@ SELECT c1, c2, c3, c4 FROM ints ORDER BY c1;
 
 /* check other number types */
 INSERT INTO uints
-	SELECT i, i + 1, i + 2, i+ 3 FROM generate_series(1, 3) i;
+	SELECT i, i + 1, i + 2, i+ 3, (i % 2)::bool FROM generate_series(1, 3) i;
 SELECT * FROM uints ORDER BY c1;
- c1 | c2 | c3 | c4 
-----+----+----+----
-  1 |  2 |  3 |  4
-  2 |  3 |  4 |  5
-  3 |  4 |  5 |  6
+ c1 | c2 | c3 | c4 | c5 
+----+----+----+----+----
+  1 |  2 |  3 |  4 | t
+  2 |  3 |  4 |  5 | f
+  3 |  4 |  5 |  6 | t
 (3 rows)
 
 INSERT INTO floats

@@ -38,7 +38,7 @@ SELECT clickhouse_raw_query('CREATE TABLE http_test.t3 (c1 Int, c3 String)
  
 (1 row)
 
-SELECT clickhouse_raw_query('CREATE TABLE http_test.t4 (c1 Int, c2 Int, c3 String)
+SELECT clickhouse_raw_query('CREATE TABLE http_test.t4 (c1 Int, c2 Int, c3 String, c4 Bool)
 	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
  clickhouse_raw_query 
 ----------------------
@@ -80,17 +80,20 @@ CREATE FOREIGN TABLE ft3 (
 CREATE FOREIGN TABLE ft4 (
 	c1 int NOT NULL,
 	c2 int NOT NULL,
-	c3 text
+	c3 text,
+	c4 bool
 ) SERVER http_loopback OPTIONS (table_name 't4');
 CREATE FOREIGN TABLE ft5 (
 	c1 int NOT NULL,
 	c2 int NOT NULL,
-	c3 text
+	c3 text,
+	c4 bool
 ) SERVER http_loopback OPTIONS (table_name 't4');
 CREATE FOREIGN TABLE ft6 (
 	c1 int NOT NULL,
 	c2 int NOT NULL,
-	c3 text
+	c3 text,
+	c4 bool
 ) SERVER http_loopback2 OPTIONS (table_name 't4');
 CREATE FOREIGN TABLE ftcopy (
 	c1 int,
@@ -132,8 +135,19 @@ SELECT c3, (c3 = 'lf\ntab\t\b\f\r') AS true FROM ft3 WHERE c1 = 2;
 INSERT INTO ft4
 	SELECT id,
 	       id + 1,
-	       'AAA' || to_char(id, 'FM000')
+	       'AAA' || to_char(id, 'FM000'),
+		   (id % 2)::bool
 	FROM generate_series(1, 100) id;
+SELECT * FROM ft5 ORDER BY c1 LIMIT 5;
+ c1 | c2 |   c3   | c4 
+----+----+--------+----
+  1 |  2 | AAA001 | t
+  2 |  3 | AAA002 | f
+  3 |  4 | AAA003 | t
+  4 |  5 | AAA004 | f
+  5 |  6 | AAA005 | t
+(5 rows)
+
 COPY ftcopy FROM stdin;
 INSERT INTO ftcopy VALUES
 	(3, 4, '1990-03-03', '1990-03-03 12:02:02', '12:02:02', 'val3'),

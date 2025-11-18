@@ -10,7 +10,7 @@ SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.ints (
 ');
 
 SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.uints (
-    c1 UInt8, c2 UInt16, c3 UInt32, c4 UInt64
+    c1 UInt8, c2 UInt16, c3 UInt32, c4 UInt64, c5 Bool
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
 
@@ -53,7 +53,7 @@ SELECT c1, c2, c3, c4 FROM ints ORDER BY c1;
 
 /* check other number types */
 INSERT INTO uints
-	SELECT i, i + 1, i + 2, i+ 3 FROM generate_series(1, 3) i;
+	SELECT i, i + 1, i + 2, i+ 3, (i % 2)::bool FROM generate_series(1, 3) i;
 SELECT * FROM uints ORDER BY c1;
 INSERT INTO floats
 	SELECT i * 1.1, i + 2.1 FROM generate_series(1, 3) i;

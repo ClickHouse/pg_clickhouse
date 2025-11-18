@@ -18,7 +18,7 @@ SELECT clickhouse_raw_query('CREATE DATABASE binary_test');
 SELECT clickhouse_raw_query('CREATE TABLE binary_test.ints (
     c1 Int8, c2 Int16, c3 Int32, c4 Int64,
     c5 UInt8, c6 UInt16, c7 UInt32, c8 UInt64,
-    c9 Float32, c10 Float64
+    c9 Float32, c10 Float64, c11 Bool
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
  clickhouse_raw_query 
@@ -28,7 +28,8 @@ SELECT clickhouse_raw_query('CREATE TABLE binary_test.ints (
 
 SELECT clickhouse_raw_query('INSERT INTO binary_test.ints SELECT
     number, number + 1, number + 2, number + 3, number + 4, number + 5,
-    number + 6, number + 7, number + 8.1, number + 9.2 FROM numbers(10);');
+    number + 6, number + 7, number + 8.1, number + 9.2, cast(number % 2 as Bool)
+    FROM numbers(10);');
  clickhouse_raw_query 
 ----------------------
  
@@ -110,7 +111,8 @@ CREATE FOREIGN TABLE fints (
 	c7 int8,
 	c8 int8,
     c9 float4,
-    c10 float8
+    c10 float8,
+    c11 bool
 ) SERVER binary_loopback OPTIONS (table_name 'ints');
 CREATE FOREIGN TABLE ftypes (
 	c1 date,
@@ -137,18 +139,18 @@ CREATE FOREIGN TABLE ftuples (
 ) SERVER binary_loopback OPTIONS (table_name 'tuples');
 -- integers
 SELECT * FROM fints ORDER BY c1;
- c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 |  c9  | c10  
-----+----+----+----+----+----+----+----+------+------
-  0 |  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8.1 |  9.2
-  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8 |  9.1 | 10.2
-  2 |  3 |  4 |  5 |  6 |  7 |  8 |  9 | 10.1 | 11.2
-  3 |  4 |  5 |  6 |  7 |  8 |  9 | 10 | 11.1 | 12.2
-  4 |  5 |  6 |  7 |  8 |  9 | 10 | 11 | 12.1 | 13.2
-  5 |  6 |  7 |  8 |  9 | 10 | 11 | 12 | 13.1 | 14.2
-  6 |  7 |  8 |  9 | 10 | 11 | 12 | 13 | 14.1 | 15.2
-  7 |  8 |  9 | 10 | 11 | 12 | 13 | 14 | 15.1 | 16.2
-  8 |  9 | 10 | 11 | 12 | 13 | 14 | 15 | 16.1 | 17.2
-  9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17.1 | 18.2
+ c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 |  c9  | c10  | c11 
+----+----+----+----+----+----+----+----+------+------+-----
+  0 |  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8.1 |  9.2 | f
+  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8 |  9.1 | 10.2 | t
+  2 |  3 |  4 |  5 |  6 |  7 |  8 |  9 | 10.1 | 11.2 | f
+  3 |  4 |  5 |  6 |  7 |  8 |  9 | 10 | 11.1 | 12.2 | t
+  4 |  5 |  6 |  7 |  8 |  9 | 10 | 11 | 12.1 | 13.2 | f
+  5 |  6 |  7 |  8 |  9 | 10 | 11 | 12 | 13.1 | 14.2 | t
+  6 |  7 |  8 |  9 | 10 | 11 | 12 | 13 | 14.1 | 15.2 | f
+  7 |  8 |  9 | 10 | 11 | 12 | 13 | 14 | 15.1 | 16.2 | t
+  8 |  9 | 10 | 11 | 12 | 13 | 14 | 15 | 16.1 | 17.2 | f
+  9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17.1 | 18.2 | t
 (10 rows)
 
 SELECT c2, c1, c8, c3, c4, c7, c6, c5 FROM fints ORDER BY c1;

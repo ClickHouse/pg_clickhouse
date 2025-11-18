@@ -199,7 +199,6 @@ SELECT clickhouse_raw_query('INSERT INTO import_test.timezones VALUES (
 (1 row)
 
 IMPORT FOREIGN SCHEMA "import_test" FROM SERVER import_loopback INTO clickhouse;
-NOTICE:  pg_clickhouse: ClickHouse <UInt8> type was translated to <INT2> type for column "c5", change it to BOOLEAN if needed
 NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT> type for column "c2", please create composite type and alter the column if needed
 \d+ clickhouse.ints;
                                          Foreign table "clickhouse.ints"
@@ -336,7 +335,6 @@ SELECT * FROM clickhouse.ip ORDER BY c1;
 (3 rows)
 
 IMPORT FOREIGN SCHEMA "import_test" FROM SERVER import_loopback_bin INTO clickhouse_bin;
-NOTICE:  pg_clickhouse: ClickHouse <UInt8> type was translated to <INT2> type for column "c5", change it to BOOLEAN if needed
 NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT> type for column "c2", please create composite type and alter the column if needed
 \d+ clickhouse_bin.ints;
                                        Foreign table "clickhouse_bin.ints"
@@ -473,7 +471,6 @@ SELECT * FROM clickhouse.ip ORDER BY c1;
 (3 rows)
 
 IMPORT FOREIGN SCHEMA "import_test" LIMIT TO (ints, types) FROM SERVER import_loopback INTO clickhouse_limit;
-NOTICE:  pg_clickhouse: ClickHouse <UInt8> type was translated to <INT2> type for column "c5", change it to BOOLEAN if needed
 \d+ clickhouse_limit.ints;
                                       Foreign table "clickhouse_limit.ints"
  Column |       Type       | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
