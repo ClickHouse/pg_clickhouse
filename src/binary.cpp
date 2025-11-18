@@ -270,7 +270,7 @@ static Oid get_corr_postgres_type(const TypeRef & type)
 				get_corr_postgres_type(type->As<clickhouse::ArrayType>()->GetItemType()));
 			if (array_type == InvalidOid)
 				throw std::runtime_error(
-					"clickhouse_fdw: could not find array "
+					"pg_clickhouse: could not find array "
 					" type for column type "
 					+ type->GetName());
 
@@ -281,7 +281,7 @@ static Oid get_corr_postgres_type(const TypeRef & type)
 		case Type::Code::Nullable:
 			return get_corr_postgres_type(type->As<NullableType>()->GetNestedType());
 		default:
-			throw std::runtime_error("clickhouse_fdw: unsupported column type " + type->GetName());
+			throw std::runtime_error("pg_clickhouse: unsupported column type " + type->GetName());
 	}
 }
 
@@ -301,7 +301,7 @@ void ch_binary_insert_state_free(void * c)
 			catch (const std::exception & e)
 			{
 				// just ignore, next query will fail
-				elog(NOTICE, "clickhouse_fdw: could not send empty packet");
+				elog(NOTICE, "pg_clickhouse: could not send empty packet");
 			}
 		}
 
@@ -418,7 +418,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 					break;
 				default:
 					throw std::runtime_error(
-						"clickhouse_fdw: unexpected column "
+						"pg_clickhouse: unexpected column "
 						"type for INT2: "
 						+ col->Type()->GetName());
 			}
@@ -621,7 +621,7 @@ void ch_binary_column_append_data(ch_binary_insert_state * state, size_t colidx)
 	}
 	catch (const std::exception & e)
 	{
-		elog(ERROR, "clickhouse_fdw: could not append data to column - %s", e.what());
+		elog(ERROR, "pg_clickhouse: could not append data to column - %s", e.what());
 	}
 }
 
@@ -642,7 +642,7 @@ void ch_binary_insert_columns(ch_binary_insert_state * state)
 	}
 	catch (const std::exception & e)
 	{
-		elog(ERROR, "clickhouse_fdw: could not insert columns - %s", e.what());
+		elog(ERROR, "pg_clickhouse: could not insert columns - %s", e.what());
 	}
 }
 
@@ -747,7 +747,7 @@ nested_col:
 		case Type::Code::UInt64: {
 			uint64 val = col->As<ColumnUInt64>()->At(row);
 			if (val > LONG_MAX)
-				throw std::overflow_error("clickhouse_fdw: int64 overflow");
+				throw std::overflow_error("pg_clickhouse: int64 overflow");
 
 			ret = Int64GetDatum((int64)val);
 			*valtype = INT8OID;
@@ -894,7 +894,7 @@ nested_col:
 
 			if (array_type == InvalidOid)
 				throw std::runtime_error(
-					std::string("clickhouse_fdw: could not") + " find array type for "
+					std::string("pg_clickhouse: could not") + " find array type for "
 					+ std::to_string(item_type));
 
 			slot->len = len;
@@ -920,7 +920,7 @@ nested_col:
 			auto len = tuple->TupleSize();
 
 			if (len == 0)
-				throw std::runtime_error("clickhouse_fdw: returned tuple is empty");
+				throw std::runtime_error("pg_clickhouse: returned tuple is empty");
 
 			auto slot = (ch_binary_tuple_t *)exc_palloc(sizeof(ch_binary_tuple_t));
 

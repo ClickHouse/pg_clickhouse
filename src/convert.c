@@ -267,7 +267,7 @@ ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 			}
 			state->outdesc = CreateTupleDescCopy(tupdesc);
 			state->tupmap = convert_tuples_by_position(state->indesc, state->outdesc,
-				"clickhouse_fdw: could not map tuple to returned type");
+				"pg_clickhouse: could not map tuple to returned type");
 			ReleaseTupleDesc(tupdesc);
 		}
 	}
@@ -317,7 +317,7 @@ ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 					/* all good */
 					break;
 				default:
-					elog(ERROR, "clickhouse_fdw: could not cast value from %s to %s",
+					elog(ERROR, "pg_clickhouse: could not cast value from %s to %s",
 							format_type_be(intype), format_type_be(outtype));
 			}
 		}
@@ -360,7 +360,7 @@ init_output_convert_state(ch_convert_output_state *state)
 			state->func = NULL;
 			return;
 		default:
-			elog(ERROR, "clickhouse_fdw: could not find a casting path from %s to %s",
+			elog(ERROR, "pg_clickhouse: could not find a casting path from %s to %s",
 					format_type_be(state->intype), format_type_be(state->outtype));
 	}
 }
@@ -426,7 +426,7 @@ ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc)
 		if (curstate->attnum == 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATATYPE_MISMATCH),
-					 errmsg_internal("clickhouse_fdw: could not create conversion map"),
+					 errmsg_internal("pg_clickhouse: could not create conversion map"),
 					 errdetail("Attribute \"%s\" of type %s does not exist in type %s.",
 							   outattname,
 							   format_type_be(indesc->tdtypeid),
@@ -459,7 +459,7 @@ ch_binary_do_output_convertion(ch_binary_insert_state *insert_state,
 				array_iter	iter;
 
 				if (AARR_NDIM(v) != 1)
-					elog(ERROR, "clickhouse_fdw: inserted array should have one dimension");
+					elog(ERROR, "pg_clickhouse: inserted array should have one dimension");
 
 				arr = palloc(sizeof(ch_binary_array_t));
 				arr->len = ArrayGetNItems(AARR_NDIM(v), AARR_DIMS(v));

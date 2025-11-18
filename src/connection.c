@@ -1,14 +1,14 @@
 /*-------------------------------------------------------------------------
  *
  * connection,c
- *		  Connection management functions for clickhouse_fdw
+ *		  Connection management functions for pg_clickhouse
  *
  * Portions Copyright (c) 2012-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 2019-2022, Adjust GmbH
  * Copyright (c) 2025, ClickHouse, Inc.
  *
  * IDENTIFICATION
- *		  github.com/clickhouse/clickhouse_fdw/src/connection.c
+ *		  github.com/clickhouse/pg_clickhouse/src/connection.c
  *
  *-------------------------------------------------------------------------
  */
@@ -81,7 +81,7 @@ chfdw_get_connection(UserMapping *user)
 		ctl.entrysize = sizeof(ConnCacheEntry);
 		/* allocate ConnectionHash in the cache context */
 		ctl.hcxt = CacheMemoryContext;
-		ConnectionHash = hash_create("clickhouse_fdw connections", 8,
+		ConnectionHash = hash_create("pg_clickhouse connections", 8,
 									 &ctl,
 									 HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
 
@@ -150,7 +150,7 @@ chfdw_get_connection(UserMapping *user)
 		entry->gate = clickhouse_connect(server, user);
 
 		elog(DEBUG3,
-			 "new clickhouse_fdw connection %p for server \"%s\" (user mapping oid %u, userid %u)",
+			 "new pg_clickhouse connection %p for server \"%s\" (user mapping oid %u, userid %u)",
 			 entry->gate.conn, server->servername, user->umid, user->userid);
 	}
 

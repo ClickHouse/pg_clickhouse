@@ -1,17 +1,17 @@
-clickhouse_fdw 2.0
-==================
+pg_clickhouse 0.1.0
+===================
 
 ## Synopsis
 
 ```pgsql
-CREATE EXTENSION clickhouse_fdw;
+CREATE EXTENSION pg_clickhouse;
 ```
 
 ## Description
 
-This library contains a single PostgreSQL extension, a [foreign data wrapper]
-for [ClickHouse] databases. It supports PostgreSQL 13 and higher and
-ClickHouse 22 and higher.
+This library contains a single PostgreSQL extension that enables remote query
+execution on ClickHouse databases, including a [foreign data wrapper]. It
+supports PostgreSQL 13 and higher and ClickHouse 22 and higher.
 
 ## Usage
 
@@ -69,9 +69,10 @@ SELECT clickhouse_raw_query(
 ### Pushdown Functions
 
 All PostgreSQL builtin functions used in conditionals (`HAVING` and `WHERE`
-clauses) automatically push down to ClickHouse with the same names and
-signatures. However, some have different names or signatures and must be
-mapped to their equivalents. `clickhouse_fdw` maps the following functions:
+clauses) to query ClickHouse foreign tables automatically push down to
+ClickHouse with the same names and signatures. However, some have different
+names or signatures and must be mapped to their equivalents. `pg_clickhouse`
+maps the following functions:
 
 *   `date_part`:
     *   `date_part('day')`: [toDayOfMonth](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfMonth)
@@ -102,9 +103,9 @@ mapped to their equivalents. `clickhouse_fdw` maps the following functions:
 
 ### Custom Functions
 
-These custom functions created by `clickhouse_fdw` provide pushdown for select
-ClickHouse functions with no PostgreSQL equivalents. If any of these functions
-cannot be pushed down they will raise an exception.
+These custom functions created by `pg_clickhouse` provide foreign query
+pushdown for select ClickHouse functions with no PostgreSQL equivalents. If
+any of these functions cannot be pushed down they will raise an exception.
 
 *   [dictGet](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull)
 
@@ -138,9 +139,10 @@ are not supported and will raise an error.
 
 ### Custom Aggregates
 
-These custom aggregate functions created by `clickhouse_fdw` provide pushdown
-for select ClickHouse aggregate functions with no PostgreSQL equivalents. If
-any of these functions cannot be pushed down they will raise an exception.
+These custom aggregate functions created by `pg_clickhouse` provide foreign
+query pushdown for select ClickHouse aggregate functions with no PostgreSQL
+equivalents. If any of these functions cannot be pushed down they will raise
+an exception.
 
 *   [argMax](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax)
 *   [argMin](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmin)

@@ -41,7 +41,7 @@
 
 // Extension metadata for the server.
 #ifdef PG_MODULE_MAGIC_EXT
-PG_MODULE_MAGIC_EXT(.name = "clickhouse_fdw", .version = "__VERSION__");
+PG_MODULE_MAGIC_EXT(.name = "pg_clickhouse", .version = "__VERSION__");
 #else
 PG_MODULE_MAGIC;
 #endif
@@ -791,10 +791,10 @@ clickhouseBeginForeignScan(ForeignScanState *node, int eflags)
 
 	/* Create contexts for batches of tuples and per-tuple temp workspace. */
 	fsstate->batch_cxt = AllocSetContextCreate(estate->es_query_cxt,
-	                     "clickhouse_fdw tuple data",
+	                     "pg_clickhouse tuple data",
 	                     ALLOCSET_DEFAULT_SIZES);
 	fsstate->temp_cxt = AllocSetContextCreate(estate->es_query_cxt,
-	                    "clickhouse_fdw temporary data",
+	                    "pg_clickhouse temporary data",
 	                    ALLOCSET_SMALL_SIZES);
 
 	/*
@@ -1392,7 +1392,7 @@ create_foreign_modify(EState *estate,
 
 	/* Create context for per-query temp workspace. */
 	fmstate->temp_cxt = AllocSetContextCreate(estate->es_query_cxt,
-	                    "clickhouse_fdw temporary data",
+	                    "pg_clickhouse temporary data",
 	                    ALLOCSET_SMALL_SIZES);
 
 	/* Set up remote query information. */
@@ -2885,7 +2885,7 @@ clickhouse_op_push_fail(PG_FUNCTION_ARGS)
 	text* name = PG_GETARG_TEXT_PP(0);
 	ereport(ERROR,
 		errcode(ERRCODE_FDW_ERROR),
-		errmsg("clickhouse_fdw: failed to push down %s", text_to_cstring(name))
+		errmsg("pg_clickhouse: failed to push down %s", text_to_cstring(name))
 	);
 }
 
@@ -2899,6 +2899,6 @@ clickhouse_push_fail(PG_FUNCTION_ARGS)
 	char *name = get_func_name(fcinfo->flinfo->fn_oid);
 	ereport(ERROR,
 		errcode(ERRCODE_FDW_ERROR),
-		errmsg("clickhouse_fdw: failed to push down %s()", name)
+		errmsg("pg_clickhouse: failed to push down %s()", name)
 	);
 }

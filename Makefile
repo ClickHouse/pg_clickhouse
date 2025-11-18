@@ -1,6 +1,6 @@
 EXTENSION    = $(shell grep -m 1 '"name":' META.json | \
                sed -e 's/[[:space:]]*"name":[[:space:]]*"\([^"]*\)",/\1/')
-EXTVERSION   = $(shell grep -m 1 'default_version' clickhouse_fdw.control | \
+EXTVERSION   = $(shell grep -m 1 'default_version' pg_clickhouse.control | \
                sed -e "s/[[:space:]]*default_version[[:space:]]*=[[:space:]]*'\([^']*\)',\{0,1\}/\1/")
 DISTVERSION  = $(shell grep -m 1 '[[:space:]]\{3\}"version":' META.json | \
                sed -e 's/[[:space:]]*"version":[[:space:]]*"\([^"]*\)",\{0,1\}/\1/')

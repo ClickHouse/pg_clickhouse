@@ -59,7 +59,7 @@ create_custom_objects_cache(void)
 	ctl.keysize = sizeof(Oid);
 	ctl.entrysize = sizeof(CustomObjectDef);
 
-	return hash_create("clickhouse_fdw custom functions", 20, &ctl, HASH_ELEM | HASH_BLOBS);
+	return hash_create("pg_clickhouse custom functions", 20, &ctl, HASH_ELEM | HASH_BLOBS);
 }
 
 static void
@@ -91,7 +91,7 @@ create_custom_columns_cache(void)
 								  invalidate_custom_columns_cache,
 								  (Datum) 0);
 
-	return hash_create("clickhouse_fdw custom functions", 20, &ctl, HASH_ELEM | HASH_BLOBS);
+	return hash_create("pg_clickhouse custom functions", 20, &ctl, HASH_ELEM | HASH_BLOBS);
 }
 
 inline static void
@@ -319,7 +319,7 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 					strcpy(entry->custom_name, "indexOf");
 				}
 			}
-			else if (strcmp(extname, "clickhouse_fdw") == 0)
+			else if (strcmp(extname, "pg_clickhouse") == 0)
 			{
 				entry->cf_type = CF_CH_FUNCTION;
 				if (strcmp(proname, "argmax") == 0)
@@ -360,7 +360,7 @@ FuncExpr * ch_get_params_function(TargetEntry *tle)
 
 	FuncExpr   *fe = (FuncExpr *) n;
 	Oid extoid = getExtensionOfObject(ProcedureRelationId, fe->funcid);
-	if (strcmp(get_extension_name(extoid), "clickhouse_fdw") != 0) return NULL;
+	if (strcmp(get_extension_name(extoid), "pg_clickhouse") != 0) return NULL;
 	if (strcmp(get_func_name(fe->funcid), "params") != 0) return NULL;
 
 	return fe;

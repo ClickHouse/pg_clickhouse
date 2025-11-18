@@ -1,14 +1,14 @@
 /*-------------------------------------------------------------------------
  *
  * deparse.c
- *		  Query deparser for clickhouse_fdw
+ *		  Query deparser for pg_clickhouse
  *
  * Portions Copyright (c) 2012-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 2019-2022, Adjust GmbH
  * Copyright (c) 2025, ClickHouse, Inc.
  *
  * IDENTIFICATION
- *		  github.com/clickhouse/clickhouse_fdw/src/deparse.c
+ *		  github.com/clickhouse/pg_clickhouse/src/deparse.c
  *
  *-------------------------------------------------------------------------
  */
@@ -703,7 +703,7 @@ ch_format_type_extended(Oid type_oid, int32 typemod, bits16 flags)
 
 	tuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(type_oid));
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "clickhouse_fdw: cache lookup failed for type %u", type_oid);
+		elog(ERROR, "pg_clickhouse: cache lookup failed for type %u", type_oid);
 
 	typeform = (Form_pg_type) GETSTRUCT(tuple);
 
@@ -722,7 +722,7 @@ ch_format_type_extended(Oid type_oid, int32 typemod, bits16 flags)
 		ReleaseSysCache(tuple);
 		tuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(array_base_type));
 		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "clickhouse_fdw: cache lookup failed for type %u", type_oid);
+			elog(ERROR, "pg_clickhouse: cache lookup failed for type %u", type_oid);
 
 		typeform = (Form_pg_type) GETSTRUCT(tuple);
 		type_oid = array_base_type;
@@ -1942,7 +1942,7 @@ deparseVar(Var *node, deparse_expr_cxt *context)
 						 planner_rt_fetch(node->varno, context->root),
 						 qualify_col);
 	else
-		elog(ERROR, "clickhouse_fdw does not support params");
+		elog(ERROR, "pg_clickhouse does not support params");
 }
 
 #define USE_ISO_DATES			1
@@ -2034,7 +2034,7 @@ deparseArray(Datum arr, deparse_expr_cxt *context)
 	bool		first;
 
 	if (ndims > 1)
-		elog(ERROR, "only one dimension of arrays supported by clickhouse_fdw");
+		elog(ERROR, "only one dimension of arrays supported by pg_clickhouse");
 
 	get_type_io_data(element_type, IOFunc_output,
 					 &typlen, &typbyval,
@@ -2489,7 +2489,7 @@ deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
 		CustomColumnInfo *cinfo;
 
 		if (!IsA(linitial(node->args), Var))
-			elog(ERROR, "clickhouse_fdw supports simple accumulate with column as first parameter");
+			elog(ERROR, "pg_clickhouse supports simple accumulate with column as first parameter");
 
 		if (bms_is_member(var->varno, relids) && var->varlevelsup == 0)
 			rte = planner_rt_fetch(var->varno, context->root);
@@ -2515,7 +2515,7 @@ deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
 			char *colval = psprintf("%s_values", colname);
 
 			if (list_length(node->args) == 1)
-				elog(ERROR, "clickhouse_fdw supports accumulate only with max_key parameter");
+				elog(ERROR, "pg_clickhouse supports accumulate only with max_key parameter");
 
 			/* first block
 			 *	if(a_keys[1] <= max_key, arrayMap(x -> a_keys[1] + x - 1,
@@ -2802,7 +2802,7 @@ findFunction(Oid typoid, char *name)
 			CStringGetDatum(name));
 
 	if (catlist->n_members == 0)
-		elog(ERROR, "clickhouse_fdw requires istore extension to parse istore values");
+		elog(ERROR, "pg_clickhouse requires istore extension to parse istore values");
 
 	for (i = 0; i < catlist->n_members; i++)
 	{
@@ -2899,7 +2899,7 @@ deparseOpExpr(OpExpr *node, deparse_expr_cxt *context)
 					appendStringInfoString(buf, "), 0)])");
 				}
 				else
-					elog(ERROR, "clickhouse_fdw supports hstore fetchval "
+					elog(ERROR, "pg_clickhouse supports hstore fetchval "
 							"only for scalars");
 
 				goto cleanup;
@@ -2940,7 +2940,7 @@ deparseOpExpr(OpExpr *node, deparse_expr_cxt *context)
 					appendStringInfoString(buf, "), 0)])");
 				}
 				else
-					elog(ERROR, "clickhouse_fdw supports fetchval only for columns and consts");
+					elog(ERROR, "pg_clickhouse supports fetchval only for columns and consts");
 
 				goto cleanup;
 			}
@@ -3110,7 +3110,7 @@ deparseScalarArrayOpExpr(ScalarArrayOpExpr *node, deparse_expr_cxt *context)
 	int			optype = chfdw_is_equal_op(node->opno);
 
 	if (optype == 0)
-		elog(ERROR, "clickhouse_fdw supports only equal (not equal) operations on ANY/ALL functions");
+		elog(ERROR, "pg_clickhouse supports only equal (not equal) operations on ANY/ALL functions");
 
 	/* Sanity check. */
 	Assert(list_length(node->args) == 2);
@@ -3323,13 +3323,13 @@ appendAggOrderBySuffix(Oid sortop, Oid sortcoltype, bool nulls_first,
 		; // Okay.
 	else if (sortop == typentry->gt_opr)
 		// appendStringInfoString(buf, " DESC");
-		elog(ERROR, "clickhouse_fdw: ClickHouse does not support \"DESC\" in aggregate expressions");
+		elog(ERROR, "pg_clickhouse: ClickHouse does not support \"DESC\" in aggregate expressions");
 	else
-		elog(ERROR, "clickhouse_fdw: ClickHouse does not support \"USING\" in aggregate expressions");
+		elog(ERROR, "pg_clickhouse: ClickHouse does not support \"USING\" in aggregate expressions");
 
 	if (nulls_first)
 		// appendStringInfoString(buf, " NULLS FIRST");
-		elog(ERROR, "clickhouse_fdw: ClickHouse does not support \"NULLS FIRST\" in aggregate expressions");
+		elog(ERROR, "pg_clickhouse: ClickHouse does not support \"NULLS FIRST\" in aggregate expressions");
 	// else // Okay unless DESC support added.
 		// appendStringInfoString(buf, " NULLS LAST");
 }
@@ -3454,7 +3454,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 		if (node->aggstar)
 		{
 			/* Omit * for COUNT(*) but not COUNT(DISTINCT *)
-			* https://github.com/ClickHouse/clickhouse_fdw/issues/25
+			* https://github.com/ClickHouse/pg_clickhouse/issues/25
 			* To be fixed in ClickHouse 25.11, so can be omitted once relased.
 			* https://github.com/ClickHouse/ClickHouse/pull/89373
 			*

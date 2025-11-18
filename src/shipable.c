@@ -8,7 +8,7 @@
  * Copyright (c) 2025, ClickHouse, Inc.
  *
  * IDENTIFICATION
- *		  github.com/clickhouse/clickhouse_fdw/src/shippable.c
+ *		  github.com/clickhouse/pg_clickhouse/src/shippable.c
  *
  *-------------------------------------------------------------------------
  */

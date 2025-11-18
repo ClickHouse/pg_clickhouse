@@ -8,7 +8,7 @@
  * Copyright (c) 2025, ClickHouse, Inc.
  *
  * IDENTIFICATION
- *		  github.com/clickhouse/clickhouse_fdw/src/include/fdw.h
+ *		  github.com/clickhouse/pg_clickhouse/src/include/fdw.h
  *
  *-------------------------------------------------------------------------
  */

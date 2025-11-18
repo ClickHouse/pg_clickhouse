@@ -176,7 +176,7 @@ again:
 
 		ereport(ERROR,
 				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-				 errmsg("clickhouse_fdw: communication error: %s", error)));
+				 errmsg("pg_clickhouse: communication error: %s", error)));
 	}
 	else if (resp->http_status == 418)
 	{
@@ -185,7 +185,7 @@ again:
 
 		ereport(ERROR,
 				(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-				 errmsg("clickhouse_fdw: query was aborted")));
+				 errmsg("pg_clickhouse: query was aborted")));
 	}
 	else if (resp->http_status != 200)
 	{
@@ -195,7 +195,7 @@ again:
 
 		ereport(ERROR, (
 			errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-			errmsg("clickhouse_fdw: %s", format_error(error)),
+			errmsg("pg_clickhouse: %s", format_error(error)),
 			status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query),
 			errcontext("HTTP status code: %li", status)
 		));
@@ -203,7 +203,7 @@ again:
 
 	/* we could not control properly deallocation of libclickhouse memory, so
 	 * we use memory context callbacks for that */
-	tempcxt = AllocSetContextCreate(PortalContext, "clickhouse_fdw cursor",
+	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse cursor",
 										ALLOCSET_DEFAULT_SIZES);
 	oldcxt = MemoryContextSwitchTo(tempcxt);
 
@@ -236,7 +236,7 @@ http_simple_insert(void *conn, const char *query)
 
 		ereport(ERROR,
 				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-				 errmsg("clickhouse_fdw: communication error: %s", error)));
+				 errmsg("pg_clickhouse: communication error: %s", error)));
 	}
 
 	if (resp->http_status != 200)
@@ -247,7 +247,7 @@ http_simple_insert(void *conn, const char *query)
 
 		ereport(ERROR, (
 			errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-			errmsg("clickhouse_fdw: %s", format_error(error)),
+			errmsg("pg_clickhouse: %s", format_error(error)),
 			status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query),
 			errcontext("HTTP status code: %li", status)
 		));
@@ -298,7 +298,7 @@ http_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc, Datum *v, bool
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
-				 errmsg_internal("clickhouse_fdw: columns mismatch"),
+				 errmsg_internal("pg_clickhouse: columns mismatch"),
 				 errdetail("Number of returned columns does not match "
 						   "expected column count (%lu).", attcount)));
 	}
@@ -495,7 +495,7 @@ chfdw_binary_connect(ch_connection_details *details)
 
 		ereport(ERROR,
 				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-				 errmsg("clickhouse_fdw: connection error: %s", error)));
+				 errmsg("pg_clickhouse: connection error: %s", error)));
 	}
 
 	res.conn = conn;
@@ -527,12 +527,12 @@ binary_simple_query(void *conn, const char *query)
 		ch_binary_response_free(resp);
 		ereport(ERROR, (
 			errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-			errmsg("clickhouse_fdw: %s", error),
+			errmsg("pg_clickhouse: %s", error),
 			errdetail_internal("Remote Query: %.64000s", query)
 		));
 	}
 
-	tempcxt = AllocSetContextCreate(PortalContext, "clickhouse_fdw cursor",
+	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse cursor",
 										ALLOCSET_DEFAULT_SIZES);
 
 	oldcxt = MemoryContextSwitchTo(tempcxt);
@@ -555,7 +555,7 @@ binary_simple_query(void *conn, const char *query)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-				 errmsg("clickhouse_fdw: could not initialize read state: %s",
+				 errmsg("pg_clickhouse: could not initialize read state: %s",
 					 state->error)));
 	}
 
@@ -574,7 +574,7 @@ binary_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc,
 	if (state->error)
 		ereport(ERROR,
 				(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-				 errmsg("clickhouse_fdw: error while reading row: %s",
+				 errmsg("pg_clickhouse: error while reading row: %s",
 					 state->error)));
 
 	if (!have_data)
@@ -588,14 +588,14 @@ binary_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc,
 			goto ok;
 		}
 		else
-			elog(ERROR, "clickhouse_fdw: unexpected state: attributes "
+			elog(ERROR, "pg_clickhouse: unexpected state: attributes "
 					"count == 0 and haven't got NULL in the response");
 	}
 	else if (attcount != state->resp->columns_count)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
-				 errmsg_internal("clickhouse_fdw: columns mismatch"),
+				 errmsg_internal("pg_clickhouse: columns mismatch"),
 				 errdetail("Number of returned columns (%lu) does not match "
 						   "expected column count (%lu).",
 						   state->resp->columns_count, attcount)));
@@ -689,7 +689,7 @@ binary_prepare_insert(void *conn, ResultRelInfo *rri, List *target_attrs,
 		elog(ERROR, "expected table name");
 
 	tempcxt = AllocSetContextCreate(CurrentMemoryContext,
-		"clickhouse_fdw binary insert state", ALLOCSET_DEFAULT_SIZES);
+		"pg_clickhouse binary insert state", ALLOCSET_DEFAULT_SIZES);
 
 	/* prepare cleanup */
 	oldcxt = MemoryContextSwitchTo(tempcxt);
@@ -784,7 +784,7 @@ parse_type(char *colname, char *typepart, bool *is_nullable, List **options)
 		if (strncmp(typepart, "Decimal", strlen("Decimal")) == 0)
 		{
 			if (strstr(insidebr, ",") == NULL)
-				elog(ERROR, "clickhouse_fdw: could not import Decimal field, "
+				elog(ERROR, "pg_clickhouse: could not import Decimal field, "
 					"should be two parameters on definition");
 
 			return psprintf("NUMERIC(%s)", insidebr);
@@ -801,7 +801,7 @@ parse_type(char *colname, char *typepart, bool *is_nullable, List **options)
 			return "TIMESTAMP";
 		else if (strncmp(typepart, "Tuple", strlen("Tuple")) == 0)
 		{
-			elog(NOTICE, "clickhouse_fdw: ClickHouse <Tuple> type was "
+			elog(NOTICE, "pg_clickhouse: ClickHouse <Tuple> type was "
 				"translated to <TEXT> type for column \"%s\", please create composite type and alter the column if needed", colname);
 			return "TEXT";
 		}
@@ -812,7 +812,7 @@ parse_type(char *colname, char *typepart, bool *is_nullable, List **options)
 		else if (strncmp(typepart, "Nullable", strlen("Nullable")) == 0)
 		{
 			if (is_nullable == NULL)
-				elog(ERROR, "clickhouse_fdw: nested Nullable is not supported");
+				elog(ERROR, "pg_clickhouse: nested Nullable is not supported");
 
 			*is_nullable = true;
 			return parse_type(colname, insidebr, NULL, options);
@@ -829,7 +829,7 @@ parse_type(char *colname, char *typepart, bool *is_nullable, List **options)
 				// Detect COUNT with no params.
 				if (strncmp(insidebr, "count", strlen("count")) == 0)
 					return "BIGINT";
-				elog(ERROR, "clickhouse_fdw: expected comma in AggregateFunction");
+				elog(ERROR, "pg_clickhouse: expected comma in AggregateFunction");
 			}
 
 			char *func = pnstrdup(pos + 1, strstr(pos + 1, ",") - pos - 1);
@@ -857,7 +857,7 @@ parse_type(char *colname, char *typepart, bool *is_nullable, List **options)
 		{
 			if (strcmp(typepart, "UInt8") == 0)
 			{
-				elog(NOTICE, "clickhouse_fdw: ClickHouse <UInt8> type was "
+				elog(NOTICE, "pg_clickhouse: ClickHouse <UInt8> type was "
 					"translated to <INT2> type for column \"%s\", change it to BOOLEAN if needed", colname);
 			}
 			return pstrdup(str_types_map[i][1]);
@@ -866,7 +866,7 @@ parse_type(char *colname, char *typepart, bool *is_nullable, List **options)
 		i++;
 	}
 
-	ereport(ERROR, (errmsg("clickhouse_fdw: could not map type <%s>", typepart)));
+	ereport(ERROR, (errmsg("pg_clickhouse: could not map type <%s>", typepart)));
 }
 
 List *
@@ -1096,7 +1096,7 @@ escape_string(char *to, const char *from, size_t length)
 		}
 
 		if (i < len)
-			elog(ERROR, "clickhouse_fdw: incomplete multibyte character");
+			elog(ERROR, "pg_clickhouse: incomplete multibyte character");
 	}
 
 	/* Write the terminating NUL character. */

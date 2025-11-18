@@ -37,5 +37,5 @@ COPY --chmod=644 --from=build \
     /dest/usr/lib/postgresql/$PG_MAJOR/lib/bitcode/*.bc \
     /usr/lib/postgresql/$PG_MAJOR/lib/bitcode/
 COPY --chmod=644 --from=build \
-    /dest/usr/lib/postgresql/$PG_MAJOR/lib/bitcode/clickhouse_fdw/src/*.bc \
-    /usr/lib/postgresql/$PG_MAJOR/lib/bitcode/clickhouse_fdw/src/
+    /dest/usr/lib/postgresql/$PG_MAJOR/lib/bitcode/pg_clickhouse/src/*.bc \
+    /usr/lib/postgresql/$PG_MAJOR/lib/bitcode/pg_clickhouse/src/

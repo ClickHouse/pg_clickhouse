@@ -122,10 +122,10 @@ SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work
 
 ALTER SERVER binary_queries_loopback OPTIONS (SET dbname 'no such database');
 SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should fail
-ERROR:  clickhouse_fdw: DB::Exception: Database `no such database` doesn't exist
+ERROR:  pg_clickhouse: DB::Exception: Database `no such database` doesn't exist
 ALTER USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback OPTIONS (ADD user 'no such user');
 SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should fail
-ERROR:  clickhouse_fdw: connection error: DB::Exception: no such user: Authentication failed: password is incorrect, or there is no user with such name.
+ERROR:  pg_clickhouse: connection error: DB::Exception: no such user: Authentication failed: password is incorrect, or there is no user with such name.
 ALTER SERVER binary_queries_loopback OPTIONS (SET dbname 'binary_queries_test');
 ALTER USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback OPTIONS (DROP user);
 SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work again
@@ -713,7 +713,7 @@ SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
     19
 (1 row)
 
-/* https://github.com/ClickHouse/clickhouse_fdw/issues/25 */
+/* https://github.com/ClickHouse/pg_clickhouse/issues/25 */
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(*) FILTER (WHERE c1 < 20) FROM ft2;
                                  QUERY PLAN                                  
 -----------------------------------------------------------------------------

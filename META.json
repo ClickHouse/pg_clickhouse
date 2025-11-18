@@ -1,32 +1,32 @@
 {
-   "name": "clickhouse_fdw",
-   "abstract": "A Foreign Data Wrapper for ClickHouse",
-   "description": "Provides a Foreign Data Wrapper for easy and efficient access to ClickHouse databases, including pushdown of WHERE and JOIN conditions as well as comprehensive EXPLAIN and ANALYZE support.",
-   "version": "2.0.0-b1",
+   "name": "pg_clickhouse",
+   "abstract": "Query ClickHouse databases from PostgreSQL",
+   "description": "Provides a Foreign Data Wrapper and other interfaces for easy and efficient access to ClickHouse databases, including pushdown of WHERE, JOIN, and aggregates expressions as well as comprehensive EXPLAIN and ANALYZE support.",
+   "version": "0.1.0-b1",
    "maintainer": "David E. Wheeler <david@justatheory.com>",
    "license": "apache_2_0",
    "provides": {
-      "clickhouse_fdw": {
-         "abstract": "A Foreign Data Wrapper for ClickHouse",
-         "file": "clickhouse_fdw.control",
-         "docfile": "doc/clickhouse_fdw.md",
-         "version": "2.0.0"
+      "pg_clickhouse": {
+         "abstract": "Interfaces to query ClickHouse databases from Postgres",
+         "file": "pg_clickhouse.control",
+         "docfile": "doc/pg_clickhouse.md",
+         "version": "0.1.0-b1"
       }
    },
    "prereqs": {
       "runtime": {
          "requires": {
-            "PostgreSQL": "11.0.0"
+            "PostgreSQL": "13.0.0"
          }
       }
    },
    "resources": {
       "bugtracker": {
-         "web": "http://github.com/clickhouse/clickhouse_fdw/issues/"
+         "web": "http://github.com/clickhouse/pg_clickhouse/issues/"
       },
       "repository": {
-        "url":  "git://github.com/clickhouse/clickhouse_fdw.git",
-        "web":  "http://github.com/clickhouse/clickhouse_fdw/",
+        "url":  "git://github.com/clickhouse/pg_clickhouse.git",
+        "web":  "http://github.com/clickhouse/pg_clickhouse/",
         "type": "git"
       }
    },
@@ -40,6 +40,8 @@
       "fdw",
       "clickhouse",
       "analytics",
-      "external data"
+      "external data",
+      "pushdown",
+      "aggregate"
    ]
 }

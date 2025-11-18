@@ -235,7 +235,7 @@ SELECT * FROM farrays ORDER BY c1;
 (10 rows)
 
 SELECT * FROM farrays2 ORDER BY c1;
-ERROR:  clickhouse_fdw: could not cast value from integer[] to bigint[]
+ERROR:  pg_clickhouse: could not cast value from integer[] to bigint[]
 -- tuples
 SELECT * FROM ftuples ORDER BY c1;
  c1 |    c2    | c3 

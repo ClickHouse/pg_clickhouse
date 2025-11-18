@@ -1,5 +1,5 @@
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
-\echo Use "CREATE EXTENSION clickhouse_fdw" to load this file. \quit
+\echo Use "CREATE EXTENSION pg_clickhouse" to load this file. \quit
 
 -- Set up the FDW.
 CREATE FUNCTION clickhouse_fdw_handler()
@@ -60,7 +60,7 @@ LANGUAGE C STRICT;
 CREATE FUNCTION ch_argmax(anyelement, anyelement, anycompatible)
 RETURNS anyelement AS $$
 BEGIN
-    RAISE 'clickhouse_fdw: failed to push down aggregate argMax()'
+    RAISE 'pg_clickhouse: failed to push down aggregate argMax()'
     USING ERRCODE = 'fdw_error';
 END;
 $$
@@ -77,7 +77,7 @@ CREATE AGGREGATE argMax(anyelement, anycompatible)
 CREATE FUNCTION ch_argmin(anyelement, anyelement, anycompatible)
 RETURNS anyelement AS $$
 BEGIN
-    RAISE 'clickhouse_fdw: failed to push down aggregate argMin()'
+    RAISE 'pg_clickhouse: failed to push down aggregate argMin()'
     USING ERRCODE = 'fdw_error';
 END;
 $$

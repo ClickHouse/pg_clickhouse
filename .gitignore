@@ -7,7 +7,7 @@ results/
 tmp/
 regression.diffs
 regression.out
-/clickhouse_fdw-*
+/pg_clickhouse-*
 .vscode/
 _build/
 /latest-changes.md

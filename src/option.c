@@ -1,14 +1,14 @@
 /*-------------------------------------------------------------------------
  *
  * option.c
- *		  FDW option handling for clickhouse_fdw
+ *		  FDW option handling for pg_clickhouse
  *
  * Portions Copyright (c) 2012-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 2019-2022, Adjust GmbH
  * Copyright (c) 2025, ClickHouse, Inc.
  *
  * IDENTIFICATION
- *		  github.com/clickhouse/clickhouse_fdw/src/option.c
+ *		  github.com/clickhouse/pg_clickhouse/src/option.c
 *
  *-------------------------------------------------------------------------
  */

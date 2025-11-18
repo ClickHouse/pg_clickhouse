@@ -23,21 +23,21 @@ variable "pg_versions" {
 # Values to use in the targets.
 now = timestamp()
 authors = "David E. Wheeler"
-url = "https://github.com/ClickHouse/clickhouse_fdw"
+url = "https://github.com/ClickHouse/pg_clickhouse"
 
 target "default" {
   platforms = ["linux/amd64", "linux/arm64"]
   matrix = {
     pgv = pg_versions
   }
-  name = "clickhouse_fdw-${pgv}"
+  name = "pg_clickhouse-${pgv}"
   context = "."
   args = {
     PG_MAJOR = "${pgv}"
   }
   tags = [
-    "${registry}/postgres-clickhouse_fdw:${pgv}",
-    "${registry}/postgres-clickhouse_fdw:${pgv}-${version}",
+    "${registry}/pg_clickhouse:${pgv}",
+    "${registry}/pg_clickhouse:${pgv}-${version}",
   ]
   annotations = [
     "index,manifest:org.opencontainers.image.created=${now}",
@@ -46,8 +46,8 @@ target "default" {
     "index,manifest:org.opencontainers.image.version=${pgv}-${version}",
     "index,manifest:org.opencontainers.image.revision=${revision}",
     "index,manifest:org.opencontainers.image.vendor=${authors}",
-    "index,manifest:org.opencontainers.image.title=PostgreSQL with clickhouse_fdw",
-    "index,manifest:org.opencontainers.image.description=PostgreSQL ${pgv} with clickhouse_fdw ${version}",
+    "index,manifest:org.opencontainers.image.title=PostgreSQL with pg_clickhouse",
+    "index,manifest:org.opencontainers.image.description=PostgreSQL ${pgv} with pg_clickhouse ${version}",
     "index,manifest:org.opencontainers.image.documentation=${url}",
     "index,manifest:org.opencontainers.image.authors=${authors}",
     "index,manifest:org.opencontainers.image.licenses=PostgreSQL AND Apache-2.0",
@@ -60,8 +60,8 @@ target "default" {
     "org.opencontainers.image.version" = "${pgv}-${version}",
     "org.opencontainers.image.revision" = "${revision}",
     "org.opencontainers.image.vendor" = "${authors}",
-    "org.opencontainers.image.title" = "PostgreSQL with clickhouse_fdw",
-    "org.opencontainers.image.description" = "PostgreSQL ${pgv} with clickhouse_fdw ${version}",
+    "org.opencontainers.image.title" = "PostgreSQL with pg_clickhouse",
+    "org.opencontainers.image.description" = "PostgreSQL ${pgv} with pg_clickhouse ${version}",
     "org.opencontainers.image.documentation" = "${url}",
     "org.opencontainers.image.authors" = "${authors}",
     "org.opencontainers.image.licenses" = "PostgreSQL AND Apache-2.0"

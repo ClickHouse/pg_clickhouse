@@ -569,11 +569,11 @@ SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a NULLS LAST) FROM t1;
 (1 row)
 
 SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a DESC) FROM t1;
-ERROR:  clickhouse_fdw: ClickHouse does not support "DESC" in aggregate expressions
+ERROR:  pg_clickhouse: ClickHouse does not support "DESC" in aggregate expressions
 SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a NULLS FIRST) FROM t1;
-ERROR:  clickhouse_fdw: ClickHouse does not support "NULLS FIRST" in aggregate expressions
+ERROR:  pg_clickhouse: ClickHouse does not support "NULLS FIRST" in aggregate expressions
 SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a USING >) FROM t1;
-ERROR:  clickhouse_fdw: ClickHouse does not support "DESC" in aggregate expressions
+ERROR:  pg_clickhouse: ClickHouse does not support "DESC" in aggregate expressions
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
                                                                                   QUERY PLAN                                                                                  
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

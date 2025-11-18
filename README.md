@@ -1,10 +1,11 @@
-clickhouse_fdw Postgres Extension
-=================================
+pg_clickhouse Postgres Extension
+================================
 
 [![PGXN]][⚙️] [![Postgres]][🐘] [![ClickHouse]][🏠] [![Docker]][🐳]
 
-This library contains the PostgreSQL extension `clickhouse_fdw` a foreign data
-wrapper for ClickHouse databases. It supports ClickHouse v22 and later.
+This library contains the PostgreSQL extension `pg_clickhouse`, including a
+foreign data wrapper for ClickHouse databases. It supports ClickHouse v22 and
+later.
 
 ## Installation
 
@@ -34,7 +35,7 @@ sudo apt install \
 
 #### Compile and Install
 
-To build and install the ClickHouse library and `clickhouse_fdw`, run:
+To build and install the ClickHouse library and `pg_clickhouse`, run:
 
 ```sh
 make
@@ -43,7 +44,7 @@ sudo make install
 
 By default `make` dynamically links the `clickhouse-cpp` library (except on
 macOS, where a dynamic `clickhouse-cpp` library is not yet supported). To
-statically compile the ClickHouse library into `clickhouse_fdw`, pass
+statically compile the ClickHouse library into `pg_clickhouse`, pass
 `CH_BUILD=static`:
 
 ```sh
@@ -139,25 +140,25 @@ make installcheck PGUSER=postgres
 
 ### Loading
 
-Once `clickhouse_fdw` is installed, you can add it to a database by connecting
+Once `pg_clickhouse` is installed, you can add it to a database by connecting
 to a database as a super user and running:
 
 ``` sql
-CREATE EXTENSION clickhouse_fdw;
+CREATE EXTENSION pg_clickhouse;
 ```
 
-If you want to install `clickhouse_fdw` and all of its supporting objects into
+If you want to install `pg_clickhouse` and all of its supporting objects into
 a specific schema, use the `SCHEMA` clause to specify the schema, like so:
 
 ``` sql
 CREATE SCHEMA env;
-CREATE EXTENSION clickhouse_fdw SCHEMA env;
+CREATE EXTENSION pg_clickhouse SCHEMA env;
 ```
 
 ## Dependencies
 
-The `clickhouse_fdw` extension requires PostgreSQL 11 or higher, [libcurl],
-and [libuuid]. Building the extension requires a compiler, GNU `make`, and
+The `pg_clickhouse` extension requires PostgreSQL 13 or higher, [libcurl], and
+[libuuid]. Building the extension requires a compiler, GNU `make`, and
 [CMake].
 
 ## Authors
@@ -168,19 +169,19 @@ and [libuuid]. Building the extension requires a compiler, GNU `make`, and
 
 ## Copyright
 
-*   Portions Copyright (c) 2025 ClickHouse
+*   Portions Copyright (c) 2025, ClickHouse
 *   Portions Copyright (c) 2019-2023, Adjust GmbH
-*   Portions Copyright (c) 2019 Percona
+*   Portions Copyright (c) 2019, Percona
 *   Portions Copyright (c) 2012-2019, PostgreSQL Global Development Group
 
-  [PGXN]: https://badge.fury.io/pg/clickhouse_fdw.svg
-  [⚙️]: https://pgxn.org/dist/clickhouse_fdw "Latest version on PGXN"
-  [Postgres]:  https://github.com/clickhouse/clickhouse_fdw/actions/workflows/postgres.yml/badge.svg
-  [🐘]:        https://github.com/clickhouse/clickhouse_fdw/actions/workflows/postgres.yml "Tested with PostgreSQL 13-18"
-  [ClickHouse]: https://github.com/clickhouse/clickhouse_fdw/actions/workflows/clickhouse.yml/badge.svg
-  [🏠]:          https://github.com/clickhouse/clickhouse_fdw/actions/workflows/clickhouse.yml "Tested with ClickHouse v22–25"
-  [Docker]:    https://ghcr-badge.egpl.dev/clickhouse/clickhouse_fdw/latest_tag?color=%2344cc11&ignore=latest&label=version
-  [🐳]:        https://github.com/ClickHouse/clickhouse_fdw/pkgs/container/postgres-clickhouse_fdw "Latest version on Docker Hub"
+  [PGXN]: https://badge.fury.io/pg/pg_clickhouse.svg
+  [⚙️]: https://pgxn.org/dist/pg_clickhouse "Latest version on PGXN"
+  [Postgres]:  https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml/badge.svg
+  [🐘]:        https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml "Tested with PostgreSQL 13-18"
+  [ClickHouse]: https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml/badge.svg
+  [🏠]:          https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml "Tested with ClickHouse v22–25"
+  [Docker]:    https://ghcr-badge.egpl.dev/clickhouse/pg_clickhouse/latest_tag?color=%2344cc11&ignore=latest&label=version
+  [🐳]:        https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "Latest version on Docker Hub"
 
   [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
   [libcurl]: https://curl.se/libcurl/ "libcurl — your network transfer library"

@@ -1,0 +1,4 @@
+comment = 'Interfaces to query ClickHouse databases from PostgreSQL'
+default_version = '0.1.0'
+module_pathname = 'pg_clickhouse'
+relocatable = true
