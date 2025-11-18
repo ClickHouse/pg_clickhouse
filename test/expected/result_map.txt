@@ -7,6 +7,18 @@ ClickHouse they cover.
 *   Postgres coverage run using latest ClickHouse release.
 *   ClickHouse coverage run from PostgreSQL 18.
 
+binary_inserts.sql
+------------------
+
+ Postgres | File
+----------|----------------------
+ 18       | binary_inserts.out
+ 13-17    | binary_inserts_1.out
+
+ ClickHouse | File
+------------|--------------------
+ 22-25      | binary_inserts.out
+
 binary_queries.sql
 ------------------
 
@@ -33,7 +45,7 @@ deparse_checks.sql
  13-17    | deparse_checks_1.out
 
  ClickHouse | File
-------------|----------------------
+------------|--------------------
  22-25      | deparse_checks.out
 
 engines.sql

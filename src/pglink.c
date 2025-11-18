@@ -737,7 +737,6 @@ binary_insert_tuple(void *istate, TupleTableSlot *slot)
 	else
 	{
 		ch_binary_insert_columns(state);
-		state->success = true;
 	}
 }
 

@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 typedef struct ch_binary_connection_t ch_binary_connection_t;
+typedef struct ch_insert_block_h ch_insert_block_h;
 typedef struct ch_binary_response_t
 {
 	void			   *values;
@@ -48,7 +49,7 @@ typedef struct {
 	MemoryContextCallback callback;
 
 	TupleDesc	outdesc;
-	void   *columns;	/* std::vector */
+	ch_insert_block_h *insert_block; /* clickhouse::Block */
 	size_t	len;
 	void  *conversion_states;
 	char *table_name;
