@@ -2,7 +2,7 @@
    "name": "clickhouse_fdw",
    "abstract": "A Foreign Data Wrapper for ClickHouse",
    "description": "Provides a Foreign Data Wrapper for easy and efficient access to ClickHouse databases, including pushdown of WHERE and JOIN conditions as well as comprehensive EXPLAIN and ANALYZE support.",
-   "version": "2.0.0",
+   "version": "2.0.0-b1",
    "maintainer": "David E. Wheeler <david@justatheory.com>",
    "license": "apache_2_0",
    "provides": {

@@ -1,8 +1,7 @@
 clickhouse_fdw Postgres Extension
 =================================
 
-[![PGXN version](https://badge.fury.io/pg/clickhouse_fdw.svg)](https://badge.fury.io/pg/clickhouse_fdw)
-[![Build Status](https://github.com/clickhouse/clickhouse_fdw/actions/workflows/ci.yml/badge.svg)](https://github.com/clickhouse/clickhouse_fdw/actions/workflows/ci.yml)
+[![PGXN]][⚙️] [![Postgres]][🐘] [![ClickHouse]][🏠] [![Docker]][🐳]
 
 This library contains the PostgreSQL extension `clickhouse_fdw` a foreign data
 wrapper for ClickHouse databases. It supports ClickHouse v22 and later.
@@ -29,6 +28,7 @@ sudo apt install \
   uuid-dev \
   make \
   cmake \
+  libssl-dev \
   g++
 ```
 
@@ -172,6 +172,15 @@ and [libuuid]. Building the extension requires a compiler, GNU `make`, and
 *   Portions Copyright (c) 2019-2023, Adjust GmbH
 *   Portions Copyright (c) 2019 Percona
 *   Portions Copyright (c) 2012-2019, PostgreSQL Global Development Group
+
+  [PGXN]: https://badge.fury.io/pg/clickhouse_fdw.svg
+  [⚙️]: https://pgxn.org/dist/clickhouse_fdw "Latest version on PGXN"
+  [Postgres]:  https://github.com/clickhouse/clickhouse_fdw/actions/workflows/postgres.yml/badge.svg
+  [🐘]:        https://github.com/clickhouse/clickhouse_fdw/actions/workflows/postgres.yml "Tested with PostgreSQL 13-18"
+  [ClickHouse]: https://github.com/clickhouse/clickhouse_fdw/actions/workflows/clickhouse.yml/badge.svg
+  [🏠]:          https://github.com/clickhouse/clickhouse_fdw/actions/workflows/clickhouse.yml "Tested with ClickHouse v22–25"
+  [Docker]:    https://ghcr-badge.egpl.dev/clickhouse/clickhouse_fdw/latest_tag?color=%2344cc11&ignore=latest&label=version
+  [🐳]:        https://github.com/ClickHouse/clickhouse_fdw/pkgs/container/postgres-clickhouse_fdw "Latest version on Docker Hub"
 
   [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
   [libcurl]: https://curl.se/libcurl/ "libcurl — your network transfer library"

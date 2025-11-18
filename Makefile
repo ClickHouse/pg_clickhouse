@@ -155,3 +155,21 @@ results:
 
 # Run make print-VARIABLE_NAME to print VARIABLE_NAME's flavor and value.
 print-%	: ; $(info $* is $(flavor $*) variable set to "$($*)") @true
+
+# OCI images.
+REGISTRY ?= localhost:5001
+REVISION := $(shell git rev-parse --short HEAD)
+PLATFORMS ?= linux/amd64,linux/arm64
+PG_VERSIONS ?= 18,17,16,15,14,13
+.PHONY: image # Build the linux/amd64 OCI image.
+image:
+	registry=$(REGISTRY) version=$(DISTVERSION) revision=$(REVISION) pg_versions=$(PG_VERSIONS) \
+	docker buildx bake --set "*.platform=$(PLATFORMS)" \
+	$(if $(filter true,$(PUSH)),--push,) \
+	$(if $(filter true,$(LOAD)),--load,) \
+
+bake-vars:
+	@echo "registry=$(REGISTRY)"
+	@echo "version=$(DISTVERSION)"
+	@echo "revision=$(REVISION)"
+	@echo "pg_versions=$(PG_VERSIONS)"
