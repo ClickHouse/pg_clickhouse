@@ -291,6 +291,7 @@ void ch_binary_insert_state_free(void * c)
 	if (state->insert_block)
 	{
 		/* Finish the insert to set the proper ClickHouse state */
+		delete (Block *)state->insert_block;
 		Client * client = (Client *)state->conn->client;
 		try
 		{
@@ -298,10 +299,9 @@ void ch_binary_insert_state_free(void * c)
 		}
 		catch (const std::exception & e)
 		{
-			// just ignore, next query will fail
-			elog(NOTICE, "pg_clickhouse: could not finish INSERT: - %s", e.what());
+			client->ResetConnection();
+			elog(ERROR, "pg_clickhouse: could not finish INSERT - %s", e.what());
 		}
-		delete (Block *)state->insert_block;
 	}
 }
 
@@ -316,6 +316,7 @@ void ch_binary_prepare_insert(void * conn, char * query, ch_binary_insert_state 
 	}
 	catch (const std::exception & e)
 	{
+		client->ResetConnection();
 		elog(ERROR, "pg_clickhouse: could not prepare insert - %s", e.what());
 	}
 
@@ -585,16 +586,18 @@ void ch_binary_column_append_data(ch_binary_insert_state * state, size_t colidx)
 
 void ch_binary_insert_columns(ch_binary_insert_state * state)
 {
+	Client * client = (Client *)state->conn->client;
+	auto block = (Block *)state->insert_block;
 	try
 	{
-		Client * client = (Client *)state->conn->client;
-		auto block = (Block *)state->insert_block;
 		block->RefreshRowCount();
 		client->SendInsertBlock(*block);
 		block->Clear();
 	}
 	catch (const std::exception & e)
 	{
+		client->ResetConnection();
+		delete block;
 		elog(ERROR, "pg_clickhouse: could not insert columns - %s", e.what());
 	}
 }
