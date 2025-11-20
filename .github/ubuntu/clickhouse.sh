@@ -38,5 +38,17 @@ for pkg in clickhouse-common-static clickhouse-server; do
     rm "${pkg}.deb"
 done
 
+if [ "${CH_VERSION%%.*}" -lt 25 ]; then
+    # Enable the JSON type in release prior to 2025.
+    printf "~~~~ Starting ClickHouse %s ~~~~\n" "$CH_VERSION"
+    setting=allow_experimental_object_type
+    if [ "${CH_VERSION:0:4}" == "24.8" ]; then
+        # The setting was renamed.
+        setting=allow_experimental_json_type
+    fi
+
+    perl -i -pe "s{^((\s+)<default>)}{\$1\n\$2    <$setting>1</$setting>}" /etc/clickhouse-server/users.xml
+fi
+
 printf "~~~~ Starting ClickHouse %s ~~~~\n" "$CH_VERSION"
 /etc/init.d/clickhouse-server start

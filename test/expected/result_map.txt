@@ -100,3 +100,16 @@ import_schema.sql
  ClickHouse | File
 ------------|-------------------
  22-25      | import_schema.out
+
+json.sql
+--------
+
+ Postgres | File
+----------|----------
+ 13-18    | json.out
+
+ ClickHouse | File
+------------|------------
+ 25.8+      | json.out
+ 24.8-25.3  | json_1.out
+ 22-24.3    | json_2.out

@@ -760,6 +760,7 @@ static char *str_types_map[][2] = {
 	{"UUID", "UUID"},
 	{"IPv4", "inet"},
 	{"IPv6", "inet"},
+	{"JSON", "JSON"},
 	{NULL, NULL},
 };
 

@@ -1,0 +1,86 @@
+SET datestyle = 'ISO';
+CREATE SERVER binary_json_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'json_test', driver 'binary');
+CREATE SERVER http_json_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'json_test', driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;
+CREATE USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS json_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE DATABASE json_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    CREATE TABLE json_test.things (
+        id   Int32 NOT NULL,
+        data JSON NOT NULL
+    ) ENGINE = MergeTree PARTITION BY id ORDER BY (id);
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+CREATE SCHEMA json_bin;
+CREATE SCHEMA json_http;
+IMPORT FOREIGN SCHEMA "json_test" FROM SERVER binary_json_loopback INTO json_bin;
+\d json_bin.things
+                 Foreign table "json_bin.things"
+ Column |  Type   | Collation | Nullable | Default | FDW options 
+--------+---------+-----------+----------+---------+-------------
+ id     | integer |           | not null |         | 
+ data   | json    |           | not null |         | 
+Server: binary_json_loopback
+FDW options: (database 'json_test', table_name 'things', engine 'MergeTree')
+
+IMPORT FOREIGN SCHEMA "json_test" FROM SERVER http_json_loopback INTO json_http;
+\d json_http.things
+                Foreign table "json_http.things"
+ Column |  Type   | Collation | Nullable | Default | FDW options 
+--------+---------+-----------+----------+---------+-------------
+ id     | integer |           | not null |         | 
+ data   | json    |           | not null |         | 
+Server: http_json_loopback
+FDW options: (database 'json_test', table_name 'things', engine 'MergeTree')
+
+-- Fails pending https://github.com/ClickHouse/clickhouse-cpp/issues/422
+INSERT INTO json_bin.things VALUES
+    (1, '{"id": 1, "name": "widget", "size": "large", "stocked": true}'),
+    (2, '{"id": 2, "name": "sprocket", "size": "small", "stocked": true}')
+;
+ERROR:  pg_clickhouse: could not prepare insert - unsupported column type: JSON
+INSERT INTO json_http.things VALUES
+    (1, '{"id": 1, "name": "widget", "size": "large", "stocked": true}'),
+    (2, '{"id": 2, "name": "sprocket", "size": "small", "stocked": true}'),
+    (3, '{"id": 3, "name": "gizmo", "size": "medium", "stocked": true}'),
+    (4, '{"id": 4, "name": "doodad", "size": "large", "stocked": false}')
+;
+SELECT * FROM json_bin.things ORDER BY id;
+ERROR:  pg_clickhouse: unsupported column type: JSON
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC
+SELECT * FROM json_http.things ORDER BY id;
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":1,"name":"widget","size":"large","stocked":true}
+  2 | {"id":2,"name":"sprocket","size":"small","stocked":true}
+  3 | {"id":3,"name":"gizmo","size":"medium","stocked":true}
+  4 | {"id":4,"name":"doodad","size":"large","stocked":false}
+(4 rows)
+
+SELECT clickhouse_raw_query('DROP DATABASE json_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;
+DROP USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;
+DROP SERVER binary_json_loopback CASCADE;
+NOTICE:  drop cascades to foreign table json_bin.things
+DROP SERVER http_json_loopback CASCADE;
+NOTICE:  drop cascades to foreign table json_http.things
