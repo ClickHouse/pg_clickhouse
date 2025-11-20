@@ -48,6 +48,11 @@ using namespace clickhouse;
 #define HOST_TO_BIG_ENDIAN_64(x) htobe64(x)
 #endif
 
+#define THROW_UNEXPECTED_COLUMN(exp_type, col) \
+	throw std::runtime_error("unexpected column type for " \
+		+ std::string(exp_type) \
+		+ ": " + col->Type()->GetName())
+
 /* palloc which will throw exceptions */
 static void * exc_palloc(Size size)
 {
@@ -368,10 +373,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 		nullable = true;
 
 	if (isnull && !nullable)
-		throw std::runtime_error(
-			"unexpected column "
-			"type for NULL: "
-			+ col->Type()->GetName());
+		THROW_UNEXPECTED_COLUMN("NULL", col);
 
 	if (nullable)
 	{
@@ -395,10 +397,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 					col->As<ColumnInt16>()->Append((int16_t)val);
 					break;
 				default:
-					throw std::runtime_error(
-						"pg_clickhouse: unexpected column "
-						"type for INT2: "
-						+ col->Type()->GetName());
+					THROW_UNEXPECTED_COLUMN("INT2", col);
 			}
 			break;
 		}
@@ -412,10 +411,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 					col->As<ColumnUInt16>()->Append((uint16_t)val);
 					break;
 				default:
-					throw std::runtime_error(
-						"unexpected column "
-						"type for INT4: "
-						+ col->Type()->GetName());
+					THROW_UNEXPECTED_COLUMN("INT4", col);
 			}
 			break;
 		}
@@ -432,10 +428,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 					col->As<ColumnUInt64>()->Append((uint64_t)val);
 					break;
 				default:
-					throw std::runtime_error(
-						"unexpected column "
-						"type for INT8: "
-						+ col->Type()->GetName());
+					THROW_UNEXPECTED_COLUMN("INT8", col);
 			}
 			break;
 		}
@@ -446,10 +439,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 					col->As<ColumnFloat32>()->Append(DatumGetFloat4(val));
 					break;
 				default:
-					throw std::runtime_error(
-						"unexpected column "
-						"type for FLOAT4: "
-						+ col->Type()->GetName());
+					THROW_UNEXPECTED_COLUMN("FLOAT4", col);
 			}
 			break;
 		}
@@ -460,10 +450,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 					col->As<ColumnFloat64>()->Append(DatumGetFloat8(val));
 					break;
 				default:
-					throw std::runtime_error(
-						"unexpected column "
-						"type for FLOAT8: "
-						+ col->Type()->GetName());
+					THROW_UNEXPECTED_COLUMN("FLOAT8", col);
 			}
 			break;
 		}
@@ -479,10 +466,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 					col->As<ColumnDecimal>()->Append(std::string(s));
 					break;
 				default:
-					throw std::runtime_error(
-						"unexpected column "
-						"type for NUMERIC: "
-						+ col->Type()->GetName());
+					THROW_UNEXPECTED_COLUMN("NUMERIC", col);
 			}
 			pfree(s);
 			break;
@@ -509,10 +493,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 					break;
 				}
 				default:
-					throw std::runtime_error(
-						"unexpected column "
-						"type for TEXT: "
-						+ col->Type()->GetName());
+					THROW_UNEXPECTED_COLUMN("TEXT", col);
 			}
 
 			break;
@@ -527,10 +508,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 					col->As<ColumnDate>()->Append(d);
 					break;
 				default:
-					throw std::runtime_error(
-						"unexpected column "
-						"type for DATE: "
-						+ col->Type()->GetName());
+					THROW_UNEXPECTED_COLUMN("DATE", col);
 			}
 			break;
 		}
@@ -553,10 +531,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 					break;
 				}
 				default:
-					throw std::runtime_error(
-						"unexpected column "
-						"type for TIMESTAMPOID: "
-						+ col->Type()->GetName());
+					THROW_UNEXPECTED_COLUMN("TIMESTAMP", col);
 			}
 			break;
 		}
@@ -576,17 +551,12 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 					break;
 				}
 				default:
-					throw std::runtime_error(
-						"unexpected column "
-						"type for array: "
-						+ col->Type()->GetName());
+					THROW_UNEXPECTED_COLUMN("array", col);
 			}
 			break;
 		}
 		default: {
-			throw std::runtime_error(
-				"unexpected type " + std::to_string(valtype)
-				+ " type for : " + col->Type()->GetName());
+			THROW_UNEXPECTED_COLUMN(std::to_string(valtype), col);
 		}
 	}
 }
