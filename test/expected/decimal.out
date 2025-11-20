@@ -1,0 +1,104 @@
+SET datestyle = 'ISO';
+CREATE SERVER binary_decimal_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'decimal_test', driver 'binary');
+CREATE SERVER http_decimal_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'decimal_test', driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_decimal_loopback;
+CREATE USER MAPPING FOR CURRENT_USER SERVER http_decimal_loopback;
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS decimal_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE DATABASE decimal_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    CREATE TABLE decimal_test.decimals (
+        id     Int32          NOT NULL,
+        dec    Decimal(8, 0)  NOT NULL,
+        dec32  Decimal32(4)   NOT NULL,
+        dec64  Decimal64(6)   NOT NULL,
+        dec128 Decimal128(8)  NOT NULL
+    ) ENGINE = MergeTree PARTITION BY id ORDER BY (id);
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+CREATE SCHEMA dec_bin;
+CREATE SCHEMA dec_http;
+IMPORT FOREIGN SCHEMA "decimal_test" FROM SERVER binary_decimal_loopback INTO dec_bin;
+\d dec_bin.decimals
+                   Foreign table "dec_bin.decimals"
+ Column |     Type      | Collation | Nullable | Default | FDW options 
+--------+---------------+-----------+----------+---------+-------------
+ id     | integer       |           | not null |         | 
+ dec    | numeric(8,0)  |           | not null |         | 
+ dec32  | numeric(9,4)  |           | not null |         | 
+ dec64  | numeric(18,6) |           | not null |         | 
+ dec128 | numeric(38,8) |           | not null |         | 
+Server: binary_decimal_loopback
+FDW options: (database 'decimal_test', table_name 'decimals', engine 'MergeTree')
+
+IMPORT FOREIGN SCHEMA "decimal_test" FROM SERVER http_decimal_loopback INTO dec_http;
+\d dec_http.decimals
+                   Foreign table "dec_http.decimals"
+ Column |     Type      | Collation | Nullable | Default | FDW options 
+--------+---------------+-----------+----------+---------+-------------
+ id     | integer       |           | not null |         | 
+ dec    | numeric(8,0)  |           | not null |         | 
+ dec32  | numeric(9,4)  |           | not null |         | 
+ dec64  | numeric(18,6) |           | not null |         | 
+ dec128 | numeric(38,8) |           | not null |         | 
+Server: http_decimal_loopback
+FDW options: (database 'decimal_test', table_name 'decimals', engine 'MergeTree')
+
+-- Fails pending https://github.com/ClickHouse/clickhouse-cpp/issues/422
+INSERT INTO dec_bin.decimals (id, dec, dec32, dec64, dec128) VALUES
+    (1, 42::NUMERIC, 98.6::NUMERIC, 102.4::NUMERIC, 1024.003::NUMERIC),
+    (2, 9999, 9999.9999, 9999999.999999, 99999999999.99999999),
+    (3, -9999, -9999.9999, -9999999.999999, -99999999999.99999999)
+;
+INSERT INTO dec_http.decimals VALUES
+    (4, 1000000::NUMERIC, 10000::NUMERIC, 3000000000::NUMERIC, 400000000000::NUMERIC),
+    (5, -1, -0.0001, -0.000001, -0.00000001),
+    (6, 0, 0, 0, 0)
+;
+SELECT * FROM dec_bin.decimals ORDER BY id;
+ id |   dec   |   dec32    |       dec64       |        dec128         
+----+---------+------------+-------------------+-----------------------
+  1 |      42 |    98.6000 |        102.400000 |         1024.00300000
+  2 |    9999 |  9999.9999 |    9999999.999999 |  99999999999.99999999
+  3 |   -9999 | -9999.9999 |   -9999999.999999 | -99999999999.99999999
+  4 | 1000000 | 10000.0000 | 3000000000.000000 | 400000000000.00000000
+  5 |      -1 |    -0.0001 |         -0.000001 |           -0.00000001
+  6 |       0 |     0.0000 |          0.000000 |            0.00000000
+(6 rows)
+
+SELECT * FROM dec_http.decimals ORDER BY id;
+ id |   dec   |   dec32    |       dec64       |        dec128         
+----+---------+------------+-------------------+-----------------------
+  1 |      42 |    98.6000 |        102.400000 |         1024.00300000
+  2 |    9999 |  9999.9999 |    9999999.999999 |  99999999999.99999999
+  3 |   -9999 | -9999.9999 |   -9999999.999999 | -99999999999.99999999
+  4 | 1000000 | 10000.0000 | 3000000000.000000 | 400000000000.00000000
+  5 |      -1 |    -0.0001 |         -0.000001 |           -0.00000001
+  6 |       0 |     0.0000 |          0.000000 |            0.00000000
+(6 rows)
+
+SELECT clickhouse_raw_query('DROP DATABASE decimal_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP USER MAPPING FOR CURRENT_USER SERVER binary_decimal_loopback;
+DROP USER MAPPING FOR CURRENT_USER SERVER http_decimal_loopback;
+DROP SERVER binary_decimal_loopback CASCADE;
+NOTICE:  drop cascades to foreign table dec_bin.decimals
+DROP SERVER http_decimal_loopback CASCADE;
+NOTICE:  drop cascades to foreign table dec_http.decimals

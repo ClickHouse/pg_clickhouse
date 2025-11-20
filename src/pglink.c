@@ -377,12 +377,9 @@ extend_insert_query(ch_http_insert_state *state, TupleTableSlot *slot)
 			break;
 			case NUMERICOID:
 			{
-				Datum  valueDatum;
-				float8 f;
-
-				valueDatum = DirectFunctionCall1(numeric_float8, value);
-				f = DatumGetFloat8(valueDatum);
-				appendStringInfo(&state->sql, "%f", f);
+				char *extval = DatumGetCString(DirectFunctionCall1(numeric_out, value));
+				appendStringInfoString(&state->sql, extval);
+				pfree(extval);
 			}
 			break;
 			case BPCHAROID:

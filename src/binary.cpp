@@ -1,3 +1,4 @@
+#include <sstream>
 #include <iostream>
 #include <cassert>
 #include <stdexcept>
@@ -250,6 +251,11 @@ static Oid get_corr_postgres_type(const TypeRef & type)
 			return FLOAT4OID;
 		case Type::Code::Float64:
 			return FLOAT8OID;
+		case Type::Code::Decimal128:
+		case Type::Code::Decimal64:
+		case Type::Code::Decimal32:
+		case Type::Code::Decimal:
+			return NUMERICOID;
 		case Type::Code::FixedString:
 		case Type::Code::Enum8:
 		case Type::Code::Enum16:
@@ -459,6 +465,26 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 						"type for FLOAT8: "
 						+ col->Type()->GetName());
 			}
+			break;
+		}
+		case NUMERICOID: {
+			// Convert numeric to string and let ColumnDecimal parse it.
+			char *s = DatumGetCString(DirectFunctionCall1(numeric_out, val));
+			switch (col->Type()->GetCode())
+			{
+				case Type::Code::Decimal128:
+				case Type::Code::Decimal64:
+				case Type::Code::Decimal32:
+				case Type::Code::Decimal:
+					col->As<ColumnDecimal>()->Append(std::string(s));
+					break;
+				default:
+					throw std::runtime_error(
+						"unexpected column "
+						"type for NUMERIC: "
+						+ col->Type()->GetName());
+			}
+			pfree(s);
 			break;
 		}
 		case TEXTOID: {
@@ -743,6 +769,55 @@ nested_col:
 			double val = col->As<ColumnFloat64>()->At(row);
 			ret = Float8GetDatum(val);
 			*valtype = FLOAT8OID;
+		}
+		break;
+		case Type::Code::Decimal128:
+		case Type::Code::Decimal64:
+		case Type::Code::Decimal32:
+		case Type::Code::Decimal:
+		{
+			auto decCol = col->As<ColumnDecimal>();
+			auto val = decCol->At(row);
+
+			// Convert the Int128 to a string.
+			std::stringstream ss;
+			ss << val;
+			std::string str = ss.str();
+
+			// Start a destination string.
+			std::stringstream res;
+			auto scale = decCol->GetScale();
+
+			// Output a dash for negative values
+			if (val < 0)
+			{
+				res << '-';
+				str.erase(0, 1);
+			}
+
+			if (str.length() <= scale)
+			{
+				// Append the entire value prepended with zeros after the decimal.
+				res << "0." << std::string(scale-1, '0') << str;
+			}
+			else
+			{
+				// There are digits before the decimal.
+				auto decAt = str.length() - scale;
+				res << str.substr(0, decAt);
+
+				// Append any digits after the decimal.
+				if (decAt < str.length())
+				{
+					res << '.' << str.substr(decAt);
+				}
+			}
+
+			ret = DirectFunctionCall3(numeric_in,
+										CStringGetDatum(res.str().c_str()),
+										ObjectIdGetDatum(0),
+										Int32GetDatum(-1));
+			*valtype = NUMERICOID;
 		}
 		break;
 		case Type::Code::FixedString: {
