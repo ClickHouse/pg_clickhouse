@@ -34,23 +34,23 @@
 /*
  * Connection cache (initialized on first use)
  */
-static HTAB *ConnectionHash = NULL;
+static HTAB * ConnectionHash = NULL;
 static void chfdw_inval_callback(Datum arg, int cacheid, uint32 hashvalue);
 static int32 strtoint32(const char *s);
 
 
 static ch_connection
-clickhouse_connect(ForeignServer *server, UserMapping *user)
+clickhouse_connect(ForeignServer * server, UserMapping * user)
 {
 	char	   *driver = "http";
 
 	/* default settings */
-	ch_connection_details	details = {"127.0.0.1", 0, NULL, NULL, "default"};
+	ch_connection_details details = {"127.0.0.1", 0, NULL, NULL, "default"};
 
 	chfdw_extract_options(server->options, &driver, &details.host,
-		&details.port, &details.dbname, &details.username, &details.password);
+						  &details.port, &details.dbname, &details.username, &details.password);
 	chfdw_extract_options(user->options, &driver, &details.host,
-		&details.port, &details.dbname, &details.username, &details.password);
+						  &details.port, &details.dbname, &details.username, &details.password);
 
 	if (strcmp(driver, "http") == 0)
 	{
@@ -65,7 +65,7 @@ clickhouse_connect(ForeignServer *server, UserMapping *user)
 }
 
 ch_connection
-chfdw_get_connection(UserMapping *user)
+chfdw_get_connection(UserMapping * user)
 {
 	bool		found;
 	ConnCacheEntry *entry;
@@ -95,7 +95,7 @@ chfdw_get_connection(UserMapping *user)
 									  chfdw_inval_callback, (Datum) 0);
 	}
 
-	/* Create hash key for the entry.  Assume no pad bytes in key struct */
+	/* Create hash key for the entry. Assume no pad bytes in key struct */
 	key.userid = user->umid;
 
 	/*
@@ -124,13 +124,13 @@ chfdw_get_connection(UserMapping *user)
 
 	/*
 	 * We don't check the health of cached connection here, because it would
-	 * require some overhead.  Broken connection will be detected when the
+	 * require some overhead. Broken connection will be detected when the
 	 * connection is actually used.
 	 */
 
 	/*
 	 * If cache entry doesn't have a connection, we have to establish a new
-	 * connection.  (If clickhouse_connect throws an error, the cache entry
+	 * connection. (If clickhouse_connect throws an error, the cache entry
 	 * will remain in a valid empty state, ie conn == NULL.)
 	 */
 	if (entry->gate.conn == NULL)
@@ -190,10 +190,10 @@ chfdw_inval_callback(Datum arg, int cacheid, uint32 hashvalue)
 
 		/* hashvalue == 0 means a cache reset, must clear all state */
 		if (hashvalue == 0 ||
-				(cacheid == FOREIGNSERVEROID &&
-				 entry->server_hashvalue == hashvalue) ||
-				(cacheid == USERMAPPINGOID &&
-				 entry->mapping_hashvalue == hashvalue))
+			(cacheid == FOREIGNSERVEROID &&
+			 entry->server_hashvalue == hashvalue) ||
+			(cacheid == USERMAPPINGOID &&
+			 entry->mapping_hashvalue == hashvalue))
 		{
 			entry->invalidated = true;
 		}
@@ -209,7 +209,7 @@ connstring_parse(const char *connstring)
 	char	   *buf;
 	char	   *cp;
 	char	   *cp2;
-    ch_connection_details *details = palloc0(sizeof(ch_connection_details));
+	ch_connection_details *details = palloc0(sizeof(ch_connection_details));
 
 	/* Need a modifiable copy of the input string */
 	if ((buf = pstrdup(connstring)) == NULL)
@@ -310,19 +310,26 @@ connstring_parse(const char *connstring)
 			}
 		}
 
-		if (strcmp(pname, "host") == 0) {
+		if (strcmp(pname, "host") == 0)
+		{
 			details->host = pstrdup(pval);
-		} else if (strcmp(pname, "port") == 0) {
+		}
+		else if (strcmp(pname, "port") == 0)
+		{
 			details->port = strtoint32(pval);
-		} else if (strcmp(pname, "username") == 0) {
+		}
+		else if (strcmp(pname, "username") == 0)
+		{
 			details->username = pstrdup(pval);
-		} else if (strcmp(pname, "password") == 0) {
+		}
+		else if (strcmp(pname, "password") == 0)
+		{
 			details->password = pstrdup(pval);
 		}
 	}
 
-    pfree(buf);
-    return details;
+	pfree(buf);
+	return details;
 }
 
 /*

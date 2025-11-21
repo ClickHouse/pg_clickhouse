@@ -19,8 +19,10 @@
 
 #include "fdw.h"
 
-// Prior to PostgreSQL 14 these variables had other names or were undefined.
-// See postgres/include/server/utils/fmgroids.h
+/*
+ * Prior to PostgreSQL 14 these variables had other names or were undefined.
+ * See postgres / include / server / utils / fmgroids.h
+ */
 #if PG_VERSION_NUM < 140000
 #define F_DATE_TRUNC_TEXT_TIMESTAMP F_TIMESTAMP_TRUNC
 #define F_DATE_PART_TEXT_TIMESTAMP F_TIMESTAMP_PART
@@ -36,20 +38,23 @@
 #define F_PERCENTILE_CONT_FLOAT8_FLOAT8 3974
 #define F_PERCENTILE_CONT_FLOAT8_INTERVAL 3976
 
-// Prior to Postgres 14 EXTRACT mapped directly to DATE_PART.
-// https://github.com/postgres/postgres/commit/a2da77cdb466
+/*
+ * Prior to Postgres 14 EXTRACT mapped directly to DATE_PART.
+ * https://github.com / postgres / postgres / commit / a2da77cdb466
+ */
 #define F_EXTRACT_TEXT_TIMESTAMP 6202
 #define F_EXTRACT_TEXT_TIMESTAMPTZ 6203
 #define F_EXTRACT_TEXT_DATE 6199
 #endif
-// regexp_like was added in Postgres 15; Mock it for earlier versions.
+/* regexp_like was added in Postgres 15; Mock it for earlier versions. */
 #if PG_VERSION_NUM < 150000
 #define F_REGEXP_LIKE_TEXT_TEXT 6263
 #endif
 
 
-static HTAB *custom_objects_cache = NULL;
-static HTAB *custom_columns_cache = NULL;
+static HTAB * custom_objects_cache = NULL;
+static HTAB
+* custom_columns_cache = NULL;
 
 static HTAB *
 create_custom_objects_cache(void)
@@ -95,7 +100,7 @@ create_custom_columns_cache(void)
 }
 
 inline static void
-init_custom_entry(CustomObjectDef *entry)
+init_custom_entry(CustomObjectDef * entry)
 {
 	entry->cf_type = CF_USUAL;
 	entry->custom_name[0] = '\0';
@@ -107,25 +112,29 @@ init_custom_entry(CustomObjectDef *entry)
  * Return true if ordered aggregate funcid maps to a parameterized ClickHouse
  * aggregate function.
  */
-inline bool chfdw_check_for_ordered_aggregate(Aggref *agg)
+inline bool
+chfdw_check_for_ordered_aggregate(Aggref * agg)
 {
-	switch (agg->aggfnoid) {
-		// Ordered aggregates that map to ClickHouse functions.
+	switch (agg->aggfnoid)
+	{
 		case F_PERCENTILE_CONT_FLOAT8_FLOAT8:
 		case F_PERCENTILE_CONT_FLOAT8_INTERVAL:
+			/* Ordered aggregates that map to ClickHouse functions. */
 			return true;
 	}
 
-	// Accept all ordered aggregates defined by pg_clickhouse.
-	Oid	extoid = getExtensionOfObject(ProcedureRelationId, agg->aggfnoid);
-	char *extname = get_extension_name(extoid);
+	/* Accept all ordered aggregates defined by pg_clickhouse. */
+	Oid			extoid = getExtensionOfObject(ProcedureRelationId, agg->aggfnoid);
+	char	   *extname = get_extension_name(extoid);
+
 	return strcmp(extname, "pg_clickhouse") == 0;
 }
 
-CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
+CustomObjectDef *
+chfdw_check_for_custom_function(Oid funcid)
 {
-	bool special_builtin = false;
-	CustomObjectDef	*entry;
+	bool		special_builtin = false;
+	CustomObjectDef *entry;
 
 	if (chfdw_is_builtin(funcid))
 	{
@@ -171,57 +180,57 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 		{
 			case F_DATE_TRUNC_TEXT_TIMESTAMPTZ:
 			case F_DATE_TRUNC_TEXT_TIMESTAMP:
-			{
-				entry->cf_type = CF_DATE_TRUNC;
-				entry->custom_name[0] = '\1';
-				break;
-			}
+				{
+					entry->cf_type = CF_DATE_TRUNC;
+					entry->custom_name[0] = '\1';
+					break;
+				}
 			case F_DATE_PART_TEXT_TIMESTAMPTZ:
 			case F_DATE_PART_TEXT_TIMESTAMP:
 			case F_DATE_PART_TEXT_DATE:
 			case F_EXTRACT_TEXT_TIMESTAMP:
 			case F_EXTRACT_TEXT_TIMESTAMPTZ:
 			case F_EXTRACT_TEXT_DATE:
-			{
-				entry->cf_type = CF_DATE_PART;
-				entry->custom_name[0] = '\1';
-				break;
-			}
+				{
+					entry->cf_type = CF_DATE_PART;
+					entry->custom_name[0] = '\1';
+					break;
+				}
 			case F_TIMEZONE_TEXT_TIMESTAMP:
 			case F_TIMEZONE_TEXT_TIMESTAMPTZ:
-			{
-				entry->cf_type = CF_TIMEZONE;
-				strcpy(entry->custom_name, "toTimeZone");
-				break;
-			}
+				{
+					entry->cf_type = CF_TIMEZONE;
+					strcpy(entry->custom_name, "toTimeZone");
+					break;
+				}
 			case F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE:
-			{
-				strcpy(entry->custom_name, "indexOf");
-				break;
-			}
+				{
+					strcpy(entry->custom_name, "indexOf");
+					break;
+				}
 			case F_BTRIM_TEXT_TEXT:
 			case F_BTRIM_TEXT:
-			{
-				strcpy(entry->custom_name, "trimBoth");
-				break;
-			}
+				{
+					strcpy(entry->custom_name, "trimBoth");
+					break;
+				}
 			case F_STRPOS:
-			{
-				strcpy(entry->custom_name, "position");
-				break;
-			}
+				{
+					strcpy(entry->custom_name, "position");
+					break;
+				}
 			case F_REGEXP_LIKE_TEXT_TEXT:
-			{
-				entry->cf_type = CF_MATCH;
-				strcpy(entry->custom_name, "match");
-				break;
-			}
+				{
+					entry->cf_type = CF_MATCH;
+					strcpy(entry->custom_name, "match");
+					break;
+				}
 			case F_PERCENTILE_CONT_FLOAT8_FLOAT8:
 			case F_PERCENTILE_CONT_FLOAT8_INTERVAL:
-			{
-				strcpy(entry->custom_name, "quantile");
-				break;
-			}
+				{
+					strcpy(entry->custom_name, "quantile");
+					break;
+				}
 		}
 
 		if (special_builtin)
@@ -233,7 +242,7 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 		{
 			HeapTuple	proctup;
 			Form_pg_proc procform;
-			char		*proname;
+			char	   *proname;
 
 			proctup = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcid));
 			if (!HeapTupleIsValid(proctup))
@@ -343,7 +352,8 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 				else if (strcmp(proname, "dictget") == 0)
 					strcpy(entry->custom_name, "dictGet");
 				else if (strcmp(proname, "params") == 0)
-					entry->custom_name[0] = '\1'; // Will have no function name.
+					entry->custom_name[0] = '\1';
+				/* Will have no function name. */
 				else if (strcmp(proname, "quantileexact") == 0)
 					strcpy(entry->custom_name, "quantileExact");
 				else
@@ -360,9 +370,9 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 static Oid
 find_rowfunc(char *procname, Oid rettype)
 {
-	Oid		argtypes[1] = {RECORDOID};
-	Oid		procOid;
-	List   *funcname = NIL;
+	Oid			argtypes[1] = {RECORDOID};
+	Oid			procOid;
+	List	   *funcname = NIL;
 
 	funcname = list_make1(makeString(procname));
 	procOid = LookupFuncName(funcname, 1, argtypes, false);
@@ -383,9 +393,11 @@ find_rowfunc(char *procname, Oid rettype)
 	return procOid;
 }
 
-CustomObjectDef *chfdw_check_for_custom_type(Oid typeoid)
+CustomObjectDef *
+chfdw_check_for_custom_type(Oid typeoid)
 {
-	CustomObjectDef	*entry;
+	CustomObjectDef *entry;
+
 	if (!custom_objects_cache)
 		custom_objects_cache = create_custom_objects_cache();
 
@@ -404,27 +416,28 @@ CustomObjectDef *chfdw_check_for_custom_type(Oid typeoid)
 		if (HeapTupleIsValid(tp))
 		{
 			Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
-			char *name = NameStr(typtup->typname);
+			char	   *name = NameStr(typtup->typname);
+
 			if (strcmp(name, "istore") == 0)
 			{
-				entry->cf_type = CF_ISTORE_TYPE; /* bigistore or istore */
+				entry->cf_type = CF_ISTORE_TYPE;	/* bigistore or istore */
 				strcpy(entry->custom_name, "Tuple(Array(Int32), Array(Int64))");
 				entry->rowfunc = find_rowfunc("row_to_istore", typeoid);
 			}
 			else if (strcmp(name, "bigistore") == 0)
 			{
-				entry->cf_type = CF_ISTORE_TYPE; /* bigistore or istore */
+				entry->cf_type = CF_ISTORE_TYPE;	/* bigistore or istore */
 				strcpy(entry->custom_name, "Tuple(Array(Int32), Array(Int64))");
 				entry->rowfunc = find_rowfunc("row_to_bigistore", typeoid);
 			}
 			else if (strcmp(name, "ajtime") == 0)
 			{
-				entry->cf_type = CF_AJTIME_TYPE; /* ajtime */
+				entry->cf_type = CF_AJTIME_TYPE;	/* ajtime */
 				strcpy(entry->custom_name, "timestamp");
 			}
 			else if (strcmp(name, "country") == 0)
 			{
-				entry->cf_type = CF_COUNTRY_TYPE; /* country type */
+				entry->cf_type = CF_COUNTRY_TYPE;	/* country type */
 				strcpy(entry->custom_name, "text");
 			}
 			ReleaseSysCache(tp);
@@ -434,18 +447,21 @@ CustomObjectDef *chfdw_check_for_custom_type(Oid typeoid)
 	return entry;
 }
 
-CustomObjectDef *chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form)
+CustomObjectDef *
+chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form)
 {
 	HeapTuple	tuple = NULL;
 
-	CustomObjectDef	*entry;
+	CustomObjectDef *entry;
+
 	if (!custom_objects_cache)
 		custom_objects_cache = create_custom_objects_cache();
 
 	if (chfdw_is_builtin(opoid))
 	{
-		switch (opoid) {
-			/* timestamptz + interval */
+		switch (opoid)
+		{
+				/* timestamptz + interval */
 			case F_TIMESTAMPTZ_PL_INTERVAL:
 				break;
 			default:
@@ -471,8 +487,8 @@ CustomObjectDef *chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator for
 			entry->cf_type = CF_TIMESTAMPTZ_PL_INTERVAL;
 		else
 		{
-			Oid		extoid = getExtensionOfObject(OperatorRelationId, opoid);
-			char   *extname = get_extension_name(extoid);
+			Oid			extoid = getExtensionOfObject(OperatorRelationId, opoid);
+			char	   *extname = get_extension_name(extoid);
 
 			if (extname)
 			{
@@ -505,9 +521,9 @@ CustomObjectDef *chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator for
  * New options might also require tweaking merge_fdw_options().
  */
 void
-chfdw_apply_custom_table_options(CHFdwRelationInfo *fpinfo, Oid relid)
+chfdw_apply_custom_table_options(CHFdwRelationInfo * fpinfo, Oid relid)
 {
-	ListCell	*lc;
+	ListCell   *lc;
 	TupleDesc	tupdesc;
 	int			attnum;
 	Relation	rel;
@@ -516,16 +532,18 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo *fpinfo, Oid relid)
 	foreach(lc, fpinfo->table->options)
 	{
 		DefElem    *def = (DefElem *) lfirst(lc);
+
 		if (strcmp(def->defname, "engine") == 0)
 		{
 			static char *collapsing_text = "collapsingmergetree",
-						*aggregating_text = "aggregatingmergetree";
+					   *aggregating_text = "aggregatingmergetree";
 
-			char *val = defGetString(def);
+			char	   *val = defGetString(def);
+
 			if (strncasecmp(val, collapsing_text, strlen(collapsing_text)) == 0)
 			{
-				char   *start = index(val, '('),
-					   *end = rindex(val, ')');
+				char	   *start = index(val, '('),
+						   *end = rindex(val, ')');
 
 				fpinfo->ch_table_engine = CH_COLLAPSING_MERGE_TREE;
 				if (start == end)
@@ -555,18 +573,19 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo *fpinfo, Oid relid)
 
 	for (attnum = 1; attnum <= tupdesc->natts; attnum++)
 	{
-		bool				found;
-		CustomObjectDef	   *cdef;
-		CustomColumnInfo	entry_key,
-						   *entry;
-		custom_object_type	cf_type = CF_ISTORE_ARR;
+		bool		found;
+		CustomObjectDef *cdef;
+		CustomColumnInfo entry_key,
+				   *entry;
+		custom_object_type cf_type = CF_ISTORE_ARR;
 
 		Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+
 		entry_key.relid = relid;
 		entry_key.varattno = attnum;
 
 		entry = hash_search(custom_columns_cache,
-				(void *) &entry_key.relid, HASH_ENTER, &found);
+							(void *) &entry_key.relid, HASH_ENTER, &found);
 		if (found)
 			continue;
 
@@ -580,7 +599,7 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo *fpinfo, Oid relid)
 
 		/* If a column has the column_name FDW option, use that value */
 		options = GetForeignColumnOptions(relid, attnum);
-		foreach (lc, options)
+		foreach(lc, options)
 		{
 			DefElem    *def = (DefElem *) lfirst(lc);
 
@@ -614,8 +633,8 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo *fpinfo, Oid relid)
 CustomColumnInfo *
 chfdw_get_custom_column_info(Oid relid, uint16 varattno)
 {
-	CustomColumnInfo	entry_key,
-					   *entry;
+	CustomColumnInfo entry_key,
+			   *entry;
 
 	entry_key.relid = relid;
 	entry_key.varattno = varattno;
@@ -624,7 +643,7 @@ chfdw_get_custom_column_info(Oid relid, uint16 varattno)
 		custom_columns_cache = create_custom_columns_cache();
 
 	entry = hash_search(custom_columns_cache,
-			(void *) &entry_key.relid, HASH_FIND, NULL);
+						(void *) &entry_key.relid, HASH_FIND, NULL);
 
 	return entry;
 }

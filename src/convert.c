@@ -20,63 +20,66 @@
 
 typedef struct ch_convert_state ch_convert_state;
 typedef struct ch_convert_output_state ch_convert_output_state;
-typedef Datum (*convert_func)(ch_convert_state *, Datum);
-typedef Datum (*out_convert_func)(ch_convert_output_state *, Datum);
+typedef Datum(*convert_func) (ch_convert_state *, Datum);
+typedef Datum(*out_convert_func) (ch_convert_output_state *, Datum);
 
-typedef struct ch_convert_state {
-	Oid				intype;
-	Oid				outtype;
-	convert_func	func;
+typedef struct ch_convert_state
+{
+	Oid			intype;
+	Oid			outtype;
+	convert_func func;
 
-	// record
-	TupleConversionMap	*tupmap;
-	CustomObjectDef	*cdef;
-	TupleDesc		indesc;		/* for RECORD */
-	TupleDesc		outdesc;	/* for RECORD */
+	/* record */
+	TupleConversionMap *tupmap;
+	CustomObjectDef *cdef;
+	TupleDesc	indesc;			/* for RECORD */
+	TupleDesc	outdesc;		/* for RECORD */
 	ch_convert_state **conversion_states;
 
-	// array
+	/* array */
 	int16		typlen;
 	bool		typbyval;
 	char		typalign;
 
-	// text
+	/* text */
 	int32		typmod;
 	Oid			typinput;
 	Oid			typioparam;
 
-	// generic
-	CoercionPathType	ctype;
-	Oid					castfunc;
-} ch_convert_state;
+	/* generic */
+	CoercionPathType ctype;
+	Oid			castfunc;
+}			ch_convert_state;
 
-typedef struct ch_convert_output_state {
-	Oid				intype;
-	Oid				outtype;
-	AttrNumber		attnum;
-	out_convert_func	func;
+typedef struct ch_convert_output_state
+{
+	Oid			intype;
+	Oid			outtype;
+	AttrNumber	attnum;
+	out_convert_func func;
 
-	// array
-	Oid			innertype; /* if intype is array */
+	/* array */
+	Oid			innertype;		/* if intype is array */
 	int16		typlen;
 	bool		typbyval;
 	char		typalign;
 
-	// generic
-	CoercionPathType	ctype;
-	Oid					castfunc;
-} ch_convert_output_state;
+	/* generic */
+	CoercionPathType ctype;
+	Oid			castfunc;
+}			ch_convert_output_state;
 
 static Datum
-convert_record(ch_convert_state *state, Datum val)
+convert_record(ch_convert_state * state, Datum val)
 {
-	HeapTuple		temptup;
-	HeapTuple		htup;
-	ch_binary_tuple_t	*slot = (ch_binary_tuple_t *) DatumGetPointer(val);
+	HeapTuple	temptup;
+	HeapTuple	htup;
+	ch_binary_tuple_t *slot = (ch_binary_tuple_t *) DatumGetPointer(val);
 
 	for (size_t i = 0; i < slot->len; i++)
 	{
 		ch_convert_state *s = state->conversion_states[i];
+
 		if (s)
 			slot->datums[i] = s->func(s, slot->datums[i]);
 	}
@@ -95,7 +98,7 @@ convert_record(ch_convert_state *state, Datum val)
 		{
 			/* a lot of allocations, not so efficient */
 			val = CStringGetTextDatum(DatumGetCString(
-						OidFunctionCall1(F_RECORD_OUT, val)));
+													  OidFunctionCall1(F_RECORD_OUT, val)));
 		}
 	}
 	else
@@ -112,7 +115,7 @@ convert_record(ch_convert_state *state, Datum val)
 }
 
 inline static Datum
-convert_generic(ch_convert_state *state, Datum val)
+convert_generic(ch_convert_state * state, Datum val)
 {
 	if (state->ctype == COERCION_PATH_FUNC)
 	{
@@ -124,7 +127,7 @@ convert_generic(ch_convert_state *state, Datum val)
 }
 
 inline static Datum
-convert_out_generic(ch_convert_output_state *state, Datum val)
+convert_out_generic(ch_convert_output_state * state, Datum val)
 {
 	if (state->ctype == COERCION_PATH_FUNC)
 	{
@@ -136,16 +139,16 @@ convert_out_generic(ch_convert_output_state *state, Datum val)
 }
 
 static Datum
-convert_array(ch_convert_state *state, Datum val)
+convert_array(ch_convert_state * state, Datum val)
 {
-	ch_binary_array_t	*slot = (ch_binary_array_t *) DatumGetPointer(val);
+	ch_binary_array_t *slot = (ch_binary_array_t *) DatumGetPointer(val);
 
 	if (slot->len == 0)
 		val = PointerGetDatum(construct_empty_array(state->intype));
 	else
 	{
-		void *arrout = construct_array(slot->datums, slot->len, slot->item_type,
-			state->typlen, state->typbyval, state->typalign);
+		void	   *arrout = construct_array(slot->datums, slot->len, slot->item_type,
+											 state->typlen, state->typbyval, state->typalign);
 
 		val = PointerGetDatum(arrout);
 	}
@@ -154,10 +157,10 @@ convert_array(ch_convert_state *state, Datum val)
 }
 
 static Datum
-convert_remote_text(ch_convert_state *state, Datum val)
+convert_remote_text(ch_convert_state * state, Datum val)
 {
 	return OidInputFunctionCall(state->typinput, TextDatumGetCString(val),
-			state->typioparam, state->typmod);
+								state->typioparam, state->typmod);
 }
 
 /*
@@ -165,20 +168,21 @@ convert_remote_text(ch_convert_state *state, Datum val)
  * SMALLINT and this function covers this case
  */
 static Datum
-convert_bool(ch_convert_state *state, Datum val)
+convert_bool(ch_convert_state * state, Datum val)
 {
-	int16 dat = DatumGetInt16(val);
+	int16		dat = DatumGetInt16(val);
+
 	return BoolGetDatum(dat);
 }
 
 inline static Datum
-convert_bool_to_int16(ch_convert_output_state *state, Datum val)
+convert_bool_to_int16(ch_convert_output_state * state, Datum val)
 {
 	return Int16GetDatum(DatumGetBool(val) ? 1 : 0);
 }
 
 static Datum
-convert_date(ch_convert_state *state, Datum val)
+convert_date(ch_convert_state * state, Datum val)
 {
 	val = DirectFunctionCall1(timestamp_date, val);
 	return convert_generic(state, val);
@@ -191,7 +195,7 @@ ch_binary_convert_datum(void *state, Datum val)
 }
 
 /* input */
-void *
+void	   *
 ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 {
 	ch_convert_state *state = palloc0(sizeof(ch_convert_state));
@@ -206,9 +210,10 @@ ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 		state->func = convert_date;
 	else if (intype == ANYARRAYOID)
 	{
-		ch_binary_array_t	*slot = (ch_binary_array_t *) DatumGetPointer(val);
+		ch_binary_array_t *slot = (ch_binary_array_t *) DatumGetPointer(val);
+
 		get_typlenbyvalalign(slot->item_type, &state->typlen, &state->typbyval,
-				&state->typalign);
+							 &state->typalign);
 
 		/* restore intype */
 		state->intype = slot->array_type;
@@ -218,7 +223,7 @@ ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 
 	if (intype == RECORDOID)
 	{
-		ch_binary_tuple_t	*slot = (ch_binary_tuple_t *) DatumGetPointer(val);
+		ch_binary_tuple_t *slot = (ch_binary_tuple_t *) DatumGetPointer(val);
 
 		state->func = convert_record;
 
@@ -231,26 +236,27 @@ ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 
 		for (size_t i = 0; i < slot->len; ++i)
 		{
-			Oid item_type = slot->types[i];
+			Oid			item_type = slot->types[i];
 
 			if (slot->types[i] == ANYARRAYOID)
 			{
-				ch_binary_array_t	*arr = (ch_binary_array_t *) DatumGetPointer(slot->datums[i]);
+				ch_binary_array_t *arr = (ch_binary_array_t *) DatumGetPointer(slot->datums[i]);
+
 				item_type = arr->array_type;
 			}
 			state->conversion_states[i] = ch_binary_init_convert_state(slot->datums[i],
-					slot->types[i], item_type);
+																	   slot->types[i], item_type);
 
 			TupleDescInitEntry(state->indesc, (AttrNumber) i + 1, "",
-				item_type, -1, 0);
+							   item_type, -1, 0);
 		}
 
 		state->indesc = BlessTupleDesc(state->indesc);
 
 		if (!(state->cdef || outtype == RECORDOID || outtype == TEXTOID))
 		{
-			TypeCacheEntry	   *typentry;
-			TupleDesc			tupdesc;
+			TypeCacheEntry *typentry;
+			TupleDesc	tupdesc;
 
 			typentry = lookup_type_cache(outtype,
 										 TYPECACHE_TUPDESC |
@@ -258,8 +264,8 @@ ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 
 			if (typentry->typtype == TYPTYPE_DOMAIN)
 				tupdesc = lookup_rowtype_tupdesc_noerror(typentry->domainBaseType,
-													  typentry->domainBaseTypmod,
-													  false);
+														 typentry->domainBaseTypmod,
+														 false);
 			else
 			{
 				if (typentry->tupDesc == NULL)
@@ -273,7 +279,7 @@ ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 			}
 			state->outdesc = CreateTupleDescCopy(tupdesc);
 			state->tupmap = convert_tuples_by_position(state->indesc, state->outdesc,
-				"pg_clickhouse: could not map tuple to returned type");
+													   "pg_clickhouse: could not map tuple to returned type");
 			ReleaseTupleDesc(tupdesc);
 		}
 	}
@@ -308,15 +314,18 @@ ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 		{
 			/* try to convert */
 			state->ctype = find_coercion_pathway(outtype, intype,
-										  COERCION_EXPLICIT,
-										  &state->castfunc);
+												 COERCION_EXPLICIT,
+												 &state->castfunc);
 			switch (state->ctype)
 			{
 				case COERCION_PATH_FUNC:
 					break;
 				case COERCION_PATH_RELABELTYPE:
-					/* if the conversion func was not previously set,
-					 * then no conversion needed */
+
+					/*
+					 * if the conversion func was not previously set, then no
+					 * conversion needed
+					 */
 					if (state->func == NULL)
 						goto no_conversion;
 
@@ -324,7 +333,7 @@ ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 					break;
 				default:
 					elog(ERROR, "pg_clickhouse: could not cast value from %s to %s",
-							format_type_be(intype), format_type_be(outtype));
+						 format_type_be(intype), format_type_be(outtype));
 			}
 		}
 	}
@@ -343,27 +352,30 @@ void
 ch_binary_free_convert_state(void *s)
 {
 	ch_convert_state *state = s;
+
 	pfree(state);
 }
 
 /* output */
 
 static void
-init_output_convert_state(ch_convert_output_state *state)
+init_output_convert_state(ch_convert_output_state * state)
 {
 	if (state->outtype == state->intype)
 		return;
 
-	// Postgres has no cast from bool to INT16, so provide our own.
-	if (state->outtype == INT2OID &&  state->intype == BOOLOID) {
+	/* Postgres has no cast from bool to INT16, so provide our own. */
+	if (state->outtype == INT2OID && state->intype == BOOLOID)
+	{
 		state->func = convert_bool_to_int16;
 		state->ctype = COERCION_PATH_FUNC;
 		return;
 	}
 
 	state->func = convert_out_generic;
+
 	state->ctype = find_coercion_pathway(state->outtype, state->intype,
-		COERCION_EXPLICIT, &state->castfunc);
+										 COERCION_EXPLICIT, &state->castfunc);
 
 	switch (state->ctype)
 	{
@@ -374,14 +386,14 @@ init_output_convert_state(ch_convert_output_state *state)
 			return;
 		default:
 			elog(ERROR, "pg_clickhouse: could not find a casting path from %s to %s",
-					format_type_be(state->intype), format_type_be(state->outtype));
+				 format_type_be(state->intype), format_type_be(state->outtype));
 	}
 }
 
-void *
+void	   *
 ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc)
 {
-	ch_convert_output_state	 *states;
+	ch_convert_output_state *states;
 	int			n;
 	int			i;
 
@@ -402,6 +414,7 @@ ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc)
 		if (NameStr(TupleDescAttr(indesc, 0)->attname)[0] == '\0')
 		{
 			Form_pg_attribute attin = TupleDescAttr(indesc, i);
+
 			curstate->intype = attin->atttypid;
 			init_output_convert_state(curstate);
 			curstate->attnum = (AttrNumber) (i + 1);
@@ -432,7 +445,7 @@ ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc)
 		{
 			curstate->outtype = ANYARRAYOID;
 			get_typlenbyvalalign(curstate->innertype, &curstate->typlen,
-					&curstate->typbyval, &curstate->typalign);
+								 &curstate->typbyval, &curstate->typalign);
 		}
 
 
@@ -450,16 +463,17 @@ ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc)
 }
 
 void
-ch_binary_do_output_convertion(ch_binary_insert_state *insert_state,
-		TupleTableSlot *slot)
+ch_binary_do_output_convertion(ch_binary_insert_state * insert_state,
+							   TupleTableSlot * slot)
 {
-	Datum *out_values = insert_state->values;
-	bool *out_nulls = insert_state->nulls;
+	Datum	   *out_values = insert_state->values;
+	bool	   *out_nulls = insert_state->nulls;
 
 	for (size_t i = 0; i < insert_state->outdesc->natts; i++)
 	{
 		ch_convert_output_state *cstate = &((ch_convert_output_state *) insert_state->conversion_states)[i];
-		AttrNumber attnum = cstate->attnum;
+		AttrNumber	attnum = cstate->attnum;
+
 		out_values[i] = slot_getattr(slot, attnum, &out_nulls[i]);
 		if (!out_nulls[i])
 		{
@@ -468,7 +482,7 @@ ch_binary_do_output_convertion(ch_binary_insert_state *insert_state,
 			else if (cstate->outtype == ANYARRAYOID)
 			{
 				AnyArrayType *v = DatumGetAnyArrayP(out_values[i]);
-				ch_binary_array_t	*arr;
+				ch_binary_array_t *arr;
 				array_iter	iter;
 
 				if (AARR_NDIM(v) != 1)
@@ -484,7 +498,7 @@ ch_binary_do_output_convertion(ch_binary_insert_state *insert_state,
 				for (size_t j = 0; j < arr->len; j++)
 				{
 					arr->datums[j] = array_iter_next(&iter, &arr->nulls[j], i,
-						cstate->typlen, cstate->typbyval, cstate->typalign);
+													 cstate->typlen, cstate->typbyval, cstate->typalign);
 				}
 				out_values[i] = PointerGetDatum(arr);
 

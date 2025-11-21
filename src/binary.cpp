@@ -13,8 +13,8 @@
 #include <clickhouse/types/types.h>
 
 #if __cplusplus > 199711L
-#define register // Deprecated in C++11.
-#endif // #if __cplusplus > 199711L
+#define register /* Deprecated in C++11. */
+#endif /* #if __cplusplus > 199711L */
 
 extern "C" {
 
@@ -39,7 +39,7 @@ extern "C" {
 
 using namespace clickhouse;
 
-#if defined(__APPLE__) // Byte ordering on macOS
+#if defined(__APPLE__) /* Byte ordering on macOS */
 #include <machine/endian.h>
 #include <libkern/OSByteOrder.h>
 #define HOST_TO_BIG_ENDIAN_64(x) OSSwapHostToBigInt64(x)
@@ -137,7 +137,7 @@ ch_binary_connection_t * ch_binary_connect(
 		if (options->port == CLICKHOUSE_SECURE_PORT)
 			options->SetSSLOptions(ClientOptions::SSLOptions());
 
-		//options->SetRethrowException(false);
+		/* options->SetRethrowException(false); */
 		conn = new ch_binary_connection_t();
 
 		Client * client = new Client(*options);
@@ -318,7 +318,7 @@ void ch_binary_insert_state_free(void * c)
 
 void ch_binary_prepare_insert(void * conn, char * query, ch_binary_insert_state * state)
 {
-	// Start the INSERT.
+	/* Start the INSERT. */
 	Block * block;
 	Client * client = (Client *)((ch_binary_connection_t *)conn)->client;
 	try
@@ -331,7 +331,7 @@ void ch_binary_prepare_insert(void * conn, char * query, ch_binary_insert_state 
 		elog(ERROR, "pg_clickhouse: could not prepare insert - %s", e.what());
 	}
 
-	// Setup the column config (or return if no columns).
+	/* Setup the column config (or return if no columns). */
 	state->len = block->GetColumnCount();
 	if (state->len == 0)
 	{
@@ -340,11 +340,11 @@ void ch_binary_prepare_insert(void * conn, char * query, ch_binary_insert_state 
 	}
 	state->outdesc = CreateTemplateTupleDesc(state->len);
 
-	// Iterate over the list of columns returned by ClickHouse.
+	/* Iterate over the list of columns returned by ClickHouse. */
 	AttrNumber i = 0;
 	for (Block::Iterator bi(*block); bi.IsValid(); bi.Next())
 	{
-		// Determine the Postgres column type.
+		/* Determine the Postgres column type. */
 		Oid pg_type = get_corr_postgres_type(bi.Type());
 		const char * colname = bi.Name().c_str();
 
@@ -354,7 +354,7 @@ void ch_binary_prepare_insert(void * conn, char * query, ch_binary_insert_state 
 		}
 		PG_CATCH();
 		{
-			// Clean up and re-throw.
+			/* Clean up and re-throw. */
 			client->ResetConnection();
 			delete block;
 			PG_RE_THROW();
@@ -455,7 +455,7 @@ static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, boo
 			break;
 		}
 		case NUMERICOID: {
-			// Convert numeric to string and let ColumnDecimal parse it.
+			/* Convert numeric to string and let ColumnDecimal parse it. */
 			char *s = DatumGetCString(DirectFunctionCall1(numeric_out, val));
 			switch (col->Type()->GetCode())
 			{
@@ -749,16 +749,16 @@ nested_col:
 			auto decCol = col->As<ColumnDecimal>();
 			auto val = decCol->At(row);
 
-			// Convert the Int128 to a string.
+			/* Convert the Int128 to a string. */
 			std::stringstream ss;
 			ss << val;
 			std::string str = ss.str();
 
-			// Start a destination string.
+			/* Start a destination string. */
 			std::stringstream res;
 			auto scale = decCol->GetScale();
 
-			// Output a dash for negative values
+			/* Output a dash for negative values */
 			if (val < 0)
 			{
 				res << '-';
@@ -767,16 +767,16 @@ nested_col:
 
 			if (str.length() <= scale)
 			{
-				// Append the entire value prepended with zeros after the decimal.
+				/* Append the entire value prepended with zeros after the decimal. */
 				res << "0." << std::string(scale-1, '0') << str;
 			}
 			else
 			{
-				// There are digits before the decimal.
+				/* There are digits before the decimal. */
 				auto decAt = str.length() - scale;
 				res << str.substr(0, decAt);
 
-				// Append any digits after the decimal.
+				/* Append any digits after the decimal. */
 				if (decAt < str.length())
 				{
 					res << '.' << str.substr(decAt);

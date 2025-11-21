@@ -11,12 +11,13 @@
 
 static char curl_error_buffer[CURL_ERROR_SIZE];
 static bool curl_error_happened = false;
-static long	curl_verbose = 0;
+static long curl_verbose = 0;
 static void *curl_progressfunc = NULL;
 static bool curl_initialized = false;
 static char ch_query_id_prefix[5];
 
-void ch_http_init(int verbose, uint32_t query_id_prefix)
+void
+ch_http_init(int verbose, uint32_t query_id_prefix)
 {
 	curl_verbose = verbose;
 	snprintf(ch_query_id_prefix, 5, "%x", query_id_prefix);
@@ -28,15 +29,16 @@ void ch_http_init(int verbose, uint32_t query_id_prefix)
 	}
 }
 
-void ch_http_set_progress_func(void *progressfunc)
+void
+ch_http_set_progress_func(void *progressfunc)
 {
 	curl_progressfunc = progressfunc;
 }
 
 static size_t write_data(void *contents, size_t size, size_t nmemb, void *userp)
 {
-	size_t realsize			= size * nmemb;
-	ch_http_response_t *res	= userp;
+	size_t		realsize = size * nmemb;
+	ch_http_response_t *res = userp;
 
 	if (res->data == NULL)
 		res->data = malloc(realsize + 1);
@@ -54,14 +56,16 @@ static size_t write_data(void *contents, size_t size, size_t nmemb, void *userp)
 #define CLICKHOUSE_TLS_PORT 8443
 #define HTTP_TLS_PORT 443
 
-ch_http_connection_t *ch_http_connection(char *host, int port, char *username, char *password)
+ch_http_connection_t *
+ch_http_connection(char *host, int port, char *username, char *password)
 {
-	int n;
-	char *connstring = NULL;
-	size_t len = 20; /* all symbols from url string + some extra */
+	int			n;
+	char	   *connstring = NULL;
+	size_t		len = 20;		/* all symbols from url string + some extra */
 
 	curl_error_happened = false;
 	ch_http_connection_t *conn = calloc(sizeof(ch_http_connection_t), 1);
+
 	if (!conn)
 		goto cleanup;
 
@@ -69,19 +73,22 @@ ch_http_connection_t *ch_http_connection(char *host, int port, char *username, c
 	if (!conn->curl)
 		goto cleanup;
 
-	if (!host || !*host) host = "localhost";
+	if (!host || !*host)
+		host = "localhost";
 
 	if (!port)
 		port = ch_is_cloud_host(host) ? CLICKHOUSE_TLS_PORT : CLICKHOUSE_PORT;
 
 	len += strlen(host) + snprintf(NULL, 0, "%d", port);
 
-	if (username) {
+	if (username)
+	{
 		username = curl_easy_escape(conn->curl, username, 0);
 		len += strlen(username);
 	}
 
-	if (password) {
+	if (password)
+	{
 		password = curl_easy_escape(conn->curl, password, 0);
 		len += strlen(password);
 	}
@@ -90,7 +97,7 @@ ch_http_connection_t *ch_http_connection(char *host, int port, char *username, c
 	if (!connstring)
 		goto cleanup;
 
-	char *scheme = port == CLICKHOUSE_TLS_PORT || port == HTTP_TLS_PORT ? "https" : "http";
+	char	   *scheme = port == CLICKHOUSE_TLS_PORT || port == HTTP_TLS_PORT ? "https" : "http";
 
 	if (username && password)
 	{
@@ -126,20 +133,24 @@ cleanup:
 	return NULL;
 }
 
-static void set_query_id(ch_http_response_t *resp)
+static void
+set_query_id(ch_http_response_t * resp)
 {
-	uuid_t	id;
+	uuid_t		id;
+
 	uuid_generate(id);
 	uuid_unparse(id, resp->query_id);
 }
 
-ch_http_response_t *ch_http_simple_query(ch_http_connection_t *conn, const char *query)
+ch_http_response_t *
+ch_http_simple_query(ch_http_connection_t * conn, const char *query)
 {
-	char		*url;
+	char	   *url;
 	CURLcode	errcode;
 	static char errbuffer[CURL_ERROR_SIZE];
 
-	ch_http_response_t	*resp = calloc(sizeof(ch_http_response_t), 1);
+	ch_http_response_t *resp = calloc(sizeof(ch_http_response_t), 1);
+
 	if (resp == NULL)
 		return NULL;
 
@@ -182,19 +193,19 @@ ch_http_response_t *ch_http_simple_query(ch_http_connection_t *conn, const char 
 
 	if (errcode == CURLE_ABORTED_BY_CALLBACK)
 	{
-		resp->http_status = 418; /* I'm teapot */
+		resp->http_status = 418;	/* I'm teapot */
 		return resp;
 	}
 	else if (errcode != CURLE_OK)
 	{
-		resp->http_status = 419; /* illegal http status */
+		resp->http_status = 419;	/* illegal http status */
 		resp->data = strdup(errbuffer);
 		resp->datasize = strlen(errbuffer);
 		return resp;
 	}
 
 	errcode = curl_easy_getinfo(conn->curl, CURLINFO_PRETRANSFER_TIME,
-			&resp->pretransfer_time);
+								&resp->pretransfer_time);
 	if (errcode != CURLE_OK)
 		resp->pretransfer_time = 0;
 
@@ -202,8 +213,10 @@ ch_http_response_t *ch_http_simple_query(ch_http_connection_t *conn, const char 
 	if (errcode != CURLE_OK)
 		resp->total_time = 0;
 
-	// all good with request, but we need http status to make sure
-	// query went ok
+	/*
+	 * All good with request, but we need http status to make sure query went
+	 * ok
+	 */
 	curl_easy_getinfo(conn->curl, CURLINFO_RESPONSE_CODE, &resp->http_status);
 	if (curl_verbose && resp->http_status != 200)
 		fprintf(stderr, "%s", resp->data);
@@ -211,13 +224,15 @@ ch_http_response_t *ch_http_simple_query(ch_http_connection_t *conn, const char 
 	return resp;
 }
 
-void ch_http_close(ch_http_connection_t *conn)
+void
+ch_http_close(ch_http_connection_t * conn)
 {
 	free(conn->base_url);
 	curl_easy_cleanup(conn->curl);
 }
 
-char *ch_http_last_error(void)
+char	   *
+ch_http_last_error(void)
 {
 	if (curl_error_happened)
 		return curl_error_buffer;
@@ -225,7 +240,8 @@ char *ch_http_last_error(void)
 	return NULL;
 }
 
-void ch_http_response_free(ch_http_response_t *resp)
+void
+ch_http_response_free(ch_http_response_t * resp)
 {
 	if (resp->data)
 		free(resp->data);

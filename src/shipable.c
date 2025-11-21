@@ -28,11 +28,11 @@
 
 
 /* Hash table for caching the results of shippability lookups */
-static HTAB *ShippableCacheHash = NULL;
+static HTAB * ShippableCacheHash = NULL;
 
 /*
- * Hash key for shippability lookups.  We include the FDW server OID because
- * decisions may differ per-server.  Otherwise, objects are identified by
+ * Hash key for shippability lookups. We include the FDW server OID because
+ * decisions may differ per-server. Otherwise, objects are identified by
  * their (local!) OID and catalog OID.
  */
 typedef struct
@@ -41,20 +41,20 @@ typedef struct
 	Oid			objid;			/* function/operator/type OID */
 	Oid			classid;		/* OID of its catalog (pg_proc, etc) */
 	Oid			serverid;		/* FDW server we are concerned with */
-} ShippableCacheKey;
+}			ShippableCacheKey;
 
 typedef struct
 {
 	ShippableCacheKey key;		/* hash key - must be first */
 	bool		shippable;
-} ShippableCacheEntry;
+}			ShippableCacheEntry;
 
 
 /*
  * Flush cache entries when pg_foreign_server is updated.
  *
  * We do this because of the possibility of ALTER SERVER being used to change
- * a server's extensions option.  We do not currently bother to check whether
+ * a server's extensions option. We do not currently bother to check whether
  * objects' extension membership changes once a shippability decision has been
  * made for them, however.
  */
@@ -67,16 +67,16 @@ InvalidateShippableCacheCallback(Datum arg, int cacheid, uint32 hashvalue)
 	/*
 	 * In principle we could flush only cache entries relating to the
 	 * pg_foreign_server entry being outdated; but that would be more
-	 * complicated, and it's probably not worth the trouble.  So for now, just
+	 * complicated, and it's probably not worth the trouble. So for now, just
 	 * flush all entries.
 	 */
 	hash_seq_init(&status, ShippableCacheHash);
 	while ((entry = (ShippableCacheEntry *) hash_seq_search(&status)) != NULL)
 	{
 		if (hash_search(ShippableCacheHash,
-		                (void *) &entry->key,
-		                HASH_REMOVE,
-		                NULL) == NULL)
+						(void *) &entry->key,
+						HASH_REMOVE,
+						NULL) == NULL)
 		{
 			elog(ERROR, "hash table corrupted");
 		}
@@ -96,12 +96,12 @@ InitializeShippableCache(void)
 	ctl.keysize = sizeof(ShippableCacheKey);
 	ctl.entrysize = sizeof(ShippableCacheEntry);
 	ShippableCacheHash =
-	    hash_create("Shippability cache", 256, &ctl, HASH_ELEM | HASH_BLOBS);
+		hash_create("Shippability cache", 256, &ctl, HASH_ELEM | HASH_BLOBS);
 
 	/* Set up invalidation callback on pg_foreign_server. */
 	CacheRegisterSyscacheCallback(FOREIGNSERVEROID,
-	                              InvalidateShippableCacheCallback,
-	                              (Datum) 0);
+								  InvalidateShippableCacheCallback,
+								  (Datum) 0);
 }
 
 /*
@@ -109,11 +109,11 @@ InitializeShippableCache(void)
  * according to the server options.
  *
  * Right now "shippability" is exclusively a function of whether the object
- * belongs to an extension declared by the user.  In the future we could
+ * belongs to an extension declared by the user. In the future we could
  * additionally have a whitelist of functions/operators declared one at a time.
  */
 static bool
-lookup_shippable(Oid objectId, Oid classId, CHFdwRelationInfo *fpinfo)
+lookup_shippable(Oid objectId, Oid classId, CHFdwRelationInfo * fpinfo)
 {
 	Oid			extensionOid;
 
@@ -125,7 +125,7 @@ lookup_shippable(Oid objectId, Oid classId, CHFdwRelationInfo *fpinfo)
 
 	/* If so, is that extension in fpinfo->shippable_extensions? */
 	if (OidIsValid(extensionOid) &&
-	        list_member_oid(fpinfo->shippable_extensions, extensionOid))
+		list_member_oid(fpinfo->shippable_extensions, extensionOid))
 	{
 		return true;
 	}
@@ -146,8 +146,8 @@ lookup_shippable(Oid objectId, Oid classId, CHFdwRelationInfo *fpinfo)
  * Thus we must exclude information_schema types.
  *
  * XXX there is a problem with this, which is that the set of built-in
- * objects expands over time.  Something that is built-in to us might not
- * be known to the remote server, if it's of an older version.  But keeping
+ * objects expands over time. Something that is built-in to us might not
+ * be known to the remote server, if it's of an older version. But keeping
  * track of that would be a huge exercise.
  */
 bool
@@ -161,8 +161,8 @@ chfdw_is_builtin(Oid objectId)
  *	   Is this object (function/operator/type) shippable to foreign server?
  */
 bool
-chfdw_is_shippable(Oid objectId, Oid classId, CHFdwRelationInfo *fpinfo,
-		CustomObjectDef **outcdef)
+chfdw_is_shippable(Oid objectId, Oid classId, CHFdwRelationInfo * fpinfo,
+				   CustomObjectDef * *outcdef)
 {
 	ShippableCacheKey key;
 	ShippableCacheEntry *entry;
@@ -174,6 +174,7 @@ chfdw_is_shippable(Oid objectId, Oid classId, CHFdwRelationInfo *fpinfo,
 	if (classId == ProcedureRelationId)
 	{
 		CustomObjectDef *cdef = chfdw_check_for_custom_function(objectId);
+
 		if (outcdef != NULL)
 			*outcdef = cdef;
 
@@ -201,10 +202,10 @@ chfdw_is_shippable(Oid objectId, Oid classId, CHFdwRelationInfo *fpinfo,
 
 	/* See if we already cached the result. */
 	entry = (ShippableCacheEntry *)
-	        hash_search(ShippableCacheHash,
-	                    (void *) &key,
-	                    HASH_FIND,
-	                    NULL);
+		hash_search(ShippableCacheHash,
+					(void *) &key,
+					HASH_FIND,
+					NULL);
 
 	if (!entry)
 	{
@@ -217,10 +218,10 @@ chfdw_is_shippable(Oid objectId, Oid classId, CHFdwRelationInfo *fpinfo,
 		 * cache invalidation.
 		 */
 		entry = (ShippableCacheEntry *)
-		        hash_search(ShippableCacheHash,
-		                    (void *) &key,
-		                    HASH_ENTER,
-		                    NULL);
+			hash_search(ShippableCacheHash,
+						(void *) &key,
+						HASH_ENTER,
+						NULL);
 
 		entry->shippable = shippable;
 	}

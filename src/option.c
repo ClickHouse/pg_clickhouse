@@ -34,15 +34,15 @@ typedef struct ChFdwOption
 {
 	const char *keyword;
 	Oid			optcontext;		/* OID of catalog in which option may appear */
-	bool		is_ch_opt;	  /* true if it's used in clickhouseclient */
-	char    dispchar[10];
-} ChFdwOption;
+	bool		is_ch_opt;		/* true if it's used in clickhouseclient */
+	char		dispchar[10];
+}			ChFdwOption;
 
 /*
  * Valid options for clickhouse_fdw.
  * Allocated and filled in InitChFdwOptions.
  */
-static ChFdwOption *clickhouse_fdw_options;
+static ChFdwOption * clickhouse_fdw_options;
 
 /*
  * Valid options for clickhouse client.
@@ -84,10 +84,10 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS)
 	InitChFdwOptions();
 
 	/*
-	 * Check that only options supported by clickhouse_fdw, and allowed for the
-	 * current object type, are given.
+	 * Check that only options supported by clickhouse_fdw, and allowed for
+	 * the current object type, are given.
 	 */
-	foreach (cell, options_list)
+	foreach(cell, options_list)
 	{
 		DefElem    *def = (DefElem *) lfirst(cell);
 
@@ -126,7 +126,7 @@ static void
 InitChFdwOptions(void)
 {
 	int			num_ch_opts;
-	const ChFdwOption *lopt;
+	const		ChFdwOption *lopt;
 	ChFdwOption *popt;
 
 	/* non-clickhouseclient FDW-specific FDW options */
@@ -159,12 +159,11 @@ InitChFdwOptions(void)
 
 	/*
 	 * We use plain malloc here to allocate clickhouse_fdw_options because it
-	 * lives as long as the backend process does.  Besides, keeping
-	 * ch_options in memory allows us to avoid copying every keyword
-	 * string.
+	 * lives as long as the backend process does. Besides, keeping ch_options
+	 * in memory allows us to avoid copying every keyword string.
 	 */
 	clickhouse_fdw_options = (ChFdwOption *) malloc(sizeof(
-								   ChFdwOption) * num_ch_opts + sizeof(non_ch_options));
+														   ChFdwOption) * num_ch_opts + sizeof(non_ch_options));
 	if (clickhouse_fdw_options == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_FDW_OUT_OF_MEMORY),
@@ -181,8 +180,8 @@ InitChFdwOptions(void)
 		 * Everything else is a server option.
 		 */
 		if (strcmp(lopt->keyword, "user") == 0 ||
-				strcmp(lopt->keyword, "password") == 0 ||
-				strchr(lopt->dispchar, '*'))
+			strcmp(lopt->keyword, "password") == 0 ||
+			strchr(lopt->dispchar, '*'))
 		{
 			popt->optcontext = UserMappingRelationId;
 		}
@@ -210,7 +209,7 @@ is_valid_option(const char *keyword, Oid context)
 {
 	ChFdwOption *opt;
 
-	Assert(clickhouse_fdw_options);	/* must be initialized already */
+	Assert(clickhouse_fdw_options); /* must be initialized already */
 
 	for (opt = clickhouse_fdw_options; opt->keyword; opt++)
 	{
@@ -231,7 +230,7 @@ is_ch_option(const char *keyword)
 {
 	ChFdwOption *opt;
 
-	Assert(clickhouse_fdw_options);	/* must be initialized already */
+	Assert(clickhouse_fdw_options); /* must be initialized already */
 
 	for (opt = clickhouse_fdw_options; opt->keyword; opt++)
 	{
@@ -246,21 +245,21 @@ is_ch_option(const char *keyword)
 
 /*
  * Generate key-value arrays which include only clickhouseclient options from the
- * given list (which can contain any kind of options).  Caller must have
- * allocated large-enough arrays.  Returns number of options found.
+ * given list (which can contain any kind of options). Caller must have
+ * allocated large-enough arrays. Returns number of options found.
  */
 void
-chfdw_extract_options(List *defelems, char **driver,  char **host, int *port,
-                         char **dbname, char **username, char **password)
+chfdw_extract_options(List * defelems, char **driver, char **host, int *port,
+					  char **dbname, char **username, char **password)
 {
 	ListCell   *lc;
 
 	/* Build our options lists if we didn't yet. */
 	InitChFdwOptions();
 
-	foreach (lc, defelems)
+	foreach(lc, defelems)
 	{
-		DefElem *def = (DefElem *) lfirst(lc);
+		DefElem    *def = (DefElem *) lfirst(lc);
 
 		if (driver && strcmp(def->defname, "driver") == 0)
 			*driver = defGetString(def);
@@ -276,11 +275,11 @@ chfdw_extract_options(List *defelems, char **driver,  char **host, int *port,
 			else if (password && strcmp(def->defname, "password") == 0)
 				*password = defGetString(def);
 			else if (dbname && strcmp(def->defname, "dbname") == 0)
-            {
+			{
 				*dbname = defGetString(def);
-                if (*dbname[0] == '\0')
-                    *dbname = DEFAULT_DBNAME;
-            }
+				if (*dbname[0] == '\0')
+					*dbname = DEFAULT_DBNAME;
+			}
 		}
 	}
 }

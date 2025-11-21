@@ -62,12 +62,13 @@ typedef struct foreign_glob_cxt
 	RelOptInfo *foreignrel;		/* the foreign relation we are planning for */
 	Relids		relids;			/* relids of base relations in the underlying
 								 * scan */
-} foreign_glob_cxt;
+}			foreign_glob_cxt;
 
 typedef struct foreign_loc_cxt
 {
-	bool	found_AggregateFunction;	/* indicator or CH AggregateFunction fields */
-} foreign_loc_cxt;
+	bool		found_AggregateFunction;	/* indicator or CH
+											 * AggregateFunction fields */
+}			foreign_loc_cxt;
 
 /*
  * Context for deparseExpr
@@ -81,12 +82,12 @@ typedef struct deparse_expr_cxt
 								 * a base relation. */
 	StringInfo	buf;			/* output buffer to append to */
 	List	  **params_list;	/* exprs that will become remote Params */
-	CustomObjectDef	*func;		/* custom function deparse */
+	CustomObjectDef *func;		/* custom function deparse */
 	CHFdwRelationInfo *fpinfo;	/* fdw relation info */
 	bool		interval_op;
 	bool		array_as_tuple; /* determines array output format */
-	bool        no_sort_parens; /* determines sort group clause format */
-} deparse_expr_cxt;
+	bool		no_sort_parens; /* determines sort group clause format */
+}			deparse_expr_cxt;
 
 #define REL_ALIAS_PREFIX	"r"
 /* Handy macro to add relation name qualification */
@@ -106,77 +107,77 @@ do { \
  * Functions to determine whether an expression can be evaluated safely on
  * remote server.
  */
-static bool foreign_expr_walker(Node *node,
-					foreign_glob_cxt *glob_cxt,
-					foreign_loc_cxt *outer_cxt);
+static bool foreign_expr_walker(Node * node,
+								foreign_glob_cxt * glob_cxt,
+								foreign_loc_cxt * outer_cxt);
 static char *deparse_type_name(Oid type_oid, int32 typemod);
 
 /*
  * Functions to construct string representation of a node tree.
  */
 static void deparseTargetList(StringInfo buf,
-				  RangeTblEntry *rte,
-				  Index rtindex,
-				  Relation rel,
-				  Bitmapset *attrs_used,
-				  bool qualify_col,
-				  List **retrieved_attrs);
-static void deparseExplicitTargetList(List *tlist,
-						  List **retrieved_attrs,
-						  deparse_expr_cxt *context);
-static void deparseSubqueryTargetList(deparse_expr_cxt *context);
-static void deparseColumnRef(StringInfo buf, CustomObjectDef *cdef,
-	int varno, int varattno, RangeTblEntry *rte, bool qualify_col);
+							  RangeTblEntry * rte,
+							  Index rtindex,
+							  Relation rel,
+							  Bitmapset * attrs_used,
+							  bool qualify_col,
+							  List * *retrieved_attrs);
+static void deparseExplicitTargetList(List * tlist,
+									  List * *retrieved_attrs,
+									  deparse_expr_cxt * context);
+static void deparseSubqueryTargetList(deparse_expr_cxt * context);
+static void deparseColumnRef(StringInfo buf, CustomObjectDef * cdef,
+							 int varno, int varattno, RangeTblEntry * rte, bool qualify_col);
 static void deparseRelation(StringInfo buf, Relation rel);
-static void deparseExpr(Expr *expr, deparse_expr_cxt *context);
-static void deparseVar(Var *node, deparse_expr_cxt *context);
-static void deparseConst(Const *node, deparse_expr_cxt *context, int showtype);
-static void deparseSubscriptingRef(SubscriptingRef *node, deparse_expr_cxt *context);
-static void deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context);
-static void deparseOpExpr(OpExpr *node, deparse_expr_cxt *context);
+static void deparseExpr(Expr * expr, deparse_expr_cxt * context);
+static void deparseVar(Var * node, deparse_expr_cxt * context);
+static void deparseConst(Const * node, deparse_expr_cxt * context, int showtype);
+static void deparseSubscriptingRef(SubscriptingRef * node, deparse_expr_cxt * context);
+static void deparseFuncExpr(FuncExpr * node, deparse_expr_cxt * context);
+static void deparseOpExpr(OpExpr * node, deparse_expr_cxt * context);
 static void deparseOperatorName(StringInfo buf, Form_pg_operator opform);
-static void deparseDistinctExpr(DistinctExpr *node, deparse_expr_cxt *context);
-static void deparseScalarArrayOpExpr(ScalarArrayOpExpr *node,
-                                     deparse_expr_cxt *context);
-static void deparseCaseExpr(CaseExpr *node, deparse_expr_cxt *context);
-static void deparseCaseWhen(CaseWhen *node, deparse_expr_cxt *context);
-static void deparseRelabelType(RelabelType *node, deparse_expr_cxt *context);
-static void deparseBoolExpr(BoolExpr *node, deparse_expr_cxt *context);
-static void deparseNullTest(NullTest *node, deparse_expr_cxt *context);
-static void deparseArrayExpr(ArrayExpr *node, deparse_expr_cxt *context);
-static void deparseArrayList(ArrayExpr *node, deparse_expr_cxt *context);
-static void deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs,
-				 deparse_expr_cxt *context);
-static void appendOrderByClause(List *pathkeys, bool has_final_sort,
-					deparse_expr_cxt *context);
-static void appendLimitClause(deparse_expr_cxt *context);
-static void appendConditions(List *exprs, deparse_expr_cxt *context);
-static void deparseFromExprForRel(StringInfo buf, PlannerInfo *root,
-					  RelOptInfo *foreignrel, bool use_alias,
-					  Index ignore_rel, List **ignore_conds,
-					  List **params_list);
-static void deparseFromExpr(List *quals, deparse_expr_cxt *context);
-static void deparseRangeTblRef(StringInfo buf, PlannerInfo *root,
-				   RelOptInfo *foreignrel, bool make_subquery,
-				   Index ignore_rel, List **ignore_conds, List **params_list);
-static void deparseAggref(Aggref *node, deparse_expr_cxt *context);
-static void appendGroupByClause(List *tlist, deparse_expr_cxt *context);
-static CustomObjectDef *appendFunctionName(Oid funcid, deparse_expr_cxt *context);
-static Node *deparseSortGroupClause(Index ref, List *tlist, bool force_colno,
-					   deparse_expr_cxt *context);
-static void deparseCoerceViaIO(CoerceViaIO *node, deparse_expr_cxt *context);
-static void deparseCoalesceExpr(CoalesceExpr *node, deparse_expr_cxt *context);
-static void deparseMinMaxExpr(MinMaxExpr *node, deparse_expr_cxt *context);
-static void deparseRowExpr(RowExpr *node, deparse_expr_cxt *context);
-static void deparseNullIfExpr(NullIfExpr *node, deparse_expr_cxt *context);
+static void deparseDistinctExpr(DistinctExpr * node, deparse_expr_cxt * context);
+static void deparseScalarArrayOpExpr(ScalarArrayOpExpr * node,
+									 deparse_expr_cxt * context);
+static void deparseCaseExpr(CaseExpr * node, deparse_expr_cxt * context);
+static void deparseCaseWhen(CaseWhen * node, deparse_expr_cxt * context);
+static void deparseRelabelType(RelabelType * node, deparse_expr_cxt * context);
+static void deparseBoolExpr(BoolExpr * node, deparse_expr_cxt * context);
+static void deparseNullTest(NullTest * node, deparse_expr_cxt * context);
+static void deparseArrayExpr(ArrayExpr * node, deparse_expr_cxt * context);
+static void deparseArrayList(ArrayExpr * node, deparse_expr_cxt * context);
+static void deparseSelectSql(List * tlist, bool is_subquery, List * *retrieved_attrs,
+							 deparse_expr_cxt * context);
+static void appendOrderByClause(List * pathkeys, bool has_final_sort,
+								deparse_expr_cxt * context);
+static void appendLimitClause(deparse_expr_cxt * context);
+static void appendConditions(List * exprs, deparse_expr_cxt * context);
+static void deparseFromExprForRel(StringInfo buf, PlannerInfo * root,
+								  RelOptInfo * foreignrel, bool use_alias,
+								  Index ignore_rel, List * *ignore_conds,
+								  List * *params_list);
+static void deparseFromExpr(List * quals, deparse_expr_cxt * context);
+static void deparseRangeTblRef(StringInfo buf, PlannerInfo * root,
+							   RelOptInfo * foreignrel, bool make_subquery,
+							   Index ignore_rel, List * *ignore_conds, List * *params_list);
+static void deparseAggref(Aggref * node, deparse_expr_cxt * context);
+static void appendGroupByClause(List * tlist, deparse_expr_cxt * context);
+static CustomObjectDef * appendFunctionName(Oid funcid, deparse_expr_cxt * context);
+static Node * deparseSortGroupClause(Index ref, List * tlist, bool force_colno,
+									 deparse_expr_cxt * context);
+static void deparseCoerceViaIO(CoerceViaIO * node, deparse_expr_cxt * context);
+static void deparseCoalesceExpr(CoalesceExpr * node, deparse_expr_cxt * context);
+static void deparseMinMaxExpr(MinMaxExpr * node, deparse_expr_cxt * context);
+static void deparseRowExpr(RowExpr * node, deparse_expr_cxt * context);
+static void deparseNullIfExpr(NullIfExpr * node, deparse_expr_cxt * context);
 
 /*
  * Helper functions
  */
-static bool is_subquery_var(Var *node, RelOptInfo *foreignrel,
-				int *relno, int *colno);
-static void get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
-							  int *relno, int *colno);
+static bool is_subquery_var(Var * node, RelOptInfo * foreignrel,
+							int *relno, int *colno);
+static void get_relation_column_alias_ids(Var * node, RelOptInfo * foreignrel,
+										  int *relno, int *colno);
 
 static char *
 get_alias_name()
@@ -192,11 +193,11 @@ get_alias_name()
  *	- local_conds contains expressions that can't be evaluated remotely
  */
 void
-chfdw_classify_conditions(PlannerInfo *root,
-				   RelOptInfo *baserel,
-				   List *input_conds,
-				   List **remote_conds,
-				   List **local_conds)
+chfdw_classify_conditions(PlannerInfo * root,
+						  RelOptInfo * baserel,
+						  List * input_conds,
+						  List * *remote_conds,
+						  List * *local_conds)
 {
 	ListCell   *lc;
 
@@ -218,13 +219,13 @@ chfdw_classify_conditions(PlannerInfo *root,
  * Returns true if given expr is safe to evaluate on the foreign server.
  */
 bool
-chfdw_is_foreign_expr(PlannerInfo *root,
-				RelOptInfo *baserel,
-				Expr *expr)
+chfdw_is_foreign_expr(PlannerInfo * root,
+					  RelOptInfo * baserel,
+					  Expr * expr)
 {
 	foreign_glob_cxt glob_cxt;
 	foreign_loc_cxt loc_cxt = {false};
-	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *)(baserel->fdw_private);
+	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) (baserel->fdw_private);
 
 	/*
 	 * Check that the expression consists of nodes that are safe to execute
@@ -236,7 +237,7 @@ chfdw_is_foreign_expr(PlannerInfo *root,
 	/*
 	 * For an upper relation, use relids from its underneath scan relation,
 	 * because the upperrel's own relids currently aren't set to anything
-	 * meaningful by the core code.  For other relation, use their own relids.
+	 * meaningful by the core code. For other relation, use their own relids.
 	 */
 	if (IS_UPPER_REL(baserel))
 		glob_cxt.relids = fpinfo->outerrel->relids;
@@ -254,9 +255,9 @@ chfdw_is_foreign_expr(PlannerInfo *root,
 int
 chfdw_is_equal_op(Oid opno)
 {
-	Form_pg_operator	operform;
-	HeapTuple			opertup;
-	int					res = 0;
+	Form_pg_operator operform;
+	HeapTuple	opertup;
+	int			res = 0;
 
 	opertup = SearchSysCache1(OPEROID, ObjectIdGetDatum(opno));
 	if (!HeapTupleIsValid(opertup))
@@ -281,15 +282,15 @@ chfdw_is_equal_op(Oid opno)
  * We must check that the expression contains only node types we can deparse,
  * that all types/functions/operators are safe to send (they are "shippable"),
  * and that all collations used in the expression derive from Vars of the
- * foreign table.  Because of the latter, the logic is pretty close to
+ * foreign table. Because of the latter, the logic is pretty close to
  * assign_collations_walker() in parse_collate.c, though we can assume here
- * that the given expression is valid.  Note function mutability is not
+ * that the given expression is valid. Note function mutability is not
  * currently considered here.
  */
 static bool
-foreign_expr_walker(Node *node,
-                    foreign_glob_cxt *glob_cxt,
-                    foreign_loc_cxt *outer_cxt)
+foreign_expr_walker(Node * node,
+					foreign_glob_cxt * glob_cxt,
+					foreign_loc_cxt * outer_cxt)
 {
 	bool		check_type = true;
 	CHFdwRelationInfo *fpinfo;
@@ -300,351 +301,354 @@ foreign_expr_walker(Node *node,
 		return true;
 
 	/* May need server info from baserel's fdw_private struct */
-	fpinfo = (CHFdwRelationInfo *)(glob_cxt->foreignrel->fdw_private);
+	fpinfo = (CHFdwRelationInfo *) (glob_cxt->foreignrel->fdw_private);
 
 	switch (nodeTag(node))
 	{
-	case T_Var:
-	{
-		Var		   *var = (Var *) node;
-
-		/*
-		 * If the Var is from the foreign table, we consider its
-		 * collation (if any) safe to use.  If it is from another
-		 * table, we treat its collation the same way as we would a
-		 * Param's collation, ie it's not safe for it to have a
-		 * non-default collation.
-		 */
-		if (bms_is_member(var->varno, glob_cxt->relids) &&
-				var->varlevelsup == 0)
-		{
-			RangeTblEntry		*rte;
-			CustomColumnInfo	*cinfo;
-
-			/* Var belongs to foreign table */
-
-			/*
-			 * System columns other than ctid and oid should not be
-			 * sent to the remote, since we don't make any effort to
-			 * ensure that local and remote values match (tableoid, in
-			 * particular, almost certainly doesn't match).
-			 */
-			if (var->varattno < 0)
-				return false;
-
-			rte = planner_rt_fetch(var->varno, glob_cxt->root);
-			cinfo = chfdw_get_custom_column_info(rte->relid, var->varattno);
-
-			/*
-			 * If this T_Var column is an aggregate function column, tell the
-			 * outer context as much, so that it propagates to its parent
-			 * `T_Aggref`, if any.
-			 */
-			if (cinfo && cinfo->is_AggregateFunction == CF_AGGR_FUNC)
-				outer_cxt->found_AggregateFunction = true;
-		}
-	}
-	break;
-	case T_Const:
-	break;
-	case T_Param:
-	{
-		/* We are not supporting param push down*/
-		return false;
-	}
-	break;
-	case T_SubscriptingRef:
-	{
-		SubscriptingRef   *ar = (SubscriptingRef *) node;
-
-		/* Assignment should not be in restrictions. */
-		if (ar->refassgnexpr != NULL)
-			return false;
-
-		/*
-		 * Recurse to remaining subexpressions.  Since the array
-		 * subscripts must yield (noncollatable) integers, they won't
-		 * affect the inner_cxt state.
-		 */
-		if (!foreign_expr_walker((Node *) ar->refupperindexpr,
-								 glob_cxt, &inner_cxt))
-			return false;
-
-		if (!foreign_expr_walker((Node *) ar->reflowerindexpr,
-								 glob_cxt, &inner_cxt))
-			return false;
-
-		if (!foreign_expr_walker((Node *) ar->refexpr,
-								 glob_cxt, &inner_cxt))
-			return false;
-	}
-	break;
-	case T_FuncExpr:
-	{
-		CustomObjectDef	*cdef = NULL;
-		FuncExpr   *fe = (FuncExpr *) node;
-
-		/* not in ClickHouse */
-		if (fe->funcvariadic)
-			return false;
-
-		/*
-		 * If function used by the expression is not shippable, it
-		 * can't be sent to remote because it might have incompatible
-		 * semantics on remote side.
-		 */
-		if (!chfdw_is_shippable(fe->funcid, ProcedureRelationId, fpinfo, &cdef))
-			return false;
-
-		/* only simple Var as first argument for accumulate */
-		if (cdef && cdef->cf_type == CF_ISTORE_ACCUMULATE && (!IsA(linitial(fe->args), Var)))
-			return false;
-
-		/*
-		 * Recurse to input subexpressions.
-		 */
-		if (!foreign_expr_walker((Node *) fe->args,
-								 glob_cxt, &inner_cxt))
-			return false;
-	}
-	break;
-	case T_OpExpr:
-	case T_NullIfExpr:
-	case T_DistinctExpr:	/* struct-equivalent to OpExpr */
-	{
-		OpExpr	   *oe = (OpExpr *) node;
-
-		/*
-		 * Similarly, only shippable operators can be sent to remote.
-		 * (If the operator is shippable, we assume its underlying
-		 * function is too.)
-		 */
-		if (!chfdw_is_shippable(oe->opno, OperatorRelationId, fpinfo, NULL))
-			return false;
-
-		/*
-		 * Recurse to input subexpressions.
-		 */
-		if (!foreign_expr_walker((Node *) oe->args,
-								 glob_cxt, &inner_cxt))
-			return false;
-	}
-	break;
-	case T_ScalarArrayOpExpr:
-	{
-		ScalarArrayOpExpr *oe = (ScalarArrayOpExpr *) node;
-
-		if (!chfdw_is_equal_op(oe->opno))
-			return false;
-
-		/*
-		 * Recurse to input subexpressions.
-		 */
-		if (!foreign_expr_walker((Node *) oe->args,
-								 glob_cxt, &inner_cxt))
-			return false;
-	}
-	break;
-	case T_RelabelType:
-	{
-		RelabelType *r = (RelabelType *) node;
-
-		/*
-		 * Recurse to input subexpression.
-		 */
-		if (!foreign_expr_walker((Node *) r->arg,
-								 glob_cxt, &inner_cxt))
-		{
-			return false;
-		}
-	}
-	break;
-	case T_BoolExpr:
-	{
-		BoolExpr   *b = (BoolExpr *) node;
-
-		/*
-		 * Recurse to input subexpressions.
-		 */
-		if (!foreign_expr_walker((Node *) b->args,
-								 glob_cxt, &inner_cxt))
-		{
-			return false;
-		}
-	}
-	break;
-	case T_NullTest:
-	{
-		NullTest   *nt = (NullTest *) node;
-
-		/*
-		 * Recurse to input subexpressions.
-		 */
-		if (!foreign_expr_walker((Node *) nt->arg,
-								 glob_cxt, &inner_cxt))
-		{
-			return false;
-		}
-	}
-	break;
-	case T_ArrayExpr:
-	{
-		ArrayExpr  *a = (ArrayExpr *) node;
-
-		/*
-		 * Recurse to input subexpressions.
-		 */
-		if (!foreign_expr_walker((Node *) a->elements,
-								 glob_cxt, &inner_cxt))
-		{
-			return false;
-		}
-	}
-	break;
-	case T_List:
-	{
-		List	   *l = (List *) node;
-		ListCell   *lc;
-
-		/*
-		 * Recurse to component subexpressions.
-		 */
-		foreach (lc, l)
-		{
-			if (!foreign_expr_walker((Node *) lfirst(lc),
-									 glob_cxt, &inner_cxt))
+		case T_Var:
 			{
+				Var		   *var = (Var *) node;
+
+				/*
+				 * If the Var is from the foreign table, we consider its
+				 * collation (if any) safe to use. If it is from another
+				 * table, we treat its collation the same way as we would a
+				 * Param's collation, ie it's not safe for it to have a
+				 * non-default collation.
+				 */
+				if (bms_is_member(var->varno, glob_cxt->relids) &&
+					var->varlevelsup == 0)
+				{
+					RangeTblEntry *rte;
+					CustomColumnInfo *cinfo;
+
+					/* Var belongs to foreign table */
+
+					/*
+					 * System columns other than ctid and oid should not be
+					 * sent to the remote, since we don't make any effort to
+					 * ensure that local and remote values match (tableoid, in
+					 * particular, almost certainly doesn't match).
+					 */
+					if (var->varattno < 0)
+						return false;
+
+					rte = planner_rt_fetch(var->varno, glob_cxt->root);
+					cinfo = chfdw_get_custom_column_info(rte->relid, var->varattno);
+
+					/*
+					 * If this T_Var column is an aggregate function column,
+					 * tell the outer context as much, so that it propagates
+					 * to its parent `T_Aggref`, if any.
+					 */
+					if (cinfo && cinfo->is_AggregateFunction == CF_AGGR_FUNC)
+						outer_cxt->found_AggregateFunction = true;
+				}
+			}
+			break;
+		case T_Const:
+			break;
+		case T_Param:
+			{
+				/* We are not supporting param push down */
 				return false;
 			}
-		}
-
-		/* Don't apply exprType() to the list. */
-		check_type = false;
-	}
-	break;
-	case T_Aggref:
-	{
-		Aggref	   *agg = (Aggref *) node;
-		ListCell   *lc;
-
-		/* Not safe to pushdown when not in grouping context */
-		if (!IS_UPPER_REL(glob_cxt->foreignrel))
-			return false;
-
-		/* Only non-split aggregates are pushable. */
-		if (agg->aggsplit != AGGSPLIT_SIMPLE)
-			return false;
-
-		/* As usual, it must be shippable. */
-		if (!chfdw_is_shippable(agg->aggfnoid, ProcedureRelationId, fpinfo, NULL))
-			return false;
-
-			/* Features that ClickHouse doesn't support */
-		if (AGGKIND_IS_ORDERED_SET(agg->aggkind)
-			&& !chfdw_check_for_ordered_aggregate(agg))
-			return false;
-
-		if (agg->aggdistinct && agg->aggfilter)
-			return false;
-
-		/*
-		 * Recurse to input args. aggdirectargs, aggorder and
-		 * aggdistinct are all present in args, so no need to check
-		 * their shippability explicitly.
-		 */
-		foreach (lc, agg->args)
-		{
-			Node	   *n = (Node *) lfirst(lc);
-
-			/* If TargetEntry, extract the expression from it */
-			if (IsA(n, TargetEntry))
+			break;
+		case T_SubscriptingRef:
 			{
-				TargetEntry *tle = (TargetEntry *) n;
+				SubscriptingRef *ar = (SubscriptingRef *) node;
 
-				n = (Node *) tle->expr;
+				/* Assignment should not be in restrictions. */
+				if (ar->refassgnexpr != NULL)
+					return false;
+
+				/*
+				 * Recurse to remaining subexpressions. Since the array
+				 * subscripts must yield (noncollatable) integers, they won't
+				 * affect the inner_cxt state.
+				 */
+				if (!foreign_expr_walker((Node *) ar->refupperindexpr,
+										 glob_cxt, &inner_cxt))
+					return false;
+
+				if (!foreign_expr_walker((Node *) ar->reflowerindexpr,
+										 glob_cxt, &inner_cxt))
+					return false;
+
+				if (!foreign_expr_walker((Node *) ar->refexpr,
+										 glob_cxt, &inner_cxt))
+					return false;
 			}
+			break;
+		case T_FuncExpr:
+			{
+				CustomObjectDef *cdef = NULL;
+				FuncExpr   *fe = (FuncExpr *) node;
+
+				/* not in ClickHouse */
+				if (fe->funcvariadic)
+					return false;
+
+				/*
+				 * If function used by the expression is not shippable, it
+				 * can't be sent to remote because it might have incompatible
+				 * semantics on remote side.
+				 */
+				if (!chfdw_is_shippable(fe->funcid, ProcedureRelationId, fpinfo, &cdef))
+					return false;
+
+				/* only simple Var as first argument for accumulate */
+				if (cdef && cdef->cf_type == CF_ISTORE_ACCUMULATE && (!IsA(linitial(fe->args), Var)))
+					return false;
+
+				/*
+				 * Recurse to input subexpressions.
+				 */
+				if (!foreign_expr_walker((Node *) fe->args,
+										 glob_cxt, &inner_cxt))
+					return false;
+			}
+			break;
+		case T_OpExpr:
+		case T_NullIfExpr:
+		case T_DistinctExpr:	/* struct-equivalent to OpExpr */
+			{
+				OpExpr	   *oe = (OpExpr *) node;
+
+				/*
+				 * Similarly, only shippable operators can be sent to remote.
+				 * (If the operator is shippable, we assume its underlying
+				 * function is too.)
+				 */
+				if (!chfdw_is_shippable(oe->opno, OperatorRelationId, fpinfo, NULL))
+					return false;
+
+				/*
+				 * Recurse to input subexpressions.
+				 */
+				if (!foreign_expr_walker((Node *) oe->args,
+										 glob_cxt, &inner_cxt))
+					return false;
+			}
+			break;
+		case T_ScalarArrayOpExpr:
+			{
+				ScalarArrayOpExpr *oe = (ScalarArrayOpExpr *) node;
+
+				if (!chfdw_is_equal_op(oe->opno))
+					return false;
+
+				/*
+				 * Recurse to input subexpressions.
+				 */
+				if (!foreign_expr_walker((Node *) oe->args,
+										 glob_cxt, &inner_cxt))
+					return false;
+			}
+			break;
+		case T_RelabelType:
+			{
+				RelabelType *r = (RelabelType *) node;
+
+				/*
+				 * Recurse to input subexpression.
+				 */
+				if (!foreign_expr_walker((Node *) r->arg,
+										 glob_cxt, &inner_cxt))
+				{
+					return false;
+				}
+			}
+			break;
+		case T_BoolExpr:
+			{
+				BoolExpr   *b = (BoolExpr *) node;
+
+				/*
+				 * Recurse to input subexpressions.
+				 */
+				if (!foreign_expr_walker((Node *) b->args,
+										 glob_cxt, &inner_cxt))
+				{
+					return false;
+				}
+			}
+			break;
+		case T_NullTest:
+			{
+				NullTest   *nt = (NullTest *) node;
+
+				/*
+				 * Recurse to input subexpressions.
+				 */
+				if (!foreign_expr_walker((Node *) nt->arg,
+										 glob_cxt, &inner_cxt))
+				{
+					return false;
+				}
+			}
+			break;
+		case T_ArrayExpr:
+			{
+				ArrayExpr  *a = (ArrayExpr *) node;
+
+				/*
+				 * Recurse to input subexpressions.
+				 */
+				if (!foreign_expr_walker((Node *) a->elements,
+										 glob_cxt, &inner_cxt))
+				{
+					return false;
+				}
+			}
+			break;
+		case T_List:
+			{
+				List	   *l = (List *) node;
+				ListCell   *lc;
+
+				/*
+				 * Recurse to component subexpressions.
+				 */
+				foreach(lc, l)
+				{
+					if (!foreign_expr_walker((Node *) lfirst(lc),
+											 glob_cxt, &inner_cxt))
+					{
+						return false;
+					}
+				}
+
+				/* Don't apply exprType() to the list. */
+				check_type = false;
+			}
+			break;
+		case T_Aggref:
+			{
+				Aggref	   *agg = (Aggref *) node;
+				ListCell   *lc;
+
+				/* Not safe to pushdown when not in grouping context */
+				if (!IS_UPPER_REL(glob_cxt->foreignrel))
+					return false;
+
+				/* Only non-split aggregates are pushable. */
+				if (agg->aggsplit != AGGSPLIT_SIMPLE)
+					return false;
+
+				/* As usual, it must be shippable. */
+				if (!chfdw_is_shippable(agg->aggfnoid, ProcedureRelationId, fpinfo, NULL))
+					return false;
+
+				/* Features that ClickHouse doesn't support */
+				if (AGGKIND_IS_ORDERED_SET(agg->aggkind)
+					&& !chfdw_check_for_ordered_aggregate(agg))
+					return false;
+
+				if (agg->aggdistinct && agg->aggfilter)
+					return false;
+
+				/*
+				 * Recurse to input args. aggdirectargs, aggorder and
+				 * aggdistinct are all present in args, so no need to check
+				 * their shippability explicitly.
+				 */
+				foreach(lc, agg->args)
+				{
+					Node	   *n = (Node *) lfirst(lc);
+
+					/* If TargetEntry, extract the expression from it */
+					if (IsA(n, TargetEntry))
+					{
+						TargetEntry *tle = (TargetEntry *) n;
+
+						n = (Node *) tle->expr;
+					}
+
+					/*
+					 * Walk the inner node and determine if the inner T_Var is
+					 * an AggregateFunction. If so, we'll append "Merge" to
+					 * the function call in deparseAggref.
+					 */
+					inner_cxt.found_AggregateFunction = false;
+					if (!foreign_expr_walker(n, glob_cxt, &inner_cxt))
+						return false;
+
+					if (inner_cxt.found_AggregateFunction)
+						agg->location = -2;
+
+					/* Prevent propagating to earlier nodes. */
+					inner_cxt.found_AggregateFunction = false;
+				}
+
+				/* Check aggregate filter */
+				if (!foreign_expr_walker((Node *) agg->aggfilter,
+										 glob_cxt, &inner_cxt))
+					return false;
+			}
+			break;
+		case T_CaseExpr:
+			{
+				CaseExpr   *caseexpr = (CaseExpr *) node;
+				ListCell   *lc;
+
+				if (!foreign_expr_walker((Node *) caseexpr->arg, glob_cxt, &inner_cxt))
+					return true;
+
+				foreach(lc, caseexpr->args)
+				{
+					CaseWhen   *when = lfirst_node(CaseWhen, lc);
+
+					if (!foreign_expr_walker((Node *) when->expr, glob_cxt, &inner_cxt))
+						return false;
+					if (!foreign_expr_walker((Node *) when->result, glob_cxt, &inner_cxt))
+						return false;
+				}
+				if (!foreign_expr_walker((Node *) caseexpr->defresult, glob_cxt, &inner_cxt))
+					return false;
+			}
+			break;
+		case T_CoalesceExpr:
+			{
+				CoalesceExpr *ce = (CoalesceExpr *) node;
+
+				if (!foreign_expr_walker((Node *) ce->args, glob_cxt, &inner_cxt))
+					return false;
+			}
+			break;
+		case T_MinMaxExpr:
+			{
+				MinMaxExpr *me = (MinMaxExpr *) node;
+
+				if (!foreign_expr_walker((Node *) me->args, glob_cxt, &inner_cxt))
+					return false;
+			}
+			break;
+		case T_CoerceViaIO:
+			{
+				CoerceViaIO *me = (CoerceViaIO *) node;
+
+				if (!foreign_expr_walker((Node *) me->arg, glob_cxt, &inner_cxt))
+					return false;
+			}
+			break;
+		case T_RowExpr:
+			{
+				RowExpr    *me = (RowExpr *) node;
+
+				if (!foreign_expr_walker((Node *) me->args, glob_cxt, &inner_cxt))
+					return false;
+			}
+			break;
+		case T_CaseTestExpr:
+			break;
+		default:
 
 			/*
-			 * Walk the inner node and determine if the inner T_Var is an
-			 * AggregateFunction. If so, we'll append "Merge" to the function
-			 * call in deparseAggref.
-			*/
-			inner_cxt.found_AggregateFunction = false;
-			if (!foreign_expr_walker(n, glob_cxt, &inner_cxt))
-				return false;
-
-			if (inner_cxt.found_AggregateFunction)
-				agg->location = -2;
-
-			/* Prevent propagating to earlier nodes. */
-			inner_cxt.found_AggregateFunction = false;
-		}
-
-		/* Check aggregate filter */
-		if (!foreign_expr_walker((Node *) agg->aggfilter,
-								 glob_cxt, &inner_cxt))
+			 * If it's anything else, assume it's unsafe. This list can be
+			 * expanded later, but don't forget to add deparse support below.
+			 */
 			return false;
-	}
-	break;
-	case T_CaseExpr:
-	{
-		CaseExpr   *caseexpr = (CaseExpr *) node;
-		ListCell   *lc;
-
-		if (!foreign_expr_walker((Node *) caseexpr->arg, glob_cxt, &inner_cxt))
-			return true;
-
-		foreach(lc, caseexpr->args)
-		{
-			CaseWhen   *when = lfirst_node(CaseWhen, lc);
-
-			if (!foreign_expr_walker((Node *) when->expr, glob_cxt, &inner_cxt))
-				return false;
-			if (!foreign_expr_walker((Node *) when->result, glob_cxt, &inner_cxt))
-				return false;
-		}
-		if (!foreign_expr_walker((Node *) caseexpr->defresult, glob_cxt, &inner_cxt))
-			return false;
-	}
-	break;
-	case T_CoalesceExpr:
-	{
-		CoalesceExpr   *ce = (CoalesceExpr *) node;
-
-		if (!foreign_expr_walker((Node *) ce->args, glob_cxt, &inner_cxt))
-			return false;
-	}
-	break;
-	case T_MinMaxExpr:
-	{
-		MinMaxExpr	*me = (MinMaxExpr *) node;
-		if (!foreign_expr_walker((Node *) me->args, glob_cxt, &inner_cxt))
-			return false;
-	}
-	break;
-	case T_CoerceViaIO:
-	{
-		CoerceViaIO	*me = (CoerceViaIO *) node;
-		if (!foreign_expr_walker((Node *) me->arg, glob_cxt, &inner_cxt))
-			return false;
-	}
-	break;
-	case T_RowExpr:
-	{
-		RowExpr	*me = (RowExpr *) node;
-		if (!foreign_expr_walker((Node *) me->args, glob_cxt, &inner_cxt))
-			return false;
-	}
-	break;
-	case T_CaseTestExpr:
-	break;
-	default:
-
-		/*
-		 * If it's anything else, assume it's unsafe.  This list can be
-		 * expanded later, but don't forget to add deparse support below.
-		 */
-		return false;
 	}
 
 	/*
@@ -708,8 +712,8 @@ ch_format_type_extended(Oid type_oid, int32 typemod, bits16 flags)
 	typeform = (Form_pg_type) GETSTRUCT(tuple);
 
 	/*
-	 * Check if it's a regular (variable length) array type.  Fixed-length
-	 * array types such as "name" shouldn't get deconstructed.  As of Postgres
+	 * Check if it's a regular (variable length) array type. Fixed-length
+	 * array types such as "name" shouldn't get deconstructed. As of Postgres
 	 * 8.1, rather than checking typlen we check the toast property, and don't
 	 * deconstruct "plain storage" array types --- this is because we don't
 	 * want to show oidvector as oid[].
@@ -741,7 +745,7 @@ ch_format_type_extended(Oid type_oid, int32 typemod, bits16 flags)
 	 *
 	 * If we do not provide a special-case output here, the type name will be
 	 * handled the same way as a user type name --- in particular, it will be
-	 * double-quoted if it matches any lexer keyword.  This behavior is
+	 * double-quoted if it matches any lexer keyword. This behavior is
 	 * essential for some cases, such as types "bit" and "char".
 	 */
 	buf = NULL;					/* flag for no special case */
@@ -759,7 +763,7 @@ ch_format_type_extended(Oid type_oid, int32 typemod, bits16 flags)
 			{
 				/*
 				 * bpchar with typmod -1 is not the same as CHARACTER, which
-				 * means CHARACTER(1) per SQL spec.  Report it as bpchar so
+				 * means CHARACTER(1) per SQL spec. Report it as bpchar so
 				 * that parser will not assign a bogus typmod.
 				 */
 			}
@@ -822,7 +826,7 @@ ch_format_type_extended(Oid type_oid, int32 typemod, bits16 flags)
 
 	if (buf == NULL)
 	{
-		CustomObjectDef	*cdef;
+		CustomObjectDef *cdef;
 		char	   *typname;
 
 		cdef = chfdw_check_for_custom_type(type_oid);
@@ -848,13 +852,13 @@ ch_format_type_extended(Oid type_oid, int32 typemod, bits16 flags)
 
 /*
  * Convert type OID + typmod info into a type name we can ship to the remote
- * server.  Someplace else had better have verified that this type name is
+ * server. Someplace else had better have verified that this type name is
  * expected to be known on the remote end.
  *
  * This is almost just format_type_with_typemod(), except that if left to its
  * own devices, that function will make schema-qualification decisions based
- * on the local search_path, which is wrong.  We must schema-qualify all
- * type names that are not in pg_catalog.  We assume here that built-in types
+ * on the local search_path, which is wrong. We must schema-qualify all
+ * type names that are not in pg_catalog. We assume here that built-in types
  * are all in pg_catalog and need not be qualified; otherwise, qualify.
  */
 static char *
@@ -872,12 +876,12 @@ deparse_type_name(Oid type_oid, int32 typemod)
  * Build the targetlist for given relation to be deparsed as SELECT clause.
  *
  * The output targetlist contains the columns that need to be fetched from the
- * foreign server for the given relation.  If foreignrel is an upper relation,
+ * foreign server for the given relation. If foreignrel is an upper relation,
  * then the output targetlist can also contain expressions to be evaluated on
  * foreign server.
  */
-List *
-chfdw_build_tlist_to_deparse(RelOptInfo *foreignrel)
+List	   *
+chfdw_build_tlist_to_deparse(RelOptInfo * foreignrel)
 {
 	List	   *tlist = NIL;
 	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) foreignrel->fdw_private;
@@ -934,16 +938,17 @@ chfdw_build_tlist_to_deparse(RelOptInfo *foreignrel)
  * List of columns selected is returned in retrieved_attrs.
  */
 void
-chfdw_deparse_select_stmt_for_rel(StringInfo buf, PlannerInfo *root, RelOptInfo *rel,
-						List *tlist, List *remote_conds, List *pathkeys,
-						bool has_final_sort, bool has_limit, bool is_subquery,
-						List **retrieved_attrs, List **params_list)
+chfdw_deparse_select_stmt_for_rel(StringInfo buf, PlannerInfo * root, RelOptInfo * rel,
+								  List * tlist, List * remote_conds, List * pathkeys,
+								  bool has_final_sort, bool has_limit, bool is_subquery,
+								  List * *retrieved_attrs, List * *params_list)
 {
 	deparse_expr_cxt context;
 	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) rel->fdw_private;
 	List	   *quals;
 
 	elog(DEBUG2, "> %s:%d", __FUNCTION__, __LINE__);
+
 	/*
 	 * We handle relations for foreign tables, joins between those and upper
 	 * relations.
@@ -1006,20 +1011,20 @@ chfdw_deparse_select_stmt_for_rel(StringInfo buf, PlannerInfo *root, RelOptInfo 
 
 /*
  * Construct a simple SELECT statement that retrieves desired columns
- * of the specified foreign table, and append it to "buf".  The output
+ * of the specified foreign table, and append it to "buf". The output
  * contains just "SELECT ... ".
  *
  * We also create an integer List of the columns being retrieved, which is
  * returned to *retrieved_attrs, unless we deparse the specified relation
  * as a subquery.
  *
- * tlist is the list of desired columns.  is_subquery is the flag to
+ * tlist is the list of desired columns. is_subquery is the flag to
  * indicate whether to deparse the specified relation as a subquery.
  * Read prologue of chfdw_deparse_select_stmt_for_rel() for details.
  */
 static void
-deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs,
-				 deparse_expr_cxt *context)
+deparseSelectSql(List * tlist, bool is_subquery, List * *retrieved_attrs,
+				 deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	RelOptInfo *foreignrel = context->foreignrel;
@@ -1029,6 +1034,7 @@ deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs,
 	/* reset var counter */
 	var_counter = 0;
 	elog(DEBUG2, "> %s:%d", __FUNCTION__, __LINE__);
+
 	/*
 	 * Construct SELECT list
 	 */
@@ -1038,7 +1044,7 @@ deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs,
 	{
 		/*
 		 * For a relation that is deparsed as a subquery, emit expressions
-		 * specified in the relation's reltarget.  Note that since this is for
+		 * specified in the relation's reltarget. Note that since this is for
 		 * the subquery, no need to care about *retrieved_attrs.
 		 */
 		deparseSubqueryTargetList(context);
@@ -1080,7 +1086,7 @@ deparseSelectSql(List *tlist, bool is_subquery, List **retrieved_attrs,
  * (These may or may not include RestrictInfo decoration.)
  */
 static void
-deparseFromExpr(List *quals, deparse_expr_cxt *context)
+deparseFromExpr(List * quals, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	RelOptInfo *scanrel = context->scanrel;
@@ -1115,12 +1121,12 @@ deparseFromExpr(List *quals, deparse_expr_cxt *context)
  */
 static void
 deparseTargetList(StringInfo buf,
-				  RangeTblEntry *rte,
+				  RangeTblEntry * rte,
 				  Index rtindex,
 				  Relation rel,
-				  Bitmapset *attrs_used,
+				  Bitmapset * attrs_used,
 				  bool qualify_col,
-				  List **retrieved_attrs)
+				  List * *retrieved_attrs)
 {
 	TupleDesc	tupdesc = RelationGetDescr(rel);
 	bool		have_wholerow;
@@ -1136,7 +1142,7 @@ deparseTargetList(StringInfo buf,
 	first = true;
 	for (i = 1; i <= tupdesc->natts; i++)
 	{
-		CustomObjectDef	*cdef;
+		CustomObjectDef *cdef;
 		Form_pg_attribute attr = TupleDescAttr(tupdesc, i - 1);
 
 		/* Ignore dropped attributes. */
@@ -1184,13 +1190,13 @@ deparseTargetList(StringInfo buf,
  * or bare clauses.
  */
 static void
-appendConditions(List *exprs, deparse_expr_cxt *context)
+appendConditions(List * exprs, deparse_expr_cxt * context)
 {
 	ListCell   *lc;
 	bool		is_first = true;
 	StringInfo	buf = context->buf;
 
-	foreach (lc, exprs)
+	foreach(lc, exprs)
 	{
 		Expr	   *expr = (Expr *) lfirst(lc);
 
@@ -1220,21 +1226,21 @@ chfdw_get_jointype_name(JoinType jointype)
 {
 	switch (jointype)
 	{
-	case JOIN_INNER:
-		return "INNER";
+		case JOIN_INNER:
+			return "INNER";
 
-	case JOIN_LEFT:
-		return "LEFT";
+		case JOIN_LEFT:
+			return "LEFT";
 
-	case JOIN_RIGHT:
-		return "RIGHT";
+		case JOIN_RIGHT:
+			return "RIGHT";
 
-	case JOIN_FULL:
-		return "FULL";
+		case JOIN_FULL:
+			return "FULL";
 
-	default:
-		/* Shouldn't come here, but protect from buggy code. */
-		elog(ERROR, "unsupported join type %d", jointype);
+		default:
+			/* Shouldn't come here, but protect from buggy code. */
+			elog(ERROR, "unsupported join type %d", jointype);
 	}
 
 	/* Keep compiler happy */
@@ -1250,9 +1256,9 @@ chfdw_get_jointype_name(JoinType jointype)
  * from 1. It has same number of entries as tlist.
  */
 static void
-deparseExplicitTargetList(List *tlist,
-                          List **retrieved_attrs,
-                          deparse_expr_cxt *context)
+deparseExplicitTargetList(List * tlist,
+						  List * *retrieved_attrs,
+						  deparse_expr_cxt * context)
 {
 	ListCell   *lc;
 	StringInfo	buf = context->buf;
@@ -1260,7 +1266,7 @@ deparseExplicitTargetList(List *tlist,
 
 	*retrieved_attrs = NIL;
 
-	foreach (lc, tlist)
+	foreach(lc, tlist)
 	{
 		TargetEntry *tle = lfirst_node(TargetEntry, lc);
 
@@ -1283,7 +1289,7 @@ deparseExplicitTargetList(List *tlist,
  * This is used for deparsing the given relation as a subquery.
  */
 static void
-deparseSubqueryTargetList(deparse_expr_cxt *context)
+deparseSubqueryTargetList(deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	RelOptInfo *foreignrel = context->foreignrel;
@@ -1318,16 +1324,16 @@ deparseSubqueryTargetList(deparse_expr_cxt *context)
  * relation it just returns schema-qualified tablename, with the appropriate
  * alias if so requested.
  *
- * 'ignore_rel' is either zero or the RT index of a target relation.  In the
+ * 'ignore_rel' is either zero or the RT index of a target relation. In the
  * latter case the function constructs FROM clause of UPDATE or USING clause
  * of DELETE; it deparses the join relation as if the relation never contained
  * the target relation, and creates a List of conditions to be deparsed into
  * the top-level WHERE clause, which is returned to *ignore_conds.
  */
 static void
-deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
-                      bool use_alias, Index ignore_rel, List **ignore_conds,
-                      List **params_list)
+deparseFromExprForRel(StringInfo buf, PlannerInfo * root, RelOptInfo * foreignrel,
+					  bool use_alias, Index ignore_rel, List * *ignore_conds,
+					  List * *params_list)
 {
 	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) foreignrel->fdw_private;
 
@@ -1345,13 +1351,13 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 			/*
 			 * If this is an inner join, add joinclauses to *ignore_conds and
 			 * set it to empty so that those can be deparsed into the WHERE
-			 * clause.  Note that since the target relation can never be
-			 * within the nullable side of an outer join, those could safely
-			 * be pulled up into the WHERE clause (see foreign_join_ok()).
-			 * Note also that since the target relation is only inner-joined
-			 * to any other relation in the query, all conditions in the join
-			 * tree mentioning the target relation could be deparsed into the
-			 * WHERE clause by doing this recursively.
+			 * clause. Note that since the target relation can never be within
+			 * the nullable side of an outer join, those could safely be
+			 * pulled up into the WHERE clause (see foreign_join_ok()). Note
+			 * also that since the target relation is only inner-joined to any
+			 * other relation in the query, all conditions in the join tree
+			 * mentioning the target relation could be deparsed into the WHERE
+			 * clause by doing this recursively.
 			 */
 			if (fpinfo->jointype == JOIN_INNER)
 			{
@@ -1485,9 +1491,9 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
  * Append FROM clause entry for the given relation into buf.
  */
 static void
-deparseRangeTblRef(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
-                   bool make_subquery, Index ignore_rel, List **ignore_conds,
-                   List **params_list)
+deparseRangeTblRef(StringInfo buf, PlannerInfo * root, RelOptInfo * foreignrel,
+				   bool make_subquery, Index ignore_rel, List * *ignore_conds,
+				   List * *params_list)
 {
 	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) foreignrel->fdw_private;
 
@@ -1513,9 +1519,9 @@ deparseRangeTblRef(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 		/* Deparse the subquery representing the relation. */
 		appendStringInfoChar(buf, '(');
 		chfdw_deparse_select_stmt_for_rel(buf, root, foreignrel, NIL,
-								fpinfo->remote_conds, NIL,
-                                false, false, true,
-								&retrieved_attrs, params_list);
+										  fpinfo->remote_conds, NIL,
+										  false, false, true,
+										  &retrieved_attrs, params_list);
 		appendStringInfoChar(buf, ')');
 
 		/* Append the relation alias. */
@@ -1523,7 +1529,7 @@ deparseRangeTblRef(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 						 fpinfo->relation_index);
 
 		/*
-		 * Append the column aliases if needed.  Note that the subquery emits
+		 * Append the column aliases if needed. Note that the subquery emits
 		 * expressions specified in the relation's reltarget (see
 		 * deparseSubqueryTargetList).
 		 */
@@ -1553,14 +1559,14 @@ deparseRangeTblRef(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 /*
  * deparse remote INSERT statement
  */
-char *
-chfdw_deparse_insert_sql(StringInfo buf, RangeTblEntry *rte,
-                 Index rtindex, Relation rel,
-                 List *targetAttrs)
+char	   *
+chfdw_deparse_insert_sql(StringInfo buf, RangeTblEntry * rte,
+						 Index rtindex, Relation rel,
+						 List * targetAttrs)
 {
-	bool    first;
+	bool		first;
 	ListCell   *lc;
-	StringInfoData	table_name;
+	StringInfoData table_name;
 
 	initStringInfo(&table_name);
 	appendStringInfoString(buf, "INSERT INTO ");
@@ -1572,7 +1578,7 @@ chfdw_deparse_insert_sql(StringInfo buf, RangeTblEntry *rte,
 		appendStringInfoChar(buf, '(');
 
 		first = true;
-		foreach (lc, targetAttrs)
+		foreach(lc, targetAttrs)
 		{
 			int			attnum = lfirst_int(lc);
 
@@ -1596,12 +1602,12 @@ chfdw_deparse_insert_sql(StringInfo buf, RangeTblEntry *rte,
  * If qualify_col is true, qualify column name with the alias of relation.
  */
 static void
-deparseColumnRef(StringInfo buf, CustomObjectDef *cdef,
-				 int varno, int varattno, RangeTblEntry *rte,
-                 bool qualify_col)
+deparseColumnRef(StringInfo buf, CustomObjectDef * cdef,
+				 int varno, int varattno, RangeTblEntry * rte,
+				 bool qualify_col)
 {
 	char	   *colname = NULL;
-	CustomColumnInfo	*cinfo;
+	CustomColumnInfo *cinfo;
 
 	/* varno must not be any of OUTER_VAR, INNER_VAR and INDEX_VAR. */
 	Assert(!IS_SPECIAL_VARNO(varno));
@@ -1615,16 +1621,16 @@ deparseColumnRef(StringInfo buf, CustomObjectDef *cdef,
 		colname = cinfo->colname;
 
 	/*
-	 * If it's a column of a regular table or it doesn't have column_name
-	 * FDW option, use attribute name.
+	 * If it's a column of a regular table or it doesn't have column_name FDW
+	 * option, use attribute name.
 	 */
 	if (colname == NULL)
 		colname = get_attname(rte->relid, varattno, false);
 
 	if (cinfo && cinfo->coltype == CF_ISTORE_ARR)
 	{
-		char *colkey = psprintf("%s_keys", colname);
-		char *colval = psprintf("%s_values", colname);
+		char	   *colkey = psprintf("%s_keys", colname);
+		char	   *colval = psprintf("%s_values", colname);
 
 		if (cdef && cdef->cf_type == CF_ISTORE_SUM)
 		{
@@ -1695,12 +1701,14 @@ deparseColumnRef(StringInfo buf, CustomObjectDef *cdef,
 	}
 	else if (cinfo && cinfo->coltype == CF_ISTORE_COL)
 	{
-		char *alias_name = get_alias_name();
+		char	   *alias_name = get_alias_name();
 
 		if (cdef && cdef->cf_type == CF_ISTORE_FETCHVAL)
 		{
-			/* ((finalizeAggregation(colname) as _tmp).2)[indexOf(_tmp.1, - we fill this part
-			 * <key>)] - should be filled later */
+			/*
+			 * ((finalizeAggregation(colname) as _tmp).2)[indexOf(_tmp.1, - we
+			 * fill this part <key>)] - should be filled later
+			 */
 
 			appendStringInfoString(buf, "((");
 
@@ -1759,9 +1767,9 @@ deparseRelation(StringInfo buf, Relation rel)
 {
 	ForeignTable *table;
 	const char *relname = NULL;
-	char       *dbname = "default";
+	char	   *dbname = "default";
 	ForeignServer *server = chfdw_get_foreign_server(rel);
-	ListCell    *lc;
+	ListCell   *lc;
 
 	chfdw_extract_options(server->options, NULL, NULL, NULL, &dbname, NULL, NULL);
 
@@ -1771,7 +1779,7 @@ deparseRelation(StringInfo buf, Relation rel)
 	/*
 	 * Use value of FDW options if any, instead of the name of object itself.
 	 */
-	foreach (lc, table->options)
+	foreach(lc, table->options)
 	{
 		DefElem    *def = (DefElem *) lfirst(lc);
 
@@ -1780,9 +1788,9 @@ deparseRelation(StringInfo buf, Relation rel)
 			relname = defGetString(def);
 		}
 		else if (strcmp(def->defname, "database") == 0)
-        {
+		{
 			dbname = defGetString(def);
-        }
+		}
 	}
 	if (relname == NULL)
 	{
@@ -1828,7 +1836,7 @@ deparseStringLiteral(StringInfo buf, const char *val, bool quote)
  * should be self-parenthesized.
  */
 static void
-deparseExpr(Expr *node, deparse_expr_cxt *context)
+deparseExpr(Expr * node, deparse_expr_cxt * context)
 {
 	if (node == NULL)
 	{
@@ -1837,67 +1845,67 @@ deparseExpr(Expr *node, deparse_expr_cxt *context)
 
 	switch (nodeTag(node))
 	{
-	case T_Var:
-		deparseVar((Var *) node, context);
-		break;
-	case T_Const:
-		deparseConst((Const *) node, context, 0);
-		break;
-	case T_SubscriptingRef:
-		deparseSubscriptingRef((SubscriptingRef *) node, context);
-		break;
-	case T_FuncExpr:
-		deparseFuncExpr((FuncExpr *) node, context);
-		break;
-	case T_OpExpr:
-		deparseOpExpr((OpExpr *) node, context);
-		break;
-	case T_DistinctExpr:
-		deparseDistinctExpr((DistinctExpr *) node, context);
-		break;
-	case T_NullIfExpr:
-		deparseNullIfExpr((NullIfExpr *) node, context);
-		break;
-	case T_ScalarArrayOpExpr:
-		deparseScalarArrayOpExpr((ScalarArrayOpExpr *) node, context);
-		break;
-	case T_RelabelType:
-		deparseRelabelType((RelabelType *) node, context);
-		break;
-	case T_BoolExpr:
-		deparseBoolExpr((BoolExpr *) node, context);
-		break;
-	case T_NullTest:
-		deparseNullTest((NullTest *) node, context);
-		break;
-	case T_ArrayExpr:
-		deparseArrayExpr((ArrayExpr *) node, context);
-		break;
-	case T_Aggref:
-		deparseAggref((Aggref *) node, context);
-		break;
-	case T_CaseExpr:
-		deparseCaseExpr((CaseExpr *) node, context);
-		break;
-	case T_CaseWhen:
-		deparseCaseWhen((CaseWhen *) node, context);
-		break;
-	case T_CoalesceExpr:
-		deparseCoalesceExpr((CoalesceExpr *) node, context);
-		break;
-	case T_MinMaxExpr:
-		deparseMinMaxExpr((MinMaxExpr *) node, context);
-		break;
-	case T_CoerceViaIO:
-		deparseCoerceViaIO((CoerceViaIO *) node, context);
-		break;
-	case T_RowExpr:
-		deparseRowExpr((RowExpr *) node, context);
-		break;
-	default:
-		elog(ERROR, "unsupported expression type for deparse: %d",
-			 (int) nodeTag(node));
-		break;
+		case T_Var:
+			deparseVar((Var *) node, context);
+			break;
+		case T_Const:
+			deparseConst((Const *) node, context, 0);
+			break;
+		case T_SubscriptingRef:
+			deparseSubscriptingRef((SubscriptingRef *) node, context);
+			break;
+		case T_FuncExpr:
+			deparseFuncExpr((FuncExpr *) node, context);
+			break;
+		case T_OpExpr:
+			deparseOpExpr((OpExpr *) node, context);
+			break;
+		case T_DistinctExpr:
+			deparseDistinctExpr((DistinctExpr *) node, context);
+			break;
+		case T_NullIfExpr:
+			deparseNullIfExpr((NullIfExpr *) node, context);
+			break;
+		case T_ScalarArrayOpExpr:
+			deparseScalarArrayOpExpr((ScalarArrayOpExpr *) node, context);
+			break;
+		case T_RelabelType:
+			deparseRelabelType((RelabelType *) node, context);
+			break;
+		case T_BoolExpr:
+			deparseBoolExpr((BoolExpr *) node, context);
+			break;
+		case T_NullTest:
+			deparseNullTest((NullTest *) node, context);
+			break;
+		case T_ArrayExpr:
+			deparseArrayExpr((ArrayExpr *) node, context);
+			break;
+		case T_Aggref:
+			deparseAggref((Aggref *) node, context);
+			break;
+		case T_CaseExpr:
+			deparseCaseExpr((CaseExpr *) node, context);
+			break;
+		case T_CaseWhen:
+			deparseCaseWhen((CaseWhen *) node, context);
+			break;
+		case T_CoalesceExpr:
+			deparseCoalesceExpr((CoalesceExpr *) node, context);
+			break;
+		case T_MinMaxExpr:
+			deparseMinMaxExpr((MinMaxExpr *) node, context);
+			break;
+		case T_CoerceViaIO:
+			deparseCoerceViaIO((CoerceViaIO *) node, context);
+			break;
+		case T_RowExpr:
+			deparseRowExpr((RowExpr *) node, context);
+			break;
+		default:
+			elog(ERROR, "unsupported expression type for deparse: %d",
+				 (int) nodeTag(node));
+			break;
 	}
 }
 
@@ -1906,12 +1914,12 @@ deparseExpr(Expr *node, deparse_expr_cxt *context)
  *
  * If the Var belongs to the foreign relation, just print its remote name.
  * Otherwise, it's effectively a Param (and will in fact be a Param at
- * run time).  Handle it the same way we handle plain Params.
+ * run time). Handle it the same way we handle plain Params.
  */
 static void
-deparseVar(Var *node, deparse_expr_cxt *context)
+deparseVar(Var * node, deparse_expr_cxt * context)
 {
-	CustomObjectDef	*cdef;
+	CustomObjectDef *cdef;
 	Relids		relids = context->scanrel->relids;
 	int			relno;
 	int			colno;
@@ -2002,7 +2010,7 @@ ch_timestamp_out(PG_FUNCTION_ARGS)
 	if (TIMESTAMP_NOT_FINITE(timestamp))
 		EncodeSpecialTimestamp(timestamp, buf);
 	else if (timestamp2tm(timestamp, NULL, tm, &fsec, NULL, NULL) == 0)
-		/* we ignore ftractional seconds */
+		/* we ignore fractional seconds */
 		EncodeDateTime(tm, 0, false, 0, NULL, USE_ISO_DATES, buf);
 	else
 		ereport(ERROR,
@@ -2014,7 +2022,7 @@ ch_timestamp_out(PG_FUNCTION_ARGS)
 }
 
 static void
-deparseArray(Datum arr, deparse_expr_cxt *context)
+deparseArray(Datum arr, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	AnyArrayType *array = DatumGetAnyArrayP(arr);
@@ -2069,41 +2077,42 @@ deparseArray(Datum arr, deparse_expr_cxt *context)
 		}
 		else
 		{
-			char *extval = OidOutputFunctionCall(typiofunc, elt);
+			char	   *extval = OidOutputFunctionCall(typiofunc, elt);
+
 			switch (element_type)
 			{
-			case INT2OID:
-			case INT4OID:
-			case INT8OID:
-			case OIDOID:
-			case FLOAT4OID:
-			case FLOAT8OID:
-			case NUMERICOID:
-			{
-				/*
-				 * No need to quote unless it's a special value such as 'NaN'.
-				 * See comments in get_const_expr().
-				 */
-				if (strspn(extval, "0123456789+-eE.") == strlen(extval))
-				{
-					if (extval[0] == '+' || extval[0] == '-')
-						appendStringInfo(buf, "(%s)", extval);
+				case INT2OID:
+				case INT4OID:
+				case INT8OID:
+				case OIDOID:
+				case FLOAT4OID:
+				case FLOAT8OID:
+				case NUMERICOID:
+					{
+						/*
+						 * No need to quote unless it's a special value such
+						 * as 'NaN'. See comments in get_const_expr().
+						 */
+						if (strspn(extval, "0123456789+-eE.") == strlen(extval))
+						{
+							if (extval[0] == '+' || extval[0] == '-')
+								appendStringInfo(buf, "(%s)", extval);
+							else
+								appendStringInfoString(buf, extval);
+						}
+						else
+							appendStringInfo(buf, "'%s'", extval);
+					}
+					break;
+				case BOOLOID:
+					if (strcmp(extval, "t") == 0)
+						appendStringInfoString(buf, "true");
 					else
-						appendStringInfoString(buf, extval);
-				}
-				else
-					appendStringInfo(buf, "'%s'", extval);
-			}
-			break;
-			case BOOLOID:
-				if (strcmp(extval, "t") == 0)
-					appendStringInfoString(buf, "true");
-				else
-					appendStringInfoString(buf, "false");
-				break;
-			default:
-				deparseStringLiteral(buf, extval, true);
-				break;
+						appendStringInfoString(buf, "false");
+					break;
+				default:
+					deparseStringLiteral(buf, extval, true);
+					break;
 			}
 			pfree(extval);
 		}
@@ -2123,7 +2132,7 @@ deparseArray(Datum arr, deparse_expr_cxt *context)
  * to be the right type by default.
  */
 static void
-deparseConst(Const *node, deparse_expr_cxt *context, int showtype)
+deparseConst(Const * node, deparse_expr_cxt * context, int showtype)
 {
 	StringInfo	buf = context->buf;
 	Oid			typoutput;
@@ -2148,16 +2157,17 @@ deparseConst(Const *node, deparse_expr_cxt *context, int showtype)
 		/*
 		 * We use our own function here, that removes fractional seconds since
 		 * there are not supported in clickhouse
-		 * */
+		 */
 		extval = DatumGetCString(DirectFunctionCall1(ch_timestamp_out, node->constvalue));
 	}
 	else if (typoutput == F_INTERVAL_OUT)
 	{
-		/* basicly we can't convert month part since we should know about
+		/*
+		 * basicly we can't convert month part since we should know about
 		 * related timestamp first.
 		 *
 		 * for other types we just convert to seconds.
-		 * */
+		 */
 		uint64		sec;
 		Interval   *ival = DatumGetIntervalP(node->constvalue);
 		char		bufint8[MAXINT8LEN + 1];
@@ -2182,11 +2192,9 @@ deparseConst(Const *node, deparse_expr_cxt *context, int showtype)
 		extval = OidOutputFunctionCall(typoutput, node->constvalue);
 		if (cdef && cdef->cf_type == CF_AJBOOL_OUT)
 		{
-			/* ajbool:
-				'f' => 0
-				't' => 1
-				'u' => -1
-			*/
+			/*
+			 * ajbool: 'f' => 0 't' => 1 'u' => -1
+			 */
 			if (extval[0] == 'f')
 				appendStringInfoChar(buf, '0');
 			else if (extval[0] == 't')
@@ -2207,42 +2215,42 @@ deparseConst(Const *node, deparse_expr_cxt *context, int showtype)
 
 	switch (node->consttype)
 	{
-	case INT2OID:
-	case INT4OID:
-	case INT8OID:
-	case OIDOID:
-	case FLOAT4OID:
-	case FLOAT8OID:
-	case NUMERICOID:
-	{
-		/*
-		 * No need to quote unless it's a special value such as 'NaN'.
-		 * See comments in get_const_expr().
-		 */
-		if (strspn(extval, "0123456789+-eE.") == strlen(extval))
-		{
-			if (extval[0] == '+' || extval[0] == '-')
-				appendStringInfo(buf, "(%s)", extval);
+		case INT2OID:
+		case INT4OID:
+		case INT8OID:
+		case OIDOID:
+		case FLOAT4OID:
+		case FLOAT8OID:
+		case NUMERICOID:
+			{
+				/*
+				 * No need to quote unless it's a special value such as 'NaN'.
+				 * See comments in get_const_expr().
+				 */
+				if (strspn(extval, "0123456789+-eE.") == strlen(extval))
+				{
+					if (extval[0] == '+' || extval[0] == '-')
+						appendStringInfo(buf, "(%s)", extval);
+					else
+						appendStringInfoString(buf, extval);
+				}
+				else
+					appendStringInfo(buf, "'%s'", extval);
+			}
+			break;
+		case BITOID:
+		case VARBITOID:
+			appendStringInfo(buf, "B'%s'", extval);
+			break;
+		case BOOLOID:
+			if (strcmp(extval, "t") == 0)
+				appendStringInfoString(buf, "1");
 			else
-				appendStringInfoString(buf, extval);
-		}
-		else
-			appendStringInfo(buf, "'%s'", extval);
-	}
-	break;
-	case BITOID:
-	case VARBITOID:
-		appendStringInfo(buf, "B'%s'", extval);
-		break;
-	case BOOLOID:
-		if (strcmp(extval, "t") == 0)
-			appendStringInfoString(buf, "1");
-		else
-			appendStringInfoString(buf, "0");
-		break;
-	default:
-		deparseStringLiteral(buf, extval, true);
-		break;
+				appendStringInfoString(buf, "0");
+			break;
+		default:
+			deparseStringLiteral(buf, extval, true);
+			break;
 	}
 
 	if (closebr)
@@ -2262,7 +2270,7 @@ cleanup:
  * Deparse an array subscript expression.
  */
 static void
-deparseSubscriptingRef(SubscriptingRef *node, deparse_expr_cxt *context)
+deparseSubscriptingRef(SubscriptingRef * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	ListCell   *lowlist_item;
@@ -2272,9 +2280,9 @@ deparseSubscriptingRef(SubscriptingRef *node, deparse_expr_cxt *context)
 	appendStringInfoChar(buf, '(');
 
 	/*
-	 * Deparse referenced array expression first.  If that expression includes
+	 * Deparse referenced array expression first. If that expression includes
 	 * a cast, we have to parenthesize to prevent the array subscript from
-	 * being taken as typename decoration.  We can avoid that in the typical
+	 * being taken as typename decoration. We can avoid that in the typical
 	 * case of subscripting a Var, but otherwise do it.
 	 */
 	if (IsA(node->refexpr, Var))
@@ -2290,7 +2298,7 @@ deparseSubscriptingRef(SubscriptingRef *node, deparse_expr_cxt *context)
 
 	/* Deparse subscript expressions. */
 	lowlist_item = list_head(node->reflowerindexpr);	/* could be NULL */
-	foreach (uplist_item, node->refupperindexpr)
+	foreach(uplist_item, node->refupperindexpr)
 	{
 		appendStringInfoChar(buf, '[');
 		if (lowlist_item)
@@ -2310,14 +2318,14 @@ deparseSubscriptingRef(SubscriptingRef *node, deparse_expr_cxt *context)
  * Deparse a function call.
  */
 static void
-deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
+deparseFuncExpr(FuncExpr * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	bool		first;
 	ListCell   *arg;
-	CustomObjectDef	*cdef,
-					*old_cdef;
-	CustomObjectDef	 funcdef;
+	CustomObjectDef *cdef,
+			   *old_cdef;
+	CustomObjectDef funcdef;
 	CHFdwRelationInfo *fpinfo = context->scanrel->fdw_private;
 
 	/*
@@ -2355,10 +2363,11 @@ deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
 	cdef = appendFunctionName(node->funcid, context);
 	if (cdef && cdef->cf_type == CF_DATE_TRUNC)
 	{
-		Const *arg = (Const *) linitial(node->args);
-		char *trunctype = TextDatumGetCString(arg->constvalue);
+		Const	   *arg = (Const *) linitial(node->args);
+		char	   *trunctype = TextDatumGetCString(arg->constvalue);
+
 		CSTRING_TOLOWER(trunctype);
-		int cast_to_datetime64 = 0;
+		int			cast_to_datetime64 = 0;
 
 		if (strcmp(trunctype, "week") == 0)
 		{
@@ -2415,8 +2424,9 @@ deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
 	}
 	else if (cdef && cdef->cf_type == CF_DATE_PART)
 	{
-		Const *arg = (Const *) linitial(node->args);
-		char *parttype = TextDatumGetCString(arg->constvalue);
+		Const	   *arg = (Const *) linitial(node->args);
+		char	   *parttype = TextDatumGetCString(arg->constvalue);
+
 		CSTRING_TOLOWER(parttype);
 
 		if (strcmp(parttype, "day") == 0)
@@ -2510,16 +2520,17 @@ deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
 		colname = cinfo->colname;
 		if (cinfo->coltype == CF_ISTORE_ARR)
 		{
-			char *max_key_alias = get_alias_name();
-			char *colkey = psprintf("%s_keys", colname);
-			char *colval = psprintf("%s_values", colname);
+			char	   *max_key_alias = get_alias_name();
+			char	   *colkey = psprintf("%s_keys", colname);
+			char	   *colval = psprintf("%s_values", colname);
 
 			if (list_length(node->args) == 1)
 				elog(ERROR, "pg_clickhouse supports accumulate only with max_key parameter");
 
-			/* first block
-			 *	if(a_keys[1] <= max_key, arrayMap(x -> a_keys[1] + x - 1,
-			 *		arrayEnumerate(arrayResize(emptyArrayInt32(), (max_key) - a_keys[1] + 1))), []),
+			/*
+			 * first block if(a_keys[1] <= max_key, arrayMap(x -> a_keys[1] +
+			 * x - 1, arrayEnumerate(arrayResize(emptyArrayInt32(), (max_key)
+			 * - a_keys[1] + 1))), []),
 			 */
 			appendStringInfoString(buf, "if(");
 			if (qualify_col)
@@ -2539,9 +2550,11 @@ deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
 			appendStringInfoString(buf, colkey);
 			appendStringInfoString(buf, "[1] + 1))), []),");
 
-			/* second block:
-			 *	if(a_keys[1] <= max_key, arrayCumSum(arrayMap(x -> sign * (a_values[indexOf(a_keys, a_keys[1] + x - 1)]),
-			 *		arrayEnumerate(arrayResize(emptyArrayInt32(), (max_key) -a_keys[1] + 1)))), [])
+			/*
+			 * second block: if(a_keys[1] <= max_key, arrayCumSum(arrayMap(x
+			 * -> sign * (a_values[indexOf(a_keys, a_keys[1] + x - 1)]),
+			 * arrayEnumerate(arrayResize(emptyArrayInt32(), (max_key)
+			 * -a_keys[1] + 1)))), [])
 			 */
 			appendStringInfoString(buf, "if(");
 			if (qualify_col)
@@ -2580,15 +2593,16 @@ deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
 		}
 		else if (cinfo->coltype == CF_ISTORE_COL)
 		{
-			/* (mapFill((finalizeAggregation(col) as t1).1, t1.2, <max_key>) as t2).1,
-			 * arrayCumSum(t2.2)
+			/*
+			 * (mapFill((finalizeAggregation(col) as t1).1, t1.2, <max_key>)
+			 * as t2).1, arrayCumSum(t2.2)
 			 *
-			 * simple:
-			 * (mapFill((col as t1).1, t1.2, <max_key>) as t2).1,
-			 * arrayCumSum(t2.2) */
+			 * simple: (mapFill((col as t1).1, t1.2, <max_key>) as t2).1,
+			 * arrayCumSum(t2.2)
+			 */
 
-			char *alias1 = get_alias_name();
-			char *alias2 = get_alias_name();
+			char	   *alias1 = get_alias_name();
+			char	   *alias2 = get_alias_name();
 
 			appendStringInfoString(buf, "(mapFill((");
 			if (cinfo->is_AggregateFunction == CF_AGGR_FUNC)
@@ -2644,27 +2658,22 @@ deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
 	/* sup_up requires only values part of array */
 	if (cdef && cdef->cf_type == CF_ISTORE_SUM_UP)
 	{
-		/* sum_up(daily_time_spent_cohort, 12)
-			=>
-			arraySum(arrayFilter((v, k) -> k <= 12,
-			daily_time_spent_cohort_values,
-			daily_time_spent_cohort_keys))
-
-			sum_up(daily_time_spent_cohort)
-			=>
-			arraySum(daily_time_spent_cohort_values)
-
-			!!!! or in case of AggregateFunction:
-			sum_up(daily_time_spent_cohort, 12)
-			=>
-			arraySum(arrayFilter((v, k) -> k <= 12,
-			(finalizeAggregation(daily_time_spent_cohort) as _tmp).2,
-			_tmp.1))
-
-			sum_up(daily_time_spent_cohort)
-			=>
-			arraySum(finalizeAggregation(daily_time_spent_cohort).2)
-		*/
+		/*
+		 * sum_up(daily_time_spent_cohort, 12) => arraySum(arrayFilter((v, k)
+		 * -> k <= 12, daily_time_spent_cohort_values,
+		 * daily_time_spent_cohort_keys))
+		 *
+		 * sum_up(daily_time_spent_cohort) =>
+		 * arraySum(daily_time_spent_cohort_values)
+		 *
+		 * !!!! or in case of AggregateFunction:
+		 * sum_up(daily_time_spent_cohort, 12) => arraySum(arrayFilter((v, k)
+		 * -> k <= 12, (finalizeAggregation(daily_time_spent_cohort) as
+		 * _tmp).2, _tmp.1))
+		 *
+		 * sum_up(daily_time_spent_cohort) =>
+		 * arraySum(finalizeAggregation(daily_time_spent_cohort).2)
+		 */
 		funcdef = *cdef;
 		funcdef.cf_context = node->args;
 		context->func = &funcdef;
@@ -2687,7 +2696,7 @@ deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context)
 
 	/* ... and all the arguments */
 	first = true;
-	foreach (arg, node->args)
+	foreach(arg, node->args)
 	{
 		if (!first)
 			appendStringInfoString(buf, ", ");
@@ -2702,7 +2711,7 @@ end:
 }
 
 static void
-deparseIntervalOp(Node *first, Node *second, deparse_expr_cxt *context, bool plus)
+deparseIntervalOp(Node * first, Node * second, deparse_expr_cxt * context, bool plus)
 {
 	StringInfo	buf = context->buf;
 	Const	   *constval;
@@ -2711,7 +2720,8 @@ deparseIntervalOp(Node *first, Node *second, deparse_expr_cxt *context, bool plu
 
 	if (!IsA(second, Const))
 	{
-		bool old_op = context->interval_op;
+		bool		old_op = context->interval_op;
+
 		/* first argument */
 		deparseExpr((Expr *) first, context);
 
@@ -2778,7 +2788,7 @@ deparseIntervalOp(Node *first, Node *second, deparse_expr_cxt *context, bool plu
 
 	/* addSeconds arg */
 	appendStringInfoChar(buf, ',');
-	pg_lltoa((int64)(span->time / 1000000), ibuf);
+	pg_lltoa((int64) (span->time / 1000000), ibuf);
 	if (!plus)
 	{
 		appendStringInfoString(buf, "-(");
@@ -2798,8 +2808,9 @@ findFunction(Oid typoid, char *name)
 	HeapTuple	proctup;
 	Form_pg_proc procform;
 	CatCList   *catlist;
+
 	catlist = SearchSysCacheList1(PROCNAMEARGSNSP,
-			CStringGetDatum(name));
+								  CStringGetDatum(name));
 
 	if (catlist->n_members == 0)
 		elog(ERROR, "pg_clickhouse requires istore extension to parse istore values");
@@ -2822,18 +2833,18 @@ findFunction(Oid typoid, char *name)
 }
 
 /*
- * Deparse given operator expression.   To avoid problems around
- * priority of operations, we always parenthesize the arguments.
+ * Deparse given operator expression. To avoid problems around priority of
+ * operations, we always parenthesize the arguments.
  */
 static void
-deparseOpExpr(OpExpr *node, deparse_expr_cxt *context)
+deparseOpExpr(OpExpr * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	HeapTuple	tuple;
 	Form_pg_operator form;
 	char		oprkind;
 	ListCell   *arg;
-	CustomObjectDef	*cdef;
+	CustomObjectDef *cdef;
 
 	/* Retrieve information about the operator from system catalog. */
 	tuple = SearchSysCache1(OPEROID, ObjectIdGetDatum(node->opno));
@@ -2854,97 +2865,100 @@ deparseOpExpr(OpExpr *node, deparse_expr_cxt *context)
 		switch (cdef->cf_type)
 		{
 			case CF_AJTIME_OPERATOR:
-			{
-				/* intervals with ajtime */
-				CustomObjectDef	*fdef = chfdw_check_for_custom_function(form->oprcode);
-				if (fdef && fdef->cf_type == CF_AJTIME_PL_INTERVAL)
 				{
-					deparseIntervalOp(linitial(node->args),
-						list_nth(node->args, 1), context, true);
-					goto cleanup;
+					/* intervals with ajtime */
+					CustomObjectDef *fdef = chfdw_check_for_custom_function(form->oprcode);
+
+					if (fdef && fdef->cf_type == CF_AJTIME_PL_INTERVAL)
+					{
+						deparseIntervalOp(linitial(node->args),
+										  list_nth(node->args, 1), context, true);
+						goto cleanup;
+					}
+					else if (fdef && fdef->cf_type == CF_AJTIME_MI_INTERVAL)
+					{
+						deparseIntervalOp(linitial(node->args),
+										  list_nth(node->args, 1), context, false);
+						goto cleanup;
+					}
 				}
-				else if (fdef && fdef->cf_type == CF_AJTIME_MI_INTERVAL)
-				{
-					deparseIntervalOp(linitial(node->args),
-						list_nth(node->args, 1), context, false);
-					goto cleanup;
-				}
-			}
-			break;
+				break;
 			case CF_TIMESTAMPTZ_PL_INTERVAL:
-			{
-				deparseIntervalOp(linitial(node->args),
-					list_nth(node->args, 1), context, true);
-				goto cleanup;
-			}
-			break;
+				{
+					deparseIntervalOp(linitial(node->args),
+									  list_nth(node->args, 1), context, true);
+					goto cleanup;
+				}
+				break;
 			case CF_HSTORE_FETCHVAL:
-			{
-				Expr *arg1 = linitial(node->args);
-				Expr *arg2 = list_nth(node->args, 1);
-
-				if (IsA(arg1, Const))
 				{
-					Const	   *constval = (Const *) arg1;
-					Oid			akeys = findFunction(constval->consttype, "akeys");
-					Oid			avalues = findFunction(constval->consttype, "avals");
+					Expr	   *arg1 = linitial(node->args);
+					Expr	   *arg2 = list_nth(node->args, 1);
 
-					/* vals[nullif(indexOf(keys,toString(arg1)), 0)] */
-					appendStringInfoChar(buf, '(');
-					deparseArray(OidFunctionCall1(avalues, constval->constvalue), context);
-					appendStringInfoString(buf, "[nullif(indexOf(");
-					deparseArray(OidFunctionCall1(akeys, constval->constvalue), context);
-					appendStringInfoChar(buf, ',');
-					deparseExpr(arg2, context);
-					appendStringInfoString(buf, "), 0)])");
+					if (IsA(arg1, Const))
+					{
+						Const	   *constval = (Const *) arg1;
+						Oid			akeys = findFunction(constval->consttype, "akeys");
+						Oid			avalues = findFunction(constval->consttype, "avals");
+
+						/* vals[nullif(indexOf(keys,toString(arg1)), 0)] */
+						appendStringInfoChar(buf, '(');
+						deparseArray(OidFunctionCall1(avalues, constval->constvalue), context);
+						appendStringInfoString(buf, "[nullif(indexOf(");
+						deparseArray(OidFunctionCall1(akeys, constval->constvalue), context);
+						appendStringInfoChar(buf, ',');
+						deparseExpr(arg2, context);
+						appendStringInfoString(buf, "), 0)])");
+					}
+					else
+						elog(ERROR, "pg_clickhouse supports hstore fetchval "
+							 "only for scalars");
+
+					goto cleanup;
 				}
-				else
-					elog(ERROR, "pg_clickhouse supports hstore fetchval "
-							"only for scalars");
-
-				goto cleanup;
-			}
-			break;
+				break;
 			case CF_ISTORE_FETCHVAL:
-			{
-				Node *arg = linitial(node->args);
-
-				if (IsA(arg, Var))
 				{
-					CustomObjectDef	*temp;
+					Node	   *arg = linitial(node->args);
 
-					temp = context->func;
-					context->func = cdef;
+					if (IsA(arg, Var))
+					{
+						CustomObjectDef *temp;
 
-					/* values[nullif(indexOf(ids, ...  in deparseColumnRef */
-					deparseExpr((Expr *) arg, context);
-					deparseExpr((Expr *) list_nth(node->args, 1), context);
-					/* ... 0)] */
-					appendStringInfoString(buf, "), 0)]");
+						temp = context->func;
+						context->func = cdef;
 
-					context->func = temp;
+						/* values[nullif(indexOf(ids, ... in deparseColumnRef */
+						deparseExpr((Expr *) arg, context);
+						deparseExpr((Expr *) list_nth(node->args, 1), context);
+						/* ... 0)] */
+						appendStringInfoString(buf, "), 0)]");
+
+						context->func = temp;
+					}
+					else if (IsA(arg, Const))
+					{
+						Const	   *constval = (Const *) arg;
+						Oid			akeys = findFunction(constval->consttype, "akeys");
+						Oid			avalues = findFunction(constval->consttype, "avals");
+
+						/*
+						 * ([val1, val2][nullif(indexOf([k1, k2], arg), 0])
+						 */
+						appendStringInfoChar(buf, '(');
+						deparseArray(OidFunctionCall1(avalues, constval->constvalue), context);
+						appendStringInfoString(buf, "[nullif(indexOf(");
+						deparseArray(OidFunctionCall1(akeys, constval->constvalue), context);
+						appendStringInfoString(buf, ", ");
+						deparseExpr((Expr *) list_nth(node->args, 1), context);
+						appendStringInfoString(buf, "), 0)])");
+					}
+					else
+						elog(ERROR, "pg_clickhouse supports fetchval only for columns and consts");
+
+					goto cleanup;
 				}
-				else if (IsA(arg, Const))
-				{
-					Const	   *constval = (Const *) arg;
-					Oid			akeys = findFunction(constval->consttype, "akeys");
-					Oid			avalues = findFunction(constval->consttype, "avals");
-
-					/* ([val1, val2][nullif(indexOf([key1, key2], arg), 0]) */
-					appendStringInfoChar(buf, '(');
-					deparseArray(OidFunctionCall1(avalues, constval->constvalue), context);
-					appendStringInfoString(buf, "[nullif(indexOf(");
-					deparseArray(OidFunctionCall1(akeys, constval->constvalue), context);
-					appendStringInfoString(buf, ", ");
-					deparseExpr((Expr *) list_nth(node->args, 1), context);
-					appendStringInfoString(buf, "), 0)])");
-				}
-				else
-					elog(ERROR, "pg_clickhouse supports fetchval only for columns and consts");
-
-				goto cleanup;
-			}
-			break;
+				break;
 			default: /* keep compiler quiet */ ;
 		}
 	}
@@ -2952,9 +2966,10 @@ deparseOpExpr(OpExpr *node, deparse_expr_cxt *context)
 	if ((node->opresulttype == INT2OID ||
 		 node->opresulttype == INT4OID ||
 		 node->opresulttype == INT8OID) &&
-			strcmp(NameStr(form->oprname), "/") == 0)
+		strcmp(NameStr(form->oprname), "/") == 0)
 	{
-		char *s = ch_format_type_extended(node->opresulttype, 0, 0);
+		char	   *s = ch_format_type_extended(node->opresulttype, 0, 0);
+
 		appendStringInfo(buf, "to%s", s);
 	}
 
@@ -2968,8 +2983,8 @@ deparseOpExpr(OpExpr *node, deparse_expr_cxt *context)
 
 		/*
 		 * Check for TestCaseExpr, in statements like CASE expr WHEN <val>.
-		 * Basically they would look like, OpExpr->(TestCaseExpr, Const).
-		 * We should just skip first arg and deparse second.
+		 * Basically they would look like, OpExpr->(TestCaseExpr, Const). We
+		 * should just skip first arg and deparse second.
 		 */
 		if (IsA(lfirst(arg), CaseTestExpr))
 		{
@@ -2989,10 +3004,12 @@ deparseOpExpr(OpExpr *node, deparse_expr_cxt *context)
 	 */
 	if (context->interval_op && strcmp(NameStr(form->oprname), "||") == 0)
 	{
-		Const *right = lfirst(list_tail(node->args));
+		Const	   *right = lfirst(list_tail(node->args));
+
 		if (IsA(right, Const) && right->consttype == TEXTOID)
 		{
-			char *s = TextDatumGetCString(right->constvalue);
+			char	   *s = TextDatumGetCString(right->constvalue);
+
 			if (strstr(s, "day") != NULL)
 				appendStringInfoString(buf, ") day");
 			else if (strstr(s, "year") != NULL)
@@ -3050,7 +3067,7 @@ deparseOperatorName(StringInfo buf, Form_pg_operator opform)
  * Deparse IS DISTINCT FROM.
  */
 static void
-deparseDistinctExpr(DistinctExpr *node, deparse_expr_cxt *context)
+deparseDistinctExpr(DistinctExpr * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 
@@ -3064,7 +3081,7 @@ deparseDistinctExpr(DistinctExpr *node, deparse_expr_cxt *context)
 }
 
 static void
-deparseNullIfExpr(NullIfExpr *node, deparse_expr_cxt *context)
+deparseNullIfExpr(NullIfExpr * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 
@@ -3077,11 +3094,12 @@ deparseNullIfExpr(NullIfExpr *node, deparse_expr_cxt *context)
 	appendStringInfoChar(buf, ')');
 }
 
-static void deparseAsIn(ScalarArrayOpExpr *node, deparse_expr_cxt *context, int optype)
+static void
+deparseAsIn(ScalarArrayOpExpr * node, deparse_expr_cxt * context, int optype)
 {
 	StringInfo	buf = context->buf;
-	Expr *arg1 = linitial(node->args);
-	Expr *arg2 = lsecond(node->args);
+	Expr	   *arg1 = linitial(node->args);
+	Expr	   *arg2 = lsecond(node->args);
 
 	deparseExpr(arg1, context);
 	if (optype == 1)
@@ -3096,11 +3114,11 @@ static void deparseAsIn(ScalarArrayOpExpr *node, deparse_expr_cxt *context, int 
 }
 
 /*
- * Deparse given ScalarArrayOpExpr expression.  To avoid problems
- * around priority of operations, we always parenthesize the arguments.
+ * Deparse given ScalarArrayOpExpr expression. To avoid problems around
+ * priority of operations, we always parenthesize the arguments.
  */
 static void
-deparseScalarArrayOpExpr(ScalarArrayOpExpr *node, deparse_expr_cxt *context)
+deparseScalarArrayOpExpr(ScalarArrayOpExpr * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	Expr	   *arg1;
@@ -3170,7 +3188,9 @@ deparseScalarArrayOpExpr(ScalarArrayOpExpr *node, deparse_expr_cxt *context)
 				/* Deparse right operand again */
 				deparseExpr(arg2, context);
 				appendStringInfoChar(buf, ')');
-			} else {
+			}
+			else
+			{
 				appendStringInfoString(buf, ") = 0");
 			}
 		}
@@ -3183,7 +3203,7 @@ deparseScalarArrayOpExpr(ScalarArrayOpExpr *node, deparse_expr_cxt *context)
  * Deparse a RelabelType (binary-compatible cast) node.
  */
 static void
-deparseRelabelType(RelabelType *node, deparse_expr_cxt *context)
+deparseRelabelType(RelabelType * node, deparse_expr_cxt * context)
 {
 	deparseExpr(node->arg, context);
 }
@@ -3192,7 +3212,7 @@ deparseRelabelType(RelabelType *node, deparse_expr_cxt *context)
  * Deparse a BoolExpr node.
  */
 static void
-deparseBoolExpr(BoolExpr *node, deparse_expr_cxt *context)
+deparseBoolExpr(BoolExpr * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	const char *op = NULL;		/* keep compiler quiet */
@@ -3201,22 +3221,22 @@ deparseBoolExpr(BoolExpr *node, deparse_expr_cxt *context)
 
 	switch (node->boolop)
 	{
-	case AND_EXPR:
-		op = "AND";
-		break;
-	case OR_EXPR:
-		op = "OR";
-		break;
-	case NOT_EXPR:
-		appendStringInfoString(buf, "(NOT ");
-		deparseExpr(linitial(node->args), context);
-		appendStringInfoChar(buf, ')');
-		return;
+		case AND_EXPR:
+			op = "AND";
+			break;
+		case OR_EXPR:
+			op = "OR";
+			break;
+		case NOT_EXPR:
+			appendStringInfoString(buf, "(NOT ");
+			deparseExpr(linitial(node->args), context);
+			appendStringInfoChar(buf, ')');
+			return;
 	}
 
 	appendStringInfoChar(buf, '(');
 	first = true;
-	foreach (lc, node->args)
+	foreach(lc, node->args)
 	{
 		if (!first)
 		{
@@ -3232,7 +3252,7 @@ deparseBoolExpr(BoolExpr *node, deparse_expr_cxt *context)
  * Deparse IS [NOT] NULL expression.
  */
 static void
-deparseNullTest(NullTest *node, deparse_expr_cxt *context)
+deparseNullTest(NullTest * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 
@@ -3241,7 +3261,7 @@ deparseNullTest(NullTest *node, deparse_expr_cxt *context)
 
 	/*
 	 * For scalar inputs, we prefer to print as IS [NOT] NULL, which is
-	 * shorter and traditional.  If it's a rowtype input but we're applying a
+	 * shorter and traditional. If it's a rowtype input but we're applying a
 	 * scalar test, must print IS [NOT] DISTINCT FROM NULL to be semantically
 	 * correct.
 	 */
@@ -3265,7 +3285,7 @@ deparseNullTest(NullTest *node, deparse_expr_cxt *context)
  * Deparse ARRAY[...] construct.
  */
 static void
-deparseArrayExpr(ArrayExpr *node, deparse_expr_cxt *context)
+deparseArrayExpr(ArrayExpr * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 
@@ -3279,7 +3299,7 @@ deparseArrayExpr(ArrayExpr *node, deparse_expr_cxt *context)
 	/* If the array is empty, we need an explicit cast to the array type. */
 	if (node->elements == NIL)
 		appendStringInfo(buf, ", '%s')",
-			deparse_type_name(node->array_typeid, -1));
+						 deparse_type_name(node->array_typeid, -1));
 }
 
 /*
@@ -3287,7 +3307,7 @@ deparseArrayExpr(ArrayExpr *node, deparse_expr_cxt *context)
  * array to the list of individual values.
 */
 static void
-deparseArrayList(ArrayExpr *node, deparse_expr_cxt *context)
+deparseArrayList(ArrayExpr * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	bool		first = true;
@@ -3309,9 +3329,9 @@ deparseArrayList(ArrayExpr *node, deparse_expr_cxt *context)
  */
 static void
 appendAggOrderBySuffix(Oid sortop, Oid sortcoltype, bool nulls_first,
-						deparse_expr_cxt *context)
+					   deparse_expr_cxt * context)
 {
-	// StringInfo	buf = context->buf;
+	/* StringInfo buf = context->buf; */
 	TypeCacheEntry *typentry;
 
 	/* See whether operator is default < or > for sort expr's datatype. */
@@ -3319,19 +3339,35 @@ appendAggOrderBySuffix(Oid sortop, Oid sortcoltype, bool nulls_first,
 								 TYPECACHE_LT_OPR | TYPECACHE_GT_OPR);
 
 	if (sortop == typentry->lt_opr)
-		// appendStringInfoString(buf, " ASC");
-		; // Okay.
+	{
+		/*
+		 * Okay.
+		 *
+		 * appendStringInfoString(buf, " ASC");
+		 */
+		;
+	}
 	else if (sortop == typentry->gt_opr)
-		// appendStringInfoString(buf, " DESC");
+	{
+		/* appendStringInfoString(buf, " DESC"); */
 		elog(ERROR, "pg_clickhouse: ClickHouse does not support \"DESC\" in aggregate expressions");
+	}
 	else
 		elog(ERROR, "pg_clickhouse: ClickHouse does not support \"USING\" in aggregate expressions");
 
 	if (nulls_first)
-		// appendStringInfoString(buf, " NULLS FIRST");
+	{
+		/* appendStringInfoString(buf, " NULLS FIRST"); */
 		elog(ERROR, "pg_clickhouse: ClickHouse does not support \"NULLS FIRST\" in aggregate expressions");
-	// else // Okay unless DESC support added.
-		// appendStringInfoString(buf, " NULLS LAST");
+	}
+	else
+	{
+		/*
+		 * Okay unless DESC support added.
+		 *
+		 * appendStringInfoString(buf, " NULLS LAST");
+		 */
+	}
 }
 
 
@@ -3339,7 +3375,7 @@ appendAggOrderBySuffix(Oid sortop, Oid sortcoltype, bool nulls_first,
  * Append ORDER BY arguments to aggregate function arguments.
  */
 static void
-appendAggOrderBy(List *orderList, List *targetList, deparse_expr_cxt *context)
+appendAggOrderBy(List * orderList, List * targetList, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	ListCell   *lc;
@@ -3359,7 +3395,7 @@ appendAggOrderBy(List *orderList, List *targetList, deparse_expr_cxt *context)
 										  false, context);
 		/* Add decoration as needed. */
 		appendAggOrderBySuffix(srt->sortop, exprType(sortexpr), srt->nulls_first,
-								context);
+							   context);
 	}
 }
 
@@ -3367,16 +3403,16 @@ appendAggOrderBy(List *orderList, List *targetList, deparse_expr_cxt *context)
  * Deparse an Aggref node.
  */
 static void
-deparseAggref(Aggref *node, deparse_expr_cxt *context)
+deparseAggref(Aggref * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
-	CustomObjectDef	*cdef;
+	CustomObjectDef *cdef;
 	CHFdwRelationInfo *fpinfo = context->scanrel->fdw_private;
-	bool	aggfilter = false;
-	bool	sign_count_filter = false;
-	uint8	brcount = 1;
-	bool	use_variadic;
-	char    *name = get_func_name(node->aggfnoid);
+	bool		aggfilter = false;
+	bool		sign_count_filter = false;
+	uint8		brcount = 1;
+	bool		use_variadic;
+	char	   *name = get_func_name(node->aggfnoid);
 
 	/* Only basic, non-split aggregation accepted. */
 	Assert(node->aggsplit == AGGSPLIT_SIMPLE);
@@ -3405,7 +3441,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	appendStringInfoChar(buf, '(');
 
 	/* Explained below. */
-	bool omit_star = false;
+	bool		omit_star = false;
 
 	if (AGGKIND_IS_ORDERED_SET(node->aggkind))
 	{
@@ -3435,47 +3471,55 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	else
 	{
 		/* Add DISTINCT */
-		if (node->aggdistinct != NIL)  appendStringInfoString(buf, "DISTINCT ");
+		if (node->aggdistinct != NIL)
+			appendStringInfoString(buf, "DISTINCT ");
 
 		/* aggstar can be set only in zero-argument aggregates */
 		if (node->aggstar)
 		{
-			/* Omit * for COUNT(*) but not COUNT(DISTINCT *)
-			* https://github.com/ClickHouse/pg_clickhouse/issues/25
-			* To be fixed in ClickHouse 25.11, so can be omitted once relased.
-			* https://github.com/ClickHouse/ClickHouse/pull/89373
-			*
-			* XXX Once ClickHouse has made a release fixing this issue, consider
-			* adding the Client::ServerInfo struct returned from
-			* Client::GetServerInfo() to deparse_expr_cxt so we can allow * to be
-			* passed through for the fixed version.
-			*/
+			/*
+			 * Omit * for COUNT(*) but not COUNT(DISTINCT *)
+			 * https://github.com/ClickHouse/pg_clickhouse/issues/25 To be
+			 * fixed in ClickHouse 25.11, so can be omitted once relased.
+			 * https://github.com/ClickHouse/ClickHouse/pull/89373
+			 *
+			 * XXX Once ClickHouse has made a release fixing this issue,
+			 * consider adding the Client::ServerInfo struct returned from
+			 * Client::GetServerInfo() to deparse_expr_cxt so we can allow *
+			 * to be passed through for the fixed version.
+			 */
 			omit_star = node->aggfilter && node->aggdistinct == NIL && !strcmp(name, "count");
 			if (context->func && context->func->cf_type == CF_SIGN_COUNT)
 			{
 				Assert(fpinfo && fpinfo->ch_table_engine == CH_COLLAPSING_MERGE_TREE);
 				appendStringInfoString(buf, fpinfo->ch_table_sign_field);
 			}
-			// Omit * for COUNT(*) but not COUNT(DISTINCT *).
+			/* Omit * for COUNT (*) but not COUNT(DISTINCT *). */
 			else if (!omit_star)
+			{
 				appendStringInfoChar(buf, '*');
+			}
 		}
 		else
 		{
 			ListCell   *arg;
 			bool		first = true;
 			bool		signMultiply = (context->func &&
-							(context->func->cf_type == CF_SIGN_AVG ||
-								context->func->cf_type == CF_SIGN_SUM));
+										(context->func->cf_type == CF_SIGN_AVG ||
+										 context->func->cf_type == CF_SIGN_SUM));
 
 			/* Add all the arguments */
 			if (sign_count_filter)
-				/* in case if COUNT(col) we should get countIf(sign, col is not null) */
+
+				/*
+				 * in case if COUNT(col) we should get countIf(sign, col is
+				 * not null)
+				 */
 				appendStringInfoString(buf, fpinfo->ch_table_sign_field);
 			else
 			{
 				/* default arguments output */
-				foreach (arg, node->args)
+				foreach(arg, node->args)
 				{
 					TargetEntry *tle = (TargetEntry *) lfirst(arg);
 					Node	   *n = (Node *) tle->expr;
@@ -3490,7 +3534,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 
 					if (use_variadic && lnext(node->args, arg) == NULL)
 					{
-						// Convert variadic array to list of arguments.
+						/* Convert variadic array to list of arguments. */
 						Assert(nodeTag(n) == T_ArrayExpr);
 						deparseArrayList((ArrayExpr *) n, context);
 					}
@@ -3513,7 +3557,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	/* Add 'If' part condition */
 	if (aggfilter)
 	{
-		// No argument output for COUNT(*).
+		/* No argument output for COUNT (*). */
 		if (!omit_star)
 			appendStringInfoChar(buf, ',');
 
@@ -3559,7 +3603,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 }
 
 static void
-deparseCaseExpr(CaseExpr *node, deparse_expr_cxt *context)
+deparseCaseExpr(CaseExpr * node, deparse_expr_cxt * context)
 {
 #define DEPARSE_WRAPPED(node) \
 do { \
@@ -3592,14 +3636,16 @@ do { \
 
 	foreach(lc, node->args)
 	{
-		CaseWhen	*arg = lfirst(lc);
+		CaseWhen   *arg = lfirst(lc);
 
 		Assert(IsA(arg, CaseWhen));
 		appendStringInfoString(buf, " WHEN ");
 		deparseExpr(arg->expr, context);
 
-		/* in simple cases like WHEN val THEN we should extend the condition
-		 * for WHEN val = 1 since there is no bool type in ClickHouse */
+		/*
+		 * in simple cases like WHEN val THEN we should extend the condition
+		 * for WHEN val = 1 since there is no bool type in ClickHouse
+		 */
 		if (IsA(arg->expr, Var))
 			appendStringInfoString(buf, " = 1");
 
@@ -3619,15 +3665,19 @@ do { \
 }
 
 static void
-deparseCaseWhen(CaseWhen *node, deparse_expr_cxt *context)
+deparseCaseWhen(CaseWhen * node, deparse_expr_cxt * context)
 {
-	// XXX Needs implementation.
-	// StringInfo	buf = context->buf;
-	// ListCell   *lc;
+	/*
+	 * XXX Needs implementation.
+	 *
+	 * StringInfo buf = context->buf;
+	 *
+	 * ListCell * lc;
+	 */
 }
 
 static void
-deparseRowExpr(RowExpr *node, deparse_expr_cxt *context)
+deparseRowExpr(RowExpr * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	ListCell   *lc;
@@ -3650,7 +3700,7 @@ deparseRowExpr(RowExpr *node, deparse_expr_cxt *context)
 }
 
 static void
-deparseCoerceViaIO(CoerceViaIO *node, deparse_expr_cxt *context)
+deparseCoerceViaIO(CoerceViaIO * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 
@@ -3675,7 +3725,7 @@ deparseCoerceViaIO(CoerceViaIO *node, deparse_expr_cxt *context)
 }
 
 static void
-deparseCoalesceExpr(CoalesceExpr *node, deparse_expr_cxt *context)
+deparseCoalesceExpr(CoalesceExpr * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	ListCell   *lc;
@@ -3684,9 +3734,9 @@ deparseCoalesceExpr(CoalesceExpr *node, deparse_expr_cxt *context)
 	appendStringInfoString(buf, "COALESCE(");
 
 	first = true;
-	foreach (lc, node->args)
+	foreach(lc, node->args)
 	{
-		Expr *arg = lfirst(lc);
+		Expr	   *arg = lfirst(lc);
 
 		if (!first)
 			appendStringInfoString(buf, ", ");
@@ -3709,7 +3759,7 @@ deparseCoalesceExpr(CoalesceExpr *node, deparse_expr_cxt *context)
 }
 
 static void
-deparseMinMaxExpr(MinMaxExpr *node, deparse_expr_cxt *context)
+deparseMinMaxExpr(MinMaxExpr * node, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	ListCell   *lc;
@@ -3722,7 +3772,7 @@ deparseMinMaxExpr(MinMaxExpr *node, deparse_expr_cxt *context)
 
 	appendStringInfoChar(buf, '(');
 	first = true;
-	foreach (lc, node->args)
+	foreach(lc, node->args)
 	{
 		if (!first)
 			appendStringInfoString(buf, ", ");
@@ -3738,7 +3788,7 @@ deparseMinMaxExpr(MinMaxExpr *node, deparse_expr_cxt *context)
  * Deparse GROUP BY clause.
  */
 static void
-appendGroupByClause(List *tlist, deparse_expr_cxt *context)
+appendGroupByClause(List * tlist, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	Query	   *query = context->root->parse;
@@ -3757,7 +3807,7 @@ appendGroupByClause(List *tlist, deparse_expr_cxt *context)
 	 */
 	Assert(!query->groupingSets);
 
-	foreach (lc, query->groupClause)
+	foreach(lc, query->groupClause)
 	{
 		SortGroupClause *grp = (SortGroupClause *) lfirst(lc);
 
@@ -3776,8 +3826,8 @@ appendGroupByClause(List *tlist, deparse_expr_cxt *context)
  * base relation are obtained and deparsed.
  */
 static void
-appendOrderByClause(List *pathkeys, bool has_final_sort,
-					deparse_expr_cxt *context)
+appendOrderByClause(List * pathkeys, bool has_final_sort,
+					deparse_expr_cxt * context)
 {
 	ListCell   *lcell;
 	char	   *delim = " ";
@@ -3797,8 +3847,8 @@ appendOrderByClause(List *pathkeys, bool has_final_sort,
 			 * the final sort.
 			 */
 			em_expr = chfdw_find_em_expr_for_input_target(context->root,
-													pathkey->pk_eclass,
-													context->foreignrel->reltarget);
+														  pathkey->pk_eclass,
+														  context->foreignrel->reltarget);
 		}
 		else
 			em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
@@ -3818,10 +3868,10 @@ appendOrderByClause(List *pathkeys, bool has_final_sort,
 
 		if (pathkey->pk_nulls_first)
 			appendStringInfoString(buf, " NULLS FIRST");
-		//else
-		//	appendStringInfoString(buf, " NULLS LAST");
+		else
+			/* appendStringInfoString(buf, " NULLS LAST"); */
 
-		delim = ", ";
+			delim = ", ";
 	}
 }
 
@@ -3829,7 +3879,7 @@ appendOrderByClause(List *pathkeys, bool has_final_sort,
  * Deparse LIMIT/OFFSET clause.
  */
 static void
-appendLimitClause(deparse_expr_cxt *context)
+appendLimitClause(deparse_expr_cxt * context)
 {
 	PlannerInfo *root = context->root;
 	StringInfo	buf = context->buf;
@@ -3852,13 +3902,13 @@ appendLimitClause(deparse_expr_cxt *context)
  *		Returns was custom or not.
  */
 static CustomObjectDef *
-appendFunctionName(Oid funcid, deparse_expr_cxt *context)
+appendFunctionName(Oid funcid, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	HeapTuple	proctup;
 	Form_pg_proc procform;
 	const char *proname;
-	CustomObjectDef	*cdef;
+	CustomObjectDef *cdef;
 	CHFdwRelationInfo *fpinfo = context->scanrel->fdw_private;
 
 	cdef = chfdw_check_for_custom_function(funcid);
@@ -3878,7 +3928,7 @@ appendFunctionName(Oid funcid, deparse_expr_cxt *context)
 
 	/* we have some additional conditions on aggregation functions */
 	if (chfdw_is_builtin(funcid) && procform->prokind == PROKIND_AGGREGATE
-			&& fpinfo->ch_table_engine == CH_COLLAPSING_MERGE_TREE)
+		&& fpinfo->ch_table_engine == CH_COLLAPSING_MERGE_TREE)
 	{
 		cdef = palloc(sizeof(CustomObjectDef));
 		cdef->cf_oid = funcid;
@@ -3917,8 +3967,8 @@ appendFunctionName(Oid funcid, deparse_expr_cxt *context)
  * need not find it again.
  */
 static Node *
-deparseSortGroupClause(Index ref, List *tlist, bool force_colno,
-                       deparse_expr_cxt *context)
+deparseSortGroupClause(Index ref, List * tlist, bool force_colno,
+					   deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
 	TargetEntry *tle;
@@ -3958,7 +4008,7 @@ deparseSortGroupClause(Index ref, List *tlist, bool force_colno,
  * column alias to the Var provided by the subquery.
  */
 static bool
-is_subquery_var(Var *node, RelOptInfo *foreignrel, int *relno, int *colno)
+is_subquery_var(Var * node, RelOptInfo * foreignrel, int *relno, int *colno)
 {
 	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) foreignrel->fdw_private;
 	RelOptInfo *outerrel = fpinfo->outerrel;
@@ -4020,8 +4070,8 @@ is_subquery_var(Var *node, RelOptInfo *foreignrel, int *relno, int *colno)
  * given relation, which are returned into *relno and *colno.
  */
 static void
-get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
-                              int *relno, int *colno)
+get_relation_column_alias_ids(Var * node, RelOptInfo * foreignrel,
+							  int *relno, int *colno)
 {
 	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) foreignrel->fdw_private;
 	int			i;
@@ -4032,7 +4082,7 @@ get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
 
 	/* Get the column alias ID */
 	i = 1;
-	foreach (lc, foreignrel->reltarget->exprs)
+	foreach(lc, foreignrel->reltarget->exprs)
 	{
 		if (equal(lfirst(lc), (Node *) node))
 		{

@@ -24,46 +24,50 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-static bool		initialized = false;
+static bool initialized = false;
 
 static void http_disconnect(void *conn);
-static ch_cursor *http_simple_query(void *conn, const char *query);
+static ch_cursor * http_simple_query(void *conn, const char *query);
 static void http_simple_insert(void *conn, const char *query);
 static void http_cursor_free(void *);
 static void **http_fetch_row(ch_cursor *, List *, TupleDesc, Datum *, bool *);
 static void *http_prepare_insert(void *, ResultRelInfo *, List *, char *, char *);
 static void http_insert_tuple(void *, TupleTableSlot *);
 
-static libclickhouse_methods http_methods = {
-	.disconnect=http_disconnect,
-	.simple_query=http_simple_query,
-	.fetch_row=http_fetch_row,
-	.prepare_insert=http_prepare_insert,
-	.insert_tuple=http_insert_tuple
+static libclickhouse_methods http_methods =
+{
+	.disconnect = http_disconnect,
+		.simple_query = http_simple_query,
+		.fetch_row = http_fetch_row,
+		.prepare_insert = http_prepare_insert,
+		.insert_tuple = http_insert_tuple
 };
 
 static void binary_disconnect(void *conn);
-static ch_cursor *binary_simple_query(void *conn, const char *query);
+static ch_cursor * binary_simple_query(void *conn, const char *query);
 static void binary_cursor_free(void *cursor);
-// static void binary_simple_insert(void *conn, const char *query);
-static void **binary_fetch_row(ch_cursor *cursor, List* attrs, TupleDesc tupdesc,
-		Datum *values, bool *nulls);
-static void binary_insert_tuple(void *, TupleTableSlot *slot);
+
+/* static void binary_simple_insert(void *conn, const char *query); */
+static void **binary_fetch_row(ch_cursor * cursor, List * attrs, TupleDesc tupdesc,
+							   Datum * values, bool *nulls);
+static void binary_insert_tuple(void *, TupleTableSlot * slot);
 static void *binary_prepare_insert(void *, ResultRelInfo *, List *,
-		char *query, char *table_name);
+								   char *query, char *table_name);
 
 static size_t escape_string(char *to, const char *from, size_t length);
 
-static libclickhouse_methods binary_methods = {
-	.disconnect=binary_disconnect,
-	.simple_query=binary_simple_query,
-	.fetch_row=binary_fetch_row,
-	.prepare_insert=binary_prepare_insert,
-	.insert_tuple=binary_insert_tuple
+static libclickhouse_methods binary_methods =
+{
+	.disconnect = binary_disconnect,
+		.simple_query = binary_simple_query,
+		.fetch_row = binary_fetch_row,
+		.prepare_insert = binary_prepare_insert,
+		.insert_tuple = binary_insert_tuple
 };
 
-static int http_progress_callback(void *clientp, double dltotal, double dlnow,
-		double ultotal, double ulnow)
+static int
+http_progress_callback(void *clientp, double dltotal, double dlnow,
+					   double ultotal, double ulnow)
 {
 	if (ProcDiePending || QueryCancelPending)
 		return 1;
@@ -71,7 +75,8 @@ static int http_progress_callback(void *clientp, double dltotal, double dlnow,
 	return 0;
 }
 
-static bool is_canceled(void)
+static bool
+is_canceled(void)
 {
 	/* this variable is bool on pg < 12, but sig_atomic_t on above versions */
 	if (QueryCancelPending)
@@ -81,11 +86,12 @@ static bool is_canceled(void)
 }
 
 ch_connection
-chfdw_http_connect(ch_connection_details *details)
+chfdw_http_connect(ch_connection_details * details)
 {
 	ch_connection res;
 	ch_http_connection_t *conn = ch_http_connection(details->host, details->port,
-            details->username, details->password);
+													details->username, details->password);
+
 	if (!initialized)
 	{
 		initialized = true;
@@ -94,7 +100,8 @@ chfdw_http_connect(ch_connection_details *details)
 
 	if (conn == NULL)
 	{
-		char *error = ch_http_last_error();
+		char	   *error = ch_http_last_error();
+
 		if (error == NULL)
 			error = "undefined";
 
@@ -125,7 +132,7 @@ http_disconnect(void *conn)
 static char *
 format_error(char *errstring)
 {
-	int n = strlen(errstring);
+	int			n = strlen(errstring);
 
 	for (int i = 0; i < n; i++)
 	{
@@ -140,7 +147,7 @@ static void
 kill_query(void *conn, const char *query_id)
 {
 	ch_http_response_t *resp;
-	char *query = psprintf("kill query where query_id='%s'", query_id);
+	char	   *query = psprintf("kill query where query_id='%s'", query_id);
 
 	ch_http_set_progress_func(NULL);
 	resp = ch_http_simple_query(conn, query);
@@ -153,9 +160,9 @@ static ch_cursor *
 http_simple_query(void *conn, const char *query)
 {
 	int			attempts = 0;
-	MemoryContext	tempcxt,
-					oldcxt;
-	ch_cursor	*cursor;
+	MemoryContext tempcxt,
+				oldcxt;
+	ch_cursor  *cursor;
 	ch_http_response_t *resp;
 
 	ch_http_set_progress_func(http_progress_callback);
@@ -168,7 +175,8 @@ again:
 	attempts++;
 	if (resp->http_status == 419)
 	{
-		char *error = pnstrdup(resp->data, resp->datasize);
+		char	   *error = pnstrdup(resp->data, resp->datasize);
+
 		ch_http_response_free(resp);
 
 		if (attempts < 3)
@@ -189,22 +197,25 @@ again:
 	}
 	else if (resp->http_status != 200)
 	{
-		char *error = pnstrdup(resp->data, resp->datasize);
-		long status =  resp->http_status;
+		char	   *error = pnstrdup(resp->data, resp->datasize);
+		long		status = resp->http_status;
+
 		ch_http_response_free(resp);
 
 		ereport(ERROR, (
-			errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-			errmsg("pg_clickhouse: %s", format_error(error)),
-			status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query),
-			errcontext("HTTP status code: %li", status)
-		));
+						errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+						errmsg("pg_clickhouse: %s", format_error(error)),
+						status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query),
+						errcontext("HTTP status code: %li", status)
+						));
 	}
 
-	/* we could not control properly deallocation of libclickhouse memory, so
-	 * we use memory context callbacks for that */
+	/*
+	 * we could not control properly deallocation of libclickhouse memory, so
+	 * we use memory context callbacks for that
+	 */
 	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse cursor",
-										ALLOCSET_DEFAULT_SIZES);
+									ALLOCSET_DEFAULT_SIZES);
 	oldcxt = MemoryContextSwitchTo(tempcxt);
 
 	cursor = palloc0(sizeof(ch_cursor));
@@ -228,9 +239,11 @@ static void
 http_simple_insert(void *conn, const char *query)
 {
 	ch_http_response_t *resp = ch_http_simple_query(conn, query);
+
 	if (resp == NULL)
 	{
-		char *error = ch_http_last_error();
+		char	   *error = ch_http_last_error();
+
 		if (error == NULL)
 			error = "undefined";
 
@@ -241,16 +254,17 @@ http_simple_insert(void *conn, const char *query)
 
 	if (resp->http_status != 200)
 	{
-		char *error = pnstrdup(resp->data, resp->datasize);
-		long status =  resp->http_status;
+		char	   *error = pnstrdup(resp->data, resp->datasize);
+		long		status = resp->http_status;
+
 		ch_http_response_free(resp);
 
 		ereport(ERROR, (
-			errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-			errmsg("pg_clickhouse: %s", format_error(error)),
-			status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query),
-			errcontext("HTTP status code: %li", status)
-		));
+						errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+						errmsg("pg_clickhouse: %s", format_error(error)),
+						status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query),
+						errcontext("HTTP status code: %li", status)
+						));
 	}
 
 	ch_http_response_free(resp);
@@ -259,17 +273,17 @@ http_simple_insert(void *conn, const char *query)
 static void
 http_cursor_free(void *c)
 {
-	ch_cursor *cursor = c;
+	ch_cursor  *cursor = c;
 
 	ch_http_read_state_free(cursor->read_state);
 	ch_http_response_free(cursor->query_response);
 }
 
 static void **
-http_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc, Datum *v, bool *n)
+http_fetch_row(ch_cursor * cursor, List * attrs, TupleDesc tupdesc, Datum * v, bool *n)
 {
-	int		rc = CH_CONT;
-	size_t	attcount = list_length(attrs);
+	int			rc = CH_CONT;
+	size_t		attcount = list_length(attrs);
 
 	if (attcount == 0)
 		/* SELECT NULL */
@@ -281,9 +295,9 @@ http_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc, Datum *v, bool
 	if (state->done || state->data == NULL)
 		return NULL;
 
-	char **values = palloc(attcount * sizeof(char *));
+	char	  **values = palloc(attcount * sizeof(char *));
 
-	for (int i=0; i < attcount; i++)
+	for (int i = 0; i < attcount; i++)
 	{
 		rc = ch_http_read_next(state);
 		if (state->val[0] == '\\' && state->val[1] == 'N')
@@ -306,10 +320,11 @@ http_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc, Datum *v, bool
 	return (void **) values;
 }
 
-text *
-chfdw_http_fetch_raw_data(ch_cursor *cursor)
+text	   *
+chfdw_http_fetch_raw_data(ch_cursor * cursor)
 {
 	ch_http_read_state *state = cursor->read_state;
+
 	if (state->data == NULL)
 		return NULL;
 
@@ -321,12 +336,12 @@ chfdw_http_fetch_raw_data(ch_cursor *cursor)
  *		Construct values part of INSERT query
  */
 static void
-extend_insert_query(ch_http_insert_state *state, TupleTableSlot *slot)
+extend_insert_query(ch_http_insert_state * state, TupleTableSlot * slot)
 {
 #ifdef USE_ASSERT_CHECKING
 	int			pindex = 0;
 #endif
-	bool first = true;
+	bool		first = true;
 
 	if (state->sql.len == 0)
 		appendStringInfoString(&state->sql, state->sql_begin);
@@ -336,7 +351,7 @@ extend_insert_query(ch_http_insert_state *state, TupleTableSlot *slot)
 	{
 		ListCell   *lc;
 
-		foreach (lc, state->target_attrs)
+		foreach(lc, state->target_attrs)
 		{
 			int			attnum = lfirst_int(lc);
 			Datum		value;
@@ -361,78 +376,83 @@ extend_insert_query(ch_http_insert_state *state, TupleTableSlot *slot)
 
 			switch (type)
 			{
-			case BOOLOID:
-			case INT2OID:
-			case INT4OID:
-				appendStringInfo(&state->sql, "%d", DatumGetInt32(value));
-			break;
-			case INT8OID:
-				appendStringInfo(&state->sql, INT64_FORMAT, DatumGetInt64(value));
-			break;
-			case FLOAT4OID:
-				appendStringInfo(&state->sql, "%f", DatumGetFloat4(value));
-			break;
-			case FLOAT8OID:
-				appendStringInfo(&state->sql, "%f", DatumGetFloat8(value));
-			break;
-			case NUMERICOID:
-			{
-				char *extval = DatumGetCString(DirectFunctionCall1(numeric_out, value));
-				appendStringInfoString(&state->sql, extval);
-				pfree(extval);
-			}
-			break;
-			case BPCHAROID:
-			case VARCHAROID:
-			case TEXTOID:
-			case JSONOID:
-			case NAMEOID:
-			case BITOID:
-			case BYTEAOID:
-			{
-				char   *strin, *strout;
-				size_t  len;
-				bool	tl = false;
-				Oid		typoutput = InvalidOid;
+				case BOOLOID:
+				case INT2OID:
+				case INT4OID:
+					appendStringInfo(&state->sql, "%d", DatumGetInt32(value));
+					break;
+				case INT8OID:
+					appendStringInfo(&state->sql, INT64_FORMAT, DatumGetInt64(value));
+					break;
+				case FLOAT4OID:
+					appendStringInfo(&state->sql, "%f", DatumGetFloat4(value));
+					break;
+				case FLOAT8OID:
+					appendStringInfo(&state->sql, "%f", DatumGetFloat8(value));
+					break;
+				case NUMERICOID:
+					{
+						char	   *extval = DatumGetCString(DirectFunctionCall1(numeric_out, value));
 
-				getTypeOutputInfo(type, &typoutput, &tl);
-				strin = OidOutputFunctionCall(typoutput, value);
-				len = strlen(strin) + 1;
-				strout = palloc(len * 3 + 1);
-				escape_string(strout, strin, len);
-				appendStringInfo(&state->sql, "%s", strout);
-				pfree(strout);
-			}
-			break;
-			case DATEOID:
-			{
-				/* we expect Date on other side */
-				char *extval = DatumGetCString(DirectFunctionCall1(ch_date_out, value));
-				appendStringInfoString(&state->sql, extval);
-				pfree(extval);
-				break;
-			}
-			case TIMEOID:
-			{
-				/* we expect DateTime on other side */
-				char *extval = DatumGetCString(DirectFunctionCall1(ch_time_out, value));
-				appendStringInfo(&state->sql, "1970-01-01 %s", extval);
-				pfree(extval);
-				break;
-			}
-			case TIMESTAMPOID:
-			case TIMESTAMPTZOID:
-			{
-				/* we expect DateTime on other side */
-				char *extval = DatumGetCString(DirectFunctionCall1(ch_timestamp_out, value));
-				appendStringInfoString(&state->sql, extval);
-				pfree(extval);
-				break;
-			}
-			default:
-				ereport(ERROR, (errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-								errmsg("cannot convert constant value to clickhouse value"),
-								errhint("Constant value data type: %u", type)));
+						appendStringInfoString(&state->sql, extval);
+						pfree(extval);
+					}
+					break;
+				case BPCHAROID:
+				case VARCHAROID:
+				case TEXTOID:
+				case JSONOID:
+				case NAMEOID:
+				case BITOID:
+				case BYTEAOID:
+					{
+						char	   *strin,
+								   *strout;
+						size_t		len;
+						bool		tl = false;
+						Oid			typoutput = InvalidOid;
+
+						getTypeOutputInfo(type, &typoutput, &tl);
+						strin = OidOutputFunctionCall(typoutput, value);
+						len = strlen(strin) + 1;
+						strout = palloc(len * 3 + 1);
+						escape_string(strout, strin, len);
+						appendStringInfo(&state->sql, "%s", strout);
+						pfree(strout);
+					}
+					break;
+				case DATEOID:
+					{
+						/* we expect Date on other side */
+						char	   *extval = DatumGetCString(DirectFunctionCall1(ch_date_out, value));
+
+						appendStringInfoString(&state->sql, extval);
+						pfree(extval);
+						break;
+					}
+				case TIMEOID:
+					{
+						/* we expect DateTime on other side */
+						char	   *extval = DatumGetCString(DirectFunctionCall1(ch_time_out, value));
+
+						appendStringInfo(&state->sql, "1970-01-01 %s", extval);
+						pfree(extval);
+						break;
+					}
+				case TIMESTAMPOID:
+				case TIMESTAMPTZOID:
+					{
+						/* we expect DateTime on other side */
+						char	   *extval = DatumGetCString(DirectFunctionCall1(ch_timestamp_out, value));
+
+						appendStringInfoString(&state->sql, extval);
+						pfree(extval);
+						break;
+					}
+				default:
+					ereport(ERROR, (errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
+									errmsg("cannot convert constant value to clickhouse value"),
+									errhint("Constant value data type: %u", type)));
 			}
 #ifdef USE_ASSERT_CHECKING
 			pindex++;
@@ -445,8 +465,8 @@ extend_insert_query(ch_http_insert_state *state, TupleTableSlot *slot)
 }
 
 static void *
-http_prepare_insert(void *conn, ResultRelInfo *rri, List *target_attrs,
-		char *query, char *table_name)
+http_prepare_insert(void *conn, ResultRelInfo * rri, List * target_attrs,
+					char *query, char *table_name)
 {
 	ch_http_insert_state *state = palloc0(sizeof(ch_http_insert_state));
 
@@ -460,14 +480,14 @@ http_prepare_insert(void *conn, ResultRelInfo *rri, List *target_attrs,
 }
 
 static void
-http_insert_tuple(void *istate, TupleTableSlot *slot)
+http_insert_tuple(void *istate, TupleTableSlot * slot)
 {
 	ch_http_insert_state *state = istate;
 
 	extend_insert_query(state, slot);
 
 	if ((slot == NULL && state->sql.len > 0)
-			|| state->sql.len > (MaxAllocSize / 2 /* 512MB */))
+		|| state->sql.len > (MaxAllocSize / 2 /* 512MB */ ))
 	{
 		http_simple_insert(state->conn, state->sql.data);
 		resetStringInfo(&state->sql);
@@ -477,17 +497,18 @@ http_insert_tuple(void *istate, TupleTableSlot *slot)
 /*** BINARY PROTOCOL ***/
 
 ch_connection
-chfdw_binary_connect(ch_connection_details *details)
+chfdw_binary_connect(ch_connection_details * details)
 {
-	char *ch_error = NULL;
+	char	   *ch_error = NULL;
 	ch_connection res;
 	ch_binary_connection_t *conn = ch_binary_connect(details->host, details->port,
-			details->dbname, details->username, details->password, &ch_error);
+													 details->dbname, details->username, details->password, &ch_error);
 
 	if (conn == NULL)
 	{
 		Assert(ch_error);
-		char *error = pstrdup(ch_error);
+		char	   *error = pstrdup(ch_error);
+
 		free(ch_error);
 
 		ereport(ERROR,
@@ -511,26 +532,27 @@ binary_disconnect(void *conn)
 static ch_cursor *
 binary_simple_query(void *conn, const char *query)
 {
-	MemoryContext	tempcxt,
-					oldcxt;
-	ch_cursor	*cursor;
+	MemoryContext tempcxt,
+				oldcxt;
+	ch_cursor  *cursor;
 	ch_binary_read_state_t *state;
 
 	ch_binary_response_t *resp = ch_binary_simple_query(conn, query, &is_canceled);
 
 	if (!resp->success)
 	{
-		char *error = pstrdup(resp->error);
+		char	   *error = pstrdup(resp->error);
+
 		ch_binary_response_free(resp);
 		ereport(ERROR, (
-			errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-			errmsg("pg_clickhouse: %s", error),
-			errdetail_internal("Remote Query: %.64000s", query)
-		));
+						errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+						errmsg("pg_clickhouse: %s", error),
+						errdetail_internal("Remote Query: %.64000s", query)
+						));
 	}
 
 	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse cursor",
-										ALLOCSET_DEFAULT_SIZES);
+									ALLOCSET_DEFAULT_SIZES);
 
 	oldcxt = MemoryContextSwitchTo(tempcxt);
 	cursor = palloc0(sizeof(ch_cursor));
@@ -553,15 +575,15 @@ binary_simple_query(void *conn, const char *query)
 		ereport(ERROR,
 				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
 				 errmsg("pg_clickhouse: could not initialize read state: %s",
-					 state->error)));
+						state->error)));
 	}
 
 	return cursor;
 }
 
 static void **
-binary_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc,
-	Datum *values, bool *nulls)
+binary_fetch_row(ch_cursor * cursor, List * attrs, TupleDesc tupdesc,
+				 Datum * values, bool *nulls)
 {
 	ListCell   *lc;
 	ch_binary_read_state_t *state = cursor->read_state;
@@ -572,7 +594,7 @@ binary_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc,
 		ereport(ERROR,
 				(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
 				 errmsg("pg_clickhouse: error while reading row: %s",
-					 state->error)));
+						state->error)));
 
 	if (!have_data)
 		return NULL;
@@ -586,7 +608,7 @@ binary_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc,
 		}
 		else
 			elog(ERROR, "pg_clickhouse: unexpected state: attributes "
-					"count == 0 and haven't got NULL in the response");
+				 "count == 0 and haven't got NULL in the response");
 	}
 	else if (attcount != state->resp->columns_count)
 	{
@@ -600,13 +622,14 @@ binary_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc,
 
 	if (tupdesc)
 	{
-		size_t j = 0;
+		size_t		j = 0;
+
 		Assert(values && nulls);
 
 		foreach(lc, attrs)
 		{
-			int		i = lfirst_int(lc);
-			bool	isnull = state->nulls[j];
+			int			i = lfirst_int(lc);
+			bool		isnull = state->nulls[j];
 			intptr_t	convstate;
 
 
@@ -614,40 +637,41 @@ binary_fetch_row(ch_cursor *cursor, List *attrs, TupleDesc tupdesc,
 				values[i - 1] = (Datum) 0;
 			else
 			{
-again:
+		again:
 				convstate = cursor->conversion_states[j];
 				switch (convstate)
 				{
 					case 0:
-					{
-						MemoryContext old_mcxt;
+						{
+							MemoryContext old_mcxt;
 
-						Oid outtype = TupleDescAttr(tupdesc, i - 1)->atttypid;
-						void *s;
+							Oid			outtype = TupleDescAttr(tupdesc, i - 1)->atttypid;
+							void	   *s;
 
-						/*
-						 * now we're should be in temporary memory context,
-						 * so make sure conversion states outlive it.
-						 */
-						old_mcxt = MemoryContextSwitchTo(cursor->memcxt);
-						s = ch_binary_init_convert_state(state->values[j],
-								state->coltypes[j], outtype);
-						MemoryContextSwitchTo(old_mcxt);
+							/*
+							 * now we're should be in temporary memory
+							 * context, so make sure conversion states outlive
+							 * it.
+							 */
+							old_mcxt = MemoryContextSwitchTo(cursor->memcxt);
+							s = ch_binary_init_convert_state(state->values[j],
+															 state->coltypes[j], outtype);
+							MemoryContextSwitchTo(old_mcxt);
 
-						if (s == NULL)
-							/* no conversion but state is initalized */
-							cursor->conversion_states[j] = 1;
-						else
-							cursor->conversion_states[j] = (uintptr_t) s;
-						goto again;
-					}
+							if (s == NULL)
+								/* no conversion but state is initalized */
+								cursor->conversion_states[j] = 1;
+							else
+								cursor->conversion_states[j] = (uintptr_t) s;
+							goto again;
+						}
 					case 1:
 						/* no conversion */
 						values[i - 1] = state->values[j];
 						break;
 					default:
 						values[i - 1] = ch_binary_convert_datum((void *) convstate,
-								state->values[j]);
+																state->values[j]);
 				}
 			}
 
@@ -663,7 +687,8 @@ ok:
 static void
 binary_cursor_free(void *c)
 {
-	ch_cursor *cursor = c;
+	ch_cursor  *cursor = c;
+
 	for (size_t i = 0; i < cursor->columns_count; i++)
 	{
 		if (cursor->conversion_states[i] > 1)
@@ -675,18 +700,18 @@ binary_cursor_free(void *c)
 }
 
 static void *
-binary_prepare_insert(void *conn, ResultRelInfo *rri, List *target_attrs,
-		char *query, char *table_name)
+binary_prepare_insert(void *conn, ResultRelInfo * rri, List * target_attrs,
+					  char *query, char *table_name)
 {
 	ch_binary_insert_state *state = NULL;
-	MemoryContext	tempcxt,
-					oldcxt;
+	MemoryContext tempcxt,
+				oldcxt;
 
 	if (table_name == NULL)
 		elog(ERROR, "expected table name");
 
 	tempcxt = AllocSetContextCreate(CurrentMemoryContext,
-		"pg_clickhouse binary insert state", ALLOCSET_DEFAULT_SIZES);
+									"pg_clickhouse binary insert state", ALLOCSET_DEFAULT_SIZES);
 
 	/* prepare cleanup */
 	oldcxt = MemoryContextSwitchTo(tempcxt);
@@ -710,17 +735,17 @@ binary_prepare_insert(void *conn, ResultRelInfo *rri, List *target_attrs,
 }
 
 static void
-binary_insert_tuple(void *istate, TupleTableSlot *slot)
+binary_insert_tuple(void *istate, TupleTableSlot * slot)
 {
 	ch_binary_insert_state *state = istate;
 
 	if (state->conversion_states == NULL)
 	{
-		MemoryContext	old_mcxt;
+		MemoryContext old_mcxt;
 
 		old_mcxt = MemoryContextSwitchTo(state->memcxt);
 		state->conversion_states = ch_binary_make_tuple_map(
-				slot->tts_tupleDescriptor, state->outdesc);
+															slot->tts_tupleDescriptor, state->outdesc);
 		MemoryContextSwitchTo(old_mcxt);
 	}
 
@@ -746,14 +771,14 @@ static char *str_types_map[][2] = {
 	{"Int32", "INT4"},
 	{"UInt32", "INT8"},
 	{"Int64", "INT8"},
-	{"UInt64", "INT8"}, //overflow risk
+	{"UInt64", "INT8"},			/* overflow risk */
 	{"Float32", "REAL"},
 	{"Float64", "DOUBLE PRECISION"},
 	{"Decimal", "NUMERIC"},
 	{"Boolean", "BOOLEAN"},
 	{"String", "TEXT"},
 	{"DateTime", "TIMESTAMP"},
-	{"Date", "DATE"}, // important that this one is after other Date types
+	{"Date", "DATE"},			/* must come after other Date types */
 	{"UUID", "UUID"},
 	{"IPv4", "inet"},
 	{"IPv6", "inet"},
@@ -771,19 +796,19 @@ readstr(ch_connection conn, char *val)
 }
 
 static char *
-parse_type(char *table_name, char *colname, char *typepart, bool *is_nullable, List **options)
+parse_type(char *table_name, char *colname, char *typepart, bool *is_nullable, List * *options)
 {
-	char *pos = strstr(typepart, "(");
+	char	   *pos = strstr(typepart, "(");
 
 	if (pos != NULL)
 	{
-		char *insidebr = pnstrdup(pos + 1, strrchr(typepart, ')') - pos - 1);
+		char	   *insidebr = pnstrdup(pos + 1, strrchr(typepart, ')') - pos - 1);
 
 		if (strncmp(typepart, "Decimal", strlen("Decimal")) == 0)
 		{
 			if (strstr(insidebr, ",") == NULL)
 				elog(ERROR, "pg_clickhouse: could not import Decimal field, "
-					"should be two parameters on definition");
+					 "should be two parameters on definition");
 
 			return psprintf("NUMERIC(%s)", insidebr);
 		}
@@ -800,7 +825,7 @@ parse_type(char *table_name, char *colname, char *typepart, bool *is_nullable, L
 		else if (strncmp(typepart, "Tuple", strlen("Tuple")) == 0)
 		{
 			elog(NOTICE, "pg_clickhouse: ClickHouse <Tuple> type was "
-				"translated to <TEXT> type for column \"%s\", please create composite type and alter the column if needed", colname);
+				 "translated to <TEXT> type for column \"%s\", please create composite type and alter the column if needed", colname);
 			return "TEXT";
 		}
 		else if (strncmp(typepart, "Array", strlen("Array")) == 0)
@@ -822,19 +847,22 @@ parse_type(char *table_name, char *colname, char *typepart, bool *is_nullable, L
 		else if (strncmp(typepart, "AggregateFunction", strlen("AggregateFunction")) == 0 ||
 				 strncmp(typepart, "SimpleAggregateFunction", strlen("SimpleAggregateFunction")) == 0)
 		{
-			char *pos2 = strstr(pos, ",");
-			if (pos2 == NULL) {
-				// Detect COUNT with no params.
+			char	   *pos2 = strstr(pos, ",");
+
+			if (pos2 == NULL)
+			{
+				/* Detect COUNT with no params. */
 				if (strncmp(insidebr, "count", strlen("count")) == 0)
 					return "BIGINT";
 				elog(ERROR, "pg_clickhouse: expected comma in AggregateFunction");
 			}
 
-			char *func = pnstrdup(pos + 1, strstr(pos + 1, ",") - pos - 1);
+			char	   *func = pnstrdup(pos + 1, strstr(pos + 1, ",") - pos - 1);
 
 			if (options != NULL)
 			{
-				int val = typepart[0] == 'A' ? 1 : 2;
+				int			val = typepart[0] == 'A' ? 1 : 2;
+
 				*options = lappend(*options, makeInteger(val));
 				*options = lappend(*options, makeString(func));
 			}
@@ -848,7 +876,8 @@ parse_type(char *table_name, char *colname, char *typepart, bool *is_nullable, L
 		typepart = pos + 1;
 	}
 
-	size_t i = 0;
+	size_t		i = 0;
+
 	while (str_types_map[i][0] != NULL)
 	{
 		if (strncmp(str_types_map[i][0], typepart, strlen(str_types_map[i][0])) == 0)
@@ -857,33 +886,33 @@ parse_type(char *table_name, char *colname, char *typepart, bool *is_nullable, L
 	}
 
 	ereport(ERROR, (errmsg(
-		"pg_clickhouse: could not map %s.%s type <%s>",
-		table_name, colname, typepart
-	)));
+						   "pg_clickhouse: could not map %s.%s type <%s>",
+						   table_name, colname, typepart
+						   )));
 }
 
-List *
-chfdw_construct_create_tables(ImportForeignSchemaStmt *stmt, ForeignServer *server)
+List	   *
+chfdw_construct_create_tables(ImportForeignSchemaStmt * stmt, ForeignServer * server)
 {
-	Oid				userid = GetUserId();
-	UserMapping	   *user = GetUserMapping(userid, server->serverid);
-	ch_connection	conn = chfdw_get_connection(user);
-	ch_cursor	   *cursor;
-	char		   *query;
-	List		   *result = NIL,
-				   *datts = NIL;
-	char		  **row_values;
+	Oid			userid = GetUserId();
+	UserMapping *user = GetUserMapping(userid, server->serverid);
+	ch_connection conn = chfdw_get_connection(user);
+	ch_cursor  *cursor;
+	char	   *query;
+	List	   *result = NIL,
+			   *datts = NIL;
+	char	  **row_values;
 
 	query = psprintf("SELECT name, engine, engine_full "
-			"FROM system.tables WHERE database='%s' and name not like '.inner%%'", stmt->remote_schema);
+					 "FROM system.tables WHERE database='%s' and name not like '.inner%%'", stmt->remote_schema);
 	cursor = conn.methods->simple_query(conn.conn, query);
 
-	datts = list_make2_int(1,2);
+	datts = list_make2_int(1, 2);
 
 	while ((row_values = (char **) conn.methods->fetch_row(cursor,
-				list_make3_int(1,2,3), NULL, NULL, NULL)) != NULL)
+														   list_make3_int(1, 2, 3), NULL, NULL, NULL)) != NULL)
 	{
-		StringInfoData	buf;
+		StringInfoData buf;
 		ch_cursor  *table_def;
 		char	   *table_name = readstr(conn, row_values[0]);
 		char	   *engine = readstr(conn, row_values[1]);
@@ -896,12 +925,13 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt *stmt, ForeignServer *serv
 
 		if (list_length(stmt->table_list))
 		{
-			ListCell *lc;
-			bool found = false;
+			ListCell   *lc;
+			bool		found = false;
 
 			foreach(lc, stmt->table_list)
 			{
 				RangeVar   *rv = (RangeVar *) lfirst(lc);
+
 				if (strcmp(rv->relname, table_name) == 0)
 					found = true;
 			}
@@ -914,18 +944,18 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt *stmt, ForeignServer *serv
 
 		initStringInfo(&buf);
 		appendStringInfo(&buf, "CREATE FOREIGN TABLE IF NOT EXISTS \"%s\".\"%s\" (\n",
-			stmt->local_schema, table_name);
+						 stmt->local_schema, table_name);
 		query = psprintf("select name, type from system.columns where database='%s' and table='%s'",
-            stmt->remote_schema, table_name);
+						 stmt->remote_schema, table_name);
 		table_def = conn.methods->simple_query(conn.conn, query);
 
 		while ((dvalues = (char **) conn.methods->fetch_row(table_def,
-			datts, NULL, NULL, NULL)) != NULL)
+															datts, NULL, NULL, NULL)) != NULL)
 		{
-			List   *options = NIL;
-			bool	is_nullable = false;
-			char   *colname = readstr(conn, dvalues[0]);
-			char   *remote_type = parse_type(table_name, colname, readstr(conn, dvalues[1]), &is_nullable, &options);
+			List	   *options = NIL;
+			bool		is_nullable = false;
+			char	   *colname = readstr(conn, dvalues[0]);
+			char	   *remote_type = parse_type(table_name, colname, readstr(conn, dvalues[1]), &is_nullable, &options);
 
 			if (!first)
 				appendStringInfoString(&buf, ",\n");
@@ -939,19 +969,22 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt *stmt, ForeignServer *serv
 
 			if (options != NIL)
 			{
-				bool first_opt = true;
-				ListCell *lc;
+				bool		first_opt = true;
+				ListCell   *lc;
 
 				appendStringInfoString(&buf, " OPTIONS (");
 				foreach(lc, options)
 				{
-					Node	*val = lfirst(lc);
+					Node	   *val = lfirst(lc);
+
 					if (IsA(val, Integer))
 					{
 						if (!first_opt)
 							appendStringInfoString(&buf, ", ");
 						first_opt = false;
-						switch intVal(val) {
+						switch intVal
+								(val)
+						{
 							case 1:
 								appendStringInfoString(&buf, "AggregateFunction");
 								break;
@@ -974,11 +1007,12 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt *stmt, ForeignServer *serv
 		}
 
 		appendStringInfo(&buf, "\n) SERVER %s OPTIONS (database '%s', table_name '%s'",
-			server->servername, stmt->remote_schema, table_name);
+						 server->servername, stmt->remote_schema, table_name);
 
 		if (engine && engine_full && strcmp(engine, "CollapsingMergeTree") == 0)
 		{
-			char *sub = strstr(engine_full, ")");
+			char	   *sub = strstr(engine_full, ")");
+
 			if (sub)
 			{
 				sub[1] = '\0';
@@ -1001,7 +1035,7 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt *stmt, ForeignServer *serv
 /*
  * Escaping arbitrary strings to get valid SQL literal strings.
  *
- * length is the length of the source string.  (Note: if a terminating NUL
+ * length is the length of the source string. (Note: if a terminating NUL
  * is encountered sooner, escape_string stops short of "length"; the behavior
  * is thus rather like strncpy.)
  *

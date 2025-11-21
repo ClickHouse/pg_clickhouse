@@ -173,3 +173,9 @@ bake-vars:
 	@echo "version=$(DISTVERSION)"
 	@echo "revision=$(REVISION)"
 	@echo "pg_versions=$(PG_VERSIONS)"
+
+# Format the .c and .h files according to the PostgreSQL indentation standard.
+# Requires `pg_bsd_indent` to be in the path.
+indent:
+	@for fn in $(wildcard src/*.c.in src/*.c src/*/*.hh src/*/*.cpp); do printf "%s\n" "$$fn"; pg_bsd_indent -bad -bap -bbb -bc -bl -cli1 -cp33 -cdb -nce -d0 -di12 -nfc1 -i4 -l79 -lp -lpl -nip -npro -sac -tpg -ts4 "$$fn"; done
+	@rm *.BAK
