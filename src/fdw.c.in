@@ -631,7 +631,7 @@ clickhouseGetForeignPlan(PlannerInfo *root,
 		/*
 		 * We leave fdw_recheck_quals empty in this case, since we never need
 		 * to apply EPQ recheck clauses.  In the case of a joinrel, EPQ
-		 * recheck is handled elsewhere --- see postgresGetForeignJoinPaths().
+		 * recheck is handled elsewhere --- see clickhouseGetForeignJoinPaths().
 		 * If we're planning an upperrel (ie, remote grouping or aggregation)
 		 * then there's no EPQ to do because SELECT FOR UPDATE wouldn't be
 		 * allowed, and indeed we *can't* put the remote clauses into

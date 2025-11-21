@@ -541,7 +541,7 @@ foreign_expr_walker(Node *node,
 
 			/* Features that ClickHouse doesn't support */
 		if (AGGKIND_IS_ORDERED_SET(agg->aggkind)
-			&& !chfdw_check_for_builtin_ordered_aggregate(agg->aggfnoid))
+			&& !chfdw_check_for_ordered_aggregate(agg))
 			return false;
 
 		if (agg->aggdistinct && agg->aggfilter)
@@ -3376,7 +3376,6 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	bool	sign_count_filter = false;
 	uint8	brcount = 1;
 	bool	use_variadic;
-	int 	first_arg = 0;
 	char    *name = get_func_name(node->aggfnoid);
 
 	/* Only basic, non-split aggregation accepted. */
@@ -3388,18 +3387,6 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 	/* Find aggregate name from aggfnoid which is a pg_proc entry */
 	cdef = context->func;
 	context->func = appendFunctionName(node->aggfnoid, context);
-
-	// Emit params list if first arg is params() function.
-	if (context->func && context->func->cf_type == CF_CH_FUNCTION && list_length(node->args) > 0)
-	{
-		FuncExpr *fe = ch_get_params_function((TargetEntry *) linitial(node->args));
-		if (fe)
-		{
-			// Deparse params first.
-			deparseFuncExpr(fe, context);
-			first_arg = 1;
-		}
-	}
 
 	/* 'If' part */
 	if (context->func && context->func->cf_type == CF_SIGN_COUNT && !node->aggstar)
@@ -3488,7 +3475,7 @@ deparseAggref(Aggref *node, deparse_expr_cxt *context)
 			else
 			{
 				/* default arguments output */
-				for_each_from (arg, node->args, first_arg)
+				foreach (arg, node->args)
 				{
 					TargetEntry *tle = (TargetEntry *) lfirst(arg);
 					Node	   *n = (Node *) tle->expr;

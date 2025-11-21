@@ -46,8 +46,6 @@ NOTICE:   SELECT ch_argmin(3, 3, true) : HV000 - pg_clickhouse: failed to push d
 NOTICE:   SELECT ch_argmin(true, false, now()) : HV000 - pg_clickhouse: failed to push down aggregate argMin()
 NOTICE:   SELECT dictGet('', '', '{"x": true}'::json) : HV000 - pg_clickhouse: failed to push down dictget()
 NOTICE:   SELECT dictGet('a', 'b', ARRAY[1]) : HV000 - pg_clickhouse: failed to push down dictget()
-NOTICE:   SELECT params(1) : HV000 - pg_clickhouse: failed to push down params()
-NOTICE:   SELECT params(1, 98.6, 'foo', false) : HV000 - pg_clickhouse: failed to push down params()
 NOTICE:   SELECT quantile(1) : HV000 - pg_clickhouse: failed to push down aggregate quantile()
 NOTICE:   SELECT quantile('x') : HV000 - pg_clickhouse: failed to push down aggregate quantile()
 NOTICE:   SELECT quantileExact(42) : HV000 - pg_clickhouse: failed to push down aggregate quantileExact()

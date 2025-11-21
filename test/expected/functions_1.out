@@ -457,16 +457,16 @@ SELECT uniqTheta(a, c) FROM t1;
          3
 (1 row)
 
-EXPLAIN (VERBOSE, COSTS OFF) SELECT quantile(params(0.25), a) FROM t1;
-                          QUERY PLAN                           
----------------------------------------------------------------
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantile(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
  Foreign Scan
-   Output: (quantile(params(0.25), a))
+   Output: (quantile('0.25'::double precision) WITHIN GROUP (ORDER BY a))
    Relations: Aggregate on (t1)
    Remote SQL: SELECT quantile(0.25)(a) FROM functions_test.t1
 (4 rows)
 
-SELECT quantile(params(0.25), a) FROM t1;
+SELECT quantile(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
  quantile 
 ----------
      1.75
@@ -487,16 +487,16 @@ SELECT quantile(a) FROM t1;
         2
 (1 row)
 
-EXPLAIN (VERBOSE, COSTS OFF) SELECT quantileExact(params(0.75), a) FROM t1;
-                             QUERY PLAN                             
---------------------------------------------------------------------
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantileExact(0.75) WITHIN GROUP (ORDER BY a) FROM t1;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
  Foreign Scan
-   Output: (quantileexact(params(0.75), a))
+   Output: (quantileexact('0.75'::double precision) WITHIN GROUP (ORDER BY a))
    Relations: Aggregate on (t1)
    Remote SQL: SELECT quantileExact(0.75)(a) FROM functions_test.t1
 (4 rows)
 
-SELECT quantileExact(params(0.75), a) FROM t1;
+SELECT quantileExact(0.75) WITHIN GROUP (ORDER BY a) FROM t1;
  quantileexact 
 ---------------
              2

@@ -21,22 +21,10 @@ CREATE FOREIGN DATA WRAPPER clickhouse_fdw
     HANDLER clickhouse_fdw_handler
     VALIDATOR clickhouse_fdw_validator;
 
--- Function used for parametric aggregate parameters.
-CREATE TYPE params AS ();
-CREATE FUNCTION params(VARIADIC "any") RETURNS params
-AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
-LANGUAGE C STRICT;
-
 -- Function used by variadic aggregate functions when pushdown fails. The
 -- first argument should describe the operation that should have been pushed
 -- down.
 CREATE FUNCTION ch_push_agg_text(TEXT, VARIADIC "any") RETURNS TEXT
-AS 'MODULE_PATHNAME', 'clickhouse_op_push_fail'
-LANGUAGE C STRICT;
-
--- Function used by parametric aggregates that take an array for the
--- parameters plus an item of any type.
-CREATE FUNCTION ch_param_any_text(TEXT, params, "any") RETURNS TEXT
 AS 'MODULE_PATHNAME', 'clickhouse_op_push_fail'
 LANGUAGE C STRICT;
 
@@ -45,13 +33,17 @@ CREATE FUNCTION ch_any_text(TEXT, "any") RETURNS TEXT
 AS 'MODULE_PATHNAME', 'clickhouse_op_push_fail'
 LANGUAGE C STRICT;
 
--- No-op functions used for aggregate final functions that specific types.
+-- No-op functions used for aggregate final functions with specific types.
 -- Allows their states to be text. Return NULL.
 CREATE FUNCTION ch_noop_bigint(TEXT) RETURNS BIGINT
 AS 'MODULE_PATHNAME', 'clickhouse_noop'
 LANGUAGE C STRICT;
 
 CREATE FUNCTION ch_noop_float8(TEXT) RETURNS float8
+AS 'MODULE_PATHNAME', 'clickhouse_noop'
+LANGUAGE C STRICT;
+
+CREATE FUNCTION ch_noop_float8_float8(TEXT, float8) RETURNS float8
 AS 'MODULE_PATHNAME', 'clickhouse_noop'
 LANGUAGE C STRICT;
 
@@ -89,12 +81,12 @@ CREATE AGGREGATE argMin(anyelement, anycompatible)
     stype = anyelement
 );
 
-CREATE AGGREGATE quantile(params, "any")
+CREATE AGGREGATE quantile(float8 ORDER BY "any")
 (
-    SFUNC     = ch_param_any_text,      -- raises error
+    SFUNC     = ch_any_text,            -- raises error
     INITCOND  = 'aggregate quantile()', -- what to push down
     STYPE     = TEXT,                   -- state type
-    FINALFUNC = ch_noop_float8          -- returns NULL
+    FINALFUNC = ch_noop_float8_float8   -- returns NULL
 );
 
 CREATE AGGREGATE quantile("any")
@@ -105,12 +97,12 @@ CREATE AGGREGATE quantile("any")
     FINALFUNC = ch_noop_float8          -- returns NULL
 );
 
-CREATE AGGREGATE quantileExact(params, "any")
+CREATE AGGREGATE quantileExact(float8 ORDER BY "any")
 (
-    SFUNC     = ch_param_any_text,           -- raises error
+    SFUNC     = ch_any_text,                 -- raises error
     INITCOND  = 'aggregate quantileExact()', -- what to push down
     STYPE     = TEXT,                        -- state type
-    FINALFUNC = ch_noop_float8               -- returns NULL
+    FINALFUNC = ch_noop_float8_float8        -- returns NULL
 );
 
 CREATE AGGREGATE quantileExact("any")
@@ -118,7 +110,7 @@ CREATE AGGREGATE quantileExact("any")
     SFUNC     = ch_any_text,                 -- raises error
     INITCOND  = 'aggregate quantileExact()', -- what to push down
     STYPE     = TEXT,                        -- state type
-    FINALFUNC = ch_noop_float8               -- returns NULL
+    FINALFUNC = ch_noop_float8        -- returns NULL
 );
 
 -- Variadic aggregates that take any number of arguments of any type and

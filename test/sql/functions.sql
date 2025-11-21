@@ -132,13 +132,13 @@ SELECT uniqTheta(a, b) FROM t1;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT uniqTheta(a, c) FROM t1;
 SELECT uniqTheta(a, c) FROM t1;
 
-EXPLAIN (VERBOSE, COSTS OFF) SELECT quantile(params(0.25), a) FROM t1;
-SELECT quantile(params(0.25), a) FROM t1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantile(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
+SELECT quantile(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT quantile(a) FROM t1;
 SELECT quantile(a) FROM t1;
 
-EXPLAIN (VERBOSE, COSTS OFF) SELECT quantileExact(params(0.75), a) FROM t1;
-SELECT quantileExact(params(0.75), a) FROM t1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT quantileExact(0.75) WITHIN GROUP (ORDER BY a) FROM t1;
+SELECT quantileExact(0.75) WITHIN GROUP (ORDER BY a) FROM t1;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT quantileExact(a) FROM t1;
 SELECT quantileExact(a) FROM t1;
 

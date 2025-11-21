@@ -107,15 +107,19 @@ init_custom_entry(CustomObjectDef *entry)
  * Return true if ordered aggregate funcid maps to a parameterized ClickHouse
  * aggregate function.
  */
-inline bool chfdw_check_for_builtin_ordered_aggregate(Oid funcid)
+inline bool chfdw_check_for_ordered_aggregate(Aggref *agg)
 {
-	switch (funcid) {
+	switch (agg->aggfnoid) {
 		// Ordered aggregates that map to ClickHouse functions.
 		case F_PERCENTILE_CONT_FLOAT8_FLOAT8:
 		case F_PERCENTILE_CONT_FLOAT8_INTERVAL:
 			return true;
 	}
-	return false;
+
+	// Accept all ordered aggregates defined by pg_clickhouse.
+	Oid	extoid = getExtensionOfObject(ProcedureRelationId, agg->aggfnoid);
+	char *extname = get_extension_name(extoid);
+	return strcmp(extname, "pg_clickhouse") == 0;
 }
 
 CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
@@ -351,19 +355,6 @@ CustomObjectDef *chfdw_check_for_custom_function(Oid funcid)
 	}
 
 	return entry;
-}
-
-FuncExpr * ch_get_params_function(TargetEntry *tle)
-{
-	Node	   *n = (Node *) tle->expr;
-	if (nodeTag(n) != T_FuncExpr) return NULL;
-
-	FuncExpr   *fe = (FuncExpr *) n;
-	Oid extoid = getExtensionOfObject(ProcedureRelationId, fe->funcid);
-	if (strcmp(get_extension_name(extoid), "pg_clickhouse") != 0) return NULL;
-	if (strcmp(get_func_name(fe->funcid), "params") != 0) return NULL;
-
-	return fe;
 }
 
 static Oid

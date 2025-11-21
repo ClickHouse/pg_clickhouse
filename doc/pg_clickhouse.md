@@ -115,28 +115,6 @@ These PostgreSQL aggregate functions pushdown to ClickHouse.
 
 *   [count](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/count)
 
-### Pushdown Ordered Set Aggregates
-
-These PostgreSQL [ordered-set aggregate functions] map to ClickHouse
-[Parametric aggregate functions] by passing their *direct argument* as a
-parameter and their `ORDER BY` expressions as arguments. For example, this
-PostgreSQL query:
-
-```sql
-SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
-```
-
-Maps to this ClickHouse query:
-
-```sql
-SELECT quantile(0.25)(a) FROM t1;
-```
-
-Note that the non-default `ORDER BY` suffixes `DESC` and `NULLS FIRST`
-are not supported and will raise an error.
-
-*   `percentile_cont(double)` => [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
-
 ### Custom Aggregates
 
 These custom aggregate functions created by `pg_clickhouse` provide foreign
@@ -155,23 +133,28 @@ an exception.
 *   [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
 *   [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
 
-#### Parametric Aggregates
+### Pushdown Ordered Set Aggregates
 
-To pass parameters to ClickHouse [Parametric aggregate functions], pass a call
-to the special `params()` function as the first argument. For example, a
-ClickHouse query such as
-
-```sql
-SELECT quantile(0.25)(val) FROM t;
-```
-
-Should be written in PostgreSQL as:
+These [ordered-set aggregate functions] map to ClickHouse [Parametric
+aggregate functions] by passing their *direct argument* as a parameter and
+their `ORDER BY` expressions as arguments. For example, this PostgreSQL query:
 
 ```sql
-SELECT quantile(params(0.25), val) FROM t;
+SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
 ```
 
-Omit `params()` to get the default value, where relevant.
+Maps to this ClickHouse query:
+
+```sql
+SELECT quantile(0.25)(a) FROM t1;
+```
+
+Note that the non-default `ORDER BY` suffixes `DESC` and `NULLS FIRST`
+are not supported and will raise an error.
+
+*   `percentile_cont(double)` => [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
+*   `quantile(double)` => [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
+*   `quantileExact(double)` => [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
 
 ## Authors
 

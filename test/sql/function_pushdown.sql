@@ -69,9 +69,6 @@ BEGIN
         $$ SELECT dictGet('', '', '{"x": true}'::json) $$,
         $$ SELECT dictGet('a', 'b', ARRAY[1]) $$,
 
-        $$ SELECT params(1) $$,
-        $$ SELECT params(1, 98.6, 'foo', false) $$,
-
         $$ SELECT quantile(1) $$,
         $$ SELECT quantile('x') $$,
         $$ SELECT quantileExact(42) $$,
