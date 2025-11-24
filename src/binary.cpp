@@ -765,10 +765,15 @@ nested_col:
 				str.erase(0, 1);
 			}
 
-			if (str.length() <= scale)
+			if (scale == 0)
+			{
+				/* No decimal point, just output the entire value. */
+				res << str;
+			}
+			else if (str.length() <= scale)
 			{
 				/* Append the entire value prepended with zeros after the decimal. */
-				res << "0." << std::string(scale-1, '0') << str;
+				res << "0." << std::string(scale-str.length(), '0') << str;
 			}
 			else
 			{
