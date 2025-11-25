@@ -59,6 +59,23 @@ SELECT (CASE WHEN b THEN 1 ELSE 2 END) as g1, MAX(a) FROM t1 GROUP BY g1;
   1 |   9
 (2 rows)
 
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 ORDER BY a NULLS FIRST, b LIMIT 3;
+                                             QUERY PLAN                                              
+-----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t1
+   Output: a, b
+   Remote SQL: SELECT a, b FROM deparse_test.t1 ORDER BY a ASC NULLS FIRST, b ASC NULLS LAST LIMIT 3
+(3 rows)
+
+SELECT * FROM t1 ORDER BY a NULLS FIRST, b LIMIT 3;
+ a | b 
+---+---
+ 0 | f
+ 0 | f
+ 0 | f
+(3 rows)
+
 DROP USER MAPPING FOR CURRENT_USER SERVER deparse_lookback;
 SELECT clickhouse_raw_query('DROP DATABASE deparse_test');
  clickhouse_raw_query 

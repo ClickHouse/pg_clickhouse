@@ -154,11 +154,11 @@ INSERT INTO ftcopy VALUES
 	(4, 5, '1991-04-04', '1990-04-04 12:04:04', '12:02:04', 'val4'),
 	(5, 6, '1991-04-04', NULL, '12:02:05', 'val5');
 EXPLAIN (VERBOSE) SELECT * FROM ftcopy ORDER BY c1;
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
  Foreign Scan on public.ftcopy  (cost=1.00..-0.50 rows=1 width=64)
    Output: c1, c2, c3, c4, c5, c6
-   Remote SQL: SELECT c1, c2, c3, c4, c5, c6 FROM http_test.tcopy ORDER BY c1 ASC
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6 FROM http_test.tcopy ORDER BY c1 ASC NULLS LAST
 (3 rows)
 
 SELECT * FROM ftcopy ORDER BY c1;
@@ -180,7 +180,7 @@ SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work
 ALTER SERVER http_loopback OPTIONS (SET dbname 'no such database');
 SELECT c3, c4 FROM ft1 ORDER BY c3, c1;  -- should fail
 ERROR:  pg_clickhouse: Code: 81. DB::Exception: Database `no such database` does not exist. (UNKNOWN_DATABASE)
-DETAIL:  Remote Query: SELECT c1, c3, c4 FROM "no such database".t1 ORDER BY c3 ASC, c1 ASC
+DETAIL:  Remote Query: SELECT c1, c3, c4 FROM "no such database".t1 ORDER BY c3 ASC NULLS LAST, c1 ASC NULLS LAST
 CONTEXT:  HTTP status code: 404
 ALTER USER MAPPING FOR CURRENT_USER SERVER http_loopback OPTIONS (ADD user 'no such user');
 SELECT c3, c4 FROM ft1 ORDER BY c3, c1;  -- should fail
@@ -245,11 +245,11 @@ SELECT * FROM ft1 t1 ORDER BY t1.c3, t1.c1, t1.tableoid OFFSET 100 LIMIT 10;
 (10 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT t1 FROM ft1 t1 ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10;
-                                                    QUERY PLAN                                                     
--------------------------------------------------------------------------------------------------------------------
+                                                               QUERY PLAN                                                                
+-----------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.ft1 t1
    Output: t1.*, c3, c1
-   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 ORDER BY c3 ASC, c1 ASC LIMIT 10 OFFSET 100
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 ORDER BY c3 ASC NULLS LAST, c1 ASC NULLS LAST LIMIT 10 OFFSET 100
 (3 rows)
 
 SELECT t1 FROM ft1 t1 ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10;
@@ -708,12 +708,12 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c8 = 'foo';  -- can't be
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT (CASE WHEN c1 < 10 THEN 1 WHEN c1 < 50 THEN 2 ELSE 3 END) a,
 	sum(length(c2)) FROM ft2 GROUP BY a ORDER BY a;
-                                                                                                                                                                      QUERY PLAN                                                                                                                                                                      
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                           QUERY PLAN                                                                                                                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (CASE WHEN (c1 < 10) THEN 1 WHEN (c1 < 50) THEN 2 ELSE 3 END), (sum(length(c2)))
    Relations: Aggregate on (ft2)
-   Remote SQL: SELECT CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END, sum(length(c2)) FROM http_test.t2 GROUP BY (CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END) ORDER BY CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END ASC
+   Remote SQL: SELECT CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END, sum(length(c2)) FROM http_test.t2 GROUP BY (CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END) ORDER BY CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END ASC NULLS LAST
 (4 rows)
 
 SELECT (CASE WHEN c1 < 10 THEN 1 WHEN c1 < 50 THEN 2 ELSE 3 END) a,
@@ -757,13 +757,13 @@ SELECT COUNT(DISTINCT c1) FROM ft2;
 
 /* DISTINCT with IF */
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
-                           QUERY PLAN                            
------------------------------------------------------------------
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
  Aggregate
    Output: count(DISTINCT c1) FILTER (WHERE (c1 < 20))
    ->  Foreign Scan on public.ft2
          Output: c1, c2
-         Remote SQL: SELECT c1 FROM http_test.t2 ORDER BY c1 ASC
+         Remote SQL: SELECT c1 FROM http_test.t2 ORDER BY c1 ASC NULLS LAST
 (5 rows)
 
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback2;

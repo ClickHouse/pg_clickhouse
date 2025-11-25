@@ -62,7 +62,7 @@ INSERT INTO json_http.things VALUES
 ;
 SELECT * FROM json_bin.things ORDER BY id;
 ERROR:  pg_clickhouse: unsupported column type: JSON
-DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
 SELECT * FROM json_http.things ORDER BY id;
  id |                           data                           
 ----+----------------------------------------------------------

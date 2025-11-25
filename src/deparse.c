@@ -3869,9 +3869,9 @@ appendOrderByClause(List * pathkeys, bool has_final_sort,
 		if (pathkey->pk_nulls_first)
 			appendStringInfoString(buf, " NULLS FIRST");
 		else
-			/* appendStringInfoString(buf, " NULLS LAST"); */
+			appendStringInfoString(buf, " NULLS LAST");
 
-			delim = ", ";
+		delim = ", ";
 	}
 }
 
