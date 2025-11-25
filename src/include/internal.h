@@ -6,6 +6,7 @@
 typedef struct ch_http_connection_t
 {
 	CURL	   *curl;
+	char	   *dbname;
 	char	   *base_url;
 	size_t		base_url_len;
 }			ch_http_connection_t;

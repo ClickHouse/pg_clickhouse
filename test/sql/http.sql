@@ -18,12 +18,12 @@ SELECT clickhouse_raw_query('CREATE TABLE http_test.t3 (c1 Int, c3 String)
 SELECT clickhouse_raw_query('CREATE TABLE http_test.t4 (c1 Int, c2 Int, c3 String, c4 Bool)
 	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
 SELECT clickhouse_raw_query('
-	CREATE TABLE http_test.tcopy
+	CREATE TABLE tcopy
 		(c1 Int32, c2 Int64, c3 Date, c4 Nullable(DateTime), c5 DateTime, c6 String)
 	ENGINE = MergeTree
 	PARTITION BY c3
 	ORDER BY (c1, c2, c3);
-');
+', 'dbname=http_test');
 
 CREATE FOREIGN TABLE ft1 (
 	c0 int,

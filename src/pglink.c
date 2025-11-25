@@ -90,7 +90,8 @@ chfdw_http_connect(ch_connection_details * details)
 {
 	ch_connection res;
 	ch_http_connection_t *conn = ch_http_connection(details->host, details->port,
-													details->username, details->password);
+													details->username, details->password,
+													details->dbname);
 
 	if (!initialized)
 	{
@@ -775,7 +776,6 @@ static char *str_types_map[][2] = {
 	{"Float32", "REAL"},
 	{"Float64", "DOUBLE PRECISION"},
 	{"Decimal", "NUMERIC"},
-	{"Boolean", "BOOLEAN"},
 	{"String", "TEXT"},
 	{"DateTime", "TIMESTAMP"},
 	{"Date", "DATE"},			/* must come after other Date types */

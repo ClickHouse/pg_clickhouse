@@ -326,6 +326,10 @@ connstring_parse(const char *connstring)
 		{
 			details->password = pstrdup(pval);
 		}
+		else if (strcmp(pname, "dbname") == 0)
+		{
+			details->dbname = pstrdup(pval);
+		}
 	}
 
 	pfree(buf);

@@ -9,6 +9,8 @@
 #include <http.h>
 #include <internal.h>
 
+#define DATABASE_HEADER "X-ClickHouse-Database"
+
 static char curl_error_buffer[CURL_ERROR_SIZE];
 static bool curl_error_happened = false;
 static long curl_verbose = 0;
@@ -57,7 +59,7 @@ static size_t write_data(void *contents, size_t size, size_t nmemb, void *userp)
 #define HTTP_TLS_PORT 443
 
 ch_http_connection_t *
-ch_http_connection(char *host, int port, char *username, char *password)
+ch_http_connection(char *host, int port, char *username, char *password, char *dbname)
 {
 	int			n;
 	char	   *connstring = NULL;
@@ -72,6 +74,8 @@ ch_http_connection(char *host, int port, char *username, char *password)
 	conn->curl = curl_easy_init();
 	if (!conn->curl)
 		goto cleanup;
+
+	conn->dbname = dbname ? strdup(dbname) : NULL;
 
 	if (!host || !*host)
 		host = "localhost";
@@ -148,6 +152,7 @@ ch_http_simple_query(ch_http_connection_t * conn, const char *query)
 	char	   *url;
 	CURLcode	errcode;
 	static char errbuffer[CURL_ERROR_SIZE];
+	struct curl_slist *headers = NULL;
 
 	ch_http_response_t *resp = calloc(sizeof(ch_http_response_t), 1);
 
@@ -186,10 +191,22 @@ ch_http_simple_query(ch_http_connection_t * conn, const char *query)
 	}
 	else
 		curl_easy_setopt(conn->curl, CURLOPT_NOPROGRESS, 1L);
+	if (conn->dbname)
+	{
+		char	   *buf = palloc(strlen(conn->dbname) + strlen(DATABASE_HEADER) + 3);
+
+		sprintf(buf, "%s: %s", DATABASE_HEADER, conn->dbname);
+		headers = curl_slist_append(headers, buf);
+		curl_easy_setopt(conn->curl, CURLOPT_HTTPHEADER, headers);
+		pfree(buf);
+	}
 
 	curl_error_happened = false;
 	errcode = curl_easy_perform(conn->curl);
 	free(url);
+	if (headers)
+		curl_slist_free_all(headers);
+
 
 	if (errcode == CURLE_ABORTED_BY_CALLBACK)
 	{
@@ -228,6 +245,8 @@ void
 ch_http_close(ch_http_connection_t * conn)
 {
 	free(conn->base_url);
+	if (conn->dbname)
+		free(conn->dbname);
 	curl_easy_cleanup(conn->curl);
 }
 
