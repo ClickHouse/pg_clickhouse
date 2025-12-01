@@ -1,0 +1,174 @@
+-- Test for TPC-H Q4 style EXISTS subquery pushdown
+-- TPC-H schema reference: https://raw.githubusercontent.com/Vonng/pgtpc/refs/heads/master/tpch/ddl/schema.ddl
+SET datestyle = 'ISO';
+CREATE SERVER subquery_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'subquery_test', driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER subquery_loopback;
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS subquery_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE DATABASE subquery_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+-- Create TPC-H orders table (matching official schema)
+SELECT clickhouse_raw_query('CREATE TABLE subquery_test.orders
+	(o_orderkey Int32, o_custkey Int32, o_orderstatus FixedString(1), o_totalprice Decimal(15,2),
+	 o_orderdate Date, o_orderpriority FixedString(15), o_clerk FixedString(15), o_shippriority Int32, o_comment String)
+	ENGINE = MergeTree ORDER BY o_orderkey;
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+-- Create TPC-H lineitem table (matching official schema)
+SELECT clickhouse_raw_query('CREATE TABLE subquery_test.lineitem
+	(l_orderkey Int32, l_partkey Int32, l_suppkey Int32, l_linenumber Int32,
+	 l_quantity Decimal(15,2), l_extendedprice Decimal(15,2), l_discount Decimal(15,2), l_tax Decimal(15,2),
+	 l_returnflag FixedString(1), l_linestatus FixedString(1), l_shipdate Date, l_commitdate Date,
+	 l_receiptdate Date, l_shipinstruct FixedString(25), l_shipmode FixedString(10), l_comment String)
+	ENGINE = MergeTree ORDER BY (l_orderkey, l_linenumber);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+-- Insert sample orders data
+SELECT clickhouse_raw_query($$
+	INSERT INTO subquery_test.orders VALUES
+	(1, 100, 'O', 1000.00, '1993-07-15', '1-URGENT', 'Clerk#000000001', 0, 'order1'),
+	(2, 101, 'O', 2000.00, '1993-07-20', '2-HIGH', 'Clerk#000000002', 0, 'order2'),
+	(3, 102, 'O', 3000.00, '1993-08-01', '1-URGENT', 'Clerk#000000003', 0, 'order3'),
+	(4, 103, 'O', 4000.00, '1993-08-15', '3-MEDIUM', 'Clerk#000000004', 0, 'order4'),
+	(5, 104, 'O', 5000.00, '1993-06-01', '1-URGENT', 'Clerk#000000005', 0, 'order5'),
+	(6, 105, 'O', 6000.00, '1993-09-15', '2-HIGH', 'Clerk#000000006', 0, 'order6'),
+	(7, 106, 'O', 7000.00, '1993-07-25', '4-NOT SPECIFIED', 'Clerk#000000007', 0, 'order7'),
+	(8, 107, 'O', 8000.00, '1993-08-20', '5-LOW', 'Clerk#000000008', 0, 'order8');
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+-- Insert sample lineitem data (l_commitdate < l_receiptdate for some items)
+SELECT clickhouse_raw_query($$
+	INSERT INTO subquery_test.lineitem VALUES
+	(1, 10, 1, 1, 10.00, 100.00, 0.10, 0.05, 'N', 'O', '1993-07-20', '1993-07-15', '1993-07-25', 'DELIVER IN PERSON', 'TRUCK', 'item1'),
+	(2, 20, 2, 1, 20.00, 200.00, 0.10, 0.05, 'N', 'O', '1993-07-25', '1993-07-20', '1993-07-30', 'DELIVER IN PERSON', 'AIR', 'item2'),
+	(3, 30, 3, 1, 30.00, 300.00, 0.10, 0.05, 'N', 'O', '1993-08-05', '1993-08-10', '1993-08-08', 'DELIVER IN PERSON', 'SHIP', 'item3'),
+	(4, 40, 4, 1, 40.00, 400.00, 0.10, 0.05, 'N', 'O', '1993-08-20', '1993-08-15', '1993-08-25', 'DELIVER IN PERSON', 'RAIL', 'item4'),
+	(7, 70, 7, 1, 70.00, 700.00, 0.10, 0.05, 'N', 'O', '1993-07-30', '1993-07-25', '1993-08-05', 'DELIVER IN PERSON', 'AIR', 'item7'),
+	(8, 80, 8, 1, 80.00, 800.00, 0.10, 0.05, 'N', 'O', '1993-08-25', '1993-08-30', '1993-08-28', 'DELIVER IN PERSON', 'TRUCK', 'item8');
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+-- Create foreign tables (matching TPC-H schema types)
+CREATE SCHEMA subquery_test;
+IMPORT FOREIGN SCHEMA "subquery_test" FROM SERVER subquery_loopback INTO subquery_test;
+-- Disable hash and merge joins to get consistent explain output
+SET SESSION enable_hashjoin TO false;
+SET SESSION enable_mergejoin TO false;
+SET SESSION search_path = subquery_test,public;
+-- ===================================================================
+-- Test SEMI-JOIN / EXISTS subquery pushdown (TPC-H Q4 style query)
+-- ===================================================================
+-- First, show the explain plan - this should show SEMI JOIN being pushed down
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT
+    o_orderpriority,
+    count(*) as order_count
+FROM
+    orders
+WHERE
+    o_orderdate >= date '1993-07-01'
+    AND o_orderdate < date '1993-10-01'
+    AND EXISTS (
+        SELECT * FROM lineitem
+        WHERE l_orderkey = o_orderkey
+        AND l_commitdate < l_receiptdate
+    )
+GROUP BY
+    o_orderpriority
+ORDER BY
+    o_orderpriority;
+                                                                                                                                                                            QUERY PLAN                                                                                                                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: orders.o_orderpriority, (count(*))
+   Relations: Aggregate on ((orders) LEFT SEMI JOIN (lineitem))
+   Remote SQL: SELECT r1.o_orderpriority, count(*) FROM  subquery_test.orders r1 LEFT SEMI JOIN subquery_test.lineitem r3 ON (((r3.l_commitdate < r3.l_receiptdate)) AND ((r1.o_orderkey = r3.l_orderkey))) WHERE ((r1.o_orderdate >= '1993-07-01')) AND ((r1.o_orderdate < '1993-10-01')) GROUP BY r1.o_orderpriority ORDER BY r1.o_orderpriority ASC NULLS LAST
+(4 rows)
+
+-- Execute the actual query
+SELECT
+    o_orderpriority,
+    count(*) as order_count
+FROM
+    orders
+WHERE
+    o_orderdate >= date '1993-07-01'
+    AND o_orderdate < date '1993-10-01'
+    AND EXISTS (
+        SELECT * FROM lineitem
+        WHERE l_orderkey = o_orderkey
+        AND l_commitdate < l_receiptdate
+    )
+GROUP BY
+    o_orderpriority
+ORDER BY
+    o_orderpriority;
+ o_orderpriority | order_count 
+-----------------+-------------
+ 1-URGENT        |           1
+ 2-HIGH          |           1
+ 3-MEDIUM        |           1
+ 4-NOT SPECIFIED |           1
+(4 rows)
+
+-- Simpler EXISTS test without aggregation
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT o_orderkey, o_orderpriority FROM orders
+WHERE EXISTS (SELECT 1 FROM lineitem WHERE l_orderkey = o_orderkey)
+ORDER BY o_orderkey;
+                                                                                                 QUERY PLAN                                                                                                 
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: orders.o_orderkey, orders.o_orderpriority
+   Relations: (orders) LEFT SEMI JOIN (lineitem)
+   Remote SQL: SELECT r1.o_orderkey, r1.o_orderpriority FROM  subquery_test.orders r1 LEFT SEMI JOIN subquery_test.lineitem r2 ON (((r1.o_orderkey = r2.l_orderkey))) ORDER BY r1.o_orderkey ASC NULLS LAST
+(4 rows)
+
+SELECT o_orderkey, o_orderpriority FROM orders
+WHERE EXISTS (SELECT 1 FROM lineitem WHERE l_orderkey = o_orderkey)
+ORDER BY o_orderkey;
+ o_orderkey | o_orderpriority 
+------------+-----------------
+          1 | 1-URGENT
+          2 | 2-HIGH
+          3 | 1-URGENT
+          4 | 3-MEDIUM
+          7 | 4-NOT SPECIFIED
+          8 | 5-LOW
+(6 rows)
+
+-- Cleanup
+SELECT clickhouse_raw_query('DROP DATABASE subquery_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP USER MAPPING FOR CURRENT_USER SERVER subquery_loopback;
+DROP SERVER subquery_loopback CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table lineitem
+drop cascades to foreign table orders

@@ -1238,6 +1238,9 @@ chfdw_get_jointype_name(JoinType jointype)
 		case JOIN_FULL:
 			return "FULL";
 
+		case JOIN_SEMI:
+			return "LEFT SEMI";
+
 		default:
 			/* Shouldn't come here, but protect from buggy code. */
 			elog(ERROR, "unsupported join type %d", jointype);
@@ -1433,9 +1436,15 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo * root, RelOptInfo * foreignre
 		 * For a join relation FROM clause entry is deparsed as
 		 *
 		 * ((outer relation) <join type> (inner relation) ON (joinclauses))
+		 *
+		 * ClickHouse doesn't use ALL modifier for SEMI joins.
 		 */
-		appendStringInfo(buf, " %s ALL %s JOIN %s ON ", join_sql_o.data,
-						 chfdw_get_jointype_name(fpinfo->jointype), join_sql_i.data);
+		if (fpinfo->jointype == JOIN_SEMI)
+			appendStringInfo(buf, " %s %s JOIN %s ON ", join_sql_o.data,
+							 chfdw_get_jointype_name(fpinfo->jointype), join_sql_i.data);
+		else
+			appendStringInfo(buf, " %s ALL %s JOIN %s ON ", join_sql_o.data,
+							 chfdw_get_jointype_name(fpinfo->jointype), join_sql_i.data);
 
 		/* Append join clause; (TRUE) if no join clause */
 		if (fpinfo->joinclauses)
@@ -3833,6 +3842,7 @@ appendOrderByClause(List * pathkeys, bool has_final_sort,
 	char	   *delim = " ";
 	RelOptInfo *baserel = context->scanrel;
 	StringInfo	buf = context->buf;
+	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) context->foreignrel->fdw_private;
 
 	appendStringInfoString(buf, " ORDER BY");
 	foreach(lcell, pathkeys)
@@ -3849,6 +3859,18 @@ appendOrderByClause(List * pathkeys, bool has_final_sort,
 			em_expr = chfdw_find_em_expr_for_input_target(context->root,
 														  pathkey->pk_eclass,
 														  context->foreignrel->reltarget);
+		}
+		else if (IS_JOIN_REL(context->foreignrel) &&
+				 fpinfo->jointype == JOIN_SEMI)
+		{
+			/*
+			 * For SEMI JOINs, prefer expressions from the outer relation
+			 * since inner relation columns are not visible in the output.
+			 */
+			em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass,
+												 fpinfo->outerrel);
+			if (em_expr == NULL)
+				em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
 		}
 		else
 			em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass, baserel);

@@ -14,3 +14,8 @@ _build/
 /src/fdw.c
 /sql/*--*.sql
 !/sql/*--*--*.sql
+compile_commands.json
+.envrc
+.env
+.cache/
+log/

@@ -294,15 +294,13 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON
 (4 rows)
 
 EXPLAIN SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
-                            QUERY PLAN                             
--------------------------------------------------------------------
- Limit  (cost=-0.99..-0.98 rows=1 width=8)
-   ->  Unique  (cost=-0.99..-0.98 rows=1 width=8)
-         ->  Sort  (cost=-0.99..-0.98 rows=1 width=1)
-               Sort Key: t1.c1, t2.c1
-               ->  Foreign Scan  (cost=1.00..-1.00 rows=1 width=1)
-                     Relations: (ft2 t1) LEFT JOIN (ft1 t2)
-(6 rows)
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Limit  (cost=1.00..1.09 rows=10 width=8)
+   ->  Unique  (cost=1.00..10.50 rows=1000 width=8)
+         ->  Foreign Scan  (cost=1.00..5.50 rows=1000 width=32)
+               Relations: (ft2 t1) LEFT JOIN (ft1 t2)
+(4 rows)
 
 SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
  c1 | c1 

@@ -113,3 +113,27 @@ json.sql
  25.8+      | json.out
  24.8-25.3  | json_1.out
  22-24.3    | json_2.out
+
+subquery_pushdown.sql
+---------------------
+
+ Postgres | File
+----------|-------------------------
+ 18       | subquery_pushdown.out
+ 13-17    | subquery_pushdown_1.out
+
+ ClickHouse | File
+------------|-----------------------
+ 22-25      | subquery_pushdown.out
+
+where_sub.sql
+-------------
+
+ Postgres | File
+----------|-----------------
+ 18       | where_sub.out
+ 13-17    | where_sub_1.out
+
+ ClickHouse | File
+------------|-----------------
+ 22-25      | where_sub.out

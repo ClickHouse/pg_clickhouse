@@ -540,18 +540,18 @@ SELECT clickhouse_raw_query('CREATE TABLE import_test_2.custom_option (a Int64) 
 
 IMPORT FOREIGN SCHEMA "import_test_2" FROM SERVER import_loopback INTO clickhouse;
 EXPLAIN VERBOSE SELECT * FROM clickhouse.custom_option;
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
- Foreign Scan on clickhouse.custom_option  (cost=0.00..0.00 rows=0 width=8)
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Foreign Scan on clickhouse.custom_option  (cost=10.00..20.00 rows=1000 width=8)
    Output: a
    Remote SQL: SELECT a FROM import_test_2.custom_option
 (3 rows)
 
 ALTER FOREIGN TABLE clickhouse.custom_option OPTIONS (DROP database);
 EXPLAIN VERBOSE SELECT * FROM clickhouse.custom_option;
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
- Foreign Scan on clickhouse.custom_option  (cost=0.00..0.00 rows=0 width=8)
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Foreign Scan on clickhouse.custom_option  (cost=10.00..20.00 rows=1000 width=8)
    Output: a
    Remote SQL: SELECT a FROM import_test.custom_option
 (3 rows)

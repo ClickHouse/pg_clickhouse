@@ -70,7 +70,7 @@ ifneq ($(OS),Darwin)
 endif
 
 # Clean up the clickhouse-cpp build directory and generated files.
-EXTRA_CLEAN = $(CH_CPP_BUILD_DIR) sql/$(EXTENSION)--$(EXTVERSION).sql src/fdw.c
+EXTRA_CLEAN = $(CH_CPP_BUILD_DIR) sql/$(EXTENSION)--$(EXTVERSION).sql src/fdw.c compile_commands.json
 
 # Import PGXS.
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -102,7 +102,7 @@ $(OBJS): $(CH_CPP_DIR)/CMakeLists.txt
 $(CH_CPP_LIB): export CXXFLAGS=-fPIC
 $(CH_CPP_LIB): export CFLAGS=-fPIC
 $(CH_CPP_LIB): $(CH_CPP_DIR)/CMakeLists.txt
-	cmake -B $(CH_CPP_BUILD_DIR) -S $(CH_CPP_DIR) $(CH_CPP_FLAGS)
+	cmake -B $(CH_CPP_BUILD_DIR) -S $(CH_CPP_DIR) $(CH_CPP_FLAGS) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 	cmake --build $(CH_CPP_BUILD_DIR) --parallel $(nproc) --target all
 
 # Require the versioned C source and SQL script.
@@ -143,6 +143,10 @@ dist-test: $(EXTENSION)-$(DISTVERSION).zip
 latest-changes.md: Changes
 	perl -e 'while (<>) {last if /^(v?\Q${DISTVERSION}\E)/; } print "Changes for v${DISTVERSION}:\n"; while (<>) { last if /^\s*$$/; s/^\s+//; print }' Changes > $@
 
+.PHONY: tempcheck # Run tests with a temporary PostgreSQL instance
+tempcheck: install
+	$(pg_regress_installcheck) --temp-instance=/tmp/pg_clickhouse_test $(REGRESS_OPTS) $(REGRESS)
+
 # Run `make test` and copy all result files to test/expected/. Use for basic
 # test changes with the latest version of Postgres, but be aware that
 # alternate `_n.out` files will not be updated.
@@ -179,3 +183,11 @@ bake-vars:
 indent:
 	@for fn in $(wildcard src/*.c.in src/*.c src/*/*.hh src/*/*.cpp); do printf "%s\n" "$$fn"; pg_bsd_indent -bad -bap -bbb -bc -bl -cli1 -cp33 -cdb -nce -d0 -di12 -nfc1 -i4 -l79 -lp -lpl -nip -npro -sac -tpg -ts4 "$$fn"; done
 	@rm *.BAK
+
+.PHONY: lsp # Generate compile_commands.json for IDE/clangd support.
+lsp: compile_commands.json
+
+# Requires https://github.com/rizsotto/Bear.
+compile_commands.json:
+	$(MAKE) clean
+	bear -- $(MAKE) all

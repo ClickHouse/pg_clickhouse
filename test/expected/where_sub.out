@@ -1,0 +1,73 @@
+CREATE SERVER where_sub_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'where_sub_test', driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER where_sub_loopback;
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS where_sub_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE DATABASE where_sub_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    CREATE TABLE where_sub_test.orders  (
+        id     Int32,
+        date   Date,
+        class  String
+    ) ENGINE = MergeTree ORDER BY (id);
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    CREATE TABLE where_sub_test.lines (
+        order_id    Int32,
+        num         Int32,
+        created_at  Date,
+        updated_at  Date
+    ) ENGINE = MergeTree ORDER BY (order_id, num);
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+CREATE SCHEMA where_sub;
+IMPORT FOREIGN SCHEMA "where_sub_test" FROM SERVER where_sub_loopback INTO where_sub;
+-- \d where_sub.orders
+-- \d where_sub.lines
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT class, COUNT(*) AS order_count
+  FROM where_sub.orders
+ WHERE date >= date '2025-07-01'
+   AND date < date(date '2025-07-01' + interval '3month')
+   AND EXISTS (
+       SELECT * FROM where_sub.lines
+        WHERE order_id = id AND created_at < updated_at
+   )
+ GROUP BY class
+ ORDER BY class;
+                                                                                                                                              QUERY PLAN                                                                                                                                              
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: orders.class, (count(*))
+   Relations: Aggregate on ((orders) LEFT SEMI JOIN (lines))
+   Remote SQL: SELECT r1.class, count(*) FROM  where_sub_test.orders r1 LEFT SEMI JOIN where_sub_test.lines r3 ON (((r3.created_at < r3.updated_at)) AND ((r1.id = r3.order_id))) WHERE ((r1.date >= '07-01-2025')) AND ((r1.date < '10-01-2025')) GROUP BY r1.class ORDER BY r1.class ASC NULLS LAST
+(4 rows)
+
+SELECT clickhouse_raw_query('DROP DATABASE where_sub_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP USER MAPPING FOR CURRENT_USER SERVER where_sub_loopback;
+DROP SERVER where_sub_loopback CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table where_sub.lines
+drop cascades to foreign table where_sub.orders
