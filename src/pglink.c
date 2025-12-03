@@ -534,8 +534,9 @@ binary_simple_query(void *conn, const char *query)
 				oldcxt;
 	ch_cursor  *cursor;
 	ch_binary_read_state_t *state;
+	ch_query q = {query};
 
-	ch_binary_response_t *resp = ch_binary_simple_query(conn, query, &is_canceled);
+	ch_binary_response_t *resp = ch_binary_simple_query(conn, &q, &is_canceled);
 
 	if (!resp->success)
 	{
@@ -722,7 +723,8 @@ binary_prepare_insert(void *conn, ResultRelInfo * rri, List * target_attrs,
 	MemoryContextRegisterResetCallback(tempcxt, &state->callback);
 
 	/* time for c++ stuff */
-	ch_binary_prepare_insert(conn, query, state);
+	ch_query q = {query};
+	ch_binary_prepare_insert(conn, &q, state);
 
 	/* buffers */
 	state->values = (Datum *) palloc0(sizeof(Datum) * state->len);

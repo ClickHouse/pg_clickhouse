@@ -4,7 +4,7 @@
 #include "postgres.h"
 #include "nodes/pg_list.h"
 #include "lib/stringinfo.h"
-#include "connect.h"
+#include "engine.h"
 
 typedef struct ch_http_connection_t ch_http_connection_t;
 typedef struct ch_http_response_t

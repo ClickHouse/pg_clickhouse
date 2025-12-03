@@ -168,6 +168,19 @@ static void set_resp_error(ch_binary_response_t * resp, const char * str)
 	strcpy(resp->error, str);
 }
 
+// static void * ch_binary_settings(ch_query *query)
+// {
+//    ListCell   *lc;
+//    auto res = new QuerySettings();
+//    foreach (lc, query.settings)
+//    {
+//        DefElem    *setting = (DefElem *) lfirst(lc);
+//        res->insert_or_assign(setting->defname, QuerySettingsField{strVal(setting->arg), 1});
+//    }
+   
+//    return res;
+// }
+
 static void set_state_error(ch_binary_read_state_t * state, const char * str)
 {
 	assert(state->error == NULL);
@@ -176,7 +189,7 @@ static void set_state_error(ch_binary_read_state_t * state, const char * str)
 }
 
 ch_binary_response_t * ch_binary_simple_query(
-	ch_binary_connection_t * conn, const char * query, bool (*check_cancel)(void))
+	ch_binary_connection_t * conn, const ch_query * query, bool (*check_cancel)(void))
 {
 	Client * client = (Client *)conn->client;
 	ch_binary_response_t * resp;
@@ -187,7 +200,7 @@ ch_binary_response_t * ch_binary_simple_query(
 		resp = new ch_binary_response_t();
 		values = new std::vector<std::vector<clickhouse::ColumnRef>>();
 		client->Select(
-			clickhouse::Query(query).SetQuerySettings(QuerySettings{
+			clickhouse::Query(query->sql).SetQuerySettings(QuerySettings{
 				/* Enable SQL compatibility. */
 				{"join_use_nulls", QuerySettingsField{ "1", 1 }},
 			}).OnDataCancelable([&resp, &values, &check_cancel](const Block & block) {
@@ -315,14 +328,14 @@ void ch_binary_insert_state_free(void * c)
 	}
 }
 
-void ch_binary_prepare_insert(void * conn, char * query, ch_binary_insert_state * state)
+void ch_binary_prepare_insert(void * conn, const ch_query * query, ch_binary_insert_state * state)
 {
 	/* Start the INSERT. */
 	Block * block;
 	Client * client = (Client *)((ch_binary_connection_t *)conn)->client;
 	try
 	{
-		block = new Block(client->BeginInsert(std::string(query) + " VALUES"));
+		block = new Block(client->BeginInsert(std::string(query->sql) + " VALUES"));
 	}
 	catch (const std::exception & e)
 	{

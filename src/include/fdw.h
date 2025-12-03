@@ -24,7 +24,7 @@
 #include "optimizer/optimizer.h"
 #include "nodes/pathnodes.h"
 #include "access/heapam.h"
-#include "connect.h"
+#include "engine.h"
 
 #if PG_VERSION_NUM < 150000
 #define FirstUnpinnedObjectId FirstBootstrapObjectId
