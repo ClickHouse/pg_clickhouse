@@ -21,8 +21,9 @@ typedef struct
 typedef struct
 {
 	const char	   *sql;
+	const List	   *settings;
 }			ch_query;
 
-#define new_query(q) {q}
+#define new_query(sql) {sql, chfdw_parse_options(ch_session_settings, true)}
 
 #endif							/* CLICKHOUSE_ENGINE_H */

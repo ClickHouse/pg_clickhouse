@@ -168,18 +168,21 @@ static void set_resp_error(ch_binary_response_t * resp, const char * str)
 	strcpy(resp->error, str);
 }
 
-// static void * ch_binary_settings(ch_query *query)
-// {
-//    ListCell   *lc;
-//    auto res = new QuerySettings();
-//    foreach (lc, query.settings)
-//    {
-//        DefElem    *setting = (DefElem *) lfirst(lc);
-//        res->insert_or_assign(setting->defname, QuerySettingsField{strVal(setting->arg), 1});
-//    }
+/* 
+ * Converts query->settings to QuerySettings.
+ */
+static QuerySettings ch_binary_settings(const ch_query *query)
+{
+   ListCell   *lc;
+   auto res = QuerySettings{};
+   foreach (lc, (List *) query->settings)
+   {
+       DefElem    *setting = (DefElem *) lfirst(lc);
+       res.insert_or_assign(setting->defname, QuerySettingsField{strVal(setting->arg), 1});
+   }
    
-//    return res;
-// }
+   return res;
+}
 
 static void set_state_error(ch_binary_read_state_t * state, const char * str)
 {
@@ -200,10 +203,9 @@ ch_binary_response_t * ch_binary_simple_query(
 		resp = new ch_binary_response_t();
 		values = new std::vector<std::vector<clickhouse::ColumnRef>>();
 		client->Select(
-			clickhouse::Query(query->sql).SetQuerySettings(QuerySettings{
-				/* Enable SQL compatibility. */
-				{"join_use_nulls", QuerySettingsField{ "1", 1 }},
-			}).OnDataCancelable([&resp, &values, &check_cancel](const Block & block) {
+			clickhouse::Query(query->sql).SetQuerySettings(
+				ch_binary_settings(query)
+			).OnDataCancelable([&resp, &values, &check_cancel](const Block & block) {
 				if (check_cancel && check_cancel())
 				{
 					set_resp_error(resp, "query was canceled");
@@ -336,6 +338,13 @@ void ch_binary_prepare_insert(void * conn, const ch_query * query, ch_binary_ins
 	try
 	{
 		block = new Block(client->BeginInsert(std::string(query->sql) + " VALUES"));
+		/* XXX https://github.com/ClickHouse/clickhouse-cpp/pull/453/
+		block = new Block(client->BeginInsert(
+			clickhouse::Query(std::string(query->sql)+ " VALUES").SetQuerySettings(
+				ch_binary_settings(query)
+			)
+		));
+		*/
 	}
 	catch (const std::exception & e)
 	{
