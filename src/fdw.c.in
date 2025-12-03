@@ -183,7 +183,6 @@ PG_FUNCTION_INFO_V1(clickhouse_raw_query);
 PG_FUNCTION_INFO_V1(clickhouse_op_push_fail);
 PG_FUNCTION_INFO_V1(clickhouse_push_fail);
 PG_FUNCTION_INFO_V1(clickhouse_noop);
-extern PGDLLEXPORT void _PG_init(void);
 static double time_used = 0;
 
 /*
@@ -279,11 +278,6 @@ static void merge_fdw_options(CHFdwRelationInfo * fpinfo,
 							  const CHFdwRelationInfo * fpinfo_o,
 							  const CHFdwRelationInfo * fpinfo_i);
 
-/* empty _PG_init_ function */
-void
-_PG_init(void)
-{
-}
 
 
 /* Make one query and close the connection */

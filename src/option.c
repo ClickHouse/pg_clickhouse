@@ -22,10 +22,15 @@
 #include "catalog/pg_user_mapping.h"
 #include "commands/defrem.h"
 #include "commands/extension.h"
-#include "utils/builtins.h"
+#include "nodes/makefuncs.h"
+#include "utils/guc.h"
 #include "utils/varlena.h"
 
 static char *DEFAULT_DBNAME = "default";
+
+#if PG_VERSION_NUM < 160000
+extern PGDLLEXPORT void _PG_init(void);
+#endif
 
 /*
  * Describes the valid options for objects that this wrapper uses.
@@ -57,6 +62,11 @@ static const ChFdwOption ch_options[] =
 	{"password", 0, false},
 	{NULL}
 };
+
+/*
+ * GUC parameters
+ */
+char	   *ch_session_settings = NULL;
 
 /*
  * Helper functions
@@ -282,4 +292,227 @@ chfdw_extract_options(List * defelems, char **driver, char **host, int *port,
 			}
 		}
 	}
+}
+
+
+/*
+ * Parse options as key/value pairs. Used for connection parameters and
+ * ClickHouse settings. Based on the Postgres conninfo_parse() function. The
+ * format is:
+ *
+ *     key = value key = 'value'...
+ *
+ * Each key/value pair must be comma-delimited if with_comma is true.
+ *
+ *     key = value, key = 'value',...
+ *
+ * Each key is an unquoted string followed by `=` with optional spaces
+ * followed by the value. Values may contain backslash-escaped spaces,
+ * backslashes, and commans when `with_comma` is true. Use SQL single-quoted
+ * literals to remove the need to escape commas and spaces.
+ *
+ * Returns a PostgreSQL List containing DefElem cells.
+ */
+List	   *
+chfdw_parse_options(const char *options_string, bool with_comma)
+{
+	char	   *pname;
+	char	   *pval;
+	char	   *buf;
+	char	   *cp;
+	char	   *cp2;
+	List	   *options = NIL;
+
+	/* Need a modifiable copy of the input string */
+	buf = pstrdup(options_string);
+	cp = buf;
+
+	while (*cp)
+	{
+		/* Skip blanks before the parameter name */
+		if (isspace((unsigned char) *cp))
+		{
+			cp++;
+			continue;
+		}
+
+		/* Get the parameter name */
+		pname = cp;
+		while (*cp)
+		{
+			if (*cp == '=')
+				break;
+			if (isspace((unsigned char) *cp))
+			{
+				*cp++ = '\0';
+				while (*cp)
+				{
+					if (!isspace((unsigned char) *cp))
+						break;
+					cp++;
+				}
+				break;
+			}
+			cp++;
+		}
+
+		/* Check that there is a following '=' */
+		if (*cp != '=')
+			ereport(ERROR,
+					errcode(ERRCODE_SYNTAX_ERROR),
+					errmsg("pg_clickhouse: missing \"=\" after \"%s\" in options string", pname));
+		*cp++ = '\0';
+
+		/* Skip blanks after the '=' */
+		while (*cp)
+		{
+			if (!isspace((unsigned char) *cp))
+				break;
+			cp++;
+		}
+
+		/* Get the parameter value */
+		pval = cp;
+
+		if (*cp != '\'')
+		{
+			cp2 = pval;
+			while (*cp)
+			{
+				if (isspace((unsigned char) *cp))
+				{
+					if (with_comma)
+					{
+						while (isspace((unsigned char) *cp))
+							cp++;
+
+						if (*cp != ',' && *cp != '\0')
+							ereport(ERROR,
+									errcode(ERRCODE_SYNTAX_ERROR),
+									errmsg("pg_clickhouse: missing comma after \"%s\" value in options string", pname));
+						while (isspace((unsigned char) *cp))
+							cp++;
+					}
+					else
+						*cp++ = '\0';
+					break;
+				}
+				if (*cp == ',' && with_comma)
+				{
+					*cp++ = '\0';
+					break;
+				}
+				if (*cp == '\\')
+				{
+					cp++;
+					if (*cp != '\0')
+						*cp2++ = *cp++;
+				}
+				else
+					*cp2++ = *cp++;
+			}
+			*cp2 = '\0';
+		}
+		else
+		{
+			cp2 = pval;
+			cp++;
+			for (;;)
+			{
+				if (*cp == '\0')
+					ereport(ERROR,
+							errcode(ERRCODE_SYNTAX_ERROR),
+							errmsg("pg_clickhouse: unterminated quoted string in options string"));
+				if (*cp == '\\')
+				{
+					cp++;
+					if (*cp != '\0')
+						*cp2++ = *cp++;
+					continue;
+				}
+				if (*cp == '\'')
+				{
+					*cp2 = '\0';
+					cp++;
+					break;
+				}
+				*cp2++ = *cp++;
+			}
+			if (with_comma)
+			{
+				/* Make sure there's a trailing comma or end of the input. */
+				while (isspace((unsigned char) *cp))
+					cp++;
+				if (*cp == ',')
+					cp++;
+				else if (*cp != '\0')
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("pg_clickhouse: missing comma after \"%s\" value in options string", pname)));
+			}
+		}
+
+		/*
+		 * Now that we have the name and the value, store the record.
+		 */
+		options = lappend(options, makeDefElem(strdup(pname), (Node *) makeString(strdup(pval)), -1));
+	}
+
+	return options;
+}
+
+/*
+ * check_settings_guc
+ *
+ * Validates the provided settings key/value pairs.
+ */
+static bool
+check_settings_guc(char **newval, void **extra, GucSource source)
+{
+	/*
+	 * The value may be an empty string, so we have to accept that value.
+	 */
+	if (*newval == NULL || *newval[0] == '\0')
+		return true;
+
+	/*
+	 * Make sure we can parse the settings.
+	 */
+	chfdw_parse_options(*newval, true);
+
+	/*
+	 * All good if no error.
+	 */
+	return true;
+}
+
+/*
+ * Module load callback
+ */
+void
+_PG_init(void)
+{
+	/*
+	 * Key/value pairs for ClickHouse session settings. The format
+	 *
+	 * key = 'val', key = 'val'
+	 *
+	 * Spaces are optional. Full list of options:
+	 * https://clickhouse.com/docs/operations/settings/settings
+	 *
+	 */
+	DefineCustomStringVariable("pg_clickhouse.session_settings",
+							   "Sets the default ClickHouse session settings.",
+							   NULL,
+							   &ch_session_settings,
+							   "join_use_nulls=1",
+							   PGC_USERSET,
+							   0,
+							   check_settings_guc,
+							   NULL,
+							   NULL);
+
+#if PG_VERSION_NUM >= 150000
+	MarkGUCPrefixReserved("pg_clickhouse");
+#endif
 }

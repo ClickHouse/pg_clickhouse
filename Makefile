@@ -147,8 +147,8 @@ latest-changes.md: Changes
 tempcheck: install
 	$(pg_regress_installcheck) --temp-instance=/tmp/pg_clickhouse_test $(REGRESS_OPTS) $(REGRESS)
 
-# Run `make test` and copy all result files to test/expected/. Use for basic
-# test changes with the latest version of Postgres, but be aware that
+# Run `make installcheck` and copy all result files to test/expected/. Use for
+# basic test changes with the latest version of Postgres, but be aware that
 # alternate `_n.out` files will not be updated.
 #
 # DO NOT RUN UNLESS YOU'RE CERTAIN ALL YOUR TESTS ARE PASSING!

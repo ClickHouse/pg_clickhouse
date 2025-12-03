@@ -209,9 +209,11 @@ extern void chfdw_report_error(int elevel, ch_connection conn,
 							   bool clear, const char *sql);
 
 /* in option.c */
+extern char *ch_session_settings;
 extern void
 			chfdw_extract_options(List * defelems, char **driver, char **host, int *port,
 								  char **dbname, char **username, char **password);
+extern List * chfdw_parse_options(const char *options, bool with_comma);
 
 /* in deparse.c */
 extern void chfdw_classify_conditions(PlannerInfo * root,

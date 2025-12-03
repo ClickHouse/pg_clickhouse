@@ -1,0 +1,12 @@
+\unset ECHO
+NOTICE:  OK ``
+NOTICE:  OK `join_use_nulls=1`
+NOTICE:  OK `join_use_nulls=1, xyz=true`
+NOTICE:  OK ` additional_result_filter = 'x != 2' `
+NOTICE:  OK ` additional_result_filter = 'x != 2' ,join_use_nulls = 1 `
+NOTICE:  OK ` xxx = DEFAULT, yyy = foo\,bar, zzz = 'He said, \'Hello\'', aaa = hi\ there `
+NOTICE:  ERR 42601 - pg_clickhouse: missing "=" after "join_use_nulls" in options string
+NOTICE:  ERR 42601 - pg_clickhouse: missing "=" after "join_use_nulls" in options string
+NOTICE:  ERR 42601 - pg_clickhouse: unterminated quoted string in options string
+NOTICE:  ERR 42601 - pg_clickhouse: missing comma after "join_use_nulls" value in options string
+NOTICE:  drop cascades to foreign table remote_settings

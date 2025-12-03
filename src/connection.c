@@ -204,115 +204,22 @@ chfdw_inval_callback(Datum arg, int cacheid, uint32 hashvalue)
 ch_connection_details *
 connstring_parse(const char *connstring)
 {
-	char	   *pname;
-	char	   *pval;
-	char	   *buf;
-	char	   *cp;
-	char	   *cp2;
+	ListCell   *lc;
+	List	   *options = chfdw_parse_options(connstring, false);
 	ch_connection_details *details = palloc0(sizeof(ch_connection_details));
 
-	/* Need a modifiable copy of the input string */
-	if ((buf = pstrdup(connstring)) == NULL)
-		return NULL;
+	if (options == NIL)
+		return details;
 
-	cp = buf;
-
-	while (*cp)
+	foreach(lc, options)
 	{
-		/* Skip blanks before the parameter name */
-		if (isspace((unsigned char) *cp))
-		{
-			cp++;
-			continue;
-		}
-
-		/* Get the parameter name */
-		pname = cp;
-		while (*cp)
-		{
-			if (*cp == '=')
-				break;
-			if (isspace((unsigned char) *cp))
-			{
-				*cp++ = '\0';
-				while (*cp)
-				{
-					if (!isspace((unsigned char) *cp))
-						break;
-					cp++;
-				}
-				break;
-			}
-			cp++;
-		}
-
-		/* Check that there is a following '=' */
-		if (*cp != '=')
-			elog(ERROR, "missing \"=\" after \"%s\" in connection info string", pname);
-
-		*cp++ = '\0';
-
-		/* Skip blanks after the '=' */
-		while (*cp)
-		{
-			if (!isspace((unsigned char) *cp))
-				break;
-			cp++;
-		}
-
-		/* Get the parameter value */
-		pval = cp;
-
-		if (*cp != '\'')
-		{
-			cp2 = pval;
-			while (*cp)
-			{
-				if (isspace((unsigned char) *cp))
-				{
-					*cp++ = '\0';
-					break;
-				}
-				if (*cp == '\\')
-				{
-					cp++;
-					if (*cp != '\0')
-						*cp2++ = *cp++;
-				}
-				else
-					*cp2++ = *cp++;
-			}
-			*cp2 = '\0';
-		}
-		else
-		{
-			cp2 = pval;
-			cp++;
-			for (;;)
-			{
-				if (*cp == '\0')
-					elog(ERROR, "unterminated quoted string in connection info string");
-
-				if (*cp == '\\')
-				{
-					cp++;
-					if (*cp != '\0')
-						*cp2++ = *cp++;
-					continue;
-				}
-				if (*cp == '\'')
-				{
-					*cp2 = '\0';
-					cp++;
-					break;
-				}
-				*cp2++ = *cp++;
-			}
-		}
+		DefElem    *elem = (DefElem *) lfirst(lc);
+		char	   *pname = elem->defname;
+		char	   *pval = strVal(elem->arg);
 
 		if (strcmp(pname, "host") == 0)
 		{
-			details->host = pstrdup(pval);
+			details->host = pval;
 		}
 		else if (strcmp(pname, "port") == 0)
 		{
@@ -320,19 +227,24 @@ connstring_parse(const char *connstring)
 		}
 		else if (strcmp(pname, "username") == 0)
 		{
-			details->username = pstrdup(pval);
+			details->username = pval;
 		}
 		else if (strcmp(pname, "password") == 0)
 		{
-			details->password = pstrdup(pval);
+			details->password = pval;
 		}
 		else if (strcmp(pname, "dbname") == 0)
 		{
-			details->dbname = pstrdup(pval);
+			details->dbname = pval;
+		}
+		else if (strcmp(pname, "") != 0)
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("pg_clickhouse: invalid connection option \"%s\"", pname)));
 		}
 	}
 
-	pfree(buf);
 	return details;
 }
 
