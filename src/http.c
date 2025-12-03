@@ -152,7 +152,7 @@ set_query_id(ch_http_response_t * resp)
 }
 
 ch_http_response_t *
-ch_http_simple_query(ch_http_connection_t * conn, const char *query)
+ch_http_simple_query(ch_http_connection_t * conn, const ch_query *query)
 {
 	char	   *url;
 	CURLcode	errcode;
@@ -186,7 +186,7 @@ ch_http_simple_query(ch_http_connection_t * conn, const char *query)
 
 	/* variable */
 	curl_easy_setopt(conn->curl, CURLOPT_WRITEDATA, resp);
-	curl_easy_setopt(conn->curl, CURLOPT_POSTFIELDS, query);
+	curl_easy_setopt(conn->curl, CURLOPT_POSTFIELDS, query->sql);
 	curl_easy_setopt(conn->curl, CURLOPT_VERBOSE, curl_verbose);
 	if (curl_progressfunc)
 	{

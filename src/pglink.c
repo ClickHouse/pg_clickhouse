@@ -146,13 +146,12 @@ static void
 kill_query(void *conn, const char *query_id)
 {
 	ch_http_response_t *resp;
-	char	   *query = psprintf("kill query where query_id='%s'", query_id);
+	ch_query query = {psprintf("kill query where query_id='%s'", query_id)};
 
 	ch_http_set_progress_func(NULL);
-	resp = ch_http_simple_query(conn, query);
+	resp = ch_http_simple_query(conn, &query);
 	if (resp != NULL)
 		ch_http_response_free(resp);
-	pfree(query);
 }
 
 static ch_cursor *
@@ -163,11 +162,12 @@ http_simple_query(void *conn, const char *query)
 				oldcxt;
 	ch_cursor  *cursor;
 	ch_http_response_t *resp;
+	ch_query q = {query};
 
 	ch_http_set_progress_func(http_progress_callback);
 
 again:
-	resp = ch_http_simple_query(conn, query);
+	resp = ch_http_simple_query(conn, &q);
 	if (resp == NULL)
 		elog(ERROR, "out of memory");
 
@@ -237,7 +237,8 @@ again:
 static void
 http_simple_insert(void *conn, const char *query)
 {
-	ch_http_response_t *resp = ch_http_simple_query(conn, query);
+	ch_query q = {query};
+	ch_http_response_t *resp = ch_http_simple_query(conn, &q);
 
 	if (resp == NULL)
 	{

@@ -47,7 +47,7 @@ void		ch_http_init(int verbose, uint32_t query_id_prefix);
 void		ch_http_set_progress_func(void *progressfunc);
 ch_http_connection_t *ch_http_connection(ch_connection_details * details);
 void		ch_http_close(ch_http_connection_t * conn);
-ch_http_response_t *ch_http_simple_query(ch_http_connection_t * conn, const char *query);
+ch_http_response_t *ch_http_simple_query(ch_http_connection_t * conn, const ch_query *query);
 char	   *ch_http_last_error(void);
 
 /* read */
