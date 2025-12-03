@@ -89,9 +89,7 @@ ch_connection
 chfdw_http_connect(ch_connection_details * details)
 {
 	ch_connection res;
-	ch_http_connection_t *conn = ch_http_connection(details->host, details->port,
-													details->username, details->password,
-													details->dbname);
+	ch_http_connection_t *conn = ch_http_connection(details);
 
 	if (!initialized)
 	{
@@ -502,8 +500,7 @@ chfdw_binary_connect(ch_connection_details * details)
 {
 	char	   *ch_error = NULL;
 	ch_connection res;
-	ch_binary_connection_t *conn = ch_binary_connect(details->host, details->port,
-													 details->dbname, details->username, details->password, &ch_error);
+	ch_binary_connection_t *conn = ch_binary_connect(details, &ch_error);
 
 	if (conn == NULL)
 	{

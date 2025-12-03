@@ -110,8 +110,7 @@ void * exc_palloc0(Size size)
 
 #define CLICKHOUSE_SECURE_PORT 9440
 
-ch_binary_connection_t * ch_binary_connect(
-	char * host, int port, char * database, char * user, char * password, char ** error)
+ch_binary_connection_t * ch_binary_connect(ch_connection_details * details, char ** error)
 {
 	ClientOptions * options = NULL;
 	ch_binary_connection_t * conn = NULL;
@@ -121,19 +120,19 @@ ch_binary_connection_t * ch_binary_connect(
 		options = new ClientOptions();
 		options->SetPingBeforeQuery(true);
 
-		if (host) {
-			options->SetHost(std::string(host));
-			if (!port && ch_is_cloud_host(host))
+		if (details->host) {
+			options->SetHost(std::string(details->host));
+			if (!details->port && ch_is_cloud_host(details->host))
 				options->SetPort(CLICKHOUSE_SECURE_PORT);
 		}
-		if (port)
-			options->SetPort(port);
-		if (database)
-			options->SetDefaultDatabase(std::string(database));
-		if (user)
-			options->SetUser(std::string(user));
-		if (password)
-			options->SetPassword(std::string(password));
+		if (details->port)
+			options->SetPort(details->port);
+		if (details->dbname)
+			options->SetDefaultDatabase(std::string(details->dbname));
+		if (details->username)
+			options->SetUser(std::string(details->username));
+		if (details->password)
+			options->SetPassword(std::string(details->password));
 		if (options->port == CLICKHOUSE_SECURE_PORT)
 			options->SetSSLOptions(ClientOptions::SSLOptions());
 

@@ -1,6 +1,8 @@
 #ifndef CLICKHOUSE_BINARY_H
 #define CLICKHOUSE_BINARY_H
 
+#include "connect.h"
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -66,8 +68,7 @@ extern "C"
 		ch_binary_connection_t *conn;
 	}			ch_binary_insert_state;
 
-	extern ch_binary_connection_t * ch_binary_connect(char *host, int port,
-													  char *database, char *user, char *password, char **error);
+	extern ch_binary_connection_t * ch_binary_connect(ch_connection_details * details, char **error);
 	extern void ch_binary_close(ch_binary_connection_t * conn);
 	extern ch_binary_response_t * ch_binary_simple_query(ch_binary_connection_t * conn,
 														 const char *query, bool (*check_cancel) (void));

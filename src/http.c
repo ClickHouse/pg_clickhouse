@@ -59,11 +59,15 @@ static size_t write_data(void *contents, size_t size, size_t nmemb, void *userp)
 #define HTTP_TLS_PORT 443
 
 ch_http_connection_t *
-ch_http_connection(char *host, int port, char *username, char *password, char *dbname)
+ch_http_connection(ch_connection_details * details)
 {
 	int			n;
 	char	   *connstring = NULL;
 	size_t		len = 20;		/* all symbols from url string + some extra */
+	char	   *host = details->host,
+			   *username = details->username,
+			   *password = details->password;
+	int			port = details->port;
 
 	curl_error_happened = false;
 	ch_http_connection_t *conn = calloc(sizeof(ch_http_connection_t), 1);
@@ -75,7 +79,8 @@ ch_http_connection(char *host, int port, char *username, char *password, char *d
 	if (!conn->curl)
 		goto cleanup;
 
-	conn->dbname = dbname ? strdup(dbname) : NULL;
+	conn->dbname = details->dbname ? strdup(details->dbname) : NULL;
+
 
 	if (!host || !*host)
 		host = "localhost";

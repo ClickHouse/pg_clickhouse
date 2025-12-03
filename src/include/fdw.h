@@ -24,6 +24,7 @@
 #include "optimizer/optimizer.h"
 #include "nodes/pathnodes.h"
 #include "access/heapam.h"
+#include "connect.h"
 
 #if PG_VERSION_NUM < 150000
 #define FirstUnpinnedObjectId FirstBootstrapObjectId
@@ -72,15 +73,6 @@ typedef struct
 	void	   *conn;
 	bool		is_binary;
 }			ch_connection;
-
-typedef struct
-{
-	char	   *host;
-	int			port;
-	char	   *username;
-	char	   *password;
-	char	   *dbname;
-}			ch_connection_details;
 
 ch_connection_details *connstring_parse(const char *connstring);
 ch_connection chfdw_http_connect(ch_connection_details * details);
