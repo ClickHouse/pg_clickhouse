@@ -48,13 +48,13 @@ typedef struct ch_cursor
 
 typedef void (*disconnect_method) (void *conn);
 typedef void (*check_conn_method) (const char *password, UserMapping * user);
-typedef ch_cursor * (*simple_query_method) (void *conn, const char *query);
-typedef void (*simple_insert_method) (void *conn, const char *query);
+typedef ch_cursor * (*simple_query_method) (void *conn, const ch_query *query);
+typedef void (*simple_insert_method) (void *conn, const ch_query *query);
 typedef void (*cursor_free_method) (ch_cursor * cursor);
 typedef void **(*cursor_fetch_row_method) (ch_cursor * cursor, List * attrs,
 										   TupleDesc tupdesc, Datum * values, bool *nulls);
 typedef void *(*prepare_insert_method) (void *conn, ResultRelInfo *, List *,
-										char *, char *);
+										const ch_query *, char *);
 typedef void (*insert_tuple_method) (void *state, TupleTableSlot * slot);
 
 typedef struct

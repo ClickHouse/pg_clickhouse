@@ -23,6 +23,6 @@ typedef struct
 	const char	   *sql;
 }			ch_query;
 
-#define new_query(q) ch_query {q}
+#define new_query(q) {q}
 
 #endif							/* CLICKHOUSE_ENGINE_H */

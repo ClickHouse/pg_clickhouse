@@ -27,11 +27,11 @@
 static bool initialized = false;
 
 static void http_disconnect(void *conn);
-static ch_cursor * http_simple_query(void *conn, const char *query);
-static void http_simple_insert(void *conn, const char *query);
+static ch_cursor * http_simple_query(void *conn, const ch_query *query);
+static void http_simple_insert(void *conn, const ch_query *query);
 static void http_cursor_free(void *);
 static void **http_fetch_row(ch_cursor *, List *, TupleDesc, Datum *, bool *);
-static void *http_prepare_insert(void *, ResultRelInfo *, List *, char *, char *);
+static void *http_prepare_insert(void *, ResultRelInfo *, List *, const ch_query *, char *);
 static void http_insert_tuple(void *, TupleTableSlot *);
 
 static libclickhouse_methods http_methods =
@@ -44,7 +44,7 @@ static libclickhouse_methods http_methods =
 };
 
 static void binary_disconnect(void *conn);
-static ch_cursor * binary_simple_query(void *conn, const char *query);
+static ch_cursor * binary_simple_query(void *conn, const ch_query *query);
 static void binary_cursor_free(void *cursor);
 
 /* static void binary_simple_insert(void *conn, const char *query); */
@@ -52,7 +52,7 @@ static void **binary_fetch_row(ch_cursor * cursor, List * attrs, TupleDesc tupde
 							   Datum * values, bool *nulls);
 static void binary_insert_tuple(void *, TupleTableSlot * slot);
 static void *binary_prepare_insert(void *, ResultRelInfo *, List *,
-								   char *query, char *table_name);
+								   const ch_query *query, char *table_name);
 
 static size_t escape_string(char *to, const char *from, size_t length);
 
@@ -146,7 +146,7 @@ static void
 kill_query(void *conn, const char *query_id)
 {
 	ch_http_response_t *resp;
-	ch_query query = {psprintf("kill query where query_id='%s'", query_id)};
+	ch_query query = new_query(psprintf("kill query where query_id='%s'", query_id));
 
 	ch_http_set_progress_func(NULL);
 	resp = ch_http_simple_query(conn, &query);
@@ -155,19 +155,18 @@ kill_query(void *conn, const char *query_id)
 }
 
 static ch_cursor *
-http_simple_query(void *conn, const char *query)
+http_simple_query(void *conn, const ch_query *query)
 {
 	int			attempts = 0;
 	MemoryContext tempcxt,
 				oldcxt;
 	ch_cursor  *cursor;
 	ch_http_response_t *resp;
-	ch_query q = {query};
 
 	ch_http_set_progress_func(http_progress_callback);
 
 again:
-	resp = ch_http_simple_query(conn, &q);
+	resp = ch_http_simple_query(conn, query);
 	if (resp == NULL)
 		elog(ERROR, "out of memory");
 
@@ -204,7 +203,7 @@ again:
 		ereport(ERROR, (
 						errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
 						errmsg("pg_clickhouse: %s", format_error(error)),
-						status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query),
+						status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query->sql),
 						errcontext("HTTP status code: %li", status)
 						));
 	}
@@ -220,7 +219,7 @@ again:
 	cursor = palloc0(sizeof(ch_cursor));
 	cursor->query_response = resp;
 	cursor->read_state = palloc0(sizeof(ch_http_read_state));
-	cursor->query = pstrdup(query);
+	cursor->query = pstrdup(query->sql);
 	cursor->request_time = resp->pretransfer_time * 1000;
 	cursor->total_time = resp->total_time * 1000;
 	ch_http_read_state_init(cursor->read_state, resp->data, resp->datasize);
@@ -235,10 +234,9 @@ again:
 }
 
 static void
-http_simple_insert(void *conn, const char *query)
+http_simple_insert(void *conn, const ch_query *query)
 {
-	ch_query q = {query};
-	ch_http_response_t *resp = ch_http_simple_query(conn, &q);
+	ch_http_response_t *resp = ch_http_simple_query(conn, query);
 
 	if (resp == NULL)
 	{
@@ -262,7 +260,7 @@ http_simple_insert(void *conn, const char *query)
 		ereport(ERROR, (
 						errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
 						errmsg("pg_clickhouse: %s", format_error(error)),
-						status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query),
+						status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query->sql),
 						errcontext("HTTP status code: %li", status)
 						));
 	}
@@ -466,12 +464,12 @@ extend_insert_query(ch_http_insert_state * state, TupleTableSlot * slot)
 
 static void *
 http_prepare_insert(void *conn, ResultRelInfo * rri, List * target_attrs,
-					char *query, char *table_name)
+					const ch_query *query, char *table_name)
 {
 	ch_http_insert_state *state = palloc0(sizeof(ch_http_insert_state));
 
 	initStringInfo(&state->sql);
-	state->sql_begin = psprintf("%s FORMAT TSV\n", query);
+	state->sql_begin = psprintf("%s FORMAT TSV\n", query->sql);
 	state->target_attrs = target_attrs;
 	state->p_nums = list_length(state->target_attrs);
 	state->conn = conn;
@@ -489,7 +487,8 @@ http_insert_tuple(void *istate, TupleTableSlot * slot)
 	if ((slot == NULL && state->sql.len > 0)
 		|| state->sql.len > (MaxAllocSize / 2 /* 512MB */ ))
 	{
-		http_simple_insert(state->conn, state->sql.data);
+		ch_query query = new_query(state->sql.data);
+		http_simple_insert(state->conn, &query);
 		resetStringInfo(&state->sql);
 	}
 }
@@ -529,15 +528,14 @@ binary_disconnect(void *conn)
 }
 
 static ch_cursor *
-binary_simple_query(void *conn, const char *query)
+binary_simple_query(void *conn, const ch_query *query)
 {
 	MemoryContext tempcxt,
 				oldcxt;
 	ch_cursor  *cursor;
 	ch_binary_read_state_t *state;
-	ch_query q = {query};
 
-	ch_binary_response_t *resp = ch_binary_simple_query(conn, &q, &is_canceled);
+	ch_binary_response_t *resp = ch_binary_simple_query(conn, query, &is_canceled);
 
 	if (!resp->success)
 	{
@@ -547,7 +545,7 @@ binary_simple_query(void *conn, const char *query)
 		ereport(ERROR, (
 						errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
 						errmsg("pg_clickhouse: %s", error),
-						errdetail_internal("Remote Query: %.64000s", query)
+						errdetail_internal("Remote Query: %.64000s", query->sql)
 						));
 	}
 
@@ -558,7 +556,7 @@ binary_simple_query(void *conn, const char *query)
 	cursor = palloc0(sizeof(ch_cursor));
 	cursor->query_response = resp;
 	state = (ch_binary_read_state_t *) palloc0(sizeof(ch_binary_read_state_t));
-	cursor->query = pstrdup(query);
+	cursor->query = pstrdup(query->sql);
 	cursor->read_state = state;
 	cursor->columns_count = resp->columns_count;
 	ch_binary_read_state_init(cursor->read_state, resp);
@@ -701,7 +699,7 @@ binary_cursor_free(void *c)
 
 static void *
 binary_prepare_insert(void *conn, ResultRelInfo * rri, List * target_attrs,
-					  char *query, char *table_name)
+					  const ch_query *query, char *table_name)
 {
 	ch_binary_insert_state *state = NULL;
 	MemoryContext tempcxt,
@@ -724,8 +722,7 @@ binary_prepare_insert(void *conn, ResultRelInfo * rri, List * target_attrs,
 	MemoryContextRegisterResetCallback(tempcxt, &state->callback);
 
 	/* time for c++ stuff */
-	ch_query q = {query};
-	ch_binary_prepare_insert(conn, &q, state);
+	ch_binary_prepare_insert(conn, query, state);
 
 	/* buffers */
 	state->values = (Datum *) palloc0(sizeof(Datum) * state->len);
@@ -898,14 +895,14 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt * stmt, ForeignServer * se
 	UserMapping *user = GetUserMapping(userid, server->serverid);
 	ch_connection conn = chfdw_get_connection(user);
 	ch_cursor  *cursor;
-	char	   *query;
+	ch_query   query = new_query("");
 	List	   *result = NIL,
 			   *datts = NIL;
 	char	  **row_values;
 
-	query = psprintf("SELECT name, engine, engine_full "
+	query.sql = psprintf("SELECT name, engine, engine_full "
 					 "FROM system.tables WHERE database='%s' and name not like '.inner%%'", stmt->remote_schema);
-	cursor = conn.methods->simple_query(conn.conn, query);
+	cursor = conn.methods->simple_query(conn.conn, &query);
 
 	datts = list_make2_int(1, 2);
 
@@ -945,9 +942,9 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt * stmt, ForeignServer * se
 		initStringInfo(&buf);
 		appendStringInfo(&buf, "CREATE FOREIGN TABLE IF NOT EXISTS \"%s\".\"%s\" (\n",
 						 stmt->local_schema, table_name);
-		query = psprintf("select name, type from system.columns where database='%s' and table='%s'",
+		query.sql = psprintf("select name, type from system.columns where database='%s' and table='%s'",
 						 stmt->remote_schema, table_name);
-		table_def = conn.methods->simple_query(conn.conn, query);
+		table_def = conn.methods->simple_query(conn.conn, &query);
 
 		while ((dvalues = (char **) conn.methods->fetch_row(table_def,
 															datts, NULL, NULL, NULL)) != NULL)
