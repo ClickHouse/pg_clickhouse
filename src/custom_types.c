@@ -351,6 +351,10 @@ chfdw_check_for_custom_function(Oid funcid)
 					strcpy(entry->custom_name, "uniqTheta");
 				else if (strcmp(proname, "dictget") == 0)
 					strcpy(entry->custom_name, "dictGet");
+				else if (strcmp(proname, "accuratecast") == 0)
+					strcpy(entry->custom_name, "accurateCast");
+				else if (strcmp(proname, "clickcast") == 0)
+					strcpy(entry->custom_name, "cast");
 				else if (strcmp(proname, "params") == 0)
 					entry->custom_name[0] = '\1';
 				/* Will have no function name. */

@@ -67,6 +67,11 @@ SELECT clickhouse_raw_query($$
 $$);
 
 SELECT clickhouse_raw_query($$
+	INSERT INTO functions_test.t4
+	SELECT toString(number+1) FROM numbers(2)
+$$);
+
+SELECT clickhouse_raw_query($$
 	create dictionary functions_test.t3_dict
     (key1 Int32, key2 String, val String)
     primary key key1, key2
@@ -284,6 +289,26 @@ SELECT ts FROM t5 WHERE date_trunc('quarter', ts) = '2027-10-01'::date;
 -- check regexp_like.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE regexp_like('^val\d', val);
 SELECT val FROM t4 WHERE regexp_like('^val\d', val);
+
+-- check clickCast.
+WITH r AS (
+	SELECT COUNT(*) AS num, clickCast(a, 'UInt64') AS a64, clickCast(c, 'TEXT') AS c_text
+	FROM t1
+	GROUP by a, c
+) SELECT * FROM r order by num;
+
+-- check accurateCast.
+WITH r AS (
+	SELECT COUNT(*) AS num, accurateCast(a, 'UInt64') AS a64, accurateCast(c, 'TEXT') AS c_text
+	FROM t1
+	GROUP by a, c
+) SELECT * FROM r order by num;
+
+-- XXX: Should support incompatible type than first arg.
+SELECT COUNT(*) AS num, clickCast(val, 'Int32') AS val32
+FROM t4
+WHERE val NOT LIKE 'val%'
+GROUP by val;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE functions_test');

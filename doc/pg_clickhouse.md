@@ -99,7 +99,7 @@ maps the following functions:
 *   `array_position`: [toTimeZone](https://clickhouse.com/docs/sql-reference/functions/array-functions#indexOf)
 *   `btrim`: [trimBoth](https://clickhouse.com/docs/sql-reference/functions/string-functions#trimboth)
 *   `strpos`: [position](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#position)
-*   `regexp_like` => [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
+*   `regexp_like`: [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
 
 ### Custom Functions
 
@@ -107,7 +107,21 @@ These custom functions created by `pg_clickhouse` provide foreign query
 pushdown for select ClickHouse functions with no PostgreSQL equivalents. If
 any of these functions cannot be pushed down they will raise an exception.
 
-*   [dictGet](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull)
+*   [dictGet](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions#dictGet)
+
+### Cast Functions
+
+Postgres never pushes down [CAST()], so we provide an alias, `clickCast()`,
+which does push down. Must be called as `clickCast(x, T)`, not
+`clickCast(x AS t)`. We also provide `accurateCast()`. They will both raise an
+exception if they cannot be pushed down.
+
+**Note** The cast functions can only to cast compatible types, such as `INT`
+to `BIGINT` or `TIMESTAMP` to `TEXT`. A call such as
+`clickCast('2', 'UInt32')` is not currently supported.
+
+*   `clickCast`: [CAST()]
+*   `accurateCast`: [accurateCast](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#accuratecastx-t)
 
 ### Pushdown Aggregates
 
@@ -174,3 +188,4 @@ are not supported and will raise an error.
   [ClickHouse]: https://clickhouse.com/clickhouse
   [ordered-set aggregate functions]: https://www.postgresql.org/docs/current/functions-aggregate.html#FUNCTIONS-ORDEREDSET-TABLE
   [Parametric aggregate functions]: https://clickhouse.com/docs/sql-reference/aggregate-functions/parametric-functions
+  [CAST()](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#cast)

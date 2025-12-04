@@ -179,3 +179,16 @@ CREATE AGGREGATE uniqTheta(VARIADIC "any")
 CREATE FUNCTION dictGet(TEXT, TEXT, ANYELEMENT) RETURNS TEXT
 AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
 LANGUAGE C STRICT;
+
+-- Create error-raising functions for ClickHouse Cast functions. XXX Ideally
+-- these would not derive the return value from the first argument, but
+-- perhaps from the first return value, (or better, not care at all, since the
+-- function doesn't run in Postgres at all). We can at least support them with
+-- compatible types.
+CREATE FUNCTION clickCast(anycompatible, TEXT) RETURNS anycompatible
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C STRICT;
+
+CREATE FUNCTION accurateCast(anycompatible, TEXT) RETURNS anycompatible
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C STRICT;

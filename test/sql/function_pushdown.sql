@@ -69,6 +69,11 @@ BEGIN
         $$ SELECT dictGet('', '', '{"x": true}'::json) $$,
         $$ SELECT dictGet('a', 'b', ARRAY[1]) $$,
 
+        $$ SELECT clickCast(42, 'Uint64') $$,
+        $$ SELECT clickCast('Test'::text, 'FixedString(2)') $$,
+        $$ SELECT accurateCast(42, 'Uint64') $$,
+        $$ SELECT accurateCast('Test'::text, 'FixedString(2)') $$,
+
         $$ SELECT quantile(1) $$,
         $$ SELECT quantile('x') $$,
         $$ SELECT quantileExact(42) $$,
