@@ -697,8 +697,11 @@ nested_col:
 		break;
 		case Type::Code::UInt64: {
 			uint64 val = col->As<ColumnUInt64>()->At(row);
+			/* XXX Consider using, e.g., https://pgxn.org/dist/uint128. */
 			if (val > LONG_MAX)
-				throw std::overflow_error("pg_clickhouse: int64 overflow");
+				throw std::overflow_error(
+					"value " + std::to_string(val) + " is out of range of bigint"
+				);
 
 			ret = Int64GetDatum((int64)val);
 			*valtype = INT8OID;

@@ -172,6 +172,53 @@ EXPLAIN VERBOSE SELECT * FROM clickhouse.custom_option;
 ALTER FOREIGN TABLE clickhouse.custom_option OPTIONS (DROP database);
 EXPLAIN VERBOSE SELECT * FROM clickhouse.custom_option;
 
+-- check overflows.
+SELECT clickhouse_raw_query($$
+    INSERT INTO import_test.ints (c1, c2, c3, c4, c5, c6, c7, c8, c9, c10) VALUES
+    (
+        -- Min values
+        -128, -32768, -2147483648, -9223372036854775808,
+        0, 0, 0, 0,
+        1.175494351e-38, 2.2250738585072014e-308
+    ),
+    (
+        -- Max values
+        127, 32767, 2147483647, 9223372036854775807,
+        255, 65535, 4294967295, 18446744073709551615,
+        3.402823466e+38, 1.7976931348623158e+308
+    )
+$$);
+
+SELECT clickhouse_raw_query($$
+    SELECT * FROM import_test.ints
+    WHERE c1 IN (127, -128)
+    ORDER BY c1;
+$$);
+
+-- Error on 18446744073709551615.
+SELECT * FROM clickhouse_bin.ints
+WHERE c1 IN (127, -128)
+ORDER BY c1;
+
+SELECT * FROM clickhouse.ints
+WHERE c1 IN (127, -128)
+ORDER BY c1;
+
+-- Ignore 18446744073709551615
+SELECT * FROM clickhouse_bin.ints WHERE c1 = -128
+UNION
+SELECT c1, c2, c3, c4, c5, c6, c7, NULL, c9, c10
+FROM clickhouse_bin.ints
+WHERE c1 = 127
+ORDER BY c1;
+
+SELECT * FROM clickhouse.ints WHERE c1 = -128
+UNION
+SELECT c1, c2, c3, c4, c5, c6, c7, NULL, c9, c10
+FROM clickhouse.ints
+WHERE c1 = 127
+ORDER BY c1;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER import_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER import_loopback_bin;
 

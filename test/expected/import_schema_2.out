@@ -214,6 +214,16 @@ NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT> type fo
  c8     | bigint           |           | not null |         |             | plain   |              | 
  c9     | real             |           | not null |         |             | plain   |              | 
  c10    | double precision |           |          |         |             | plain   |              | 
+Not-null constraints:
+    "ints_c1_not_null" NOT NULL "c1"
+    "ints_c2_not_null" NOT NULL "c2"
+    "ints_c3_not_null" NOT NULL "c3"
+    "ints_c4_not_null" NOT NULL "c4"
+    "ints_c5_not_null" NOT NULL "c5"
+    "ints_c6_not_null" NOT NULL "c6"
+    "ints_c7_not_null" NOT NULL "c7"
+    "ints_c8_not_null" NOT NULL "c8"
+    "ints_c9_not_null" NOT NULL "c9"
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
 
@@ -230,6 +240,15 @@ FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
  c7     | text                        |           | not null |         |             | extended |              | 
  c9     | character varying(50)       |           |          |         |             | extended |              | 
  c8     | text                        |           | not null |         |             | extended |              | 
+Not-null constraints:
+    "types_c1_not_null" NOT NULL "c1"
+    "types_c2_not_null" NOT NULL "c2"
+    "types_c3_not_null" NOT NULL "c3"
+    "types_c4_not_null" NOT NULL "c4"
+    "types_c5_not_null" NOT NULL "c5"
+    "types_c6_not_null" NOT NULL "c6"
+    "types_c7_not_null" NOT NULL "c7"
+    "types_c8_not_null" NOT NULL "c8"
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
 
@@ -247,6 +266,9 @@ FDW options: (database 'import_test', table_name 'types2', engine 'MergeTree')
 --------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
  c1     | integer[] |           | not null |         |             | extended |              | 
  c2     | text[]    |           | not null |         |             | extended |              | 
+Not-null constraints:
+    "arrays_c1_not_null" NOT NULL "c1"
+    "arrays_c2_not_null" NOT NULL "c2"
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
 
@@ -259,6 +281,12 @@ FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
  c3.a   | integer[] |           | not null |         |             | extended |              | 
  c3.b   | integer[] |           | not null |         |             | extended |              | 
  c4     | smallint  |           | not null |         |             | plain    |              | 
+Not-null constraints:
+    "tuples_c1_not_null" NOT NULL "c1"
+    "tuples_c2_not_null" NOT NULL "c2"
+    "tuples_c3.a_not_null" NOT NULL "c3.a"
+    "tuples_c3.b_not_null" NOT NULL "c3.b"
+    "tuples_c4_not_null" NOT NULL "c4"
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
 
@@ -270,6 +298,11 @@ FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
  t2     | timestamp without time zone |           | not null |         |             | plain   |              | 
  t4     | timestamp without time zone |           | not null |         |             | plain   |              | 
  t5     | timestamp without time zone |           | not null |         |             | plain   |              | 
+Not-null constraints:
+    "timezones_t1_not_null" NOT NULL "t1"
+    "timezones_t2_not_null" NOT NULL "t2"
+    "timezones_t4_not_null" NOT NULL "t4"
+    "timezones_t5_not_null" NOT NULL "t5"
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'timezones', engine 'MergeTree')
 
@@ -279,6 +312,9 @@ FDW options: (database 'import_test', table_name 'timezones', engine 'MergeTree'
 --------+------+-----------+----------+---------+-------------+---------+--------------+-------------
  c1     | inet |           | not null |         |             | main    |              | 
  c2     | inet |           | not null |         |             | main    |              | 
+Not-null constraints:
+    "ip_c1_not_null" NOT NULL "c1"
+    "ip_c2_not_null" NOT NULL "c2"
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'ip', engine 'MergeTree')
 
@@ -350,6 +386,16 @@ NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT> type fo
  c8     | bigint           |           | not null |         |             | plain   |              | 
  c9     | real             |           | not null |         |             | plain   |              | 
  c10    | double precision |           |          |         |             | plain   |              | 
+Not-null constraints:
+    "ints_c1_not_null" NOT NULL "c1"
+    "ints_c2_not_null" NOT NULL "c2"
+    "ints_c3_not_null" NOT NULL "c3"
+    "ints_c4_not_null" NOT NULL "c4"
+    "ints_c5_not_null" NOT NULL "c5"
+    "ints_c6_not_null" NOT NULL "c6"
+    "ints_c7_not_null" NOT NULL "c7"
+    "ints_c8_not_null" NOT NULL "c8"
+    "ints_c9_not_null" NOT NULL "c9"
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
 
@@ -366,6 +412,15 @@ FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
  c7     | text                        |           | not null |         |             | extended |              | 
  c9     | character varying(50)       |           |          |         |             | extended |              | 
  c8     | text                        |           | not null |         |             | extended |              | 
+Not-null constraints:
+    "types_c1_not_null" NOT NULL "c1"
+    "types_c2_not_null" NOT NULL "c2"
+    "types_c3_not_null" NOT NULL "c3"
+    "types_c4_not_null" NOT NULL "c4"
+    "types_c5_not_null" NOT NULL "c5"
+    "types_c6_not_null" NOT NULL "c6"
+    "types_c7_not_null" NOT NULL "c7"
+    "types_c8_not_null" NOT NULL "c8"
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
 
@@ -383,6 +438,9 @@ FDW options: (database 'import_test', table_name 'types2', engine 'MergeTree')
 --------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
  c1     | integer[] |           | not null |         |             | extended |              | 
  c2     | text[]    |           | not null |         |             | extended |              | 
+Not-null constraints:
+    "arrays_c1_not_null" NOT NULL "c1"
+    "arrays_c2_not_null" NOT NULL "c2"
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
 
@@ -395,6 +453,12 @@ FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
  c3.a   | integer[] |           | not null |         |             | extended |              | 
  c3.b   | integer[] |           | not null |         |             | extended |              | 
  c4     | smallint  |           | not null |         |             | plain    |              | 
+Not-null constraints:
+    "tuples_c1_not_null" NOT NULL "c1"
+    "tuples_c2_not_null" NOT NULL "c2"
+    "tuples_c3.a_not_null" NOT NULL "c3.a"
+    "tuples_c3.b_not_null" NOT NULL "c3.b"
+    "tuples_c4_not_null" NOT NULL "c4"
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
 
@@ -406,6 +470,11 @@ FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
  t2     | timestamp without time zone |           | not null |         |             | plain   |              | 
  t4     | timestamp without time zone |           | not null |         |             | plain   |              | 
  t5     | timestamp without time zone |           | not null |         |             | plain   |              | 
+Not-null constraints:
+    "timezones_t1_not_null" NOT NULL "t1"
+    "timezones_t2_not_null" NOT NULL "t2"
+    "timezones_t4_not_null" NOT NULL "t4"
+    "timezones_t5_not_null" NOT NULL "t5"
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'timezones', engine 'MergeTree')
 
@@ -415,6 +484,9 @@ FDW options: (database 'import_test', table_name 'timezones', engine 'MergeTree'
 --------+------+-----------+----------+---------+-------------+---------+--------------+-------------
  c1     | inet |           | not null |         |             | main    |              | 
  c2     | inet |           | not null |         |             | main    |              | 
+Not-null constraints:
+    "ip_c1_not_null" NOT NULL "c1"
+    "ip_c2_not_null" NOT NULL "c2"
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'ip', engine 'MergeTree')
 
@@ -485,6 +557,16 @@ IMPORT FOREIGN SCHEMA "import_test" LIMIT TO (ints, types) FROM SERVER import_lo
  c8     | bigint           |           | not null |         |             | plain   |              | 
  c9     | real             |           | not null |         |             | plain   |              | 
  c10    | double precision |           |          |         |             | plain   |              | 
+Not-null constraints:
+    "ints_c1_not_null" NOT NULL "c1"
+    "ints_c2_not_null" NOT NULL "c2"
+    "ints_c3_not_null" NOT NULL "c3"
+    "ints_c4_not_null" NOT NULL "c4"
+    "ints_c5_not_null" NOT NULL "c5"
+    "ints_c6_not_null" NOT NULL "c6"
+    "ints_c7_not_null" NOT NULL "c7"
+    "ints_c8_not_null" NOT NULL "c8"
+    "ints_c9_not_null" NOT NULL "c9"
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
 
@@ -501,6 +583,15 @@ FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
  c7     | text                        |           | not null |         |             | extended |              | 
  c9     | character varying(50)       |           |          |         |             | extended |              | 
  c8     | text                        |           | not null |         |             | extended |              | 
+Not-null constraints:
+    "types_c1_not_null" NOT NULL "c1"
+    "types_c2_not_null" NOT NULL "c2"
+    "types_c3_not_null" NOT NULL "c3"
+    "types_c4_not_null" NOT NULL "c4"
+    "types_c5_not_null" NOT NULL "c5"
+    "types_c6_not_null" NOT NULL "c6"
+    "types_c7_not_null" NOT NULL "c7"
+    "types_c8_not_null" NOT NULL "c8"
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
 
@@ -516,6 +607,9 @@ NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT> type fo
 --------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
  c1     | integer[] |           | not null |         |             | extended |              | 
  c2     | text[]    |           | not null |         |             | extended |              | 
+Not-null constraints:
+    "arrays_c1_not_null" NOT NULL "c1"
+    "arrays_c2_not_null" NOT NULL "c2"
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
 
@@ -528,6 +622,12 @@ FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
  c3.a   | integer[] |           | not null |         |             | extended |              | 
  c3.b   | integer[] |           | not null |         |             | extended |              | 
  c4     | smallint  |           | not null |         |             | plain    |              | 
+Not-null constraints:
+    "tuples_c1_not_null" NOT NULL "c1"
+    "tuples_c2_not_null" NOT NULL "c2"
+    "tuples_c3.a_not_null" NOT NULL "c3.a"
+    "tuples_c3.b_not_null" NOT NULL "c3.b"
+    "tuples_c4_not_null" NOT NULL "c4"
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
 
@@ -584,8 +684,8 @@ SELECT clickhouse_raw_query($$
 $$);
                                                                   clickhouse_raw_query                                                                  
 --------------------------------------------------------------------------------------------------------------------------------------------------------
- -128    -32768  -2147483648     -9223372036854775808    0       0       0       0       1.1754942e-38   2.2250738585072014e-308                       +
- 127     32767   2147483647      9223372036854775807     255     65535   4294967295      18446744073709551615    3.4028233e38    1.7976931348623157e308+
+ -128    -32768  -2147483648     -9223372036854775808    0       0       0       0       1.1754944e-38   2.2250738585072014e-308                       +
+ 127     32767   2147483647      9223372036854775807     255     65535   4294967295      18446744073709551615    3.4028235e38    1.7976931348623157e308+
  
 (1 row)
 
@@ -607,8 +707,8 @@ WHERE c1 = 127
 ORDER BY c1;
   c1  |   c2   |     c3      |          c4          | c5  | c6 |     c7     | c8 |      c9       |           c10           
 ------+--------+-------------+----------------------+-----+----+------------+----+---------------+-------------------------
- -128 | -32768 | -2147483648 | -9223372036854775808 |   0 |  0 |          0 |  0 | 1.1754942e-38 | 2.2250738585072014e-308
-  127 |  32767 |  2147483647 |  9223372036854775807 | 255 | -1 | 4294967295 |    | 3.4028233e+38 | 1.7976931348623157e+308
+ -128 | -32768 | -2147483648 | -9223372036854775808 |   0 |  0 |          0 |  0 | 1.1754944e-38 | 2.2250738585072014e-308
+  127 |  32767 |  2147483647 |  9223372036854775807 | 255 | -1 | 4294967295 |    | 3.4028235e+38 | 1.7976931348623157e+308
 (2 rows)
 
 SELECT * FROM clickhouse.ints WHERE c1 = -128
@@ -619,8 +719,8 @@ WHERE c1 = 127
 ORDER BY c1;
   c1  |   c2   |     c3      |          c4          | c5  |  c6   |     c7     | c8 |      c9       |           c10           
 ------+--------+-------------+----------------------+-----+-------+------------+----+---------------+-------------------------
- -128 | -32768 | -2147483648 | -9223372036854775808 |   0 |     0 |          0 |  0 | 1.1754942e-38 | 2.2250738585072014e-308
-  127 |  32767 |  2147483647 |  9223372036854775807 | 255 | 65535 | 4294967295 |    | 3.4028233e+38 | 1.7976931348623157e+308
+ -128 | -32768 | -2147483648 | -9223372036854775808 |   0 |     0 |          0 |  0 | 1.1754944e-38 | 2.2250738585072014e-308
+  127 |  32767 |  2147483647 |  9223372036854775807 | 255 | 65535 | 4294967295 |    | 3.4028235e+38 | 1.7976931348623157e+308
 (2 rows)
 
 DROP USER MAPPING FOR CURRENT_USER SERVER import_loopback;

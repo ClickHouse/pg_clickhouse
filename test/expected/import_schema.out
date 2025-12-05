@@ -656,6 +656,73 @@ EXPLAIN VERBOSE SELECT * FROM clickhouse.custom_option;
    Remote SQL: SELECT a FROM import_test.custom_option
 (3 rows)
 
+-- check overflows.
+SELECT clickhouse_raw_query($$
+    INSERT INTO import_test.ints (c1, c2, c3, c4, c5, c6, c7, c8, c9, c10) VALUES
+    (
+        -- Min values
+        -128, -32768, -2147483648, -9223372036854775808,
+        0, 0, 0, 0,
+        1.175494351e-38, 2.2250738585072014e-308
+    ),
+    (
+        -- Max values
+        127, 32767, 2147483647, 9223372036854775807,
+        255, 65535, 4294967295, 18446744073709551615,
+        3.402823466e+38, 1.7976931348623158e+308
+    )
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    SELECT * FROM import_test.ints
+    WHERE c1 IN (127, -128)
+    ORDER BY c1;
+$$);
+                                                                  clickhouse_raw_query                                                                  
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ -128    -32768  -2147483648     -9223372036854775808    0       0       0       0       1.1754942e-38   2.2250738585072014e-308                       +
+ 127     32767   2147483647      9223372036854775807     255     65535   4294967295      18446744073709551615    3.4028233e38    1.7976931348623157e308+
+ 
+(1 row)
+
+-- Error on 18446744073709551615.
+SELECT * FROM clickhouse_bin.ints
+WHERE c1 IN (127, -128)
+ORDER BY c1;
+ERROR:  pg_clickhouse: error while reading row: value 18446744073709551615 is out of range of bigint
+SELECT * FROM clickhouse.ints
+WHERE c1 IN (127, -128)
+ORDER BY c1;
+ERROR:  value "18446744073709551615" is out of range for type bigint
+-- Ignore 18446744073709551615
+SELECT * FROM clickhouse_bin.ints WHERE c1 = -128
+UNION
+SELECT c1, c2, c3, c4, c5, c6, c7, NULL, c9, c10
+FROM clickhouse_bin.ints
+WHERE c1 = 127
+ORDER BY c1;
+  c1  |   c2   |     c3      |          c4          | c5  | c6 |     c7     | c8 |      c9       |           c10           
+------+--------+-------------+----------------------+-----+----+------------+----+---------------+-------------------------
+ -128 | -32768 | -2147483648 | -9223372036854775808 |   0 |  0 |          0 |  0 | 1.1754942e-38 | 2.2250738585072014e-308
+  127 |  32767 |  2147483647 |  9223372036854775807 | 255 | -1 | 4294967295 |    | 3.4028233e+38 | 1.7976931348623157e+308
+(2 rows)
+
+SELECT * FROM clickhouse.ints WHERE c1 = -128
+UNION
+SELECT c1, c2, c3, c4, c5, c6, c7, NULL, c9, c10
+FROM clickhouse.ints
+WHERE c1 = 127
+ORDER BY c1;
+  c1  |   c2   |     c3      |          c4          | c5  |  c6   |     c7     | c8 |      c9       |           c10           
+------+--------+-------------+----------------------+-----+-------+------------+----+---------------+-------------------------
+ -128 | -32768 | -2147483648 | -9223372036854775808 |   0 |     0 |          0 |  0 | 1.1754942e-38 | 2.2250738585072014e-308
+  127 |  32767 |  2147483647 |  9223372036854775807 | 255 | 65535 | 4294967295 |    | 3.4028233e+38 | 1.7976931348623157e+308
+(2 rows)
+
 DROP USER MAPPING FOR CURRENT_USER SERVER import_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER import_loopback_bin;
 SELECT clickhouse_raw_query('DROP DATABASE import_test');
