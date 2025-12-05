@@ -156,6 +156,44 @@ are not supported and will raise an error.
 *   `quantile(double)` => [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
 *   `quantileExact(double)` => [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
 
+### Session Settings
+
+Set the `pg_clickhouse.session_settings` runtime parameter to configure
+[ClickHouse settings] to be set on subsequent queries. Example:
+
+```sql
+SET pg_clickhouse.session_settings = 'join_use_nulls=1, final=1';
+```
+
+The default is `join_use_nulls=1`. Set it to an empty string to fall back on
+the ClickHouse server's settings.
+
+```sql
+SET pg_clickhouse.session_settings = '';
+```
+
+The syntax is a comma-delimited list of key/value pairs separated by an equal
+sign. Keys must correspond to [ClickHouse settings]. Escape spaces, commas,
+and backslashes in values with a backslash:
+
+```sql
+SET pg_clickhouse.session_settings = 'join_algorithm = grace_hash\,hash';
+```
+
+Or use single quoted values to avoid escaping spaces and commas; consider
+using [dollar quoting] to avoid the need to double-quote:
+
+```sql
+SET pg_clickhouse.session_settings = $$join_algorithm = 'grace_hash,hash'$$;
+```
+
+pg_clickhouse does not validate the settings, but passes them on to ClickHouse
+for every query. It thus supports all settings for each ClickHouse version.
+
+Note that pg_clickhouse must be loaded before setting
+`pg_clickhouse.session_settings`; either use [library preloading] or simply
+use one of the objects in the extension to ensure it loads.
+
 ## Authors
 
 *   [Ildus Kurbangaliev](https://github.com/ildus)
@@ -174,3 +212,9 @@ are not supported and will raise an error.
   [ClickHouse]: https://clickhouse.com/clickhouse
   [ordered-set aggregate functions]: https://www.postgresql.org/docs/current/functions-aggregate.html#FUNCTIONS-ORDEREDSET-TABLE
   [Parametric aggregate functions]: https://clickhouse.com/docs/sql-reference/aggregate-functions/parametric-functions
+  [ClickHouse settings]: https://clickhouse.com/docs/operations/settings/settings
+    "ClickHouse Docs: Session Settings"
+  [dollar quoting]: https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-DOLLAR-QUOTING
+    "PostgreSQL Docs: Dollar-Quoted String Constants"
+  [library preloading]: https://www.postgresql.org/docs/18/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-PRELOAD
+    "PostgreSQL Docs: Shared Library Preloading

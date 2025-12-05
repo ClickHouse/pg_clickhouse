@@ -1,4 +1,9 @@
 \unset ECHO
+ ch_noop_bigint 
+----------------
+               
+(1 row)
+
 NOTICE:  OK ``
 NOTICE:  OK `join_use_nulls=1`
 NOTICE:  OK `join_use_nulls=1, xyz=true`
@@ -9,4 +14,98 @@ NOTICE:  ERR 42601 - pg_clickhouse: missing "=" after "join_use_nulls" in option
 NOTICE:  ERR 42601 - pg_clickhouse: missing "=" after "join_use_nulls" in options string
 NOTICE:  ERR 42601 - pg_clickhouse: unterminated quoted string in options string
 NOTICE:  ERR 42601 - pg_clickhouse: missing comma after "join_use_nulls" value in options string
-NOTICE:  drop cascades to foreign table remote_settings
+      name      | value 
+----------------+-------
+ join_use_nulls | 1
+(1 row)
+
+      name      | value 
+----------------+-------
+ join_use_nulls | 1
+(1 row)
+
+        pg_clickhouse.session_settings        
+----------------------------------------------
+                                             +
+     connect_timeout = 2,                    +
+     count_distinct_implementation = uniq,   +
+     join_algorithm = 'prefer_partial_merge',+
+     join_use_nulls = 0,                     +
+     join_use_nulls = 1,                     +
+     log_queries_min_type = QUERY_FINISH,    +
+     max_block_size = 32768,                 +
+     max_execution_time = 45,                +
+     max_result_rows = 1024,                 +
+     metrics_perf_events_list = 'this,that', +
+     network_compression_method = ZSTD,      +
+     poll_interval = 5,                      +
+     totals_mode = after_having_auto         +
+ 
+(1 row)
+
+             name              |        value         
+-------------------------------+----------------------
+ connect_timeout               | 2
+ count_distinct_implementation | uniq
+ join_algorithm                | prefer_partial_merge
+ join_use_nulls                | 1
+ log_queries_min_type          | QUERY_FINISH
+ max_block_size                | 32768
+ max_execution_time            | 45
+ max_result_rows               | 1024
+ metrics_perf_events_list      | this,that
+ network_compression_method    | ZSTD
+ poll_interval                 | 5
+ totals_mode                   | after_having_auto
+(12 rows)
+
+             name              |        value         
+-------------------------------+----------------------
+ connect_timeout               | 2
+ count_distinct_implementation | uniq
+ join_algorithm                | prefer_partial_merge
+ join_use_nulls                | 1
+ log_queries_min_type          | QUERY_FINISH
+ max_block_size                | 32768
+ max_execution_time            | 45
+ max_result_rows               | 1024
+ metrics_perf_events_list      | this,that
+ network_compression_method    | ZSTD
+ poll_interval                 | 5
+ totals_mode                   | after_having_auto
+(12 rows)
+
+             name              | ?column? 
+-------------------------------+----------
+ connect_timeout               | t
+ count_distinct_implementation | t
+ join_algorithm                | t
+ join_use_nulls                | t
+ log_queries_min_type          | t
+ max_block_size                | t
+ max_execution_time            | t
+ max_result_rows               | t
+ metrics_perf_events_list      | t
+ network_compression_method    | t
+ poll_interval                 | t
+ totals_mode                   | t
+(12 rows)
+
+             name              | ?column? 
+-------------------------------+----------
+ connect_timeout               | t
+ count_distinct_implementation | t
+ join_algorithm                | t
+ join_use_nulls                | t
+ log_queries_min_type          | t
+ max_block_size                | t
+ max_execution_time            | t
+ max_result_rows               | t
+ metrics_perf_events_list      | t
+ network_compression_method    | t
+ poll_interval                 | t
+ totals_mode                   | t
+(12 rows)
+
+NOTICE:  drop cascades to foreign table bin_remote_settings
+NOTICE:  drop cascades to foreign table http_remote_settings

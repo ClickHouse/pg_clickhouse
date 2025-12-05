@@ -24,7 +24,7 @@
 #include "optimizer/optimizer.h"
 #include "nodes/pathnodes.h"
 #include "access/heapam.h"
-#include "connect.h"
+#include "engine.h"
 
 #if PG_VERSION_NUM < 150000
 #define FirstUnpinnedObjectId FirstBootstrapObjectId
@@ -48,20 +48,18 @@ typedef struct ch_cursor
 
 typedef void (*disconnect_method) (void *conn);
 typedef void (*check_conn_method) (const char *password, UserMapping * user);
-typedef ch_cursor * (*simple_query_method) (void *conn, const char *query);
-typedef void (*simple_insert_method) (void *conn, const char *query);
-typedef void (*cursor_free_method) (ch_cursor * cursor);
+typedef ch_cursor * (*simple_query_method) (void *conn, const ch_query *query);
+typedef void (*simple_insert_method) (void *conn, const ch_query *query);
 typedef void **(*cursor_fetch_row_method) (ch_cursor * cursor, List * attrs,
 										   TupleDesc tupdesc, Datum * values, bool *nulls);
 typedef void *(*prepare_insert_method) (void *conn, ResultRelInfo *, List *,
-										char *, char *);
+										const ch_query *, char *);
 typedef void (*insert_tuple_method) (void *state, TupleTableSlot * slot);
 
 typedef struct
 {
 	disconnect_method disconnect;
 	simple_query_method simple_query;
-	cursor_free_method cursor_free;
 	cursor_fetch_row_method fetch_row;
 	prepare_insert_method prepare_insert;
 	insert_tuple_method insert_tuple;

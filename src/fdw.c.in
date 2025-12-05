@@ -284,12 +284,12 @@ static void merge_fdw_options(CHFdwRelationInfo * fpinfo,
 Datum
 clickhouse_raw_query(PG_FUNCTION_ARGS)
 {
-	char	   *connstring = text_to_cstring(PG_GETARG_TEXT_P(1)),
-			   *query = text_to_cstring(PG_GETARG_TEXT_P(0));
+	char	   *connstring = text_to_cstring(PG_GETARG_TEXT_P(1));
+	ch_query	query = new_query(text_to_cstring(PG_GETARG_TEXT_P(0)));
 
 	ch_connection_details *details = connstring_parse(connstring);
 	ch_connection conn = chfdw_http_connect(details);
-	ch_cursor  *cursor = conn.methods->simple_query(conn.conn, query);
+	ch_cursor  *cursor = conn.methods->simple_query(conn.conn, &query);
 	text	   *res = chfdw_http_fetch_raw_data(cursor);
 
 	MemoryContextDelete(cursor->memcxt);
@@ -973,6 +973,7 @@ clickhouseIterateForeignScan(ForeignScanState * node)
 	struct timeval time1,
 				time2;
 	TupleDesc	tupdesc;
+	ch_query	query = new_query(fsstate->query);
 
 	/* make query if needed */
 	if (fsstate->ch_cursor == NULL)
@@ -980,7 +981,7 @@ clickhouseIterateForeignScan(ForeignScanState * node)
 		MemoryContext old = MemoryContextSwitchTo(fsstate->batch_cxt);
 
 		fsstate->ch_cursor = fsstate->conn.methods->simple_query(fsstate->conn.conn,
-																 fsstate->query);
+																 &query);
 
 		time_used += fsstate->ch_cursor->request_time;
 		MemoryContextSwitchTo(old);
@@ -1379,6 +1380,7 @@ create_foreign_modify(EState * estate,
 	UserMapping *user;
 	MemoryContext old_mcxt;
 	Relation	rel = rri->ri_RelationDesc;
+	ch_query	q = new_query(query);
 
 	/* Begin constructing CHFdwModifyState. */
 	fmstate = (CHFdwModifyState *) palloc0(sizeof(CHFdwModifyState));
@@ -1403,7 +1405,7 @@ create_foreign_modify(EState * estate,
 
 	old_mcxt = MemoryContextSwitchTo(PortalContext);
 	fmstate->state = fmstate->conn.methods->prepare_insert(fmstate->conn.conn,
-														   rri, target_attrs, query, table_name);
+														   rri, target_attrs, &q, table_name);
 	MemoryContextSwitchTo(old_mcxt);
 
 	/* Create context for per-query temp workspace. */

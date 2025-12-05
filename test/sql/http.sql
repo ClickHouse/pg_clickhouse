@@ -99,6 +99,8 @@ INSERT INTO ft3 VALUES (1, E'lf\ntab\t\b\f\r');
 SELECT c3, (c3 = E'lf\ntab\t\b\f\r') AS true FROM ft3 WHERE c1 = 1;
 INSERT INTO ft3 VALUES (2, 'lf\ntab\t\b\f\r');
 SELECT c3, (c3 = 'lf\ntab\t\b\f\r') AS true FROM ft3 WHERE c1 = 2;
+INSERT INTO ft3 VALUES (3, '');
+SELECT c3, (c3 = '') AS true FROM ft3 WHERE c1 = 3;
 
 INSERT INTO ft4
 	SELECT id,

@@ -132,6 +132,13 @@ SELECT c3, (c3 = 'lf\ntab\t\b\f\r') AS true FROM ft3 WHERE c1 = 2;
  lf\ntab\t\b\f\r | t
 (1 row)
 
+INSERT INTO ft3 VALUES (3, '');
+SELECT c3, (c3 = '') AS true FROM ft3 WHERE c1 = 3;
+ c3 | true 
+----+------
+    | t
+(1 row)
+
 INSERT INTO ft4
 	SELECT id,
 	       id + 1,

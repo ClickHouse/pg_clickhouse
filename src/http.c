@@ -126,7 +126,6 @@ ch_http_connection(ch_connection_details * details)
 		goto cleanup;
 
 	conn->base_url = connstring;
-	conn->base_url_len = strlen(conn->base_url);
 
 	return conn;
 
@@ -152,12 +151,16 @@ set_query_id(ch_http_response_t * resp)
 }
 
 ch_http_response_t *
-ch_http_simple_query(ch_http_connection_t * conn, const char *query)
+ch_http_simple_query(ch_http_connection_t * conn, const ch_query * query)
 {
 	char	   *url;
 	CURLcode	errcode;
 	static char errbuffer[CURL_ERROR_SIZE];
 	struct curl_slist *headers = NULL;
+	CURLU	   *cu = curl_url();
+	ListCell   *lc;
+	DefElem    *setting;
+	char	   *buf = NULL;
 
 	ch_http_response_t *resp = calloc(sizeof(ch_http_response_t), 1);
 
@@ -168,12 +171,22 @@ ch_http_simple_query(ch_http_connection_t * conn, const char *query)
 
 	assert(conn && conn->curl);
 
-	/* Enable SQL compatibility. */
-	const char *params = "join_use_nulls=1";
+	/* Construct the base URL with the query ID. */
+	curl_url_set(cu, CURLUPART_URL, conn->base_url, 0);
+	buf = psprintf("query_id=%s", resp->query_id);
+	curl_url_set(cu, CURLUPART_QUERY, buf, CURLU_APPENDQUERY | CURLU_URLENCODE);
+	pfree(buf);
 
-	/* construct url: query_id + ?query_id= + params */
-	url = malloc(conn->base_url_len + 37 + 12 + strlen(params));
-	sprintf(url, "%s?query_id=%s&%s", conn->base_url, resp->query_id, params);
+	/* Append each of the settings as a query param. */
+	foreach(lc, (List *) query->settings)
+	{
+		setting = (DefElem *) lfirst(lc);
+		buf = psprintf("%s=%s", setting->defname, strVal(setting->arg));
+		curl_url_set(cu, CURLUPART_QUERY, buf, CURLU_APPENDQUERY | CURLU_URLENCODE);
+		pfree(buf);
+	}
+	curl_url_get(cu, CURLUPART_URL, &url, 0);
+	curl_url_cleanup(cu);
 
 	/* constant */
 	errbuffer[0] = '\0';
@@ -186,7 +199,7 @@ ch_http_simple_query(ch_http_connection_t * conn, const char *query)
 
 	/* variable */
 	curl_easy_setopt(conn->curl, CURLOPT_WRITEDATA, resp);
-	curl_easy_setopt(conn->curl, CURLOPT_POSTFIELDS, query);
+	curl_easy_setopt(conn->curl, CURLOPT_POSTFIELDS, query->sql);
 	curl_easy_setopt(conn->curl, CURLOPT_VERBOSE, curl_verbose);
 	if (curl_progressfunc)
 	{
@@ -198,17 +211,13 @@ ch_http_simple_query(ch_http_connection_t * conn, const char *query)
 		curl_easy_setopt(conn->curl, CURLOPT_NOPROGRESS, 1L);
 	if (conn->dbname)
 	{
-		char	   *buf = palloc(strlen(conn->dbname) + strlen(DATABASE_HEADER) + 3);
-
-		sprintf(buf, "%s: %s", DATABASE_HEADER, conn->dbname);
-		headers = curl_slist_append(headers, buf);
+		headers = curl_slist_append(headers, psprintf("%s: %s", DATABASE_HEADER, conn->dbname));
 		curl_easy_setopt(conn->curl, CURLOPT_HTTPHEADER, headers);
-		pfree(buf);
 	}
 
 	curl_error_happened = false;
 	errcode = curl_easy_perform(conn->curl);
-	free(url);
+	curl_free(url);
 	if (headers)
 		curl_slist_free_all(headers);
 
