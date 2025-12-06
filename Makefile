@@ -114,7 +114,7 @@ sql/$(EXTENSION)--$(EXTVERSION).sql: sql/$(EXTENSION).sql
 
 # Versioned source file.
 src/fdw.c: src/fdw.c.in
-	sed -e 's,__VERSION__,$(EXTVERSION),g' $< > $@
+	sed -e 's,__VERSION__,$(DISTVERSION),g' $< > $@
 
 # Configure the installation of the clickhouse-cpp library.
 ifeq ($(CH_BUILD), static)
