@@ -33,9 +33,9 @@ CH_CPP_FLAGS = -D CMAKE_BUILD_TYPE=Release -D WITH_OPENSSL=ON
 
 # Build static on Darwin by default.
 ifndef ($(CH_BUILD))
-# ifeq ($(OS),Darwin)
+ifeq ($(OS),Darwin)
 	CH_BUILD = static
-# endif
+endif
 endif
 
 # Are we statically compiling clickhouse-cpp into the extension or no?
