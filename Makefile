@@ -24,7 +24,8 @@ OBJS = $(sort \
 
 # clickhouse-cpp source and build directories.
 CH_CPP_DIR = vendor/clickhouse-cpp
-CH_CPP_BUILD_DIR = vendor/_build
+MACHINE = $(shell echo "$$(uname -s)-$$(uname -m)" | tr '[:upper:]' '[:lower:]')
+CH_CPP_BUILD_DIR = vendor/_build/$(MACHINE)
 
 # List the clickhouse-cpp libraries we require.
 CH_CPP_LIB = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib$(DLSUFFIX)

@@ -12,9 +12,9 @@ jobs:
         # Test latest version and all LTS releases.
         # .github/ubuntu/ch-versions --lts --latest-stable --earliest 22  --prefix '          - ' | pbcopy
         ch:
-          - 25.9.3.48-stable
-          - 25.8.10.7-lts
-          - 25.3.6.56-lts
+          - 25.11.2.24-stable
+          - 25.8.12.129-lts
+          - 25.3.9.72-lts
           - 24.8.14.39-lts
           - 24.3.18.7-lts
           - 23.8.16.40-lts
