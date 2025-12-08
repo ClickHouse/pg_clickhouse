@@ -108,6 +108,11 @@ pushdown for select ClickHouse functions with no PostgreSQL equivalents. If
 any of these functions cannot be pushed down they will raise an exception.
 
 *   [dictGet](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull)
+*   [toUInt8](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint8)
+*   [toUInt16](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint16)
+*   [toUInt32](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint32)
+*   [toUInt64](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint64)
+*   [toUInt128](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint128)
 
 ### Pushdown Aggregates
 

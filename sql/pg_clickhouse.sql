@@ -179,3 +179,24 @@ CREATE AGGREGATE uniqTheta(VARIADIC "any")
 CREATE FUNCTION dictGet(TEXT, TEXT, ANYELEMENT) RETURNS TEXT
 AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
 LANGUAGE C STRICT;
+
+-- Create error-raising functions used for casting to ClickHouse unsigned integers.
+CREATE FUNCTION toUInt8("any") RETURNS smallint
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C STRICT;
+
+CREATE FUNCTION toUInt16("any") RETURNS smallint
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C STRICT;
+
+CREATE FUNCTION toUInt32("any") RETURNS INTEGER
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C STRICT;
+
+CREATE FUNCTION toUInt64("any") RETURNS BIGINT
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C STRICT;
+
+CREATE FUNCTION toUInt128("any") RETURNS BIGINT
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C STRICT;

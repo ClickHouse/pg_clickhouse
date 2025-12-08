@@ -51,6 +51,8 @@
 #define F_REGEXP_LIKE_TEXT_TEXT 6263
 #endif
 
+#define STR_STARTS_WITH(str, sub) strncmp(str, sub, strlen(sub)) == 0
+#define STR_EQUAL(a, b) strcmp(a, b) == 0
 
 static HTAB * custom_objects_cache = NULL;
 static HTAB
@@ -127,7 +129,43 @@ chfdw_check_for_ordered_aggregate(Aggref * agg)
 	Oid			extoid = getExtensionOfObject(ProcedureRelationId, agg->aggfnoid);
 	char	   *extname = get_extension_name(extoid);
 
-	return strcmp(extname, "pg_clickhouse") == 0;
+	return STR_EQUAL(extname, "pg_clickhouse");
+}
+
+/*
+ * Map pg_clickhouse pushdown function names to ClickHouse case-sensitive
+ * names. Must be kept in lexicographic order.
+ */
+static char *ch_func_map[][2] = {
+	{"argmax", "argMax"},
+	{"argmin", "argMin"},
+	{"dictget", "dictGet"},
+	{"quantileexact", "quantileExact"},
+	{"touint128", "toUInt128"},
+	{"touint16", "toUInt16"},
+	{"touint32", "toUInt32"},
+	{"touint64", "toUInt64"},
+	{"touint8", "toUInt8"},
+	{"uniqcombined", "uniqCombined"},
+	{"uniqcombined64", "uniqCombined64"},
+	{"uniqexact", "uniqExact"},
+	{"uniqhll12", "uniqHLL12"},
+	{"uniqtheta", "uniqTheta"},
+	{NULL, NULL},
+};
+
+inline static char *
+ch_func_name(char *proname)
+{
+	size_t		i = 0;
+
+	while (ch_func_map[i][0] != NULL)
+	{
+		if (STR_EQUAL(ch_func_map[i][0], proname))
+			return ch_func_map[i][1];
+		i++;
+	}
+	return proname;
 }
 
 CustomObjectDef *
@@ -251,113 +289,92 @@ chfdw_check_for_custom_function(Oid funcid)
 			procform = (Form_pg_proc) GETSTRUCT(proctup);
 			proname = NameStr(procform->proname);
 
-			if (strcmp(extname, "istore") == 0)
+			if (STR_EQUAL(extname, "istore"))
 			{
-				if (strcmp(NameStr(procform->proname), "sum") == 0)
+				if (STR_EQUAL(proname, "sum"))
 				{
 					entry->cf_type = CF_ISTORE_SUM;
 					strcpy(entry->custom_name, "sumMap");
 				}
-				if (strcmp(NameStr(procform->proname), "sum_up") == 0)
+				if (STR_EQUAL(proname, "sum_up"))
 				{
 					entry->cf_type = CF_ISTORE_SUM_UP;
 					strcpy(entry->custom_name, "arraySum");
 				}
-				else if (strcmp(NameStr(procform->proname), "istore_seed") == 0)
+				else if (STR_EQUAL(proname, "istore_seed"))
 				{
 					entry->cf_type = CF_ISTORE_SEED;
 					entry->custom_name[0] = '\1';	/* complex */
 				}
-				else if (strcmp(NameStr(procform->proname), "accumulate") == 0)
+				else if (STR_EQUAL(proname, "accumulate"))
 				{
 					entry->cf_type = CF_ISTORE_ACCUMULATE;
 					entry->custom_name[0] = '\1';	/* complex */
 				}
-				else if (strcmp(NameStr(procform->proname), "slice") == 0)
+				else if (STR_EQUAL(proname, "slice"))
 				{
 					entry->cf_type = CF_UNSHIPPABLE;
 					entry->custom_name[0] = '\0';	/* complex */
 				}
 			}
-			else if (strcmp(extname, "country") == 0)
+			else if (STR_EQUAL(extname, "country"))
 			{
-				if (strcmp(NameStr(procform->proname), "country_common_name") == 0)
+				if (STR_EQUAL(proname, "country_common_name"))
 				{
 					entry->cf_type = CF_UNSHIPPABLE;
 					entry->custom_name[0] = '\0';	/* complex */
 				}
 			}
-			else if (strcmp(extname, "ajtime") == 0)
+			else if (STR_EQUAL(extname, "ajtime"))
 			{
-				if (strcmp(NameStr(procform->proname), "ajtime_to_timestamp") == 0)
+				if (STR_EQUAL(proname, "ajtime_to_timestamp"))
 				{
 					entry->cf_type = CF_AJTIME_TO_TIMESTAMP;
 					strcpy(entry->custom_name, "");
 				}
-				else if (strcmp(NameStr(procform->proname), "ajtime_pl_interval") == 0)
+				else if (STR_EQUAL(proname, "ajtime_pl_interval"))
 				{
 					entry->cf_type = CF_AJTIME_PL_INTERVAL;
 					strcpy(entry->custom_name, "addSeconds");
 				}
-				else if (strcmp(NameStr(procform->proname), "ajtime_mi_interval") == 0)
+				else if (STR_EQUAL(proname, "ajtime_mi_interval"))
 				{
 					entry->cf_type = CF_AJTIME_MI_INTERVAL;
 					strcpy(entry->custom_name, "subtractSeconds");
 				}
-				else if (strcmp(NameStr(procform->proname), "day_diff") == 0)
+				else if (STR_EQUAL(proname, "day_diff"))
 				{
 					entry->cf_type = CF_AJTIME_DAY_DIFF;
 					strcpy(entry->custom_name, "toInt32");
 				}
-				else if (strcmp(NameStr(procform->proname), "ajdate") == 0)
+				else if (STR_EQUAL(proname, "ajdate"))
 				{
 					entry->cf_type = CF_AJTIME_AJDATE;
 					strcpy(entry->custom_name, "toDate");
 				}
-				else if (strcmp(NameStr(procform->proname), "ajtime_out") == 0)
+				else if (STR_EQUAL(proname, "ajtime_out"))
 				{
 					entry->cf_type = CF_AJTIME_OUT;
 				}
 			}
-			else if (strcmp(extname, "ajbool") == 0)
+			else if (STR_EQUAL(extname, "ajbool"))
 			{
-				if (strcmp(NameStr(procform->proname), "ajbool_out") == 0)
+				if (STR_EQUAL(proname, "ajbool_out"))
 					entry->cf_type = CF_AJBOOL_OUT;
 			}
-			else if (strcmp(extname, "intarray") == 0)
+			else if (STR_EQUAL(extname, "intarray"))
 			{
-				if (strcmp(NameStr(procform->proname), "idx") == 0)
+				if (STR_EQUAL(proname, "idx"))
 				{
 					entry->cf_type = CF_INTARRAY_IDX;
 					strcpy(entry->custom_name, "indexOf");
 				}
 			}
-			else if (strcmp(extname, "pg_clickhouse") == 0)
+			else if (STR_EQUAL(extname, "pg_clickhouse"))
 			{
+				/* pg_clickhouse custom functions. */
 				entry->cf_type = CF_CH_FUNCTION;
-				if (strcmp(proname, "argmax") == 0)
-					strcpy(entry->custom_name, "argMax");
-				else if (strcmp(proname, "argmin") == 0)
-					strcpy(entry->custom_name, "argMin");
-				else if (strcmp(proname, "uniqexact") == 0)
-					strcpy(entry->custom_name, "uniqExact");
-				else if (strcmp(proname, "uniqcombined") == 0)
-					strcpy(entry->custom_name, "uniqCombined");
-				else if (strcmp(proname, "uniqcombined64") == 0)
-					strcpy(entry->custom_name, "uniqCombined64");
-				else if (strcmp(proname, "uniqhll12") == 0)
-					strcpy(entry->custom_name, "uniqHLL12");
-				else if (strcmp(proname, "uniqtheta") == 0)
-					strcpy(entry->custom_name, "uniqTheta");
-				else if (strcmp(proname, "dictget") == 0)
-					strcpy(entry->custom_name, "dictGet");
-				else if (strcmp(proname, "params") == 0)
-					entry->custom_name[0] = '\1';
-				/* Will have no function name. */
-				else if (strcmp(proname, "quantileexact") == 0)
-					strcpy(entry->custom_name, "quantileExact");
-				else
-					strcpy(entry->custom_name, proname);
+				strcpy(entry->custom_name, ch_func_name(proname));
 			}
 			ReleaseSysCache(proctup);
 			pfree(extname);
@@ -418,24 +435,24 @@ chfdw_check_for_custom_type(Oid typeoid)
 			Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
 			char	   *name = NameStr(typtup->typname);
 
-			if (strcmp(name, "istore") == 0)
+			if (STR_EQUAL(name, "istore"))
 			{
 				entry->cf_type = CF_ISTORE_TYPE;	/* bigistore or istore */
 				strcpy(entry->custom_name, "Tuple(Array(Int32), Array(Int64))");
 				entry->rowfunc = find_rowfunc("row_to_istore", typeoid);
 			}
-			else if (strcmp(name, "bigistore") == 0)
+			else if (STR_EQUAL(name, "bigistore"))
 			{
 				entry->cf_type = CF_ISTORE_TYPE;	/* bigistore or istore */
 				strcpy(entry->custom_name, "Tuple(Array(Int32), Array(Int64))");
 				entry->rowfunc = find_rowfunc("row_to_bigistore", typeoid);
 			}
-			else if (strcmp(name, "ajtime") == 0)
+			else if (STR_EQUAL(name, "ajtime"))
 			{
 				entry->cf_type = CF_AJTIME_TYPE;	/* ajtime */
 				strcpy(entry->custom_name, "timestamp");
 			}
-			else if (strcmp(name, "country") == 0)
+			else if (STR_EQUAL(name, "country"))
 			{
 				entry->cf_type = CF_COUNTRY_TYPE;	/* country type */
 				strcpy(entry->custom_name, "text");
@@ -492,14 +509,14 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form)
 
 			if (extname)
 			{
-				if (strcmp(extname, "ajtime") == 0)
+				if (STR_EQUAL(extname, "ajtime"))
 					entry->cf_type = CF_AJTIME_OPERATOR;
-				else if (strcmp(extname, "istore") == 0)
+				else if (STR_EQUAL(extname, "istore"))
 				{
 					if (form && strcmp(NameStr(form->oprname), "->") == 0)
 						entry->cf_type = CF_ISTORE_FETCHVAL;
 				}
-				else if (strcmp(extname, "hstore") == 0)
+				else if (STR_EQUAL(extname, "hstore"))
 				{
 					if (form && strcmp(NameStr(form->oprname), "->") == 0)
 						entry->cf_type = CF_HSTORE_FETCHVAL;
@@ -533,7 +550,7 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo * fpinfo, Oid relid)
 	{
 		DefElem    *def = (DefElem *) lfirst(lc);
 
-		if (strcmp(def->defname, "engine") == 0)
+		if (STR_EQUAL(def->defname, "engine"))
 		{
 			static char *collapsing_text = "collapsingmergetree",
 					   *aggregating_text = "aggregatingmergetree";
@@ -603,22 +620,22 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo * fpinfo, Oid relid)
 		{
 			DefElem    *def = (DefElem *) lfirst(lc);
 
-			if (strcmp(def->defname, "column_name") == 0)
+			if (STR_EQUAL(def->defname, "column_name"))
 			{
 				strncpy(entry->colname, defGetString(def), NAMEDATALEN);
 				entry->colname[NAMEDATALEN - 1] = '\0';
 			}
-			else if (strcmp(def->defname, "aggregatefunction") == 0)
+			else if (STR_EQUAL(def->defname, "aggregatefunction"))
 			{
 				entry->is_AggregateFunction = CF_AGGR_FUNC;
 				cf_type = CF_ISTORE_COL;
 			}
-			else if (strcmp(def->defname, "simpleaggregatefunction") == 0)
+			else if (STR_EQUAL(def->defname, "simpleaggregatefunction"))
 			{
 				entry->is_AggregateFunction = CF_AGGR_SIMPLE;
 				cf_type = CF_ISTORE_COL;
 			}
-			else if (strcmp(def->defname, "arrays") == 0)
+			else if (STR_EQUAL(def->defname, "arrays"))
 				cf_type = CF_ISTORE_ARR;
 		}
 

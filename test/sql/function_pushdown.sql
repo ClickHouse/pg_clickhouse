@@ -72,7 +72,17 @@ BEGIN
         $$ SELECT quantile(1) $$,
         $$ SELECT quantile('x') $$,
         $$ SELECT quantileExact(42) $$,
-        $$ SELECT quantileExact(98.6) $$
+        $$ SELECT quantileExact(98.6) $$,
+
+        $$ SELECT toUInt8('x') $$,
+        $$ SELECT toUInt8(8) $$,
+        $$ SELECT toUInt16('x') $$,
+        $$ SELECT toUInt16(16) $$,
+        $$ SELECT toUInt32('x') $$,
+        $$ SELECT toUInt32(32) $$,
+        $$ SELECT toUInt64('x') $$,
+        $$ SELECT toUInt64(64) $$
+
    ] LOOP
         BEGIN
             EXECUTE q;
@@ -80,7 +90,7 @@ BEGIN
         EXCEPTION WHEN OTHERS OR ASSERT_FAILURE THEN
             RAISE NOTICE '%: % - %', q, SQLSTATE, SQLERRM;
             IF SQLSTATE != 'HV000' THEN
-                RAISE EXCEPTION '  Unexpected error code!';
+                RAISE EXCEPTION '  Unexpected error code: % - %', SQLSTATE, SQLERRM;
             END IF;
         END;
     END LOOP;
