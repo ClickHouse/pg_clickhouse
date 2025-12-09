@@ -761,6 +761,36 @@ binary_insert_tuple(void *istate, TupleTableSlot * slot)
 	}
 }
 
+/*
+ * Query to generate table for doc/pg_clickhouse.md. Keep in sync with
+ * str_types_map below. On change, re-run and paste the output into
+ * doc/pg_clickhouse.md.
+
+	SELECT * FROM ( VALUES
+		('Bool',     'boolean',          ''),
+		('Int8',     'smallint',         ''),
+		('UInt8',    'smallint',         ''),
+		('Int16',    'smallint',         ''),
+		('UInt16',   'integer',          ''),
+		('Int32',    'integer',          ''),
+		('UInt32',   'bigint',           ''),
+		('Int64',    'bigint',           ''),
+		('UInt64',   'bigint',           'Errors on values > BIGINT max'),
+		('Float32',  'real',             ''),
+		('Float64',  'double precision', ''),
+		('Decimal',  'numeric',          ''),
+		('String',   'text',             ''),
+		('DateTime', 'timestamp',        ''),
+		('Date',     'date',             ''),
+		('UUID',     'uuid',             ''),
+		('IPv4',     'inet',             ''),
+		('IPv6',     'inet',             ''),
+		('JSON',     'json',             'HTTP engine only')
+	) AS v("ClickHouse", "PostgreSQL", "Notes")
+	ORDER BY "ClickHouse";
+
+*/
+
 static char *str_types_map[][2] = {
 	{"Bool", "BOOLEAN"},
 	{"Int8", "INT2"},
@@ -770,7 +800,7 @@ static char *str_types_map[][2] = {
 	{"Int32", "INT4"},
 	{"UInt32", "INT8"},
 	{"Int64", "INT8"},
-	{"UInt64", "INT8"},			/* overflow risk */
+	{"UInt64", "INT8"},
 	{"Float32", "REAL"},
 	{"Float64", "DOUBLE PRECISION"},
 	{"Decimal", "NUMERIC"},

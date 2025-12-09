@@ -7,16 +7,66 @@ This library contains the PostgreSQL extension `pg_clickhouse`, including a
 foreign data wrapper for ClickHouse databases. It supports ClickHouse v22 and
 later.
 
-## Installation
+## Getting Started
+
+The simplest way to try pg_clickhouse is the [Docker image][🐳], which
+contains the standard PostgreSQL Docker image with the pg_clickhouse
+extension:
+
+```sh
+docker run --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
+       -d ghcr.io/clickhouse/pg_clickhouse:18
+docker exec -it pg_clickhouse psql
+```
+
+See the [tutorial](doc/tutorial.md) to get started importing ClickHouse tables
+and pushing down queries.
+
+## Documentation
+
+*   [Reference](doc/pg_clickhouse.md)
+*   [Tutorial](doc/tutorial.md)
+
+## Test Case: TPC-H
+
+This table compares [TPC-H] query performance between regular PostgreSQL
+tables and pg_clickhouse connected to ClickHouse, both loaded at scaling
+factor 1; ✅ indicates full pushdown, while a dash indicates a query
+cancellation after 1m. All tests run on a MacBook Pro M4 Max with 36 GB of
+memory.
+
+| Query              | Pushdown | pg_clickhouse | PostgreSQL |
+| -----------------: | :------: | ------------: | ---------: |
+|  [Query 1](#r2q1)  |     ✅    |         73ms  |     4478ms |
+|  [Query 2](#r2q2)  |          |             - |      560ms |
+|  [Query 3](#r2q3)  |     ✅    |          74ms |     1454ms |
+|  [Query 4](#r2q4)  |     ✅    |          67ms |      650ms |
+|  [Query 5](#r2q5)  |     ✅    |         104ms |      452ms |
+|  [Query 6](#r2q6)  |     ✅    |          42ms |      740ms |
+|  [Query 7](#r2q7)  |     ✅    |          83ms |      633ms |
+|  [Query 8](#r2q8)  |     ✅    |         114ms |      320ms |
+|  [Query 9](#r2q9)  |     ✅    |         136ms |     3028ms |
+| [Query 10](#r2q10) |     ✅    |          10ms |        6ms |
+| [Query 11](#r2q11) |     ✅    |          78ms |      213ms |
+| [Query 12](#r2q12) |     ✅    |          37ms |     1101ms |
+| [Query 13](#r2q13) |          |        1242ms |      967ms |
+| [Query 14](#r2q14) |     ✅    |          51ms |      193ms |
+| [Query 15](#r2q15) |          |         522ms |     1095ms |
+| [Query 16](#r2q16) |          |        1797ms |      492ms |
+| [Query 17](#r2q17) |          |           9ms |     1802ms |
+| [Query 18](#r2q18) |          |          10ms |     6185ms |
+| [Query 19](#r2q19) |          |         532ms |       64ms |
+| [Query 20](#r2q20) |          |        4595ms |      473ms |
+| [Query 21](#r2q21) |          |        1702ms |     1334ms |
+| [Query 22](#r2q22) |          |         268ms |      257ms |
 
 ### Compile From Source
 
 #### General Unix
 
-If you have PostgreSQL devel packages and curl devel packages installed, you
-should have `pg_config` and `curl-config` on your path, so you should be able
-to just run `make` (or `gmake`), then `make install`, then in your database
-`CREATE EXTENSION http`.
+The PostgreSQL and curl development packages include `pg_config` and
+`curl-config` in the path, so you should be able to just run `make` (or
+`gmake`), then `make install`, then in your database `CREATE EXTENSION http`.
 
 #### Debian / Ubuntu / APT
 
@@ -27,11 +77,26 @@ sudo apt install \
   postgresql-server-18 \
   libcurl4-openssl-dev \
   uuid-dev \
+  libssl-dev \
   make \
   cmake \
-  libssl-dev \
   g++
 ```
+
+#### RedHat / CentOS / Yum
+
+```sh
+sudo yum install \
+  postgresql-server \
+  libcurl-devel \
+  libuuid-devel \
+  openssl-libs \
+  automake \
+  cmake \
+  gcc
+```
+
+See [PostgreSQL Yum] for details on pulling from the PostgreSQL Yum repository.
 
 #### Compile and Install
 
@@ -42,6 +107,7 @@ make
 sudo make install
 ```
 
+<!-- XXX DSO currently disabled.
 By default `make` dynamically links the `clickhouse-cpp` library (except on
 macOS, where a dynamic `clickhouse-cpp` library is not yet supported). To
 statically compile the ClickHouse library into `pg_clickhouse`, pass
@@ -51,6 +117,7 @@ statically compile the ClickHouse library into `pg_clickhouse`, pass
 make CH_BUILD=static
 sudo make install CH_BUILD=static
 ```
+ -->
 
 If your host has several PostgreSQL installations, you might need to specify
 the appropriate version of `pg_config`:
@@ -141,7 +208,7 @@ make installcheck PGUSER=postgres
 ### Loading
 
 Once `pg_clickhouse` is installed, you can add it to a database by connecting
-to a database as a super user and running:
+as a super user and running:
 
 ``` sql
 CREATE EXTENSION pg_clickhouse;
@@ -157,21 +224,39 @@ CREATE EXTENSION pg_clickhouse SCHEMA env;
 
 ## Dependencies
 
-The `pg_clickhouse` extension requires PostgreSQL 13 or higher, [libcurl], and
-[libuuid]. Building the extension requires a compiler, GNU `make`, and
-[CMake].
+The `pg_clickhouse` extension requires [PostgreSQL] 13 or higher, [libcurl],
+[libuuid]. Building the extension requires a C and C++ compiler, [libSSL], [GNU
+make], and [CMake].
+
+## Road Map
+
+Our top focus is finishing pushdown coverage for analytic workloads before
+adding DML features. Our road map:
+
+*   Get the remaining 10 un-pushed-down TPC-H queries optimally planned
+*   Test and fix pushdown for the ClickBench queries
+*   Support transparent pushdown of all PostgreSQL aggregate functions
+*   Support transparent pushdown of all PostgreSQL functions
+*   Allow server-level and session-level ClickHouse settings via CREATE SERVER and GUCs
+*   Support all ClickHouse data types
+*   Support lightweight DELETEs and UPDATEs
+*   Support batch insertion via COPY
+*   Add a function to execute an arbitrary ClickHouse query and return its results as a tables
+*   Add support for pushdown of UNION queries when they all query the remote
+*   database
+
 
 ## Authors
 
-*   [Ildus Kurbangaliev](https://github.com/ildus)
-*   [Ibrar Ahmed](www.linkedin.com/in/ibrarahmed74)
 *   [David E. Wheeler](https://justatheory.com/)
+*   [Ildus Kurbangaliev](https://github.com/ildus)
+*   [Ibrar Ahmed](https://github.com/ibrarahmad)
 
 ## Copyright
 
-*   Portions Copyright (c) 2025, ClickHouse
+*   Copyright (c) 2025, ClickHouse
+*   Portions Copyright (c) 2023-2025, Ildus Kurbangaliev
 *   Portions Copyright (c) 2019-2023, Adjust GmbH
-*   Portions Copyright (c) 2019, Percona
 *   Portions Copyright (c) 2012-2019, PostgreSQL Global Development Group
 
   [PGXN]: https://badge.fury.io/pg/pg_clickhouse.svg
@@ -180,11 +265,16 @@ The `pg_clickhouse` extension requires PostgreSQL 13 or higher, [libcurl], and
   [🐘]:        https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml "Tested with PostgreSQL 13-18"
   [ClickHouse]: https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml/badge.svg
   [🏠]:          https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml "Tested with ClickHouse v22–25"
-  [Docker]:    https://ghcr-badge.egpl.dev/clickhouse/pg_clickhouse/latest_tag?color=%2344cc11&ignore=latest&label=version
+  [Docker]:    https://ghcr-badge.egpl.dev/clickhouse/pg_clickhouse/latest_tag?color=%2344cc11&ignore=latest&label=Docker
   [🐳]:        https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "Latest version on Docker Hub"
 
+  [PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt
+  [PostgreSQL Yum]: https://yum.postgresql.org
   [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
+  [PostgreSQL]: https://www.postgresql.org "PostgreSQL: The World's Most Advanced Open Source Relational Database"
   [libcurl]: https://curl.se/libcurl/ "libcurl — your network transfer library"
   [libuuid]: https://linux.die.net/man/3/libuuid "libuuid - DCE compatible Universally Unique Identifier library"
+  [GNU make]: https://www.gnu.org/software/make "GNU Make"
   [CMake]: https://cmake.org/ "CMake: A Powerful Software Build System"
-  [PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt
+  [LibSSL]: https://openssl-library.org "OpenSSL Library"
+  [TPC-H]: https://www.tpc.org/tpch/

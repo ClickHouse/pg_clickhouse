@@ -13,7 +13,8 @@ REGRESS_OPTS = --inputdir=test --load-extension=$(EXTENSION)
 PG_CONFIG   ?= pg_config
 MODULE_big   = $(EXTENSION)
 CURL_CONFIG ?= curl-config
-OS 	        ?= $(shell uname -s)
+OS 	        ?= $(shell uname -s | tr A-Z a-z)
+ARCH         = $(shell uname -m)
 
 # Collect all the C++ and C files to compile into MODULE_big.
 OBJS = $(sort \
@@ -24,8 +25,7 @@ OBJS = $(sort \
 
 # clickhouse-cpp source and build directories.
 CH_CPP_DIR = vendor/clickhouse-cpp
-MACHINE = $(shell echo "$$(uname -s)-$$(uname -m)" | tr '[:upper:]' '[:lower:]')
-CH_CPP_BUILD_DIR = vendor/_build/$(MACHINE)
+CH_CPP_BUILD_DIR = vendor/_build/$(OS)-$(ARCH)
 
 # List the clickhouse-cpp libraries we require.
 CH_CPP_LIB = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib$(DLSUFFIX)
@@ -33,7 +33,7 @@ CH_CPP_FLAGS = -D CMAKE_BUILD_TYPE=Release -D WITH_OPENSSL=ON
 
 # Build static on Darwin by default.
 ifndef ($(CH_BUILD))
-# ifeq ($(OS),Darwin)
+# ifeq ($(OS),darwin)
 	CH_BUILD = static
 # endif
 endif
@@ -66,7 +66,7 @@ PG_CXXFLAGS = -std=c++17
 PG_CFLAGS = -Wno-declaration-after-statement $(shell $(CURL_CONFIG) --cflags)
 
 # We'll need libuuid except on darwin, where it's included in the OS.
-ifneq ($(OS),Darwin)
+ifneq ($(OS),darwin)
 	PG_LDFLAGS += -luuid
 endif
 
