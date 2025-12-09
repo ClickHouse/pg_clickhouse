@@ -400,6 +400,7 @@ extend_insert_query(ch_http_insert_state * state, TupleTableSlot * slot)
 				case VARCHAROID:
 				case TEXTOID:
 				case JSONOID:
+				case JSONBOID:
 				case NAMEOID:
 				case BITOID:
 				case BYTEAOID:
@@ -785,7 +786,7 @@ binary_insert_tuple(void *istate, TupleTableSlot * slot)
 		('UUID',     'uuid',             ''),
 		('IPv4',     'inet',             ''),
 		('IPv6',     'inet',             ''),
-		('JSON',     'json',             'HTTP engine only')
+		('JSON',     'jsonb',            'HTTP engine only')
 	) AS v("ClickHouse", "PostgreSQL", "Notes")
 	ORDER BY "ClickHouse";
 
@@ -810,7 +811,7 @@ static char *str_types_map[][2] = {
 	{"UUID", "UUID"},
 	{"IPv4", "inet"},
 	{"IPv6", "inet"},
-	{"JSON", "JSON"},
+	{"JSON", "JSONB"},
 	{NULL, NULL},
 };
 

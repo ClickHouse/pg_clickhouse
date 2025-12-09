@@ -310,7 +310,7 @@ types:
  Int32      | integer          | 
  Int64      | bigint           | 
  Int8       | smallint         | 
- JSON       | json             | HTTP engine only
+ JSON       | jsonb            | HTTP engine only
  String     | text             | 
  UInt16     | integer          | 
  UInt32     | bigint           | 

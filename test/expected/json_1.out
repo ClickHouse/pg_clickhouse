@@ -34,7 +34,7 @@ IMPORT FOREIGN SCHEMA "json_test" FROM SERVER binary_json_loopback INTO json_bin
  Column |  Type   | Collation | Nullable | Default | FDW options 
 --------+---------+-----------+----------+---------+-------------
  id     | integer |           | not null |         | 
- data   | json    |           | not null |         | 
+ data   | jsonb   |           | not null |         | 
 Server: binary_json_loopback
 FDW options: (database 'json_test', table_name 'things', engine 'MergeTree')
 
@@ -44,7 +44,7 @@ IMPORT FOREIGN SCHEMA "json_test" FROM SERVER http_json_loopback INTO json_http;
  Column |  Type   | Collation | Nullable | Default | FDW options 
 --------+---------+-----------+----------+---------+-------------
  id     | integer |           | not null |         | 
- data   | json    |           | not null |         | 
+ data   | jsonb   |           | not null |         | 
 Server: http_json_loopback
 FDW options: (database 'json_test', table_name 'things', engine 'MergeTree')
 
@@ -64,12 +64,12 @@ SELECT * FROM json_bin.things ORDER BY id;
 ERROR:  pg_clickhouse: unsupported column type: JSON
 DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
 SELECT * FROM json_http.things ORDER BY id;
- id |                            data                            
-----+------------------------------------------------------------
-  1 | {"id":"1","name":"widget","size":"large","stocked":true}
-  2 | {"id":"2","name":"sprocket","size":"small","stocked":true}
-  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
-  4 | {"id":"4","name":"doodad","size":"large","stocked":false}
+ id |                               data                                
+----+-------------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+  2 | {"id": "2", "name": "sprocket", "size": "small", "stocked": true}
+  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
+  4 | {"id": "4", "name": "doodad", "size": "large", "stocked": false}
 (4 rows)
 
 SELECT clickhouse_raw_query('DROP DATABASE json_test');
