@@ -19,8 +19,6 @@ jobs:
           - 24.3.18.7-lts
           - 23.8.16.40-lts
           - 23.3.22.3-lts
-          - 22.8.21.38-lts
-          - 22.3.20.29-lts
     name: 🏠 ClickHouse ${{ matrix.ch }}
     runs-on: ubuntu-latest
     container: pgxn/pgxn-tools

@@ -14,15 +14,19 @@ NOTICE:  ERR 42601 - pg_clickhouse: missing "=" after "join_use_nulls" in option
 NOTICE:  ERR 42601 - pg_clickhouse: missing "=" after "join_use_nulls" in options string
 NOTICE:  ERR 42601 - pg_clickhouse: unterminated quoted string in options string
 NOTICE:  ERR 42601 - pg_clickhouse: missing comma after "join_use_nulls" value in options string
-      name      | value 
-----------------+-------
- join_use_nulls | 1
-(1 row)
+        name        | value 
+--------------------+-------
+ final              | 1
+ group_by_use_nulls | 1
+ join_use_nulls     | 1
+(3 rows)
 
-      name      | value 
-----------------+-------
- join_use_nulls | 1
-(1 row)
+        name        | value 
+--------------------+-------
+ final              | 1
+ group_by_use_nulls | 1
+ join_use_nulls     | 1
+(3 rows)
 
         pg_clickhouse.session_settings        
 ----------------------------------------------

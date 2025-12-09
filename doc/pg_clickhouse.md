@@ -11,7 +11,7 @@ CREATE EXTENSION pg_clickhouse;
 
 This library contains PostgreSQL extension that enables remote query execution
 on ClickHouse databases, including a [foreign data wrapper]. It supports
-PostgreSQL 13 and higher and ClickHouse 22 and higher.
+PostgreSQL 13 and higher and ClickHouse 23 and higher.
 
 ## Getting Started
 

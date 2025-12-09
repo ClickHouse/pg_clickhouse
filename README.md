@@ -4,7 +4,7 @@ pg_clickhouse Postgres Extension
 [![PGXN]][⚙️] [![Postgres]][🐘] [![ClickHouse]][🏠] [![Docker]][🐳]
 
 This library contains the PostgreSQL extension `pg_clickhouse`, including a
-foreign data wrapper for ClickHouse databases. It supports ClickHouse v22 and
+foreign data wrapper for ClickHouse databases. It supports ClickHouse v23 and
 later.
 
 ## Getting Started
@@ -264,7 +264,7 @@ adding DML features. Our road map:
   [Postgres]:  https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml/badge.svg
   [🐘]:        https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml "Tested with PostgreSQL 13-18"
   [ClickHouse]: https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml/badge.svg
-  [🏠]:          https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml "Tested with ClickHouse v22–25"
+  [🏠]:          https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml "Tested with ClickHouse v23–25"
   [Docker]:    https://ghcr-badge.egpl.dev/clickhouse/pg_clickhouse/latest_tag?color=%2344cc11&ignore=latest&label=Docker
   [🐳]:        https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "Latest version on Docker Hub"
 
