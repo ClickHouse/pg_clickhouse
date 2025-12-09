@@ -202,7 +202,7 @@ ch_connection_details *
 connstring_parse(const char *connstring)
 {
 	ListCell   *lc;
-	List	   *options = chfdw_parse_options(connstring, false);
+	List	   *options = chfdw_parse_options(connstring, false, true);
 	ch_connection_details *details = palloc0(sizeof(ch_connection_details));
 
 	if (options == NIL)

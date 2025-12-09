@@ -477,29 +477,29 @@ Set the `pg_clickhouse.session_settings` runtime parameter to configure
 [ClickHouse settings] to be set on subsequent queries. Example:
 
 ```sql
-SET pg_clickhouse.session_settings = 'join_use_nulls=1, final=1';
+SET pg_clickhouse.session_settings = 'join_use_nulls 1, final 1';
 ```
 
-The default is `join_use_nulls=1`. Set it to an empty string to fall back on
+The default is `join_use_nulls 1`. Set it to an empty string to fall back on
 the ClickHouse server's settings.
 
 ```sql
 SET pg_clickhouse.session_settings = '';
 ```
 
-The syntax is a comma-delimited list of key/value pairs separated by an equal
-sign. Keys must correspond to [ClickHouse settings]. Escape spaces, commas,
-and backslashes in values with a backslash:
+The syntax is a comma-delimited list of key/value pairs separated by one or
+more spaces. Keys must correspond to [ClickHouse settings]. Escape spaces,
+commas, and backslashes in values with a backslash:
 
 ```sql
-SET pg_clickhouse.session_settings = 'join_algorithm = grace_hash\,hash';
+SET pg_clickhouse.session_settings = 'join_algorithm grace_hash\,hash';
 ```
 
 Or use single quoted values to avoid escaping spaces and commas; consider
 using [dollar quoting] to avoid the need to double-quote:
 
 ```sql
-SET pg_clickhouse.session_settings = $$join_algorithm = 'grace_hash,hash'$$;
+SET pg_clickhouse.session_settings = $$join_algorithm 'grace_hash,hash'$$;
 ```
 
 If you care about legibility and need to set many settings, use multiple
@@ -507,19 +507,20 @@ lines, for example:
 
 ```sql
 SET pg_clickhouse.session_settings TO $$
-    connect_timeout = 2,
-    count_distinct_implementation = uniq,
-    groupby_use_nulls = 0,
-    join_algorithm = 'prefer_partial_merge',
-    join_use_nulls = 1,
-    log_queries_min_type = QUERY_FINISH,
-    max_block_size = 32768,
-    max_execution_time = 45,
-    max_result_rows = 1024,
-    metrics_perf_events_list = 'this,that',
-    network_compression_method = ZSTD,
-    poll_interval = 5,
-    totals_mode = after_having_auto
+    connect_timeout 2,
+    count_distinct_implementation uniq,
+    final 1,
+    group_by_use_nulls 1,
+    join_algorithm 'prefer_partial_merge',
+    join_use_nulls 1,
+    log_queries_min_type QUERY_FINISH,
+    max_block_size 32768,
+    max_execution_time 45,
+    max_result_rows 1024,
+    metrics_perf_events_list 'this,that',
+    network_compression_method ZSTD,
+    poll_interval 5,
+    totals_mode after_having_auto
 $$;
 ```
 

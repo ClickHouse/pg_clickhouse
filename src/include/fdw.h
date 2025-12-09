@@ -203,7 +203,7 @@ extern char *ch_session_settings;
 extern void
 			chfdw_extract_options(List * defelems, char **driver, char **host, int *port,
 								  char **dbname, char **username, char **password);
-extern List * chfdw_parse_options(const char *options, bool with_comma);
+extern List * chfdw_parse_options(const char *options, bool with_comma, bool with_equal);
 
 /* in deparse.c */
 extern void chfdw_classify_conditions(PlannerInfo * root,

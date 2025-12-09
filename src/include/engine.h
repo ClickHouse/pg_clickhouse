@@ -24,6 +24,6 @@ typedef struct
 	const List	   *settings;
 }			ch_query;
 
-#define new_query(sql) {sql, chfdw_parse_options(ch_session_settings, true)}
+#define new_query(sql) {sql, chfdw_parse_options(ch_session_settings, true, false)}
 
 #endif							/* CLICKHOUSE_ENGINE_H */

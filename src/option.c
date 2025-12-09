@@ -298,23 +298,34 @@ chfdw_extract_options(List * defelems, char **driver, char **host, int *port,
 /*
  * Parse options as key/value pairs. Used for connection parameters and
  * ClickHouse settings. Based on the Postgres conninfo_parse() function. The
- * format is:
+ * formats:
+ *
+ * with_comma = false, with_equal = false:
+ *
+ *     key = value key 'value'...
+ *
+ * with_comma = false, with_equal = true:
  *
  *     key = value key = 'value'...
  *
- * Each key/value pair must be comma-delimited if with_comma is true.
+ * with_comma = true, with_equal = false:
+ *
+ *     key value, key 'value',...
+ *
+ * with_comma = true, with_equal = true:
  *
  *     key = value, key = 'value',...
  *
- * Each key is an unquoted string followed by `=` with optional spaces
- * followed by the value. Values may contain backslash-escaped spaces,
- * backslashes, and commans when `with_comma` is true. Use SQL single-quoted
- * literals to remove the need to escape commas and spaces.
+ * Parameter names may not contain spaces or '=' (when with_equal is true),
+ * and support no escapes.
+ *
+ * Values may contain backslash-escaped spaces, backslashes, and commas. Use
+ * SQL single-quoted literals to remove the need to escape commas and spaces.
  *
  * Returns a PostgreSQL List containing DefElem cells.
  */
 List	   *
-chfdw_parse_options(const char *options_string, bool with_comma)
+chfdw_parse_options(const char *options_string, bool with_comma, bool with_equal)
 {
 	char	   *pname;
 	char	   *pval;
@@ -340,7 +351,7 @@ chfdw_parse_options(const char *options_string, bool with_comma)
 		pname = cp;
 		while (*cp)
 		{
-			if (*cp == '=')
+			if (with_equal && *cp == '=')
 				break;
 			if (isspace((unsigned char) *cp))
 			{
@@ -356,19 +367,18 @@ chfdw_parse_options(const char *options_string, bool with_comma)
 			cp++;
 		}
 
-		/* Check that there is a following '=' */
-		if (*cp != '=')
-			ereport(ERROR,
-					errcode(ERRCODE_SYNTAX_ERROR),
-					errmsg("pg_clickhouse: missing \"=\" after \"%s\" in options string", pname));
-		*cp++ = '\0';
-
-		/* Skip blanks after the '=' */
-		while (*cp)
+		if (with_equal)
 		{
-			if (!isspace((unsigned char) *cp))
-				break;
-			cp++;
+			/* Check that there is a following '=' */
+			if (*cp != '=')
+				ereport(ERROR,
+						errcode(ERRCODE_SYNTAX_ERROR),
+						errmsg("pg_clickhouse: missing \"=\" after \"%s\" in options string", pname));
+			*cp++ = '\0';
+
+			/* Skip blanks after the '=' */
+			while (isspace((unsigned char) *cp))
+				cp++;
 		}
 
 		/* Get the parameter value */
@@ -412,6 +422,10 @@ chfdw_parse_options(const char *options_string, bool with_comma)
 					*cp2++ = *cp++;
 			}
 			*cp2 = '\0';
+			if (cp2 == pval)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("pg_clickhouse: missing value for parameter \"%s\" in options string", pname)));
 		}
 		else
 		{
@@ -478,7 +492,7 @@ check_settings_guc(char **newval, void **extra, GucSource source)
 	/*
 	 * Make sure we can parse the settings.
 	 */
-	chfdw_parse_options(*newval, true);
+	chfdw_parse_options(*newval, true, false);
 
 	/*
 	 * All good if no error.
@@ -505,7 +519,7 @@ _PG_init(void)
 							   "Sets the default ClickHouse session settings.",
 							   NULL,
 							   &ch_session_settings,
-							   "join_use_nulls = 1, group_by_use_nulls = 1, final = 1",
+							   "join_use_nulls 1, group_by_use_nulls 1, final 1",
 							   PGC_USERSET,
 							   0,
 							   check_settings_guc,

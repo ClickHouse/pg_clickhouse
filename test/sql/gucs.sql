@@ -1,8 +1,8 @@
 \unset ECHO
 SET client_min_messages = notice;
 
--- Load pg_clickhouse by calling one of its functions.
-SELECT ch_noop_bigint('');
+-- Load pg_clickhouse;
+LOAD 'pg_clickhouse';
 
 -- Test parsing.
 DO $do$
@@ -12,17 +12,17 @@ BEGIN
     FOREACH cfg IN ARRAY ARRAY[
         -- Success.
         '',
-        'join_use_nulls=1',
-        'join_use_nulls=1, xyz=true',
-        $$ additional_result_filter = 'x != 2' $$,
-        $$ additional_result_filter = 'x != 2' ,join_use_nulls = 1 $$,
-        $$ xxx = DEFAULT, yyy = foo\,bar, zzz = 'He said, \'Hello\'', aaa = hi\ there $$,
+        'join_use_nulls 1',
+        'join_use_nulls 1, xyz true',
+        $$ additional_result_filter 'x != 2' $$,
+        $$ additional_result_filter 'x != 2' ,join_use_nulls 1 $$,
+        $$ xxx DEFAULT, yyy foo\,bar, zzz    'He said, \'Hello\'', aaa  hi\ there $$,
 
         -- Failure.
         'join_use_nulls',
-        'join_use_nulls xyz',
-        $$ additional_result_filter = 'x != 2 $$,
-        'join_use_nulls  = xyz no_preceding_comma = 2'
+        'join_use_nulls = xyz',
+        $$ additional_result_filter 'x != 2 $$,
+        'join_use_nulls  xyz no_preceding_comma = 2'
    ] LOOP
         BEGIN
             RAISE NOTICE 'OK `%`', set_config('pg_clickhouse.session_settings', cfg, true);
@@ -93,19 +93,19 @@ SELECT name, value
 
 -- Customize all of the above settings.
 SET pg_clickhouse.session_settings TO $$
-    connect_timeout = 2,
-    count_distinct_implementation = uniq,
-    join_algorithm = 'prefer_partial_merge',
-    join_use_nulls = 0,
-    join_use_nulls = 1,
-    log_queries_min_type = QUERY_FINISH,
-    max_block_size = 32768,
-    max_execution_time = 45,
-    max_result_rows = 1024,
-    metrics_perf_events_list = 'this,that',
-    network_compression_method = ZSTD,
-    poll_interval = 5,
-    totals_mode = after_having_auto
+    connect_timeout 2,
+    count_distinct_implementation uniq,
+    join_algorithm 'prefer_partial_merge',
+    join_use_nulls 0,
+    join_use_nulls 1,
+    log_queries_min_type QUERY_FINISH,
+    max_block_size 32768,
+    max_execution_time 45,
+    max_result_rows 1024,
+    metrics_perf_events_list 'this,that',
+    network_compression_method ZSTD,
+    poll_interval 5,
+    totals_mode after_having_auto
 $$;
 
 SHOW pg_clickhouse.session_settings;
