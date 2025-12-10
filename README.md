@@ -16,7 +16,7 @@ extension:
 ```sh
 docker run --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
-docker exec -it pg_clickhouse psql
+docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhouse';
 ```
 
 See the [tutorial](doc/tutorial.md) to get started importing ClickHouse tables

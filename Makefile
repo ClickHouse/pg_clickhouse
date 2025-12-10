@@ -140,9 +140,9 @@ dist-test: $(EXTENSION)-$(DISTVERSION).zip
 	cd $(EXTENSION)-$(DISTVERSION)
 	make && make install && make installcheck
 
-# Generate a list of the changes just for the current version.
-latest-changes.md: Changes
-	perl -e 'while (<>) {last if /^(v?\Q${DISTVERSION}\E)/; } print "Changes for v${DISTVERSION}:\n"; while (<>) { last if /^\s*$$/; s/^\s+//; print }' Changes > $@
+.PHONY: release-notes # Show release notes for current version (must have `mknotes` in PATH).
+release-notes: CHANGELOG.md
+	mknotes -v v$(DISTVERSION) -f $< -r https://github.com/$(or $(GITHUB_REPOSITORY),ClickHouse/pg_clickhouse)
 
 .PHONY: tempcheck # Run tests with a temporary PostgreSQL instance
 tempcheck: install

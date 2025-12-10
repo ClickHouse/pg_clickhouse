@@ -12,7 +12,7 @@ First, create a ClickHouse database if you don't already have one. A quick way
 to start is with the Docker image:
 
 ```sh
-docker run -d --name clickhouse -p 8123:8123 -p9000:9000 --ulimit nofile=262144:262144 clickhouse
+docker run -d --network host --name clickhouse -p 8123:8123 -p9000:9000 --ulimit nofile=262144:262144 clickhouse
 docker exec -it clickhouse clickhouse-client
 ```
 
@@ -157,8 +157,8 @@ Docker container using the [pg_clickhouse image], which simply adds
 pg_clickhouse to the Docker [Postgres image]:
 
 ```sh
-docker run --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
-       -d ghcr.io/clickhouse/pg_clickhouse:18
+docker run --network host --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
+       -d ghcr.io/clickhouse/pg_clickhouse:18 -U postgres
 ```
 
 ### Connect pg_clickhouse

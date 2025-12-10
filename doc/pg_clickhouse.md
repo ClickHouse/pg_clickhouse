@@ -21,7 +21,7 @@ the standard PostgreSQL Docker image with the pg_clickhouse extension:
 ```sh
 docker run --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
-docker exec -it pg_clickhouse psql
+docker exec -it pg_clickhouse psql -U postgres
 ```
 
 See the [tutorial](tutorial.md) to get started importing ClickHouse tables and
@@ -395,7 +395,7 @@ maps the following functions:
     *   `date_trunc('month')`: [toStartOfMonth](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfMonth)
     *   `date_trunc('quarter')`: [toStartOfQuarter](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfQuarter)
     *   `date_trunc('year')`: [toStartOfYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfYear)
-*   `array_position`: [toTimeZone](https://clickhouse.com/docs/sql-reference/functions/array-functions#indexOf)
+*   `array_position`: [indexOf](https://clickhouse.com/docs/sql-reference/functions/array-functions#indexOf)
 *   `btrim`: [trimBoth](https://clickhouse.com/docs/sql-reference/functions/string-functions#trimboth)
 *   `strpos`: [position](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#position)
 *   `regexp_like`: [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
