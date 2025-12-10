@@ -1,7 +1,7 @@
 pg_clickhouse Postgres Extension
 ================================
 
-[![PGXN]][⚙️] [![Postgres]][🐘] [![ClickHouse]][🏠] [![Docker]][🐳]
+[![PGXN]][⚙️] [![Docker]][🐳] [![GitHub]][🐙] [![Postgres]][🐘] [![ClickHouse]][🏠]
 
 This library contains `pg_clickhouse`, a PostgreSQL extension that runs
 analytics queries on ClickHouse right from PostgreSQL without rewriting any
@@ -260,14 +260,16 @@ adding DML features. Our road map:
 *   Portions Copyright (c) 2019-2023, Adjust GmbH
 *   Portions Copyright (c) 2012-2019, PostgreSQL Global Development Group
 
-  [PGXN]: https://badge.fury.io/pg/pg_clickhouse.svg
-  [⚙️]: https://pgxn.org/dist/pg_clickhouse "Latest version on PGXN"
-  [Postgres]:  https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml/badge.svg
-  [🐘]:        https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml "Tested with PostgreSQL 13-18"
+  [PGXN]:       https://badge.fury.io/pg/pg_clickhouse.svg
+  [⚙️]:         https://pgxn.org/dist/pg_clickhouse "Latest version on PGXN"
+  [Postgres]:   https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml/badge.svg
+  [🐘]:         https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml "Tested with PostgreSQL 13-18"
   [ClickHouse]: https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml/badge.svg
   [🏠]:          https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml "Tested with ClickHouse v23–25"
-  [Docker]:    https://ghcr-badge.egpl.dev/clickhouse/pg_clickhouse/latest_tag?color=%2344cc11&ignore=latest&label=Docker
-  [🐳]:        https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "Latest version on Docker Hub"
+  [Docker]:     https://img.shields.io/github/v/release/ClickHouse/pg_clickhouse?label=%F0%9F%90%B3%20Docker&color=44cc11
+  [🐳]:          https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "Latest Docker release"
+  [GitHub]:     https://img.shields.io/github/v/release/ClickHouse/pg_clickhouse?label=%F0%9F%90%99%20GitHub&color=44cc11
+  [🐙]:          https://github.com/ClickHouse/pg_clickhouse/releases "Latest release on GitHub"
 
   [PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt
   [PostgreSQL Yum]: https://yum.postgresql.org
