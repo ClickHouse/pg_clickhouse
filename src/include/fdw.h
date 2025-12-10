@@ -199,7 +199,15 @@ extern void chfdw_report_error(int elevel, ch_connection conn,
 							   bool clear, const char *sql);
 
 /* in option.c */
+typedef struct ChFdwSettings ChFdwSettings;
+typedef struct ChFdwSetting ChFdwSetting;
+
+extern ChFdwSettings *ch_session_settings_list;
+extern ChFdwSettings * chfdw_new_settings(int count);
 extern char *ch_session_settings;
+extern bool chfdw_set_setting(ChFdwSettings * settings, int i, char *name, char *value);
+extern void chfdw_free_setting(ChFdwSettings * settings);
+
 extern void
 			chfdw_extract_options(List * defelems, char **driver, char **host, int *port,
 								  char **dbname, char **username, char **password);

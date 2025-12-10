@@ -25,6 +25,7 @@
 #include "nodes/makefuncs.h"
 #include "utils/guc.h"
 #include "utils/varlena.h"
+#include "utils/builtins.h"
 
 static char *DEFAULT_DBNAME = "default";
 
@@ -67,6 +68,7 @@ static const ChFdwOption ch_options[] =
  * GUC parameters
  */
 char	   *ch_session_settings = NULL;
+ChFdwSettings *ch_session_settings_list = NULL;
 
 /*
  * Helper functions
@@ -469,19 +471,72 @@ chfdw_parse_options(const char *options_string, bool with_comma, bool with_equal
 		/*
 		 * Now that we have the name and the value, store the record.
 		 */
-		options = lappend(options, makeDefElem(strdup(pname), (Node *) makeString(strdup(pval)), -1));
+		options = lappend(options, makeDefElem(pstrdup(pname), (Node *) makeString(pstrdup(pval)), -1));
 	}
 
 	return options;
 }
 
+
+typedef struct ChFdwSetting
+{
+	char	   *name;
+	char	   *value;
+}			ChFdwSetting;
+
+typedef struct ChFdwSettings
+{
+	int			length;
+	ChFdwSetting **items;
+}			ChFdwSettings;
+
+ChFdwSettings * chfdw_new_settings(int count)
+{
+	ChFdwSettings *settings = (ChFdwSettings *) malloc(sizeof(ChFdwSettings));
+	if (settings == NULL)
+		return NULL;
+
+	settings->items = (ChFdwSetting **) malloc(count * sizeof(ChFdwSetting *));
+	if (settings->items == NULL)
+	{
+		free(settings);
+		return NULL;
+	}
+	settings->length = count;
+	return settings;
+}
+
+bool
+chfdw_set_setting(ChFdwSettings * settings, int i, char *name, char *value)
+{
+	Assert(i < settings->length);
+	settings->items[i] = (ChFdwSetting *) malloc(sizeof(ChFdwSetting));
+	if (!settings->items[i])
+		return false;
+	settings->items[i]->name = strdup(name);
+	settings->items[i]->value = strdup(value);
+	return true;
+}
+
+void
+chfdw_free_setting(ChFdwSettings * settings)
+{
+	if (settings == NULL)
+		return;
+	for (int i = 0; i < settings->length; i++)
+		if (settings->items[i] != NULL)
+			free(settings->items[i]);
+	free(settings);
+	settings = NULL;
+}
+
 /*
- * check_settings_guc
+ * chfdw_check_settings_guc
  *
  * Validates the provided settings key/value pairs.
  */
 static bool
-check_settings_guc(char **newval, void **extra, GucSource source)
+chfdw_check_settings_guc(char **newval, void **extra, GucSource source)
 {
 	/*
 	 * The value may be an empty string, so we have to accept that value.
@@ -492,12 +547,58 @@ check_settings_guc(char **newval, void **extra, GucSource source)
 	/*
 	 * Make sure we can parse the settings.
 	 */
-	chfdw_parse_options(*newval, true, false);
+	List	   *list = chfdw_parse_options(*newval, true, false);
+	if (!list)
+		return false;
+
+	if (list)
+	{
+		ListCell   *lc;
+		ChFdwSettings *settings = chfdw_new_settings(list_length(list));
+		DefElem    *elem;
+		size_t		i = 0;
+
+		if (settings == NULL)
+			return false;
+		foreach(lc, list)
+		{
+			/*
+			 * foreach reads a non-const, so we have to cast. Would be nice to
+			 * use foreach_ptr:
+			 *
+			 * foreach_ptr(DefElem, setting, query->settings)
+			 *
+			 * But it's only available in Postgres 17 and later.
+			 */
+			elem = (DefElem *) lfirst(lc);
+			if (!chfdw_set_setting(settings, i, elem->defname, strVal(elem->arg)))
+			{
+				chfdw_free_setting(settings);
+				return false;
+			}
+			i++;
+		}
+
+		*extra = settings;
+	}
 
 	/*
 	 * All good if no error.
 	 */
 	return true;
+}
+
+static void
+chfdw_settings_assign_hook(const char *newval, void *extra)
+{
+	chfdw_free_setting(ch_session_settings_list);
+	ch_session_settings_list = (ChFdwSettings *) extra;
+}
+
+static const char *
+chfdw_settings_show_hook(void)
+{
+	return ch_session_settings;
 }
 
 /*
@@ -522,9 +623,9 @@ _PG_init(void)
 							   "join_use_nulls 1, group_by_use_nulls 1, final 1",
 							   PGC_USERSET,
 							   0,
-							   check_settings_guc,
-							   NULL,
-							   NULL);
+							   chfdw_check_settings_guc,
+							   chfdw_settings_assign_hook,
+							   chfdw_settings_show_hook);
 
 #if PG_VERSION_NUM >= 150000
 	MarkGUCPrefixReserved("pg_clickhouse");
