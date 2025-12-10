@@ -1,5 +1,7 @@
 name: 🚀 Bundle & Release
 on: [push, pull_request]
+permissions:
+  contents: write
 jobs:
   release:
     name: Release on GitHub and PGXN
@@ -20,12 +22,12 @@ jobs:
       - name: Test the Bundle
         env: { PGUSER: postgres }
         run: make dist-test
-      - name: Release on PGXN
-        if: startsWith( github.ref, 'refs/tags/v' )
-        env:
-          PGXN_USERNAME: ${{ secrets.PGXN_USERNAME }}
-          PGXN_PASSWORD: ${{ secrets.PGXN_PASSWORD }}
-        run: pgxn-release
+      # - name: Release on PGXN
+      #   if: startsWith( github.ref, 'refs/tags/v' )
+      #   env:
+      #     PGXN_USERNAME: ${{ secrets.PGXN_USERNAME }}
+      #     PGXN_PASSWORD: ${{ secrets.PGXN_PASSWORD }}
+      #   run: pgxn-release
       - name: Generate Release Notes
         id: notes
         uses: theory/changelog-version-notes-action@v0

@@ -20,6 +20,9 @@
          }
       }
    },
+   "no_index": {
+      "directory": ["vendor", "test"]
+   },
    "resources": {
       "bugtracker": {
          "web": "http://github.com/clickhouse/pg_clickhouse/issues/"
