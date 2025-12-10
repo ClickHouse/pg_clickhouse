@@ -3,9 +3,9 @@ pg_clickhouse Postgres Extension
 
 [![PGXN]][⚙️] [![Postgres]][🐘] [![ClickHouse]][🏠] [![Docker]][🐳]
 
-This library contains the PostgreSQL extension `pg_clickhouse`, including a
-foreign data wrapper for ClickHouse databases. It supports ClickHouse v23 and
-later.
+This library contains `pg_clickhouse`, a PostgreSQL extension that runs
+analytics queries on ClickHouse right from PostgreSQL without rewriting any
+SQL. It supports PostgreSQL 13 and later and ClickHouse v23 and later.
 
 ## Getting Started
 
@@ -16,7 +16,7 @@ extension:
 ```sh
 docker run --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
-docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhouse';
+docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhouse'
 ```
 
 See the [tutorial](doc/tutorial.md) to get started importing ClickHouse tables
