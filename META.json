@@ -2,7 +2,7 @@
    "name": "pg_clickhouse",
    "abstract": "Query ClickHouse databases from PostgreSQL",
    "description": "Provides a Foreign Data Wrapper and other interfaces for easy and efficient access to ClickHouse databases, including pushdown of WHERE, JOIN, and aggregates expressions as well as comprehensive EXPLAIN and ANALYZE support.",
-   "version": "0.1.0",
+   "version": "0.1.1",
    "maintainer": "David E. Wheeler <david@justatheory.com>",
    "license": "apache_2_0",
    "provides": {
@@ -10,7 +10,7 @@
          "abstract": "Interfaces to query ClickHouse databases from Postgres",
          "file": "pg_clickhouse.control",
          "docfile": "doc/pg_clickhouse.md",
-         "version": "0.1.0"
+         "version": "0.1.1"
       }
    },
    "prereqs": {

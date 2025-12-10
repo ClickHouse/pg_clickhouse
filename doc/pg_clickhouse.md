@@ -27,11 +27,6 @@ docker exec -it pg_clickhouse psql -U postgres
 See the [tutorial](tutorial.md) to get started importing ClickHouse tables and
 pushing down queries.
 
-## Documentation
-
-*   [Installation](../README.md)
-*   [Tutorial](doc/tutorial.md)
-
 ## Usage
 
 ```sql
@@ -43,6 +38,38 @@ CREATE USER MAPPING FOR CURRENT_USER SERVER taxi_srv
 CREATE SCHEMA taxi;
 IMPORT FOREIGN SCHEMA taxi FROM SERVER taxi_srv INTO taxi;
 ```
+
+## Documentation
+
+*   [Installation](../README.md)
+*   [Tutorial](doc/tutorial.md)
+
+## Versioning Policy
+
+pg_clickhouse adheres to [Semantic Versioning] for its public releases.
+
+*   The major version increments for API changes
+*   The minor version increments for backward compatible SQL changes
+*   The patch version increments for binary-only changes
+
+Once installed, PostgreSQL tracks two variations of the version:
+
+*   The library version (defined by `PG_MODULE_MAGIC` on PostgreSQL 18 and
+    higher) includes the full semantic version, visible in the output of the
+    `pg_get_loaded_modules()` function.
+*   The extension version (defined in the control file) includes only the
+    major and minor versions, visible in the `pg_catalog.pg_extension` table,
+    the output of the `pg_available_extension_versions()` function, and `\dx
+    pg_clickhouse`.
+
+In practice this means that a release that increments the patch version, e.g.
+from `v0.1.0` to `v0.1.1`, benefits all databases that have loaded `v0.1` and
+do not need to run `ALTER EXTENSION` to benefit from the upgrade.
+
+A release that increments the minor or major versions, on the other hand, will
+be accompanied by SQL upgrade scrips, and all existing database that contain
+the extension must run `ALTER EXTENSION pg_clickhouse UPDATE` to benefit from
+the upgrade.
 
 ## SQL Reference
 
@@ -549,6 +576,8 @@ use one of the objects in the extension to ensure it loads.
   [Docker image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse
     "Latest version on Docker Hub"
   [ClickHouse]: https://clickhouse.com/clickhouse
+  [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
+    "Semantic Versioning 2.0.0"
   [CREATE EXTENSION]: https://www.postgresql.org/docs/current/sql-createextension.html
     "PostgreSQL Docs: CREATE EXTENSION"
   [ALTER EXTENSION]: https://www.postgresql.org/docs/current/sql-alterextension.html
