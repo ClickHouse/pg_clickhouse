@@ -98,6 +98,17 @@ sudo yum install \
 
 See [PostgreSQL Yum] for details on pulling from the PostgreSQL Yum repository.
 
+#### Install From PGXN
+
+With the above dependencies satisfied use the [PGXN client] (available as
+[Homebrew], [Apt] and Yum packages named `pgxnclient`) to download, compile,
+and install `pg_clickhouse`:
+
+
+```sh
+pgxn install pg_clickhouse
+```
+
 #### Compile and Install
 
 To build and install the ClickHouse library and `pg_clickhouse`, run:
@@ -139,7 +150,7 @@ sudo make install
 
 If you encounter an error such as:
 
-```
+``` text
 "Makefile", line 8: Need an operator
 ```
 
@@ -154,7 +165,7 @@ gmake installcheck
 
 If you encounter an error such as:
 
-```
+``` text
 make: pg_config: Command not found
 ```
 
@@ -194,7 +205,7 @@ make installcheck
 
 If you encounter an error such as:
 
-```
+``` text
 ERROR:  must be owner of database regression
 ```
 
@@ -273,6 +284,9 @@ adding DML features. Our road map:
 
   [PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt
   [PostgreSQL Yum]: https://yum.postgresql.org
+  [PGXN client]: https://pgxn.github.io/pgxnclient/ "PGXN Client’s documentation"
+  [Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "PGXN client on Homebrew"
+  [Apt]: https://tracker.debian.org/pkg/pgxnclient "PGXN client on Debian Apt"
   [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
   [PostgreSQL]: https://www.postgresql.org "PostgreSQL: The World's Most Advanced Open Source Relational Database"
   [libcurl]: https://curl.se/libcurl/ "libcurl — your network transfer library"

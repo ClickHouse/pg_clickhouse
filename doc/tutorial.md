@@ -145,7 +145,7 @@ SELECT * FROM s3(
 
 Make sure we can query it then quit the client:
 
-```
+```sql
 SELECT count() FROM taxi.trips;
 quit
 ```
@@ -467,7 +467,6 @@ Here's an excerpt from the CSV file you're using in table format. The
   |          3 | Bronx         | Allerton/Pelham Gardens | Boro Zone    |
   |          4 | Manhattan     | Alphabet City           | Yellow Zone  |
   |          5 | Staten Island | Arden Heights           | Boro Zone    |
-
 
 1.  Still in Postgres, use the `clickhouse_raw_query` function to create a
     ClickHouse [dictionary] named `taxi_zone_dictionary` and populate the
