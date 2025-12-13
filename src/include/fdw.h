@@ -199,7 +199,8 @@ extern void chfdw_report_error(int elevel, ch_connection conn,
 							   bool clear, const char *sql);
 
 /* in option.c */
-extern char *ch_session_settings;
+extern kv_list * chfdw_get_session_settings(void);
+
 extern void
 			chfdw_extract_options(List * defelems, char **driver, char **host, int *port,
 								  char **dbname, char **username, char **password);

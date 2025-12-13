@@ -35,30 +35,30 @@ factor 1; ✅ indicates full pushdown, while a dash indicates a query
 cancellation after 1m. All tests run on a MacBook Pro M4 Max with 36 GB of
 memory.
 
-| Query              | Pushdown | pg_clickhouse | PostgreSQL |
-| -----------------: | :------: | ------------: | ---------: |
-|  [Query 1](#r2q1)  |     ✅    |         73ms  |     4478ms |
-|  [Query 2](#r2q2)  |          |             - |      560ms |
-|  [Query 3](#r2q3)  |     ✅    |          74ms |     1454ms |
-|  [Query 4](#r2q4)  |     ✅    |          67ms |      650ms |
-|  [Query 5](#r2q5)  |     ✅    |         104ms |      452ms |
-|  [Query 6](#r2q6)  |     ✅    |          42ms |      740ms |
-|  [Query 7](#r2q7)  |     ✅    |          83ms |      633ms |
-|  [Query 8](#r2q8)  |     ✅    |         114ms |      320ms |
-|  [Query 9](#r2q9)  |     ✅    |         136ms |     3028ms |
-| [Query 10](#r2q10) |     ✅    |          10ms |        6ms |
-| [Query 11](#r2q11) |     ✅    |          78ms |      213ms |
-| [Query 12](#r2q12) |     ✅    |          37ms |     1101ms |
-| [Query 13](#r2q13) |          |        1242ms |      967ms |
-| [Query 14](#r2q14) |     ✅    |          51ms |      193ms |
-| [Query 15](#r2q15) |          |         522ms |     1095ms |
-| [Query 16](#r2q16) |          |        1797ms |      492ms |
-| [Query 17](#r2q17) |          |           9ms |     1802ms |
-| [Query 18](#r2q18) |          |          10ms |     6185ms |
-| [Query 19](#r2q19) |          |         532ms |       64ms |
-| [Query 20](#r2q20) |          |        4595ms |      473ms |
-| [Query 21](#r2q21) |          |        1702ms |     1334ms |
-| [Query 22](#r2q22) |          |         268ms |      257ms |
+| Query      | Pushdown | pg_clickhouse | PostgreSQL |
+| ---------: | :------: | ------------: | ---------: |
+|  [Query 1] |     ✅    |         73ms  |     4478ms |
+|  [Query 2] |          |             - |      560ms |
+|  [Query 3] |     ✅    |          74ms |     1454ms |
+|  [Query 4] |     ✅    |          67ms |      650ms |
+|  [Query 5] |     ✅    |         104ms |      452ms |
+|  [Query 6] |     ✅    |          42ms |      740ms |
+|  [Query 7] |     ✅    |          83ms |      633ms |
+|  [Query 8] |     ✅    |         114ms |      320ms |
+|  [Query 9] |     ✅    |         136ms |     3028ms |
+| [Query 10] |     ✅    |          10ms |        6ms |
+| [Query 11] |     ✅    |          78ms |      213ms |
+| [Query 12] |     ✅    |          37ms |     1101ms |
+| [Query 13] |          |        1242ms |      967ms |
+| [Query 14] |     ✅    |          51ms |      193ms |
+| [Query 15] |          |         522ms |     1095ms |
+| [Query 16] |          |        1797ms |      492ms |
+| [Query 17] |          |           9ms |     1802ms |
+| [Query 18] |          |          10ms |     6185ms |
+| [Query 19] |          |         532ms |       64ms |
+| [Query 20] |          |        4595ms |      473ms |
+| [Query 21] |          |        1702ms |     1334ms |
+| [Query 22] |          |         268ms |      257ms |
 
 ### Compile From Source
 
@@ -295,3 +295,26 @@ adding DML features. Our road map:
   [CMake]: https://cmake.org/ "CMake: A Powerful Software Build System"
   [LibSSL]: https://openssl-library.org "OpenSSL Library"
   [TPC-H]: https://www.tpc.org/tpch/
+
+  [Query 1]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/1.sql
+  [Query 2]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/2.sql
+  [Query 3]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/3.sql
+  [Query 4]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/4.sql
+  [Query 5]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/5.sql
+  [Query 6]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/6.sql
+  [Query 7]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/7.sql
+  [Query 8]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/8.sql
+  [Query 9]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/9.sql
+  [Query 10]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/10.sql
+  [Query 11]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/11.sql
+  [Query 12]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/12.sql
+  [Query 13]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/13.sql
+  [Query 14]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/14.sql
+  [Query 15]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/15.sql
+  [Query 16]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/16.sql
+  [Query 17]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/17.sql
+  [Query 18]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/18.sql
+  [Query 19]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/19.sql
+  [Query 20]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/20.sql
+  [Query 21]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/21.sql
+  [Query 22]: https://github.com/Vonng/pgtpc/blob/master/tpch/queries/22.sql

@@ -15,6 +15,7 @@
 #include "postgres.h"
 
 #include "fdw.h"
+#include "kv_list.h"
 
 #include "access/reloptions.h"
 #include "catalog/pg_foreign_server.h"
@@ -25,6 +26,7 @@
 #include "nodes/makefuncs.h"
 #include "utils/guc.h"
 #include "utils/varlena.h"
+#include "utils/builtins.h"
 
 static char *DEFAULT_DBNAME = "default";
 
@@ -66,7 +68,8 @@ static const ChFdwOption ch_options[] =
 /*
  * GUC parameters
  */
-char	   *ch_session_settings = NULL;
+static char *ch_session_settings = NULL;
+static kv_list * ch_session_settings_list = NULL;
 
 /*
  * Helper functions
@@ -469,35 +472,65 @@ chfdw_parse_options(const char *options_string, bool with_comma, bool with_equal
 		/*
 		 * Now that we have the name and the value, store the record.
 		 */
-		options = lappend(options, makeDefElem(strdup(pname), (Node *) makeString(strdup(pval)), -1));
+		options = lappend(options, makeDefElem(pstrdup(pname), (Node *) makeString(pstrdup(pval)), -1));
 	}
 
 	return options;
 }
 
 /*
- * check_settings_guc
- *
+ * Return the current list of current session settings parsed from the
+ * session_settings GUC.
+ */
+kv_list    *
+chfdw_get_session_settings()
+{
+	return ch_session_settings_list;
+}
+
+/*
  * Validates the provided settings key/value pairs.
  */
 static bool
-check_settings_guc(char **newval, void **extra, GucSource source)
+chfdw_check_settings_guc(char **newval, void **extra, GucSource source)
 {
 	/*
 	 * The value may be an empty string, so we have to accept that value.
+	 * Leave extra unset; chfdw_settings_assign_hook() will assign NULL to
+	 * ch_session_settings_list.
 	 */
 	if (*newval == NULL || *newval[0] == '\0')
 		return true;
 
-	/*
-	 * Make sure we can parse the settings.
-	 */
-	chfdw_parse_options(*newval, true, false);
+	/* Parse the settings. */
+	List	   *list = chfdw_parse_options(*newval, true, false);
 
-	/*
-	 * All good if no error.
-	 */
+	if (!list)
+		return false;
+
+	/* Convert them into a guc_malloc'd kv_list. */
+	kv_list    *settings = new_kv_list_from_pg_list(list, kv_pair_guc_malloc);
+
+	if (!settings)
+		return false;
+
+	/* All good; stash for chfdw_settings_assign_hook and return true. */
+	*extra = settings;
 	return true;
+}
+
+/*
+ * Assigns the kv_list stored in extra to the ch_session_settings_list global.
+ */
+static void
+chfdw_settings_assign_hook(const char *newval, void *extra)
+{
+/* From PostgreSQL's POV: (a) failure here is not acceptable, and (b) it is
+ * not necessarily called inside a transaction, so e.g. catalog lookups are
+ * not okay. IOW, keep it as simple as possible, and leave error returning
+ * behavior to chfdw_check_settings_guc().
+ */
+	ch_session_settings_list = (kv_list *) extra;
 }
 
 /*
@@ -522,8 +555,8 @@ _PG_init(void)
 							   "join_use_nulls 1, group_by_use_nulls 1, final 1",
 							   PGC_USERSET,
 							   0,
-							   check_settings_guc,
-							   NULL,
+							   chfdw_check_settings_guc,
+							   chfdw_settings_assign_hook,
 							   NULL);
 
 #if PG_VERSION_NUM >= 150000
