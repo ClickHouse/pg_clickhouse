@@ -158,8 +158,8 @@ ch_http_simple_query(ch_http_connection_t * conn, const ch_query * query)
 	static char errbuffer[CURL_ERROR_SIZE];
 	struct curl_slist *headers = NULL;
 	CURLU	   *cu = curl_url();
-	ListCell   *lc;
-	DefElem    *setting;
+	int			i;
+	kv_pair    *pair;
 	char	   *buf = NULL;
 
 	ch_http_response_t *resp = calloc(sizeof(ch_http_response_t), 1);
@@ -178,10 +178,11 @@ ch_http_simple_query(ch_http_connection_t * conn, const ch_query * query)
 	pfree(buf);
 
 	/* Append each of the settings as a query param. */
-	foreach(lc, (List *) query->settings)
+
+	for (i = 0; i < query->settings->length; i++)
 	{
-		setting = (DefElem *) lfirst(lc);
-		buf = psprintf("%s=%s", setting->defname, strVal(setting->arg));
+		pair = query->settings->items[i];
+		buf = psprintf("%s=%s", pair->name, pair->value);
 		curl_url_set(cu, CURLUPART_QUERY, buf, CURLU_APPENDQUERY | CURLU_URLENCODE);
 		pfree(buf);
 	}

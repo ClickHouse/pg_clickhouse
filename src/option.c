@@ -15,6 +15,7 @@
 #include "postgres.h"
 
 #include "fdw.h"
+#include "kv_list.h"
 
 #include "access/reloptions.h"
 #include "catalog/pg_foreign_server.h"
@@ -25,6 +26,7 @@
 #include "nodes/makefuncs.h"
 #include "utils/guc.h"
 #include "utils/varlena.h"
+#include "utils/builtins.h"
 
 static char *DEFAULT_DBNAME = "default";
 
@@ -66,7 +68,8 @@ static const ChFdwOption ch_options[] =
 /*
  * GUC parameters
  */
-char	   *ch_session_settings = NULL;
+static char *ch_session_settings = NULL;
+static kv_list * ch_session_settings_list = NULL;
 
 /*
  * Helper functions
@@ -469,35 +472,79 @@ chfdw_parse_options(const char *options_string, bool with_comma, bool with_equal
 		/*
 		 * Now that we have the name and the value, store the record.
 		 */
-		options = lappend(options, makeDefElem(strdup(pname), (Node *) makeString(strdup(pval)), -1));
+		options = lappend(options, makeDefElem(pstrdup(pname), (Node *) makeString(pstrdup(pval)), -1));
 	}
 
 	return options;
 }
 
 /*
- * check_settings_guc
- *
+ * Return the current list of current session settings parsed from the
+ * session_settings GUC.
+ */
+kv_list    *
+chfdw_get_session_settings()
+{
+	return ch_session_settings_list;
+}
+
+/*
  * Validates the provided settings key/value pairs.
  */
 static bool
-check_settings_guc(char **newval, void **extra, GucSource source)
+chfdw_check_settings_guc(char **newval, void **extra, GucSource source)
 {
 	/*
 	 * The value may be an empty string, so we have to accept that value.
+	 * Leave extra unset; chfdw_settings_assign_hook() will assign NULL to
+	 * ch_session_settings_list.
 	 */
 	if (*newval == NULL || *newval[0] == '\0')
 		return true;
 
-	/*
-	 * Make sure we can parse the settings.
-	 */
+	/* Make sure we can parse the settings. */
 	chfdw_parse_options(*newval, true, false);
 
-	/*
-	 * All good if no error.
-	 */
+	/* All good if no errors. */
 	return true;
+}
+
+/*
+ * Assigns the kv_list stored in extra to the ch_session_settings_list global.
+ */
+static void
+chfdw_settings_assign_hook(const char *newval, void *extra)
+{
+	/*
+	 * From PostgreSQL's POV: (a) failure here is not acceptable, and (b) it
+	 * is not necessarily called inside a transaction, so e.g. catalog lookups
+	 * are not okay. IOW, keep it as simple as possible, and leave error
+	 * returning behavior to chfdw_check_settings_guc(). Therefore wrap the
+	 * parsing in PG_TRY() to prevent errors.
+	 */
+	kv_list_free(ch_session_settings_list);
+	PG_TRY();
+	{
+		if (newval == NULL || newval[0] == '\0')
+			ch_session_settings_list = new_empty_kv_list();
+		else
+		{
+			List	   *list = chfdw_parse_options(newval, true, false);
+
+			ch_session_settings_list = new_kv_list_from_pg_list(list);
+		}
+	}
+	PG_CATCH();
+	{
+		/*
+		 * This should not happen, since chfdw_check_settings_guc successfully
+		 * parsed the options, but we could get here due to memory errors.
+		 */
+		ereport(LOG,
+				(errcode(ERRCODE_FDW_ERROR),
+				 errmsg("unexpected error parsing \"%s\"", newval)));
+	}
+	PG_END_TRY();
 }
 
 /*
@@ -522,8 +569,8 @@ _PG_init(void)
 							   "join_use_nulls 1, group_by_use_nulls 1, final 1",
 							   PGC_USERSET,
 							   0,
-							   check_settings_guc,
-							   NULL,
+							   chfdw_check_settings_guc,
+							   chfdw_settings_assign_hook,
 							   NULL);
 
 #if PG_VERSION_NUM >= 150000

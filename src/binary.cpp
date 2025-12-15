@@ -173,23 +173,17 @@ static void set_resp_error(ch_binary_response_t * resp, const char * str)
  */
 static QuerySettings ch_binary_settings(const ch_query *query)
 {
-   ListCell   *lc;
-   auto res = QuerySettings{};
-   foreach (lc, (List *) query->settings)
-   {
-		/*
-		 * foreach reads a non-const, so we have to cast. Would be nice to use
-		 * foreach_ptr:
-		 *
-		 *     foreach_ptr(DefElem, setting, query->settings)
-		 *
-		 * But it's only available in Postgres 17 and later.
-		*/
-       DefElem    *setting = (DefElem *) lfirst(lc);
-       res.insert_or_assign(setting->defname, QuerySettingsField{strVal(setting->arg), 1});
-   }
+	int	   i;
+	kv_pair *pair;
+	auto res = QuerySettings{};
 
-   return res;
+	for (i = 0; i < query->settings->length; i++)
+	{
+		pair = query->settings->items[i];
+		res.insert_or_assign(pair->name, QuerySettingsField{pair->value, 1});
+	}
+
+	return res;
 }
 
 static void set_state_error(ch_binary_read_state_t * state, const char * str)
