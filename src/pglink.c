@@ -739,7 +739,7 @@ binary_insert_tuple(void *istate, TupleTableSlot * slot)
 {
 	ch_binary_insert_state *state = istate;
 
-	if (state->conversion_states == NULL)
+	if (state->conversion_states == NULL && slot)
 	{
 		MemoryContext old_mcxt;
 
