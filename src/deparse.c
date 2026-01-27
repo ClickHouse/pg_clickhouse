@@ -162,6 +162,7 @@ static void deparseExpr(Expr * expr, deparse_expr_cxt * context);
 static void deparseVar(Var * node, deparse_expr_cxt * context);
 static void deparseConst(Const * node, deparse_expr_cxt * context, int showtype);
 static void deparseParam(Param * node, deparse_expr_cxt * context);
+static void deparseSubPlan(SubPlan * node, deparse_expr_cxt * context);
 static void deparseSubscriptingRef(SubscriptingRef * node, deparse_expr_cxt * context);
 static void deparseFuncExpr(FuncExpr * node, deparse_expr_cxt * context);
 static void deparseSQLValueFunction(SQLValueFunction * node, deparse_expr_cxt * context);
@@ -378,6 +379,46 @@ foreign_expr_walker(Node * node,
 				 */
 				if (p->paramkind == PARAM_MULTIEXPR)
 					return false;
+			}
+			break;
+		case T_SubPlan:
+			{
+				/*
+				 * The planner swaps a SubLink for a SubPlan; we need to get
+				 * the original SubLink to inspect its contents.
+				 */
+				SubPlan    *subplan = (SubPlan *) node;
+
+				//PlannerInfo * plan = list_nth(glob_cxt->root->glob->subroots, subplan->plan_id - 1);
+
+				/*
+				 * Recurse to component subexpressions.
+				 */
+				switch (subplan->subLinkType)
+				{
+						/*
+						 * Currently no support for multi-expression
+						 * subqueries or row comparisons (RowCompareExpr
+						 * nodes).
+						 */
+					case MULTIEXPR_SUBLINK:
+					case ROWCOMPARE_SUBLINK:
+						return false;
+					default:
+						break;
+				}
+
+				/*
+				 * Recurse to subexpressions. We should be fine if they all
+				 * refer to objects in the SubPlan itself or the parent plan
+				 * that all reference objects from the same remote server.
+				 */
+				if (!foreign_expr_walker(subplan->testexpr,
+										 glob_cxt, &inner_cxt))
+					return false;
+				//if (!foreign_expr_walker((Node *) plan->parse->targetList,
+										   //glob_cxt, &inner_cxt))
+					//return false;
 			}
 			break;
 		case T_SubscriptingRef:
@@ -1860,6 +1901,9 @@ deparseExpr(Expr * node, deparse_expr_cxt * context)
 		case T_Param:
 			deparseParam((Param *) node, context);
 			break;
+		case T_SubPlan:
+			deparseSubPlan((SubPlan *) node, context);
+			break;
 		case T_SubscriptingRef:
 			deparseSubscriptingRef((SubscriptingRef *) node, context);
 			break;
@@ -2339,6 +2383,79 @@ deparseParam(Param * node, deparse_expr_cxt * context)
 	else
 	{
 		printRemotePlaceholder(node->paramtype, node->paramtypmod, context);
+	}
+}
+
+/*
+ * Deparse given SubPlan node.
+ */
+static void
+deparseSubPlan(SubPlan * subplan, deparse_expr_cxt * context)
+{
+	StringInfo	buf = context->buf;
+	PlannerInfo *plan = list_nth(context->root->glob->subroots, subplan->plan_id - 1);
+	Query	   *subquery = plan->parse;
+	List	   *retrieved_attrs;
+
+	//CHFdwRelationInfo * fpinfo = (CHFdwRelationInfo *) plan->simple_rel_array[0]->fdw_private;
+	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) (context->scanrel->fdw_private);
+
+	//fpinfo = (CHFdwRelationInfo *) fpinfo->innerrel->fdw_private;
+
+	/*
+	 * As of b345682, we probably don't handle EXISTS, preferring to use a
+	 * SEMI JOIN. But for EXISTS_SUBLINK nodes, wrap it around the subquery
+	 * just to be safe.
+	 *
+	 * EXISTS_SUBLINK is a regular subquery, and the subplan is already
+	 * parenthesized, so we don't need them here.
+	 *
+	 * ARRAY_SUBLINK relies on an ARRAY() subquery constructor, not yet
+	 * supported in ClickHouse, though it does have the groupArray() aggregate
+	 * function, so use that.
+	 */
+	switch (subplan->subLinkType)
+	{
+		case EXISTS_SUBLINK:
+			appendStringInfoString(buf, "EXISTS(");
+			Assert(subplan->testexpr == NULL);
+			break;
+		case ARRAY_SUBLINK:
+			appendStringInfoString(buf, "groupArray(");
+			Assert(subplan->testexpr == NULL);
+			break;
+		case CTE_SUBLINK:
+			appendStringInfoString(buf, "WITH(");
+			Assert(subplan->testexpr == NULL);
+			break;
+		default:
+			/* Already parenthesized, no need to add more. */
+			break;
+	}
+
+	if (subplan->testexpr != NULL)
+		deparseExpr((Expr *) subplan->testexpr, context);
+
+	/*
+	 * Pass the subquery plan as the root to
+	 * chfdw_deparse_select_stmt_for_rel() to deparse the subquery.
+	 */
+	chfdw_deparse_select_stmt_for_rel(buf, plan, fpinfo->outerrel,
+									  subquery->targetList, fpinfo->final_remote_exprs,
+									  NIL, false, subquery->limitCount > 0, false,
+									  &retrieved_attrs, context->params_list);
+
+	/* Close parentheses if opened above. */
+	switch (subplan->subLinkType)
+	{
+		case EXISTS_SUBLINK:
+		case ARRAY_SUBLINK:
+		case CTE_SUBLINK:
+			appendStringInfoChar(buf, ')');
+			break;
+		default:
+			break;
+			/* No paren needs closing */
 	}
 }
 
