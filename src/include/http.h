@@ -65,7 +65,8 @@ long		ch_http_streaming_status(ch_http_streaming_state * state);
 double		ch_http_streaming_request_time(ch_http_streaming_state * state);
 double		ch_http_streaming_total_time(ch_http_streaming_state * state);
 char	   *ch_http_streaming_batch_data(ch_http_streaming_state * state);
-size_t		ch_http_streaming_batch_size(ch_http_streaming_state * state);
+void		ch_http_streaming_init_read_state(ch_http_streaming_state * state,
+											 ch_http_read_state * read_state);
 void		ch_http_end_streaming(ch_http_streaming_state * state);
 
 #endif							/* CLICKHOUSE_HTTP_H */

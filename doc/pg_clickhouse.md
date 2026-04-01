@@ -139,6 +139,10 @@ The supported options are:
 *   `dbname`: The ClickHouse database to use upon connecting. Defaults to
     "default".
 *   `host`: The host name of the ClickHouse server. Defaults to "localhost";
+*   `fetch_size`: The number of remote rows to buffer per streamed fetch while
+    scanning foreign tables. Defaults to `50000`. Set it to `0` to disable
+    streaming for tables that use this server and fall back to buffering the
+    full result set in memory.
 *   `port`: The port to connect to on the ClickHouse server. Defaults as
     follows:
     *   9440 if `driver` is "binary" and `host` is a ClickHouse Cloud host
@@ -299,6 +303,9 @@ The supported table options are:
     defined for the foreign server.
 *   `table_name`: The name of the remote table. Default to the name specified
     for the foreign table.
+*   `fetch_size`: Overrides the server-level `fetch_size` for this table only.
+    Use it to make scans buffer fewer or more remote rows at a time, or set it
+    to `0` to disable streaming for this table.
 *   `engine`: The [table engine] used by the ClickHouse table. For
     `CollapsingMergeTree()` and `AggregatingMergeTree()`, pg_clickhouse
     automatically applies the parameters to function expressions executed on

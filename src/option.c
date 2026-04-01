@@ -70,7 +70,6 @@ static const ChFdwOption ch_options[] =
  */
 static char *ch_session_settings = NULL;
 static kv_list * ch_session_settings_list = NULL;
-static int	ch_max_result_size = 0; /* MB, 0 = disabled */
 
 /*
  * Helper functions
@@ -564,25 +563,7 @@ _PG_init(void)
 							   chfdw_settings_assign_hook,
 							   NULL);
 
-	DefineCustomIntVariable("pg_clickhouse.max_result_size",
-							"Maximum size (MB) for a ClickHouse response.",
-							"Aborts a query if the accumulated response data exceeds "
-							"this limit. 0 disables the check.",
-							&ch_max_result_size,
-							0,	/* default: disabled */
-							0,	/* min */
-							65536,	/* max: 64 GB */
-							PGC_USERSET,
-							GUC_UNIT_MB,
-							NULL, NULL, NULL);
-
 #if PG_VERSION_NUM >= 150000
 	MarkGUCPrefixReserved("pg_clickhouse");
 #endif
-}
-
-int
-chfdw_get_max_result_size(void)
-{
-	return ch_max_result_size;
 }

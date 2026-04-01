@@ -188,9 +188,113 @@ kill_query(void *conn, const char *query_id)
 		ch_http_response_free(resp);
 }
 
+static void
+report_oom(void)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_FDW_OUT_OF_MEMORY),
+			 errmsg("out of memory")));
+}
+
+static void
+report_http_status_error(long status, const char *query_sql, char *error)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+			 errmsg("pg_clickhouse: %s", format_error(error)),
+			 status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query_sql),
+			 errcontext("HTTP status code: %li", status)));
+}
+
+static void
+report_http_streaming_state(ch_http_streaming_state * sstate,
+							const char *query_sql,
+							bool cleanup)
+{
+	char	   *err = ch_http_streaming_error(sstate);
+	long		status = ch_http_streaming_status(sstate);
+
+	if (err != NULL)
+	{
+		char	   *errcopy = pstrdup(err);
+
+		if (cleanup)
+			ch_http_end_streaming(sstate);
+		ereport(ERROR,
+				(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+				 errmsg("pg_clickhouse: %s", format_error(errcopy))));
+	}
+
+	if (status != 0 && status != 200)
+	{
+		char	   *data = ch_http_streaming_batch_data(sstate);
+		char	   *errcopy = data ? pstrdup(data) : pstrdup("unknown error");
+
+		if (cleanup)
+			ch_http_end_streaming(sstate);
+		report_http_status_error(status, query_sql, errcopy);
+	}
+}
+
+static bool
+http_streaming_load_batch(ch_cursor * cursor, ch_http_read_state * state)
+{
+	ch_http_streaming_state *sstate = cursor->streaming_state;
+
+	if (!ch_http_fetch_batch(sstate))
+	{
+		report_http_streaming_state(sstate, cursor->query, false);
+		return false;
+	}
+
+	report_http_streaming_state(sstate, cursor->query, false);
+	ch_http_streaming_init_read_state(sstate, state);
+	return !(state->done || state->data == NULL);
+}
+
+static void
+report_binary_query_error(const char *query_sql, char *error)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+			 errmsg("pg_clickhouse: %s", error),
+			 errdetail_internal("Remote Query: %.64000s", query_sql)));
+}
+
+static void
+report_binary_streaming_state(ch_binary_streaming_state * sstate,
+							  const char *query_sql,
+							  bool cleanup)
+{
+	char	   *err = ch_binary_streaming_error(sstate);
+	char	   *errcopy;
+
+	if (err == NULL)
+		return;
+
+	errcopy = pstrdup(err);
+	if (cleanup)
+		ch_binary_end_streaming(sstate);
+	report_binary_query_error(query_sql, errcopy);
+}
+
+static void
+report_binary_streaming_read_error(ch_binary_streaming_state * sstate)
+{
+	char	   *err = ch_binary_streaming_error(sstate);
+
+	if (err == NULL)
+		return;
+
+	ereport(ERROR,
+			(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+			 errmsg("pg_clickhouse: error while reading row: %s", err)));
+}
+
 /*
  * Allocate a cursor in its own memory context with a cleanup callback.
- * Used by both HTTP and binary query paths.
+ * The memory context owns the cursor itself; the callback only releases the
+ * external resources hanging off it.
  */
 static ch_cursor *
 cursor_create(const char *sql, size_t columns_count,
@@ -231,7 +335,7 @@ http_simple_query(void *conn, const ch_query * query)
 again:
 	resp = ch_http_simple_query(conn, query);
 	if (resp == NULL)
-		elog(ERROR, "out of memory");
+		report_oom();
 
 	attempts++;
 	if (resp->http_status == 419)
@@ -263,12 +367,7 @@ again:
 
 		ch_http_response_free(resp);
 
-		ereport(ERROR, (
-						errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-						errmsg("pg_clickhouse: %s", format_error(error)),
-						status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query->sql),
-						errcontext("HTTP status code: %li", status)
-						));
+		report_http_status_error(status, query->sql, error);
 	}
 
 	cursor = cursor_create(query->sql, 0, http_cursor_free);
@@ -310,39 +409,9 @@ http_streaming_query(void *conn, const ch_query * query, int fetch_size)
 
 	sstate = ch_http_begin_streaming(conn, query, fetch_size);
 	if (sstate == NULL)
-		elog(ERROR, "out of memory");
+		report_oom();
 
-	{
-		char	   *err = ch_http_streaming_error(sstate);
-
-		if (err != NULL)
-		{
-			char	   *errcopy = pstrdup(err);
-
-			ch_http_end_streaming(sstate);
-			ereport(ERROR,
-					(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-					 errmsg("pg_clickhouse: %s", format_error(errcopy))));
-		}
-	}
-
-	{
-		long		status = ch_http_streaming_status(sstate);
-
-		if (status != 0 && status != 200)
-		{
-			char	   *data = ch_http_streaming_batch_data(sstate);
-			char	   *errcopy = data ? pstrdup(data) : pstrdup("unknown error");
-
-			ch_http_end_streaming(sstate);
-			ereport(ERROR, (
-							errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-							errmsg("pg_clickhouse: %s", format_error(errcopy)),
-							status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query->sql),
-							errcontext("HTTP status code: %li", status)
-							));
-		}
-	}
+	report_http_streaming_state(sstate, query->sql, true);
 
 	cursor = cursor_create(query->sql, 0, http_streaming_cursor_free);
 	cursor->streaming_state = sstate;
@@ -354,9 +423,7 @@ http_streaming_query(void *conn, const ch_query * query, int fetch_size)
 		MemoryContext oldcxt = MemoryContextSwitchTo(cursor->memcxt);
 
 		cursor->read_state = palloc0(sizeof(ch_http_read_state));
-		ch_http_read_state_init(cursor->read_state,
-								ch_http_streaming_batch_data(sstate),
-								ch_http_streaming_batch_size(sstate));
+		ch_http_streaming_init_read_state(sstate, cursor->read_state);
 		MemoryContextSwitchTo(oldcxt);
 	}
 
@@ -386,13 +453,7 @@ http_simple_insert(void *conn, const ch_query * query)
 		long		status = resp->http_status;
 
 		ch_http_response_free(resp);
-
-		ereport(ERROR, (
-						errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-						errmsg("pg_clickhouse: %s", format_error(error)),
-						status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query->sql),
-						errcontext("HTTP status code: %li", status)
-						));
+		report_http_status_error(status, query->sql, error);
 	}
 
 	ch_http_response_free(resp);
@@ -428,19 +489,12 @@ http_fetch_row(ChFdwScanRowContext * ctx)
 	Datum	   *values;
 	ch_http_read_state *state = cursor->read_state;
 
-	if (state->done || state->data == NULL)
+	while (state->done || state->data == NULL)
 	{
 		if (!cursor->is_streaming)
 			return NULL;
 
-		if (!ch_http_fetch_batch(cursor->streaming_state))
-			return NULL;
-
-		ch_http_read_state_init(state,
-								ch_http_streaming_batch_data(cursor->streaming_state),
-								ch_http_streaming_batch_size(cursor->streaming_state));
-
-		if (state->done || state->data == NULL)
+		if (!http_streaming_load_batch(cursor, state))
 			return NULL;
 	}
 
@@ -764,11 +818,7 @@ binary_simple_query(void *conn, const ch_query * query)
 		char	   *error = pstrdup(resp->error);
 
 		ch_binary_response_free(resp);
-		ereport(ERROR, (
-						errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-						errmsg("pg_clickhouse: %s", error),
-						errdetail_internal("Remote Query: %.64000s", query->sql)
-						));
+		report_binary_query_error(query->sql, error);
 	}
 
 	cursor = cursor_create(query->sql, resp->columns_count,
@@ -813,25 +863,12 @@ binary_streaming_query(void *conn, const ch_query * query, int fetch_size)
 {
 	ch_binary_streaming_state *sstate;
 
+	(void) fetch_size;
 	sstate = ch_binary_begin_streaming(conn, query, &is_canceled);
 	if (sstate == NULL)
-		elog(ERROR, "out of memory");
+		report_oom();
 
-	{
-		char	   *err = ch_binary_streaming_error(sstate);
-
-		if (err != NULL)
-		{
-			char	   *errcopy = pstrdup(err);
-
-			ch_binary_end_streaming(sstate);
-			ereport(ERROR, (
-							errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-							errmsg("pg_clickhouse: %s", errcopy),
-							errdetail_internal("Remote Query: %.64000s", query->sql)
-							));
-		}
-	}
+	report_binary_streaming_state(sstate, query->sql, true);
 
 	{
 		ch_cursor  *cursor;
@@ -909,15 +946,13 @@ binary_streaming_fetch_row(ChFdwScanRowContext * ctx)
 	/* Try to read a row; if block exhausted, fetch next block. */
 	while (!ch_binary_streaming_read_row(sstate))
 	{
-		char	   *err = ch_binary_streaming_error(sstate);
-
-		if (err != NULL)
-			ereport(ERROR,
-					(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-					 errmsg("pg_clickhouse: error while reading row: %s", err)));
+		report_binary_streaming_read_error(sstate);
 
 		if (!ch_binary_fetch_block(sstate))
-			return NULL;		/* no more blocks — EOF */
+		{
+			report_binary_streaming_state(sstate, cursor->query, false);
+			return NULL;
+		}
 	}
 
 	if (tupdesc)
