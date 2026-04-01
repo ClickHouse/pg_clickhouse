@@ -53,7 +53,7 @@ void		ch_http_read_state_init(ch_http_read_state * state, char *data, size_t dat
 int			ch_http_read_next(ch_http_read_state * state);
 void		ch_http_response_free(ch_http_response_t * resp);
 
-/* Streaming API: single HTTP request with pause/unpause batching */
+/* Streaming API: single HTTP request with coroutine-based batching */
 typedef struct ch_http_streaming_state ch_http_streaming_state;
 
 ch_http_streaming_state *ch_http_begin_streaming(ch_http_connection_t * conn,
