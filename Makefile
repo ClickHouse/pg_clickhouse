@@ -33,8 +33,9 @@ ifndef CH_BUILD
 endif
 
 # clickhouse-cpp source and build directories.
-CH_CPP_DIR = vendor/clickhouse-cpp
-CH_CPP_BUILD_DIR = vendor/_build/$(OS)-$(ARCH)-$(CH_BUILD)-$(shell git submodule status $(CH_CPP_DIR) | awk '{print substr($$1, 0, 7)}')
+VENDOR_DIR = vendor
+CH_CPP_DIR = $(VENDOR_DIR)/clickhouse-cpp
+CH_CPP_BUILD_DIR = $(VENDOR_DIR)/_build/$(OS)-$(ARCH)-$(CH_BUILD)-$(shell git submodule status $(CH_CPP_DIR) | awk '{print substr($$1, 0, 7)}')
 
 # List the clickhouse-cpp libraries we require.
 CH_CPP_LIB = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib$(DLSUFFIX)
@@ -56,7 +57,7 @@ else
 endif
 
 # Add include directories.
-PG_CPPFLAGS = -I./src/include -I$(CH_CPP_DIR) -I$(CH_CPP_DIR)/contrib/absl -Ivendor/minicoro
+PG_CPPFLAGS = -I./src/include -I$(CH_CPP_DIR) -I$(CH_CPP_DIR)/contrib/absl -I$(VENDOR_DIR)/minicoro
 
 # Include other libraries compiled into clickhouse-cpp.
 PG_LDFLAGS = -lstdc++ -lssl -lcrypto $(shell $(CURL_CONFIG) --libs)
@@ -75,7 +76,7 @@ endif
 # Clean up the clickhouse-cpp build directory and generated files.
 EXTRA_CLEAN = sql/$(EXTENSION)--$(EXTVERSION).sql src/fdw.c compile_commands.json test/schedule $(EXTENSION)-$(DISTVERSION).zip
 ifndef NO_VENDOR_CLEAN
-	EXTRA_CLEAN += $(CH_CPP_BUILD_DIR)
+	EXTRA_CLEAN += $(VENDOR_DIR)
 endif
 
 # Import PGXS.
@@ -101,8 +102,12 @@ $(shlib): $(CH_CPP_LIB) $(OBJS)
 $(CH_CPP_DIR)/CMakeLists.txt:
 	git submodule update --init
 
-# Require the vendored clickhouse-cpp.
-$(OBJS): $(CH_CPP_DIR)/CMakeLists.txt
+# Clone minicoro submodule.
+$(VENDOR_DIR)/minicoro/minicoro.h:
+	git submodule update --init
+
+# Require the vendored libraries.
+$(OBJS): $(CH_CPP_DIR)/CMakeLists.txt $(VENDOR_DIR)/minicoro/minicoro.h
 
 # Build clickhouse-cpp.
 $(CH_CPP_LIB): export CXXFLAGS=-fPIC
@@ -112,7 +117,7 @@ $(CH_CPP_LIB): $(CH_CPP_DIR)/CMakeLists.txt # Sync with "Reset Vendor Timestamp"
 	cmake --build $(CH_CPP_BUILD_DIR) --parallel $$(nproc) --target all
 
 # Require the versioned C source and SQL script.
-all: sql/$(EXTENSION)--$(EXTVERSION).sql src/fdw.c
+all: sql/$(EXTENSION)--$(EXTVERSION).sql src/fdw.c $(VENDOR_DIR)/minicoro/minicoro.h
 
 # Versioned SQL script.
 sql/$(EXTENSION)--$(EXTVERSION).sql: sql/$(EXTENSION).sql
