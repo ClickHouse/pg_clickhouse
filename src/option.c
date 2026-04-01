@@ -70,7 +70,7 @@ static const ChFdwOption ch_options[] =
  */
 static char *ch_session_settings = NULL;
 static kv_list * ch_session_settings_list = NULL;
-static int ch_max_result_size = 0;	/* MB, 0 = disabled */
+static int	ch_max_result_size = 0; /* MB, 0 = disabled */
 
 /*
  * Helper functions
@@ -569,8 +569,8 @@ _PG_init(void)
 							"Aborts a query if the accumulated response data exceeds "
 							"this limit. 0 disables the check.",
 							&ch_max_result_size,
-							0,		/* default: disabled */
-							0,		/* min */
+							0,	/* default: disabled */
+							0,	/* min */
 							65536,	/* max: 64 GB */
 							PGC_USERSET,
 							GUC_UNIT_MB,

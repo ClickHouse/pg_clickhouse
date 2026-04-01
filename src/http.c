@@ -450,13 +450,11 @@ write_data_streaming(void *contents, size_t size, size_t nmemb, void *userp)
  * whenever a batch is ready.
  */
 static void
-http_streaming_coro(mco_coro *co)
+http_streaming_coro(mco_coro * co)
 {
 	ch_http_streaming_state *st = mco_get_user_data(co);
 	CURLcode	errcode;
-	static char errbuffer[CURL_ERROR_SIZE];
 
-	errbuffer[0] = '\0';
 	errcode = curl_easy_perform(st->conn->curl);
 
 	if (errcode != CURLE_OK && errcode != CURLE_WRITE_ERROR)
@@ -667,7 +665,7 @@ ch_http_fetch_batch(ch_http_streaming_state * st)
 	return false;
 }
 
-char *
+char	   *
 ch_http_streaming_error(ch_http_streaming_state * st)
 {
 	return st ? st->error : NULL;
@@ -691,7 +689,7 @@ ch_http_streaming_total_time(ch_http_streaming_state * st)
 	return st ? st->total_time : 0;
 }
 
-char *
+char	   *
 ch_http_streaming_batch_data(ch_http_streaming_state * st)
 {
 	return st ? st->buf : NULL;
@@ -710,9 +708,9 @@ ch_http_end_streaming(ch_http_streaming_state * st)
 		return;
 
 	/*
-	 * Destroy the coroutine without resuming. This abandons
-	 * curl_easy_perform mid-transfer, so reset the easy handle
-	 * afterwards to ensure curl cleans up its internal state.
+	 * Destroy the coroutine without resuming. This abandons curl_easy_perform
+	 * mid-transfer, so reset the easy handle afterwards to ensure curl cleans
+	 * up its internal state.
 	 */
 	if (st->co)
 		mco_destroy(st->co);

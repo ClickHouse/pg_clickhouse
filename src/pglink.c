@@ -40,11 +40,11 @@ static void char_to_datum(ChFdwScanRowContext * ctx, int attnum, char *data, siz
 static libclickhouse_methods http_methods =
 {
 	.disconnect = http_disconnect,
-	.simple_query = http_simple_query,
-	.streaming_query = http_streaming_query,
-	.fetch_row = http_fetch_row,
-	.prepare_insert = http_prepare_insert,
-	.insert_tuple = http_insert_tuple
+		.simple_query = http_simple_query,
+		.streaming_query = http_streaming_query,
+		.fetch_row = http_fetch_row,
+		.prepare_insert = http_prepare_insert,
+		.insert_tuple = http_insert_tuple
 };
 
 static void binary_disconnect(void *conn);
@@ -66,11 +66,11 @@ extern const char *ch_quote_ident(const char *rawstr);
 static libclickhouse_methods binary_methods =
 {
 	.disconnect = binary_disconnect,
-	.simple_query = binary_simple_query,
-	.streaming_query = binary_streaming_query,
-	.fetch_row = binary_fetch_row,
-	.prepare_insert = binary_prepare_insert,
-	.insert_tuple = binary_insert_tuple
+		.simple_query = binary_simple_query,
+		.streaming_query = binary_streaming_query,
+		.fetch_row = binary_fetch_row,
+		.prepare_insert = binary_prepare_insert,
+		.insert_tuple = binary_insert_tuple
 };
 
 static int

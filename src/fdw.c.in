@@ -974,10 +974,10 @@ clickhouseIterateForeignScan(ForeignScanState * node)
 		if (fsstate->fetch_size > 0 &&
 			fsstate->conn.methods->streaming_query != NULL)
 			fsstate->ch_cursor = fsstate->conn.methods->streaming_query(
-				fsstate->conn.conn, &query, fsstate->fetch_size);
+																		fsstate->conn.conn, &query, fsstate->fetch_size);
 		else
 			fsstate->ch_cursor = fsstate->conn.methods->simple_query(
-				fsstate->conn.conn, &query);
+																	 fsstate->conn.conn, &query);
 
 		time_used += fsstate->ch_cursor->request_time;
 		MemoryContextSwitchTo(old);

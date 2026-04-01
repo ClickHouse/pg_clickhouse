@@ -78,14 +78,14 @@ extern "C"
 	typedef struct ch_binary_streaming_state ch_binary_streaming_state;
 
 	extern ch_binary_streaming_state * ch_binary_begin_streaming(
-		ch_binary_connection_t * conn, const ch_query * query,
-		bool (*check_cancel) (void));
+																 ch_binary_connection_t * conn, const ch_query * query,
+																 bool (*check_cancel) (void));
 	extern bool ch_binary_fetch_block(ch_binary_streaming_state * state);
 	extern bool ch_binary_streaming_read_row(ch_binary_streaming_state * state);
 	extern size_t ch_binary_streaming_columns(ch_binary_streaming_state * state);
 	extern Datum ch_binary_streaming_value(ch_binary_streaming_state * state, size_t col,
-										   Oid * valtype, bool * is_null);
-	extern char * ch_binary_streaming_error(ch_binary_streaming_state * state);
+										   Oid * valtype, bool *is_null);
+	extern char *ch_binary_streaming_error(ch_binary_streaming_state * state);
 	extern void ch_binary_end_streaming(ch_binary_streaming_state * state);
 
 /* reading */
