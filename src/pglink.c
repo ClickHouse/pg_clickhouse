@@ -889,7 +889,6 @@ binary_streaming_fetch_row(ChFdwScanRowContext * ctx)
 	TupleDesc	tupdesc = ctx->tupdesc;
 	Datum	   *values = ctx->values;
 	bool	   *nulls = ctx->nulls;
-	size_t		attcount = list_length(attrs);
 
 	/* Try to read a row; if block exhausted, fetch next block. */
 	while (!ch_binary_streaming_read_row(sstate))
