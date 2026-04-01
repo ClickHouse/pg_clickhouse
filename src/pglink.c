@@ -420,17 +420,14 @@ http_fetch_row(ChFdwScanRowContext * ctx)
 	Datum	   *values;
 	ch_http_read_state *state = cursor->read_state;
 
-	/* All rows or empty table — for streaming, try next batch. */
 	if (state->done || state->data == NULL)
 	{
 		if (!cursor->is_streaming)
 			return NULL;
 
-		/* Attempt to fetch the next batch from the stream. */
 		if (!ch_http_fetch_batch(cursor->streaming_state))
 			return NULL;
 
-		/* Re-initialize read state with new batch data. */
 		ch_http_read_state_init(state,
 								ch_http_streaming_batch_data(cursor->streaming_state),
 								ch_http_streaming_batch_size(cursor->streaming_state));
@@ -746,11 +743,38 @@ binary_disconnect(void *conn)
 		ch_binary_close((ch_binary_connection_t *) conn);
 }
 
+/*
+ * Allocate a binary cursor in its own memory context with a cleanup callback.
+ */
 static ch_cursor *
-binary_simple_query(void *conn, const ch_query * query)
+binary_cursor_create(const char *sql, size_t columns_count,
+					 MemoryContextCallbackFunction cleanup_func)
 {
 	MemoryContext tempcxt,
 				oldcxt;
+	ch_cursor  *cursor;
+
+	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse cursor",
+									ALLOCSET_DEFAULT_SIZES);
+
+	oldcxt = MemoryContextSwitchTo(tempcxt);
+	cursor = palloc0(sizeof(ch_cursor));
+	cursor->query = pstrdup(sql);
+	cursor->columns_count = columns_count;
+	cursor->conversion_states = palloc0(sizeof(uintptr_t) * Max(columns_count, 1));
+
+	cursor->memcxt = tempcxt;
+	cursor->callback.func = cleanup_func;
+	cursor->callback.arg = cursor;
+	MemoryContextRegisterResetCallback(tempcxt, &cursor->callback);
+	MemoryContextSwitchTo(oldcxt);
+
+	return cursor;
+}
+
+static ch_cursor *
+binary_simple_query(void *conn, const ch_query * query)
+{
 	ch_cursor  *cursor;
 	ch_binary_read_state_t *state;
 
@@ -768,24 +792,18 @@ binary_simple_query(void *conn, const ch_query * query)
 						));
 	}
 
-	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse cursor",
-									ALLOCSET_DEFAULT_SIZES);
+	cursor = binary_cursor_create(query->sql, resp->columns_count,
+								  binary_cursor_free);
 
-	oldcxt = MemoryContextSwitchTo(tempcxt);
-	cursor = palloc0(sizeof(ch_cursor));
-	cursor->query_response = resp;
-	state = (ch_binary_read_state_t *) palloc0(sizeof(ch_binary_read_state_t));
-	cursor->query = pstrdup(query->sql);
-	cursor->read_state = state;
-	cursor->columns_count = resp->columns_count;
-	ch_binary_read_state_init(cursor->read_state, resp);
-	cursor->conversion_states = palloc0(sizeof(uintptr_t) * cursor->columns_count);
+	{
+		MemoryContext oldcxt = MemoryContextSwitchTo(cursor->memcxt);
 
-	cursor->memcxt = tempcxt;
-	cursor->callback.func = binary_cursor_free;
-	cursor->callback.arg = cursor;
-	MemoryContextRegisterResetCallback(tempcxt, &cursor->callback);
-	MemoryContextSwitchTo(oldcxt);
+		cursor->query_response = resp;
+		state = (ch_binary_read_state_t *) palloc0(sizeof(ch_binary_read_state_t));
+		cursor->read_state = state;
+		ch_binary_read_state_init(state, resp);
+		MemoryContextSwitchTo(oldcxt);
+	}
 
 	if (state->error)
 	{
@@ -814,9 +832,6 @@ binary_streaming_cursor_free(void *c)
 static ch_cursor *
 binary_streaming_query(void *conn, const ch_query * query, int fetch_size)
 {
-	MemoryContext tempcxt,
-				oldcxt;
-	ch_cursor  *cursor;
 	ch_binary_streaming_state *sstate;
 
 	sstate = ch_binary_begin_streaming(conn, query, &is_canceled);
@@ -839,41 +854,63 @@ binary_streaming_query(void *conn, const ch_query * query, int fetch_size)
 		}
 	}
 
-	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse streaming cursor",
-									ALLOCSET_DEFAULT_SIZES);
+	{
+		ch_cursor  *cursor;
 
-	oldcxt = MemoryContextSwitchTo(tempcxt);
-	cursor = palloc0(sizeof(ch_cursor));
-	cursor->streaming_state = sstate;
-	cursor->is_streaming = true;
-	cursor->query = pstrdup(query->sql);
-	cursor->columns_count = ch_binary_streaming_columns(sstate);
-	cursor->conversion_states = palloc0(sizeof(uintptr_t) * Max(cursor->columns_count, 1));
-
-	cursor->memcxt = tempcxt;
-	cursor->callback.func = binary_streaming_cursor_free;
-	cursor->callback.arg = cursor;
-	MemoryContextRegisterResetCallback(tempcxt, &cursor->callback);
-	MemoryContextSwitchTo(oldcxt);
-
-	return cursor;
+		cursor = binary_cursor_create(query->sql,
+									  ch_binary_streaming_columns(sstate),
+									  binary_streaming_cursor_free);
+		cursor->streaming_state = sstate;
+		cursor->is_streaming = true;
+		return cursor;
+	}
 }
 
 /*
- * Fetch a row from the binary cursor and return its values.
- *
- * If ctx->tupdesc is set, ctx->attinmeta must also be set, and ctx->values
- * and ctx->nulls must already be palloc'd with space for ctx->tupdesc->natts
- * values.
- *
- * Use ctx->tupdesc and ctx->attinmeta to convert the values to the
- * appropriate Datums, and store them and the indication of their NULLness in
- * ctx->values and ctx->nulls, respectively, then return ctx->values.
- *
- * If ctx->tupdesc is not set, treat all values as text and return them as
- * text `Datum`s. This is the use case for `chfdw_construct_create_tables()`,
- * which only cares about text.
+ * Convert a single binary column value, initializing the conversion state
+ * on first use.  Shared by both the buffered and streaming fetch_row paths.
  */
+static Datum
+binary_convert_column(ch_cursor * cursor, TupleDesc tupdesc,
+					  int attindex, size_t colindex,
+					  Datum val, Oid valtype, bool isnull)
+{
+	intptr_t	convstate;
+
+	if (isnull)
+		return (Datum) 0;
+
+retry:
+	convstate = cursor->conversion_states[colindex];
+	switch (convstate)
+	{
+		case 0:
+			{
+				MemoryContext old_mcxt;
+				Oid			outtype = TupleDescAttr(tupdesc, attindex)->atttypid;
+				void	   *s;
+
+				/*
+				 * Conversion states must outlive the per-tuple memory
+				 * context, so allocate them in the cursor's memory context.
+				 */
+				old_mcxt = MemoryContextSwitchTo(cursor->memcxt);
+				s = ch_binary_init_convert_state(val, valtype, outtype);
+				MemoryContextSwitchTo(old_mcxt);
+
+				if (s == NULL)
+					cursor->conversion_states[colindex] = 1;
+				else
+					cursor->conversion_states[colindex] = (uintptr_t) s;
+				goto retry;
+			}
+		case 1:
+			return val;
+		default:
+			return ch_binary_convert_datum((void *) convstate, val);
+	}
+}
+
 /*
  * Streaming variant of binary_fetch_row.  Reads rows from the coroutine-
  * backed streaming state, fetching the next block when the current one
@@ -915,42 +952,11 @@ binary_streaming_fetch_row(ChFdwScanRowContext * ctx)
 			Oid			valtype;
 			bool		isnull;
 			Datum		val;
-			intptr_t	convstate;
 
 			val = ch_binary_streaming_value(sstate, j, &valtype, &isnull);
-
-			if (isnull)
-				values[i - 1] = (Datum) 0;
-			else
-			{
-		again_s:
-				convstate = cursor->conversion_states[j];
-				switch (convstate)
-				{
-					case 0:
-						{
-							MemoryContext old_mcxt;
-							Oid			outtype = TupleDescAttr(tupdesc, i - 1)->atttypid;
-							void	   *s;
-
-							old_mcxt = MemoryContextSwitchTo(cursor->memcxt);
-							s = ch_binary_init_convert_state(val, valtype, outtype);
-							MemoryContextSwitchTo(old_mcxt);
-
-							if (s == NULL)
-								cursor->conversion_states[j] = 1;
-							else
-								cursor->conversion_states[j] = (uintptr_t) s;
-							goto again_s;
-						}
-					case 1:
-						values[i - 1] = val;
-						break;
-					default:
-						values[i - 1] = ch_binary_convert_datum((void *) convstate, val);
-				}
-			}
-
+			values[i - 1] = binary_convert_column(cursor, tupdesc,
+												  i - 1, j,
+												  val, valtype, isnull);
 			nulls[i - 1] = isnull;
 			j++;
 		}
@@ -959,6 +965,21 @@ binary_streaming_fetch_row(ChFdwScanRowContext * ctx)
 	return values;
 }
 
+/*
+ * Fetch a row from the binary cursor and return its values.
+ *
+ * If ctx->tupdesc is set, ctx->attinmeta must also be set, and ctx->values
+ * and ctx->nulls must already be palloc'd with space for ctx->tupdesc->natts
+ * values.
+ *
+ * Use ctx->tupdesc and ctx->attinmeta to convert the values to the
+ * appropriate Datums, and store them and the indication of their NULLness in
+ * ctx->values and ctx->nulls, respectively, then return ctx->values.
+ *
+ * If ctx->tupdesc is not set, treat all values as text and return them as
+ * text `Datum`s. This is the use case for `chfdw_construct_create_tables()`,
+ * which only cares about text.
+ */
 static Datum *
 binary_fetch_row(ChFdwScanRowContext * ctx)
 {
@@ -1019,51 +1040,12 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 		{
 			int			i = lfirst_int(lc);
 			bool		isnull = state->nulls[j];
-			intptr_t	convstate;
 
-
-			if (isnull)
-				values[i - 1] = (Datum) 0;
-			else
-			{
-		again:
-				convstate = cursor->conversion_states[j];
-				switch (convstate)
-				{
-					case 0:
-						{
-							MemoryContext old_mcxt;
-
-							Oid			outtype = TupleDescAttr(tupdesc, i - 1)->atttypid;
-							void	   *s;
-
-							/*
-							 * now we're should be in temporary memory
-							 * context, so make sure conversion states outlive
-							 * it.
-							 */
-							old_mcxt = MemoryContextSwitchTo(cursor->memcxt);
-							s = ch_binary_init_convert_state(state->values[j],
-															 state->coltypes[j], outtype);
-							MemoryContextSwitchTo(old_mcxt);
-
-							if (s == NULL)
-								/* no conversion but state is initialized */
-								cursor->conversion_states[j] = 1;
-							else
-								cursor->conversion_states[j] = (uintptr_t) s;
-							goto again;
-						}
-					case 1:
-						/* no conversion */
-						values[i - 1] = state->values[j];
-						break;
-					default:
-						values[i - 1] = ch_binary_convert_datum((void *) convstate,
-																state->values[j]);
-				}
-			}
-
+			values[i - 1] = binary_convert_column(cursor, tupdesc,
+												  i - 1, j,
+												  state->values[j],
+												  state->coltypes[j],
+												  isnull);
 			nulls[i - 1] = isnull;
 			j++;
 		}
