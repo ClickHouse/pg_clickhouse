@@ -188,12 +188,41 @@ kill_query(void *conn, const char *query_id)
 		ch_http_response_free(resp);
 }
 
+/*
+ * Allocate a cursor in its own memory context with a cleanup callback.
+ * Used by both HTTP and binary query paths.
+ */
+static ch_cursor *
+cursor_create(const char *sql, size_t columns_count,
+			  MemoryContextCallbackFunction cleanup_func)
+{
+	MemoryContext tempcxt,
+				oldcxt;
+	ch_cursor  *cursor;
+
+	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse cursor",
+									ALLOCSET_DEFAULT_SIZES);
+
+	oldcxt = MemoryContextSwitchTo(tempcxt);
+	cursor = palloc0(sizeof(ch_cursor));
+	cursor->query = pstrdup(sql);
+	cursor->columns_count = columns_count;
+	if (columns_count > 0)
+		cursor->conversion_states = palloc0(sizeof(uintptr_t) * columns_count);
+
+	cursor->memcxt = tempcxt;
+	cursor->callback.func = cleanup_func;
+	cursor->callback.arg = cursor;
+	MemoryContextRegisterResetCallback(tempcxt, &cursor->callback);
+	MemoryContextSwitchTo(oldcxt);
+
+	return cursor;
+}
+
 static ch_cursor *
 http_simple_query(void *conn, const ch_query * query)
 {
 	int			attempts = 0;
-	MemoryContext tempcxt,
-				oldcxt;
 	ch_cursor  *cursor;
 	ch_http_response_t *resp;
 
@@ -242,27 +271,18 @@ again:
 						));
 	}
 
-	/*
-	 * we could not control properly deallocation of libclickhouse memory, so
-	 * we use memory context callbacks for that
-	 */
-	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse cursor",
-									ALLOCSET_DEFAULT_SIZES);
-	oldcxt = MemoryContextSwitchTo(tempcxt);
+	cursor = cursor_create(query->sql, 0, http_cursor_free);
 
-	cursor = palloc0(sizeof(ch_cursor));
-	cursor->query_response = resp;
-	cursor->read_state = palloc0(sizeof(ch_http_read_state));
-	cursor->query = pstrdup(query->sql);
-	cursor->request_time = resp->pretransfer_time * 1000;
-	cursor->total_time = resp->total_time * 1000;
-	ch_http_read_state_init(cursor->read_state, resp->data, resp->datasize);
+	{
+		MemoryContext oldcxt = MemoryContextSwitchTo(cursor->memcxt);
 
-	cursor->memcxt = tempcxt;
-	cursor->callback.func = http_cursor_free;
-	cursor->callback.arg = cursor;
-	MemoryContextRegisterResetCallback(tempcxt, &cursor->callback);
-	MemoryContextSwitchTo(oldcxt);
+		cursor->query_response = resp;
+		cursor->read_state = palloc0(sizeof(ch_http_read_state));
+		cursor->request_time = resp->pretransfer_time * 1000;
+		cursor->total_time = resp->total_time * 1000;
+		ch_http_read_state_init(cursor->read_state, resp->data, resp->datasize);
+		MemoryContextSwitchTo(oldcxt);
+	}
 
 	return cursor;
 }
@@ -283,8 +303,6 @@ http_streaming_cursor_free(void *c)
 static ch_cursor *
 http_streaming_query(void *conn, const ch_query * query, int fetch_size)
 {
-	MemoryContext tempcxt,
-				oldcxt;
 	ch_cursor  *cursor;
 	ch_http_streaming_state *sstate;
 
@@ -326,31 +344,21 @@ http_streaming_query(void *conn, const ch_query * query, int fetch_size)
 		}
 	}
 
-	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse streaming cursor",
-									ALLOCSET_DEFAULT_SIZES);
-	oldcxt = MemoryContextSwitchTo(tempcxt);
-
-	cursor = palloc0(sizeof(ch_cursor));
+	cursor = cursor_create(query->sql, 0, http_streaming_cursor_free);
 	cursor->streaming_state = sstate;
 	cursor->is_streaming = true;
-	cursor->query = pstrdup(query->sql);
 	cursor->request_time = ch_http_streaming_request_time(sstate) * 1000;
 	cursor->total_time = ch_http_streaming_total_time(sstate) * 1000;
 
-	/*
-	 * Initialize read_state for the first batch.  The batch data pointer
-	 * comes from the streaming state's rolling buffer.
-	 */
-	cursor->read_state = palloc0(sizeof(ch_http_read_state));
-	ch_http_read_state_init(cursor->read_state,
-							ch_http_streaming_batch_data(sstate),
-							ch_http_streaming_batch_size(sstate));
+	{
+		MemoryContext oldcxt = MemoryContextSwitchTo(cursor->memcxt);
 
-	cursor->memcxt = tempcxt;
-	cursor->callback.func = http_streaming_cursor_free;
-	cursor->callback.arg = cursor;
-	MemoryContextRegisterResetCallback(tempcxt, &cursor->callback);
-	MemoryContextSwitchTo(oldcxt);
+		cursor->read_state = palloc0(sizeof(ch_http_read_state));
+		ch_http_read_state_init(cursor->read_state,
+								ch_http_streaming_batch_data(sstate),
+								ch_http_streaming_batch_size(sstate));
+		MemoryContextSwitchTo(oldcxt);
+	}
 
 	return cursor;
 }
@@ -743,35 +751,6 @@ binary_disconnect(void *conn)
 		ch_binary_close((ch_binary_connection_t *) conn);
 }
 
-/*
- * Allocate a binary cursor in its own memory context with a cleanup callback.
- */
-static ch_cursor *
-binary_cursor_create(const char *sql, size_t columns_count,
-					 MemoryContextCallbackFunction cleanup_func)
-{
-	MemoryContext tempcxt,
-				oldcxt;
-	ch_cursor  *cursor;
-
-	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse cursor",
-									ALLOCSET_DEFAULT_SIZES);
-
-	oldcxt = MemoryContextSwitchTo(tempcxt);
-	cursor = palloc0(sizeof(ch_cursor));
-	cursor->query = pstrdup(sql);
-	cursor->columns_count = columns_count;
-	cursor->conversion_states = palloc0(sizeof(uintptr_t) * Max(columns_count, 1));
-
-	cursor->memcxt = tempcxt;
-	cursor->callback.func = cleanup_func;
-	cursor->callback.arg = cursor;
-	MemoryContextRegisterResetCallback(tempcxt, &cursor->callback);
-	MemoryContextSwitchTo(oldcxt);
-
-	return cursor;
-}
-
 static ch_cursor *
 binary_simple_query(void *conn, const ch_query * query)
 {
@@ -792,8 +771,8 @@ binary_simple_query(void *conn, const ch_query * query)
 						));
 	}
 
-	cursor = binary_cursor_create(query->sql, resp->columns_count,
-								  binary_cursor_free);
+	cursor = cursor_create(query->sql, resp->columns_count,
+						   binary_cursor_free);
 
 	{
 		MemoryContext oldcxt = MemoryContextSwitchTo(cursor->memcxt);
@@ -857,9 +836,9 @@ binary_streaming_query(void *conn, const ch_query * query, int fetch_size)
 	{
 		ch_cursor  *cursor;
 
-		cursor = binary_cursor_create(query->sql,
-									  ch_binary_streaming_columns(sstate),
-									  binary_streaming_cursor_free);
+		cursor = cursor_create(query->sql,
+							   ch_binary_streaming_columns(sstate),
+							   binary_streaming_cursor_free);
 		cursor->streaming_state = sstate;
 		cursor->is_streaming = true;
 		return cursor;
