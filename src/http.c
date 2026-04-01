@@ -351,7 +351,7 @@ ch_http_response_free(ch_http_response_t * resp)
  * Uses minicoro to run curl_easy_perform inside a coroutine.
  * The write callback counts complete TSV rows; when a batch is
  * ready it yields back to the caller.  Resuming the coroutine
- * continues the transfer.  No threads, no curl_multi.
+ * continues the transfer.
  * ============================================================
  */
 
