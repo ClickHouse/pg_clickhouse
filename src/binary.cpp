@@ -1210,4 +1210,274 @@ extern "C"
 		if (state->error)
 			free(state->error);
 	}
+/*
+ * ============================================================
+ * Streaming binary API
+ *
+ * Uses minicoro to run Client::Select inside a coroutine.
+ * The OnDataCancelable callback yields each block back to the
+ * consumer.  No threads, no synchronization.
+ * ============================================================
+ */
+
+#include "minicoro.h"
+
+struct ch_binary_streaming_state
+{
+	mco_coro   *co;
+
+	/* Current block yielded by the coroutine */
+	Block	   *current_block;	/* points into coroutine stack; valid until next resume */
+	size_t		current_row;
+	bool		have_block;		/* true if current_block is valid */
+	bool		done;			/* coroutine has finished */
+
+	/* Per-row scratch arrays (allocated once) */
+	Oid		   *coltypes;
+	Datum	   *values;
+	bool	   *nulls;
+	size_t		columns_count;
+
+	/* Error / cancel */
+	char	   *error;
+	bool		canceled;
+	bool		(*check_cancel)(void);
+
+	/* Query details (owned, for coroutine to use) */
+	Client	   *client;
+	std::string	sql;
+	QuerySettings settings;
+	QueryParams	params;
+};
+
+/*
+ * Coroutine function: runs Client::Select, yielding each block.
+ */
+static void
+binary_streaming_coro(mco_coro *co)
+{
+	ch_binary_streaming_state *st =
+		(ch_binary_streaming_state *)mco_get_user_data(co);
+
+	try
+	{
+		st->client->Select(
+			clickhouse::Query(st->sql)
+				.SetQuerySettings(st->settings)
+				.SetParams(st->params)
+				.OnDataCancelable(
+					[st, co](const Block & block) -> bool
+					{
+						if (st->check_cancel && st->check_cancel())
+						{
+							st->error = strdup("query was canceled");
+							return false;
+						}
+
+						if (st->canceled)
+							return false;
+
+						if (block.GetColumnCount() == 0)
+							return true;
+
+						/* Make the block available to the consumer and yield */
+						st->current_block = const_cast<Block *>(&block);
+						st->columns_count = block.GetColumnCount();
+						st->have_block = true;
+						st->current_row = 0;
+
+						mco_yield(co);
+
+						/* Resumed by consumer — check if canceled */
+						return !st->canceled;
+					}
+				)
+		);
+	}
+	catch (const std::exception & e)
+	{
+		if (!st->error)
+			st->error = strdup(e.what());
+	}
+
+	st->have_block = false;
+	st->done = true;
+}
+
+ch_binary_streaming_state *
+ch_binary_begin_streaming(ch_binary_connection_t * conn,
+						  const ch_query * query,
+						  bool (*check_cancel)(void))
+{
+	mco_desc	desc;
+	mco_result	res;
+
+	ch_binary_streaming_state *st = new (std::nothrow) ch_binary_streaming_state();
+	if (!st)
+		return NULL;
+
+	st->co = NULL;
+	st->current_block = NULL;
+	st->current_row = 0;
+	st->have_block = false;
+	st->done = false;
+	st->coltypes = NULL;
+	st->values = NULL;
+	st->nulls = NULL;
+	st->columns_count = 0;
+	st->error = NULL;
+	st->canceled = false;
+	st->check_cancel = check_cancel;
+	st->client = (Client *)conn->client;
+	st->sql = query->sql;
+	st->settings = ch_binary_settings(query);
+	st->params = ch_binary_params(query);
+
+	desc = mco_desc_init(binary_streaming_coro, 1024 * 1024);
+	desc.user_data = st;
+	res = mco_create(&st->co, &desc);
+	if (res != MCO_SUCCESS)
+	{
+		st->error = strdup(mco_result_description(res));
+		st->done = true;
+		return st;
+	}
+
+	/* Resume to start the query and get the first block */
+	mco_resume(st->co);
+
+	return st;
+}
+
+/*
+ * Fetch the next block from the stream.
+ * Returns true if a new block is available.
+ */
+bool
+ch_binary_fetch_block(ch_binary_streaming_state * st)
+{
+	if (!st || st->done)
+		return false;
+
+	if (st->have_block)
+		return true;
+
+	/* Resume coroutine to get next block */
+	if (mco_status(st->co) == MCO_SUSPENDED)
+		mco_resume(st->co);
+
+	return st->have_block;
+}
+
+/*
+ * Read the next row from the current block.  Returns false when the
+ * current block is exhausted (caller should call ch_binary_fetch_block).
+ */
+bool
+ch_binary_streaming_read_row(ch_binary_streaming_state * st)
+{
+	if (!st || !st->have_block || !st->current_block)
+		return false;
+
+	Block & block = *st->current_block;
+	size_t row_count = block.GetRowCount();
+
+	if (st->current_row >= row_count)
+	{
+		/* Block exhausted — mark it consumed so next fetch_block resumes */
+		st->have_block = false;
+		return false;
+	}
+
+	/* Allocate scratch arrays on first use */
+	if (!st->coltypes && st->columns_count > 0)
+	{
+		st->coltypes = new Oid[st->columns_count];
+		st->values = new Datum[st->columns_count];
+		st->nulls = new bool[st->columns_count];
+	}
+
+	try
+	{
+		for (size_t i = 0; i < st->columns_count; i++)
+		{
+			st->values[i] = make_datum(block[i], st->current_row,
+									   &st->coltypes[i], &st->nulls[i]);
+		}
+	}
+	catch (const std::exception & e)
+	{
+		if (!st->error)
+			st->error = strdup(e.what());
+		return false;
+	}
+
+	st->current_row++;
+	return true;
+}
+
+size_t
+ch_binary_streaming_columns(ch_binary_streaming_state * st)
+{
+	return st ? st->columns_count : 0;
+}
+
+Datum
+ch_binary_streaming_value(ch_binary_streaming_state * st, size_t col,
+						  Oid * valtype, bool * is_null)
+{
+	if (!st || col >= st->columns_count)
+	{
+		*is_null = true;
+		*valtype = InvalidOid;
+		return (Datum)0;
+	}
+
+	*valtype = st->coltypes[col];
+	*is_null = st->nulls[col];
+	return st->values[col];
+}
+
+char *
+ch_binary_streaming_error(ch_binary_streaming_state * st)
+{
+	return st ? st->error : NULL;
+}
+
+void
+ch_binary_end_streaming(ch_binary_streaming_state * st)
+{
+	if (!st)
+		return;
+
+	/*
+	 * If the coroutine is still suspended (query not fully consumed),
+	 * destroy it without resuming.  mco_destroy handles suspended
+	 * coroutines.  Then reset the connection to cancel any in-flight
+	 * ClickHouse query so the server doesn't keep processing.
+	 */
+	if (st->co)
+	{
+		bool was_suspended = (mco_status(st->co) == MCO_SUSPENDED);
+
+		mco_destroy(st->co);
+		st->co = NULL;
+
+		if (was_suspended)
+			st->client->ResetConnection();
+	}
+
+	if (st->coltypes)
+	{
+		delete[] st->coltypes;
+		delete[] st->values;
+		delete[] st->nulls;
+	}
+
+	if (st->error)
+		free(st->error);
+
+	delete st;
+}
+
 }

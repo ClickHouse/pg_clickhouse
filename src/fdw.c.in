@@ -34,7 +34,9 @@
 #endif
 
 /* extension includes. */
+#include "commands/defrem.h"
 #include "utils/builtins.h"
+#include "utils/guc.h"
 #include "binary.hh"
 #include "internal.h"
 #include "fdw.h"
@@ -205,6 +207,7 @@ static int
 											double *totaldeadrows);
 static void clickhouseBeginForeignScan(ForeignScanState * node, int eflags);
 static TupleTableSlot * clickhouseIterateForeignScan(ForeignScanState * node);
+static void clickhouseReScanForeignScan(ForeignScanState * node);
 static void clickhouseEndForeignScan(ForeignScanState * node);
 static List * clickhousePlanForeignModify(PlannerInfo * root,
 										  ModifyTable * plan,
@@ -355,6 +358,25 @@ clickhouseGetForeignRelSize(PlannerInfo * root,
 	fpinfo->fdw_startup_cost = DEFAULT_FDW_STARTUP_COST;
 	fpinfo->fdw_tuple_cost = DEFAULT_FDW_TUPLE_COST;
 	fpinfo->shippable_extensions = NIL;
+	fpinfo->fetch_size = 50000;
+
+	/* Server-level fetch_size overrides default. */
+	foreach(lc, fpinfo->server->options)
+	{
+		DefElem    *def = (DefElem *) lfirst(lc);
+
+		if (strcmp(def->defname, "fetch_size") == 0)
+			(void) parse_int(defGetString(def), &fpinfo->fetch_size, 0, NULL);
+	}
+
+	/* Table-level fetch_size overrides server-level. */
+	foreach(lc, fpinfo->table->options)
+	{
+		DefElem    *def = (DefElem *) lfirst(lc);
+
+		if (strcmp(def->defname, "fetch_size") == 0)
+			(void) parse_int(defGetString(def), &fpinfo->fetch_size, 0, NULL);
+	}
 
 	chfdw_apply_custom_table_options(fpinfo, foreigntableid);
 
@@ -949,8 +971,13 @@ clickhouseIterateForeignScan(ForeignScanState * node)
 								 values);
 		}
 
-		fsstate->ch_cursor = fsstate->conn.methods->simple_query(fsstate->conn.conn,
-																 &query);
+		if (fsstate->fetch_size > 0 &&
+			fsstate->conn.methods->streaming_query != NULL)
+			fsstate->ch_cursor = fsstate->conn.methods->streaming_query(
+				fsstate->conn.conn, &query, fsstate->fetch_size);
+		else
+			fsstate->ch_cursor = fsstate->conn.methods->simple_query(
+				fsstate->conn.conn, &query);
 
 		time_used += fsstate->ch_cursor->request_time;
 		MemoryContextSwitchTo(old);
@@ -977,6 +1004,23 @@ clickhouseIterateForeignScan(ForeignScanState * node)
 	 */
 	ExecStoreHeapTuple(tup, slot, false);
 	return slot;
+}
+
+/*
+ * clickhouseReScanForeignScan
+ *		Restart the scan from scratch by disposing the current cursor.
+ *		The next IterateForeignScan call will re-issue the query.
+ */
+static void
+clickhouseReScanForeignScan(ForeignScanState * node)
+{
+	ChFdwScanState *fsstate = (ChFdwScanState *) node->fdw_state;
+
+	if (fsstate && fsstate->ch_cursor)
+	{
+		MemoryContextDelete(fsstate->ch_cursor->memcxt);
+		fsstate->ch_cursor = NULL;
+	}
 }
 
 /*
@@ -2927,7 +2971,7 @@ clickhouse_fdw_handler(PG_FUNCTION_ARGS)
 	routine->GetForeignPlan = clickhouseGetForeignPlan;
 	routine->BeginForeignScan = clickhouseBeginForeignScan;
 	routine->IterateForeignScan = clickhouseIterateForeignScan;
-	routine->ReScanForeignScan = clickhouseEndForeignScan;
+	routine->ReScanForeignScan = clickhouseReScanForeignScan;
 	routine->EndForeignScan = clickhouseEndForeignScan;
 
 	/* Functions for updating foreign tables */

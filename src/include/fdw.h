@@ -54,6 +54,11 @@ typedef struct ch_cursor
 	double		total_time;
 	size_t		columns_count;
 	uintptr_t  *conversion_states;	/* for binary */
+
+	/* Streaming support */
+	void	   *streaming_state;	/* opaque: ch_http_streaming_state or
+									 * ch_binary_streaming_state */
+	bool		is_streaming;
 }			ch_cursor;
 
 typedef struct ChFdwScanRowContext
@@ -69,6 +74,7 @@ typedef struct ChFdwScanRowContext
 typedef void (*disconnect_method) (void *conn);
 typedef void (*check_conn_method) (const char *password, UserMapping * user);
 typedef ch_cursor * (*simple_query_method) (void *conn, const ch_query * query);
+typedef ch_cursor * (*streaming_query_method) (void *conn, const ch_query * query, int fetch_size);
 typedef void (*simple_insert_method) (void *conn, const ch_query * query);
 typedef Datum * (*cursor_fetch_row_method) (ChFdwScanRowContext * ctx);
 typedef void *(*prepare_insert_method) (void *conn, ResultRelInfo *, List *,
@@ -79,6 +85,7 @@ typedef struct
 {
 	disconnect_method disconnect;
 	simple_query_method simple_query;
+	streaming_query_method streaming_query;
 	cursor_fetch_row_method fetch_row;
 	prepare_insert_method prepare_insert;
 	insert_tuple_method insert_tuple;
@@ -229,6 +236,7 @@ extern void chfdw_report_error(int elevel, ch_connection conn,
 
 /* in option.c */
 extern kv_list * chfdw_get_session_settings(void);
+extern int	chfdw_get_max_result_size(void);
 
 extern void
 			chfdw_extract_options(List * defelems, char **driver, char **host, int *port,

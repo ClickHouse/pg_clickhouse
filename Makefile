@@ -56,7 +56,7 @@ else
 endif
 
 # Add include directories.
-PG_CPPFLAGS = -I./src/include -I$(CH_CPP_DIR) -I$(CH_CPP_DIR)/contrib/absl
+PG_CPPFLAGS = -I./src/include -I$(CH_CPP_DIR) -I$(CH_CPP_DIR)/contrib/absl -Ivendor/minicoro
 
 # Include other libraries compiled into clickhouse-cpp.
 PG_LDFLAGS = -lstdc++ -lssl -lcrypto $(shell $(CURL_CONFIG) --libs)

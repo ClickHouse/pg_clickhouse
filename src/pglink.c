@@ -28,8 +28,10 @@ static bool initialized = false;
 
 static void http_disconnect(void *conn);
 static ch_cursor * http_simple_query(void *conn, const ch_query * query);
+static ch_cursor * http_streaming_query(void *conn, const ch_query * query, int fetch_size);
 static void http_simple_insert(void *conn, const ch_query * query);
 static void http_cursor_free(void *);
+static void http_streaming_cursor_free(void *);
 static Datum * http_fetch_row(ChFdwScanRowContext * ctx);
 static void *http_prepare_insert(void *, ResultRelInfo *, List *, const ch_query *, char *);
 static void http_insert_tuple(void *, TupleTableSlot *);
@@ -38,15 +40,18 @@ static void char_to_datum(ChFdwScanRowContext * ctx, int attnum, char *data, siz
 static libclickhouse_methods http_methods =
 {
 	.disconnect = http_disconnect,
-		.simple_query = http_simple_query,
-		.fetch_row = http_fetch_row,
-		.prepare_insert = http_prepare_insert,
-		.insert_tuple = http_insert_tuple
+	.simple_query = http_simple_query,
+	.streaming_query = http_streaming_query,
+	.fetch_row = http_fetch_row,
+	.prepare_insert = http_prepare_insert,
+	.insert_tuple = http_insert_tuple
 };
 
 static void binary_disconnect(void *conn);
 static ch_cursor * binary_simple_query(void *conn, const ch_query * query);
+static ch_cursor * binary_streaming_query(void *conn, const ch_query * query, int fetch_size);
 static void binary_cursor_free(void *cursor);
+static void binary_streaming_cursor_free(void *cursor);
 
 /* static void binary_simple_insert(void *conn, const char *query); */
 static Datum * binary_fetch_row(ChFdwScanRowContext * ctx);
@@ -61,10 +66,11 @@ extern const char *ch_quote_ident(const char *rawstr);
 static libclickhouse_methods binary_methods =
 {
 	.disconnect = binary_disconnect,
-		.simple_query = binary_simple_query,
-		.fetch_row = binary_fetch_row,
-		.prepare_insert = binary_prepare_insert,
-		.insert_tuple = binary_insert_tuple
+	.simple_query = binary_simple_query,
+	.streaming_query = binary_streaming_query,
+	.fetch_row = binary_fetch_row,
+	.prepare_insert = binary_prepare_insert,
+	.insert_tuple = binary_insert_tuple
 };
 
 static int
@@ -262,6 +268,94 @@ again:
 }
 
 static void
+http_streaming_cursor_free(void *c)
+{
+	ch_cursor  *cursor = c;
+
+	if (cursor->streaming_state)
+		ch_http_end_streaming(cursor->streaming_state);
+}
+
+/*
+ * Start a streaming query over HTTP.  Returns a cursor that yields rows
+ * in bounded-memory batches of fetch_size rows each.
+ */
+static ch_cursor *
+http_streaming_query(void *conn, const ch_query * query, int fetch_size)
+{
+	MemoryContext tempcxt,
+				oldcxt;
+	ch_cursor  *cursor;
+	ch_http_streaming_state *sstate;
+
+	ch_http_set_progress_func(http_progress_callback);
+
+	sstate = ch_http_begin_streaming(conn, query, fetch_size);
+	if (sstate == NULL)
+		elog(ERROR, "out of memory");
+
+	{
+		char	   *err = ch_http_streaming_error(sstate);
+
+		if (err != NULL)
+		{
+			char	   *errcopy = pstrdup(err);
+
+			ch_http_end_streaming(sstate);
+			ereport(ERROR,
+					(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+					 errmsg("pg_clickhouse: %s", format_error(errcopy))));
+		}
+	}
+
+	{
+		long		status = ch_http_streaming_status(sstate);
+
+		if (status != 0 && status != 200)
+		{
+			char	   *data = ch_http_streaming_batch_data(sstate);
+			char	   *errcopy = data ? pstrdup(data) : pstrdup("unknown error");
+
+			ch_http_end_streaming(sstate);
+			ereport(ERROR, (
+							errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+							errmsg("pg_clickhouse: %s", format_error(errcopy)),
+							status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query->sql),
+							errcontext("HTTP status code: %li", status)
+							));
+		}
+	}
+
+	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse streaming cursor",
+									ALLOCSET_DEFAULT_SIZES);
+	oldcxt = MemoryContextSwitchTo(tempcxt);
+
+	cursor = palloc0(sizeof(ch_cursor));
+	cursor->streaming_state = sstate;
+	cursor->is_streaming = true;
+	cursor->query = pstrdup(query->sql);
+	cursor->request_time = ch_http_streaming_request_time(sstate) * 1000;
+	cursor->total_time = ch_http_streaming_total_time(sstate) * 1000;
+
+	/*
+	 * Initialize read_state for the first batch.  The batch data pointer
+	 * comes from the streaming state's rolling buffer.
+	 */
+	cursor->read_state = palloc0(sizeof(ch_http_read_state));
+	ch_http_read_state_init(cursor->read_state,
+							ch_http_streaming_batch_data(sstate),
+							ch_http_streaming_batch_size(sstate));
+
+	cursor->memcxt = tempcxt;
+	cursor->callback.func = http_streaming_cursor_free;
+	cursor->callback.arg = cursor;
+	MemoryContextRegisterResetCallback(tempcxt, &cursor->callback);
+	MemoryContextSwitchTo(oldcxt);
+
+	return cursor;
+}
+
+static void
 http_simple_insert(void *conn, const ch_query * query)
 {
 	ch_http_response_t *resp = ch_http_simple_query(conn, query);
@@ -326,9 +420,24 @@ http_fetch_row(ChFdwScanRowContext * ctx)
 	Datum	   *values;
 	ch_http_read_state *state = cursor->read_state;
 
-	/* All rows or empty table. */
+	/* All rows or empty table — for streaming, try next batch. */
 	if (state->done || state->data == NULL)
-		return NULL;
+	{
+		if (!cursor->is_streaming)
+			return NULL;
+
+		/* Attempt to fetch the next batch from the stream. */
+		if (!ch_http_fetch_batch(cursor->streaming_state))
+			return NULL;
+
+		/* Re-initialize read state with new batch data. */
+		ch_http_read_state_init(state,
+								ch_http_streaming_batch_data(cursor->streaming_state),
+								ch_http_streaming_batch_size(cursor->streaming_state));
+
+		if (state->done || state->data == NULL)
+			return NULL;
+	}
 
 	/* Special case: SELECT NULL. */
 	if (attcount == 0)
@@ -689,6 +798,67 @@ binary_simple_query(void *conn, const ch_query * query)
 	return cursor;
 }
 
+static void
+binary_streaming_cursor_free(void *c)
+{
+	ch_cursor  *cursor = c;
+
+	if (cursor->streaming_state)
+		ch_binary_end_streaming(cursor->streaming_state);
+}
+
+/*
+ * Start a streaming query over the binary protocol.  Returns a cursor
+ * that yields rows block-by-block via coroutine.
+ */
+static ch_cursor *
+binary_streaming_query(void *conn, const ch_query * query, int fetch_size)
+{
+	MemoryContext tempcxt,
+				oldcxt;
+	ch_cursor  *cursor;
+	ch_binary_streaming_state *sstate;
+
+	sstate = ch_binary_begin_streaming(conn, query, &is_canceled);
+	if (sstate == NULL)
+		elog(ERROR, "out of memory");
+
+	{
+		char	   *err = ch_binary_streaming_error(sstate);
+
+		if (err != NULL)
+		{
+			char	   *errcopy = pstrdup(err);
+
+			ch_binary_end_streaming(sstate);
+			ereport(ERROR, (
+							errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+							errmsg("pg_clickhouse: %s", errcopy),
+							errdetail_internal("Remote Query: %.64000s", query->sql)
+							));
+		}
+	}
+
+	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse streaming cursor",
+									ALLOCSET_DEFAULT_SIZES);
+
+	oldcxt = MemoryContextSwitchTo(tempcxt);
+	cursor = palloc0(sizeof(ch_cursor));
+	cursor->streaming_state = sstate;
+	cursor->is_streaming = true;
+	cursor->query = pstrdup(query->sql);
+	cursor->columns_count = ch_binary_streaming_columns(sstate);
+	cursor->conversion_states = palloc0(sizeof(uintptr_t) * Max(cursor->columns_count, 1));
+
+	cursor->memcxt = tempcxt;
+	cursor->callback.func = binary_streaming_cursor_free;
+	cursor->callback.arg = cursor;
+	MemoryContextRegisterResetCallback(tempcxt, &cursor->callback);
+	MemoryContextSwitchTo(oldcxt);
+
+	return cursor;
+}
+
 /*
  * Fetch a row from the binary cursor and return its values.
  *
@@ -704,6 +874,92 @@ binary_simple_query(void *conn, const ch_query * query)
  * text `Datum`s. This is the use case for `chfdw_construct_create_tables()`,
  * which only cares about text.
  */
+/*
+ * Streaming variant of binary_fetch_row.  Reads rows from the coroutine-
+ * backed streaming state, fetching the next block when the current one
+ * is exhausted.
+ */
+static Datum *
+binary_streaming_fetch_row(ChFdwScanRowContext * ctx)
+{
+	ListCell   *lc;
+	ch_cursor  *cursor = ctx->cursor;
+	ch_binary_streaming_state *sstate = cursor->streaming_state;
+	List	   *attrs = ctx->retrieved_attrs;
+	TupleDesc	tupdesc = ctx->tupdesc;
+	Datum	   *values = ctx->values;
+	bool	   *nulls = ctx->nulls;
+	size_t		attcount = list_length(attrs);
+
+	/* Try to read a row; if block exhausted, fetch next block. */
+	while (!ch_binary_streaming_read_row(sstate))
+	{
+		char	   *err = ch_binary_streaming_error(sstate);
+
+		if (err != NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+					 errmsg("pg_clickhouse: error while reading row: %s", err)));
+
+		if (!ch_binary_fetch_block(sstate))
+			return NULL;		/* no more blocks — EOF */
+	}
+
+	if (tupdesc)
+	{
+		size_t		j = 0;
+
+		Assert(values && nulls);
+		foreach(lc, attrs)
+		{
+			int			i = lfirst_int(lc);
+			Oid			valtype;
+			bool		isnull;
+			Datum		val;
+			intptr_t	convstate;
+
+			val = ch_binary_streaming_value(sstate, j, &valtype, &isnull);
+
+			if (isnull)
+				values[i - 1] = (Datum) 0;
+			else
+			{
+		again_s:
+				convstate = cursor->conversion_states[j];
+				switch (convstate)
+				{
+					case 0:
+						{
+							MemoryContext old_mcxt;
+							Oid			outtype = TupleDescAttr(tupdesc, i - 1)->atttypid;
+							void	   *s;
+
+							old_mcxt = MemoryContextSwitchTo(cursor->memcxt);
+							s = ch_binary_init_convert_state(val, valtype, outtype);
+							MemoryContextSwitchTo(old_mcxt);
+
+							if (s == NULL)
+								cursor->conversion_states[j] = 1;
+							else
+								cursor->conversion_states[j] = (uintptr_t) s;
+							goto again_s;
+						}
+					case 1:
+						values[i - 1] = val;
+						break;
+					default:
+						values[i - 1] = ch_binary_convert_datum((void *) convstate, val);
+				}
+			}
+
+			nulls[i - 1] = isnull;
+			j++;
+		}
+	}
+
+	return values;
+}
+
 static Datum *
 binary_fetch_row(ChFdwScanRowContext * ctx)
 {
@@ -713,9 +969,16 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 	TupleDesc	tupdesc = ctx->tupdesc;
 	Datum	   *values = ctx->values;
 	bool	   *nulls = ctx->nulls;
-	ch_binary_read_state_t *state = cursor->read_state;
-	bool		have_data = ch_binary_read_row(state);
+	ch_binary_read_state_t *state;
+	bool		have_data;
 	size_t		attcount = list_length(attrs);
+
+	/* Streaming cursors use a separate code path. */
+	if (cursor->is_streaming)
+		return binary_streaming_fetch_row(ctx);
+
+	state = cursor->read_state;
+	have_data = ch_binary_read_row(state);
 
 	if (state->error)
 		ereport(ERROR,
