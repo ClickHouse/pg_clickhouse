@@ -85,7 +85,7 @@ extern "C"
 	extern size_t ch_binary_streaming_columns(ch_binary_streaming_state * state);
 	extern Datum ch_binary_streaming_value(ch_binary_streaming_state * state, size_t col,
 										   Oid * valtype, bool *is_null);
-	extern char *ch_binary_streaming_error(ch_binary_streaming_state * state);
+	extern const char *ch_binary_streaming_error(ch_binary_streaming_state * state);
 	extern void ch_binary_end_streaming(ch_binary_streaming_state * state);
 
 /* reading */

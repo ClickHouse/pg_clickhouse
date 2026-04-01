@@ -39,8 +39,8 @@ struct ch_binary_streaming_state
 	std::unique_ptr<bool[]> nulls;
 	size_t		columns_count = 0;
 
-	char	   *error = nullptr;
-	bool		error_owned = false;
+	const char *error = nullptr;
+	char	   *owned_error = nullptr;
 	bool		(*check_cancel) (void) = nullptr;
 
 	Client	   *client = nullptr;
@@ -50,17 +50,15 @@ struct ch_binary_streaming_state
 
 	~ch_binary_streaming_state()
 	{
-		if (error && error_owned)
-			free(error);
+		free(owned_error);
 	}
 
 	void
-	SetStaticError(const char *message)
+	SetBorrowedError(const char *message)
 	{
 		if (error)
 			return;
-		error = const_cast<char *>(message);
-		error_owned = false;
+		error = message;
 	}
 
 	void
@@ -72,19 +70,19 @@ struct ch_binary_streaming_state
 			return;
 		if (!message)
 		{
-			SetStaticError(kBinaryStreamingOom);
+			SetBorrowedError(kBinaryStreamingOom);
 			return;
 		}
 
 		copy = strdup(message);
 		if (!copy)
 		{
-			SetStaticError(kBinaryStreamingOom);
+			SetBorrowedError(kBinaryStreamingOom);
 			return;
 		}
 
-		error = copy;
-		error_owned = true;
+		owned_error = copy;
+		error = owned_error;
 	}
 };
 
@@ -122,7 +120,7 @@ binary_streaming_coro(mco_coro * co)
 		{
 			if (st->check_cancel && st->check_cancel())
 			{
-				st->SetStaticError(kBinaryStreamingCanceled);
+				st->SetBorrowedError(kBinaryStreamingCanceled);
 				return false;
 			}
 
@@ -225,7 +223,7 @@ extern "C"
 			st->nulls.reset(new (std::nothrow) bool[st->columns_count]);
 			if (!st->coltypes || !st->values || !st->nulls)
 			{
-				st->SetStaticError(kBinaryStreamingOom);
+				st->SetBorrowedError(kBinaryStreamingOom);
 				return false;
 			}
 		}
@@ -270,7 +268,7 @@ extern "C"
 		return st->values[col];
 	}
 
-	char *
+	const char *
 	ch_binary_streaming_error(ch_binary_streaming_state * st)
 	{
 		return st ? st->error : NULL;

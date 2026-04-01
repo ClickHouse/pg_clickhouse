@@ -253,7 +253,7 @@ http_streaming_load_batch(ch_cursor * cursor, ch_http_read_state * state)
 }
 
 static void
-report_binary_query_error(const char *query_sql, char *error)
+report_binary_query_error(const char *query_sql, const char *error)
 {
 	ereport(ERROR,
 			(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
@@ -266,7 +266,7 @@ report_binary_streaming_state(ch_binary_streaming_state * sstate,
 							  const char *query_sql,
 							  bool cleanup)
 {
-	char	   *err = ch_binary_streaming_error(sstate);
+	const char *err = ch_binary_streaming_error(sstate);
 	char	   *errcopy;
 
 	if (err == NULL)
@@ -281,7 +281,7 @@ report_binary_streaming_state(ch_binary_streaming_state * sstate,
 static void
 report_binary_streaming_read_error(ch_binary_streaming_state * sstate)
 {
-	char	   *err = ch_binary_streaming_error(sstate);
+	const char *err = ch_binary_streaming_error(sstate);
 
 	if (err == NULL)
 		return;
