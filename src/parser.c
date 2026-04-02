@@ -92,8 +92,11 @@ ch_http_read_next(ch_http_read_state * state)
 	}
 
 	/* Should be at the end of the line or the file. */
-	Assert(data[state->curpos] == '\n');
-	int			res = data[state->curpos + 1] == '\0' ? CH_EOF : CH_EOL;
+	if (data[state->curpos] != '\n' && data[state->curpos] != '\0')
+	{
+		elog(ERROR, "Unexpected character %c after array", data[state->curpos]);
+	}
+	int			res = data[state->curpos] == '\0' || data[state->curpos + 1] == '\0' ? CH_EOF : CH_EOL;
 
 	state->done = (res == CH_EOF);
 	state->curpos++;

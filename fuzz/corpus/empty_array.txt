@@ -1,0 +1,1 @@
+[]	an empty shell is still a home

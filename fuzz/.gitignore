@@ -1,0 +1,4 @@
+findings/
+fuzz_parser
+fuzz_parser_debug
+fuzz_parser_triage
