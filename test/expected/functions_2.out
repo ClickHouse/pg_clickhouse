@@ -1435,6 +1435,148 @@ SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(2042323443);
  2042323443 | 2042323443.232
 (1 row)
 
+-- check split_part → splitByString.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE split_part(val, 'l', 2) = '1';
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((splitByString('l', val)[2] = '1'))
+(3 rows)
+
+SELECT val FROM t4 WHERE split_part(val, 'l', 2) = '1';
+ val  
+------
+ val1
+(1 row)
+
+-- check regexp_replace → replaceRegexpOne (no flag).
+EXPLAIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE regexp_replace(val, '[0-9]', 'X') = 'valX';
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((replaceRegexpOne(val, '[0-9]', 'X') = 'valX'))
+(3 rows)
+
+SELECT val FROM t4 WHERE regexp_replace(val, '[0-9]', 'X') = 'valX';
+ val  
+------
+ val1
+ val2
+(2 rows)
+
+-- check regexp_replace → replaceRegexpAll ('g' flag).
+EXPLAIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE regexp_replace(val, '[0-9]', 'X', 'g') = 'valX';
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((replaceRegexpAll(val, '[0-9]', 'X') = 'valX'))
+(3 rows)
+
+SELECT val FROM t4 WHERE regexp_replace(val, '[0-9]', 'X', 'g') = 'valX';
+ val  
+------
+ val1
+ val2
+(2 rows)
+
+-- check array_to_string → arrayStringConcat.
+SELECT clickhouse_raw_query('CREATE TABLE functions_test.t8 (id UInt64, tags Array(String)) ENGINE = MergeTree ORDER BY id');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$INSERT INTO functions_test.t8 VALUES (1, ['a','b','c']), (2, ['x'])$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+CREATE FOREIGN TABLE t8 (id bigint, tags text[]) SERVER functions_loopback;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT array_to_string(tags, ', ') AS t FROM t8 GROUP BY t ORDER BY t;
+                                                                                QUERY PLAN                                                                                
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (array_to_string(tags, ', '::text))
+   Relations: Aggregate on (t8)
+   Remote SQL: SELECT arrayStringConcat(tags, ', ') FROM functions_test.t8 GROUP BY (arrayStringConcat(tags, ', ')) ORDER BY arrayStringConcat(tags, ', ') ASC NULLS LAST
+(4 rows)
+
+SELECT array_to_string(tags, ', ') AS t FROM t8 GROUP BY t ORDER BY t;
+    t    
+---------
+ a, b, c
+ x
+(2 rows)
+
+-- check concat_ws → arrayStringConcat with NULL filtering.
+SELECT clickhouse_raw_query('CREATE TABLE functions_test.t9 (id UInt64, city Nullable(String), state Nullable(String), country Nullable(String)) ENGINE = MergeTree ORDER BY id');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$INSERT INTO functions_test.t9 VALUES (1, 'Paris', NULL, 'France'), (2, 'London', 'England', 'UK')$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+CREATE FOREIGN TABLE t9 (id bigint, city text, state text, country text) SERVER functions_loopback;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT concat_ws(', ', city, state, country) AS addr FROM t9 GROUP BY addr ORDER BY addr;
+                                                                                                                                                                                                         QUERY PLAN                                                                                                                                                                                                          
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (concat_ws(', '::text, city, state, country))
+   Relations: Aggregate on (t9)
+   Remote SQL: SELECT arrayStringConcat(arrayFilter(x -> x != '', [ifNull(city, ''), ifNull(state, ''), ifNull(country, '')]), ', ') FROM functions_test.t9 GROUP BY (arrayStringConcat(arrayFilter(x -> x != '', [ifNull(city, ''), ifNull(state, ''), ifNull(country, '')]), ', ')) ORDER BY arrayStringConcat(arrayFilter(x -> x != '', [ifNull(city, ''), ifNull(state, ''), ifNull(country, '')]), ', ') ASC NULLS LAST
+(4 rows)
+
+SELECT concat_ws(', ', city, state, country) AS addr FROM t9 GROUP BY addr ORDER BY addr;
+        addr         
+---------------------
+ London, England, UK
+ Paris, France
+(2 rows)
+
+-- check to_char → formatDateTime.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE to_char(ts, 'YYYYMMDD') = '20251015';
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((formatDateTime(ts, '%Y%m%d') = '20251015'))
+(3 rows)
+
+SELECT ts FROM t5 WHERE to_char(ts, 'YYYYMMDD') = '20251015';
+         ts          
+---------------------
+ 2025-10-15 13:12:25
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT to_char(ts, 'YYYY-MM-DD HH24:MI:SS') AS d FROM t5 GROUP BY d ORDER BY d;
+                                                                                               QUERY PLAN                                                                                               
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (to_char(ts, 'YYYY-MM-DD HH24:MI:SS'::text))
+   Relations: Aggregate on (t5)
+   Remote SQL: SELECT formatDateTime(ts, '%Y-%m-%d %H:%i:%S') FROM functions_test.t5 GROUP BY (formatDateTime(ts, '%Y-%m-%d %H:%i:%S')) ORDER BY formatDateTime(ts, '%Y-%m-%d %H:%i:%S') ASC NULLS LAST
+(4 rows)
+
+SELECT to_char(ts, 'YYYY-MM-DD HH24:MI:SS') AS d FROM t5 GROUP BY d ORDER BY d;
+          d          
+---------------------
+ 2025-10-15 20:12:25
+ 2026-11-17 08:13:26
+ 2027-12-17 22:14:27
+ 2028-01-18 23:15:28
+ 2029-02-19 01:16:29
+ 2030-03-20 02:16:30
+(6 rows)
+
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE functions_test');
  clickhouse_raw_query 
@@ -1443,7 +1585,7 @@ SELECT clickhouse_raw_query('DROP DATABASE functions_test');
 (1 row)
 
 DROP SERVER functions_loopback CASCADE;
-NOTICE:  drop cascades to 7 other objects
+NOTICE:  drop cascades to 9 other objects
 DETAIL:  drop cascades to foreign table t1
 drop cascades to foreign table t2
 drop cascades to foreign table t3
@@ -1451,3 +1593,5 @@ drop cascades to foreign table t3_map
 drop cascades to foreign table t4
 drop cascades to foreign table t5
 drop cascades to foreign table t6
+drop cascades to foreign table t8
+drop cascades to foreign table t9

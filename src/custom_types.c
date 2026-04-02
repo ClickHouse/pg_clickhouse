@@ -53,6 +53,18 @@
 #define F_REGEXP_LIKE_TEXT_TEXT 6263
 #endif
 
+/* Pre-PG14 compat for function OIDs used in new translations. */
+#if PG_VERSION_NUM < 140000
+#define F_SPLIT_PART 2088
+#define F_REGEXP_REPLACE_TEXT_TEXT_TEXT 2284
+#define F_REGEXP_REPLACE_TEXT_TEXT_TEXT_TEXT 2285
+#define F_CONCAT_WS 3059
+#define F_ARRAY_TO_STRING_ANYARRAY_TEXT 395
+#define F_ARRAY_TO_STRING_ANYARRAY_TEXT_TEXT 384
+#define F_TO_CHAR_TIMESTAMP_TEXT 2049
+#define F_TO_CHAR_TIMESTAMPTZ_TEXT 1770
+#endif
+
 #define STR_STARTS_WITH(str, sub) strncmp(str, sub, strlen(sub)) == 0
 #define STR_EQUAL(a, b) strcmp(a, b) == 0
 
@@ -202,6 +214,14 @@ chfdw_check_for_custom_function(Oid funcid)
 			case F_MD5_BYTEA:
 			case F_MD5_TEXT:
 			case F_TO_TIMESTAMP_FLOAT8:
+			case F_SPLIT_PART:
+			case F_REGEXP_REPLACE_TEXT_TEXT_TEXT:
+			case F_REGEXP_REPLACE_TEXT_TEXT_TEXT_TEXT:
+			case F_CONCAT_WS:
+			case F_ARRAY_TO_STRING_ANYARRAY_TEXT:
+			case F_ARRAY_TO_STRING_ANYARRAY_TEXT_TEXT:
+			case F_TO_CHAR_TIMESTAMP_TEXT:
+			case F_TO_CHAR_TIMESTAMPTZ_TEXT:
 				special_builtin = true;
 				break;
 			default:
@@ -297,6 +317,38 @@ chfdw_check_for_custom_function(Oid funcid)
 					 */
 					strcpy(entry->custom_name, "fromUnixTimestamp(toInt64");
 					entry->paren_count = 2;
+					break;
+				}
+			case F_SPLIT_PART:
+				{
+					entry->cf_type = CF_SPLIT_PART;
+					entry->custom_name[0] = '\1';
+					break;
+				}
+			case F_REGEXP_REPLACE_TEXT_TEXT_TEXT:
+			case F_REGEXP_REPLACE_TEXT_TEXT_TEXT_TEXT:
+				{
+					entry->cf_type = CF_REGEXP_REPLACE;
+					entry->custom_name[0] = '\1';
+					break;
+				}
+			case F_CONCAT_WS:
+				{
+					entry->cf_type = CF_CONCAT_WS;
+					entry->custom_name[0] = '\1';
+					break;
+				}
+			case F_ARRAY_TO_STRING_ANYARRAY_TEXT:
+			case F_ARRAY_TO_STRING_ANYARRAY_TEXT_TEXT:
+				{
+					strcpy(entry->custom_name, "arrayStringConcat");
+					break;
+				}
+			case F_TO_CHAR_TIMESTAMP_TEXT:
+			case F_TO_CHAR_TIMESTAMPTZ_TEXT:
+				{
+					entry->cf_type = CF_TO_CHAR;
+					entry->custom_name[0] = '\1';
 					break;
 				}
 		}

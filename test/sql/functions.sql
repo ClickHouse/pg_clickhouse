@@ -309,6 +309,38 @@ SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(2042323443);
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(2042323443);
 SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(2042323443);
 
+-- check split_part → splitByString.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE split_part(val, 'l', 2) = '1';
+SELECT val FROM t4 WHERE split_part(val, 'l', 2) = '1';
+
+-- check regexp_replace → replaceRegexpOne (no flag).
+EXPLAIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE regexp_replace(val, '[0-9]', 'X') = 'valX';
+SELECT val FROM t4 WHERE regexp_replace(val, '[0-9]', 'X') = 'valX';
+
+-- check regexp_replace → replaceRegexpAll ('g' flag).
+EXPLAIN (VERBOSE, COSTS OFF) SELECT val FROM t4 WHERE regexp_replace(val, '[0-9]', 'X', 'g') = 'valX';
+SELECT val FROM t4 WHERE regexp_replace(val, '[0-9]', 'X', 'g') = 'valX';
+
+-- check array_to_string → arrayStringConcat.
+SELECT clickhouse_raw_query('CREATE TABLE functions_test.t8 (id UInt64, tags Array(String)) ENGINE = MergeTree ORDER BY id');
+SELECT clickhouse_raw_query($$INSERT INTO functions_test.t8 VALUES (1, ['a','b','c']), (2, ['x'])$$);
+CREATE FOREIGN TABLE t8 (id bigint, tags text[]) SERVER functions_loopback;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT array_to_string(tags, ', ') AS t FROM t8 GROUP BY t ORDER BY t;
+SELECT array_to_string(tags, ', ') AS t FROM t8 GROUP BY t ORDER BY t;
+
+-- check concat_ws → arrayStringConcat with NULL filtering.
+SELECT clickhouse_raw_query('CREATE TABLE functions_test.t9 (id UInt64, city Nullable(String), state Nullable(String), country Nullable(String)) ENGINE = MergeTree ORDER BY id');
+SELECT clickhouse_raw_query($$INSERT INTO functions_test.t9 VALUES (1, 'Paris', NULL, 'France'), (2, 'London', 'England', 'UK')$$);
+CREATE FOREIGN TABLE t9 (id bigint, city text, state text, country text) SERVER functions_loopback;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT concat_ws(', ', city, state, country) AS addr FROM t9 GROUP BY addr ORDER BY addr;
+SELECT concat_ws(', ', city, state, country) AS addr FROM t9 GROUP BY addr ORDER BY addr;
+
+-- check to_char → formatDateTime.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE to_char(ts, 'YYYYMMDD') = '20251015';
+SELECT ts FROM t5 WHERE to_char(ts, 'YYYYMMDD') = '20251015';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT to_char(ts, 'YYYY-MM-DD HH24:MI:SS') AS d FROM t5 GROUP BY d ORDER BY d;
+SELECT to_char(ts, 'YYYY-MM-DD HH24:MI:SS') AS d FROM t5 GROUP BY d ORDER BY d;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE functions_test');
 DROP SERVER functions_loopback CASCADE;

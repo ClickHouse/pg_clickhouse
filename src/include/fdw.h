@@ -300,6 +300,10 @@ typedef enum
 	CF_REGEX_NO_MATCH,			/* !~ POSIX regex operator */
 	CF_REGEX_ICASE_MATCH,		/* ~* case-insensitive regex operator */
 	CF_REGEX_ICASE_NO_MATCH,	/* !~* case-insensitive regex operator */
+	CF_SPLIT_PART,				/* split_part → splitByString */
+	CF_REGEXP_REPLACE,			/* regexp_replace → replaceRegexp* */
+	CF_CONCAT_WS,				/* concat_ws → arrayStringConcat */
+	CF_TO_CHAR,					/* to_char → formatDateTime */
 }			custom_object_type;
 
 typedef enum

@@ -2352,6 +2352,164 @@ deparseSubscriptingRef(SubscriptingRef * node, deparse_expr_cxt * context)
 }
 
 /*
+ * Translate a PostgreSQL to_char() format string to a ClickHouse
+ * formatDateTime() format string.  Caller must pfree the result.
+ */
+static char *
+translate_to_char_format(const char *pgfmt)
+{
+	StringInfoData chfmt;
+
+	initStringInfo(&chfmt);
+
+	for (const char *p = pgfmt; *p;)
+	{
+		if (strncmp(p, "YYYY", 4) == 0)
+		{
+			appendStringInfoString(&chfmt, "%Y");
+			p += 4;
+		}
+		else if (strncmp(p, "HH24", 4) == 0)
+		{
+			appendStringInfoString(&chfmt, "%H");
+			p += 4;
+		}
+		else if (strncmp(p, "HH12", 4) == 0)
+		{
+			appendStringInfoString(&chfmt, "%I");
+			p += 4;
+		}
+		else if (strncmp(p, "MI", 2) == 0)
+		{
+			appendStringInfoString(&chfmt, "%i");
+			p += 2;
+		}
+		else if (strncmp(p, "MM", 2) == 0)
+		{
+			appendStringInfoString(&chfmt, "%m");
+			p += 2;
+		}
+		else if (strncmp(p, "DD", 2) == 0)
+		{
+			appendStringInfoString(&chfmt, "%d");
+			p += 2;
+		}
+		else if (strncmp(p, "SS", 2) == 0)
+		{
+			appendStringInfoString(&chfmt, "%S");
+			p += 2;
+		}
+		else
+		{
+			appendStringInfoChar(&chfmt, *p);
+			p++;
+		}
+	}
+
+	return chfmt.data;
+}
+
+/*
+ * split_part(str, delim, n) → splitByString(delim, str)[n]
+ */
+static void
+deparseSplitPart(FuncExpr * node, deparse_expr_cxt * context)
+{
+	StringInfo	buf = context->buf;
+	Expr	   *str_arg = (Expr *) linitial(node->args);
+	Expr	   *delim_arg = (Expr *) list_nth(node->args, 1);
+	Const	   *idx_const = (Const *) list_nth(node->args, 2);
+	int32		idx = DatumGetInt32(idx_const->constvalue);
+
+	appendStringInfoString(buf, "splitByString(");
+	deparseExpr(delim_arg, context);
+	appendStringInfoString(buf, ", ");
+	deparseExpr(str_arg, context);
+	appendStringInfo(buf, ")[%d]", idx);
+}
+
+/*
+ * regexp_replace(str, pat, rep)      → replaceRegexpOne(str, pat, rep)
+ * regexp_replace(str, pat, rep, 'g') → replaceRegexpAll(str, pat, rep)
+ */
+static void
+deparseRegexpReplace(FuncExpr * node, deparse_expr_cxt * context)
+{
+	StringInfo	buf = context->buf;
+	int			nargs = list_length(node->args);
+
+	if (nargs == 4)
+	{
+		Const	   *flags = (Const *) list_nth(node->args, 3);
+		char	   *flagstr = TextDatumGetCString(flags->constvalue);
+
+		if (strchr(flagstr, 'g') != NULL)
+			appendStringInfoString(buf, "replaceRegexpAll(");
+		else
+			appendStringInfoString(buf, "replaceRegexpOne(");
+		pfree(flagstr);
+	}
+	else
+		appendStringInfoString(buf, "replaceRegexpOne(");
+
+	deparseExpr((Expr *) linitial(node->args), context);
+	appendStringInfoString(buf, ", ");
+	deparseExpr((Expr *) list_nth(node->args, 1), context);
+	appendStringInfoString(buf, ", ");
+	deparseExpr((Expr *) list_nth(node->args, 2), context);
+	appendStringInfoChar(buf, ')');
+}
+
+/*
+ * concat_ws(sep, a, b, ...) →
+ *   arrayStringConcat(arrayFilter(x -> x != '',
+ *     [ifNull(a,''), ifNull(b,''), ...]), sep)
+ */
+static void
+deparseConcatWs(FuncExpr * node, deparse_expr_cxt * context)
+{
+	StringInfo	buf = context->buf;
+	Expr	   *sep_arg = (Expr *) linitial(node->args);
+	ListCell   *lc;
+	bool		first_val = true;
+
+	appendStringInfoString(buf, "arrayStringConcat(arrayFilter(x -> x != '', [");
+
+	for_each_cell(lc, node->args, list_second_cell(node->args))
+	{
+		if (!first_val)
+			appendStringInfoString(buf, ", ");
+		appendStringInfoString(buf, "ifNull(");
+		deparseExpr((Expr *) lfirst(lc), context);
+		appendStringInfoString(buf, ", '')");
+		first_val = false;
+	}
+
+	appendStringInfoString(buf, "]), ");
+	deparseExpr(sep_arg, context);
+	appendStringInfoChar(buf, ')');
+}
+
+/*
+ * to_char(ts, fmt) → formatDateTime(ts, translated_fmt)
+ */
+static void
+deparseToChar(FuncExpr * node, deparse_expr_cxt * context)
+{
+	StringInfo	buf = context->buf;
+	Const	   *fmt_const = (Const *) list_nth(node->args, 1);
+	char	   *pgfmt = TextDatumGetCString(fmt_const->constvalue);
+	char	   *chfmt = translate_to_char_format(pgfmt);
+
+	appendStringInfoString(buf, "formatDateTime(");
+	deparseExpr((Expr *) linitial(node->args), context);
+	appendStringInfo(buf, ", '%s')", chfmt);
+
+	pfree(pgfmt);
+	pfree(chfmt);
+}
+
+/*
  * Deparse a function call.
  */
 static void
@@ -2495,6 +2653,27 @@ deparseFuncExpr(FuncExpr * node, deparse_expr_cxt * context)
 		appendStringInfoChar(buf, '(');
 		deparseExpr(list_nth(node->args, 1), context);
 		appendStringInfoChar(buf, ')');
+		return;
+	}
+
+	if (cdef && cdef->cf_type == CF_SPLIT_PART)
+	{
+		deparseSplitPart(node, context);
+		return;
+	}
+	else if (cdef && cdef->cf_type == CF_REGEXP_REPLACE)
+	{
+		deparseRegexpReplace(node, context);
+		return;
+	}
+	else if (cdef && cdef->cf_type == CF_CONCAT_WS)
+	{
+		deparseConcatWs(node, context);
+		return;
+	}
+	else if (cdef && cdef->cf_type == CF_TO_CHAR)
+	{
+		deparseToChar(node, context);
 		return;
 	}
 
