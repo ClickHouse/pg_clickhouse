@@ -55,9 +55,8 @@ typedef struct ch_cursor
 	size_t		columns_count;
 	uintptr_t  *conversion_states;	/* for binary */
 
-	/* Streaming support */
-	void	   *streaming_state;	/* opaque: ch_http_streaming_state or
-									 * ch_binary_streaming_state */
+	/* Streaming support for binary scans. */
+	void	   *streaming_state;
 	bool		is_streaming;
 }			ch_cursor;
 

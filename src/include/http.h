@@ -53,20 +53,4 @@ void		ch_http_read_state_init(ch_http_read_state * state, char *data, size_t dat
 int			ch_http_read_next(ch_http_read_state * state);
 void		ch_http_response_free(ch_http_response_t * resp);
 
-/* Streaming API: single HTTP request with coroutine-based batching */
-typedef struct ch_http_streaming_state ch_http_streaming_state;
-
-ch_http_streaming_state *ch_http_begin_streaming(ch_http_connection_t * conn,
-												 const ch_query * query,
-												 int fetch_size);
-bool		ch_http_fetch_batch(ch_http_streaming_state * state);
-char	   *ch_http_streaming_error(ch_http_streaming_state * state);
-long		ch_http_streaming_status(ch_http_streaming_state * state);
-double		ch_http_streaming_request_time(ch_http_streaming_state * state);
-double		ch_http_streaming_total_time(ch_http_streaming_state * state);
-char	   *ch_http_streaming_batch_data(ch_http_streaming_state * state);
-void		ch_http_streaming_init_read_state(ch_http_streaming_state * state,
-											 ch_http_read_state * read_state);
-void		ch_http_end_streaming(ch_http_streaming_state * state);
-
 #endif							/* CLICKHOUSE_HTTP_H */

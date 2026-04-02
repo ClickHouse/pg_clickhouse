@@ -196,16 +196,6 @@ report_oom(void)
 }
 
 static void
-report_http_status_error(long status, const char *query_sql, char *error)
-{
-	ereport(ERROR,
-			(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-			 errmsg("pg_clickhouse: %s", format_error(error)),
-			 status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query_sql),
-			 errcontext("HTTP status code: %li", status)));
-}
-
-static void
 report_binary_query_error(const char *query_sql, const char *error)
 {
 	ereport(ERROR,
@@ -280,6 +270,8 @@ static ch_cursor *
 http_simple_query(void *conn, const ch_query * query)
 {
 	int			attempts = 0;
+	MemoryContext tempcxt,
+				oldcxt;
 	ch_cursor  *cursor;
 	ch_http_response_t *resp;
 
@@ -288,7 +280,7 @@ http_simple_query(void *conn, const ch_query * query)
 again:
 	resp = ch_http_simple_query(conn, query);
 	if (resp == NULL)
-		report_oom();
+		elog(ERROR, "out of memory");
 
 	attempts++;
 	if (resp->http_status == 419)
@@ -320,21 +312,35 @@ again:
 
 		ch_http_response_free(resp);
 
-		report_http_status_error(status, query->sql, error);
+		ereport(ERROR, (
+						errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+						errmsg("pg_clickhouse: %s", format_error(error)),
+						status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query->sql),
+						errcontext("HTTP status code: %li", status)
+						));
 	}
 
-	cursor = cursor_create(query->sql, 0, http_cursor_free);
+	/*
+	 * we could not control properly deallocation of libclickhouse memory, so
+	 * we use memory context callbacks for that
+	 */
+	tempcxt = AllocSetContextCreate(PortalContext, "pg_clickhouse cursor",
+									ALLOCSET_DEFAULT_SIZES);
+	oldcxt = MemoryContextSwitchTo(tempcxt);
 
-	{
-		MemoryContext oldcxt = MemoryContextSwitchTo(cursor->memcxt);
+	cursor = palloc0(sizeof(ch_cursor));
+	cursor->query_response = resp;
+	cursor->read_state = palloc0(sizeof(ch_http_read_state));
+	cursor->query = pstrdup(query->sql);
+	cursor->request_time = resp->pretransfer_time * 1000;
+	cursor->total_time = resp->total_time * 1000;
+	ch_http_read_state_init(cursor->read_state, resp->data, resp->datasize);
 
-		cursor->query_response = resp;
-		cursor->read_state = palloc0(sizeof(ch_http_read_state));
-		cursor->request_time = resp->pretransfer_time * 1000;
-		cursor->total_time = resp->total_time * 1000;
-		ch_http_read_state_init(cursor->read_state, resp->data, resp->datasize);
-		MemoryContextSwitchTo(oldcxt);
-	}
+	cursor->memcxt = tempcxt;
+	cursor->callback.func = http_cursor_free;
+	cursor->callback.arg = cursor;
+	MemoryContextRegisterResetCallback(tempcxt, &cursor->callback);
+	MemoryContextSwitchTo(oldcxt);
 
 	return cursor;
 }
@@ -362,7 +368,13 @@ http_simple_insert(void *conn, const ch_query * query)
 		long		status = resp->http_status;
 
 		ch_http_response_free(resp);
-		report_http_status_error(status, query->sql, error);
+
+		ereport(ERROR, (
+						errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+						errmsg("pg_clickhouse: %s", format_error(error)),
+						status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query->sql),
+						errcontext("HTTP status code: %li", status)
+						));
 	}
 
 	ch_http_response_free(resp);
@@ -398,6 +410,7 @@ http_fetch_row(ChFdwScanRowContext * ctx)
 	Datum	   *values;
 	ch_http_read_state *state = cursor->read_state;
 
+	/* All rows or empty table. */
 	if (state->done || state->data == NULL)
 		return NULL;
 

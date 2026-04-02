@@ -1,6 +1,3 @@
 [submodule "clickhouse-cpp"]
 	path = vendor/clickhouse-cpp
 	url = git@github.com:iskakaushik/clickhouse-cpp.git
-[submodule "vendor/minicoro"]
-	path = vendor/minicoro
-	url = https://github.com/edubart/minicoro.git

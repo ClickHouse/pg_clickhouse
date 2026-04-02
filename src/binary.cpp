@@ -233,6 +233,12 @@ extern "C"
 			client->Select(clickhouse::Query(query->sql)
 						   .SetQuerySettings(ch_binary_settings(query))
 						   .SetParams(ch_binary_params(query))
+						   .OnProgress(
+						   [&check_cancel](const Progress &)
+						   {
+							   if (check_cancel && check_cancel())
+								   throw std::runtime_error("query was canceled");
+						   })
 						   .OnDataCancelable(
 						   [&resp, &values, &check_cancel](const Block &block)
 						   {

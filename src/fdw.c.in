@@ -956,6 +956,9 @@ clickhouseIterateForeignScan(ForeignScanState * node)
 	TupleDesc	tupdesc;
 	ch_query	query = new_query(fsstate->query, fsstate->numParams, fsstate->param_values);
 
+	/* Allow query cancel (e.g. Ctrl+C) between tuple fetches. */
+	CHECK_FOR_INTERRUPTS();
+
 	/* make query if needed */
 	if (fsstate->ch_cursor == NULL)
 	{

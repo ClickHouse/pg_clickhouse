@@ -35,8 +35,7 @@ struct ch_binary_streaming_state
 	std::unique_ptr<bool[]> nulls;
 	size_t		columns_count = 0;
 
-	const char *error = nullptr;
-	char	   *owned_error = nullptr;
+	std::optional<std::string> error;
 	bool		(*check_cancel) (void) = nullptr;
 
 	Client	   *client = nullptr;
@@ -44,41 +43,18 @@ struct ch_binary_streaming_state
 	QuerySettings settings;
 	QueryParams	params;
 
-	~ch_binary_streaming_state()
-	{
-		free(owned_error);
-	}
-
 	void
-	SetBorrowedError(const char *message)
+	SetError(const char *message)
 	{
 		if (error)
 			return;
-		error = message;
+		error.emplace(message ? message : kBinaryStreamingOom);
 	}
 
-	void
-	SetOwnedError(const char *message)
+	const char *
+	GetError() const
 	{
-		char	   *copy;
-
-		if (error)
-			return;
-		if (!message)
-		{
-			SetBorrowedError(kBinaryStreamingOom);
-			return;
-		}
-
-		copy = strdup(message);
-		if (!copy)
-		{
-			SetBorrowedError(kBinaryStreamingOom);
-			return;
-		}
-
-		owned_error = copy;
-		error = owned_error;
+		return error ? error->c_str() : nullptr;
 	}
 };
 
@@ -93,7 +69,7 @@ binary_streaming_fill_block(ch_binary_streaming_state * st)
 		{
 			if (st->check_cancel && st->check_cancel())
 			{
-				st->SetBorrowedError(kBinaryStreamingCanceled);
+				st->SetError(kBinaryStreamingCanceled);
 				st->done = true;
 				return false;
 			}
@@ -102,7 +78,7 @@ binary_streaming_fill_block(ch_binary_streaming_state * st)
 		}
 		catch (const std::exception & e)
 		{
-			st->SetOwnedError(e.what());
+			st->SetError(e.what());
 			st->done = true;
 			return false;
 		}
@@ -115,7 +91,7 @@ binary_streaming_fill_block(ch_binary_streaming_state * st)
 			}
 			catch (const std::exception & e)
 			{
-				st->SetOwnedError(e.what());
+				st->SetError(e.what());
 			}
 			st->current_block.reset();
 			st->have_block = false;
@@ -130,7 +106,7 @@ binary_streaming_fill_block(ch_binary_streaming_state * st)
 		if (st->columns_count != 0 &&
 			block->GetColumnCount() != st->columns_count)
 		{
-			st->SetBorrowedError("columns mismatch in blocks");
+			st->SetError("columns mismatch in blocks");
 			st->done = true;
 			return false;
 		}
@@ -171,7 +147,7 @@ extern "C"
 		}
 		catch (const std::exception & e)
 		{
-			st->SetOwnedError(e.what());
+			st->SetError(e.what());
 			st->done = true;
 			return st;
 		}
@@ -216,7 +192,7 @@ extern "C"
 			st->nulls.reset(new (std::nothrow) bool[st->columns_count]);
 			if (!st->coltypes || !st->values || !st->nulls)
 			{
-				st->SetBorrowedError(kBinaryStreamingOom);
+				st->SetError(kBinaryStreamingOom);
 				return false;
 			}
 		}
@@ -231,7 +207,7 @@ extern "C"
 		}
 		catch (const std::exception & e)
 		{
-			st->SetOwnedError(e.what());
+			st->SetError(e.what());
 			return false;
 		}
 
@@ -264,7 +240,7 @@ extern "C"
 	const char *
 	ch_binary_streaming_error(ch_binary_streaming_state * st)
 	{
-		return st ? st->error : NULL;
+		return st ? st->GetError() : NULL;
 	}
 
 	void
