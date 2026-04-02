@@ -74,7 +74,7 @@ extern "C"
 														 const ch_query * query, bool (*check_cancel) (void));
 	extern void ch_binary_response_free(ch_binary_response_t * resp);
 
-/* Streaming binary API: coroutine-based block-at-a-time iteration */
+/* Streaming binary API: block-at-a-time iteration */
 	typedef struct ch_binary_streaming_state ch_binary_streaming_state;
 
 	extern ch_binary_streaming_state * ch_binary_begin_streaming(

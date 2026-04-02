@@ -1,11 +1,10 @@
 #include <memory>
 #include <new>
+#include <optional>
 #include <string>
 
 #include <clickhouse/client.h>
 #include <clickhouse/query.h>
-
-#include "minicoro.h"
 
 extern "C"
 {
@@ -20,16 +19,13 @@ extern "C"
 
 using namespace clickhouse;
 
-static constexpr size_t kBinaryStreamingStackSize = 1024 * 1024;
 static const char kBinaryStreamingCanceled[] = "query was canceled";
 static const char kBinaryStreamingOom[] = "out of memory";
 
 struct ch_binary_streaming_state
 {
-	mco_coro   *co = nullptr;
-
-	/* Current block yielded by the coroutine. Valid until the next resume. */
-	Block	   *current_block = nullptr;
+	/* Current block returned by clickhouse-cpp. */
+	std::optional<Block> current_block;
 	size_t		current_row = 0;
 	bool		have_block = false;
 	bool		done = false;
@@ -87,62 +83,64 @@ struct ch_binary_streaming_state
 };
 
 static bool
-binary_streaming_resume(ch_binary_streaming_state * st)
+binary_streaming_fill_block(ch_binary_streaming_state * st)
 {
-	mco_result	res;
+	std::optional<Block> block;
 
-	res = mco_resume(st->co);
-	if (res == MCO_SUCCESS)
-		return true;
-
-	st->SetOwnedError(mco_result_description(res));
-	st->done = true;
-	return false;
-}
-
-/*
- * Coroutine function: runs Client::Select, yielding each block.
- */
-static void
-binary_streaming_coro(mco_coro * co)
-{
-	ch_binary_streaming_state *st =
-		(ch_binary_streaming_state *) mco_get_user_data(co);
-
-	try
+	for (;;)
 	{
-		st->client->Select(
-			clickhouse::Query(st->sql)
-			.SetQuerySettings(st->settings)
-			.SetParams(st->params)
-			.OnDataCancelable(
-							  [st, co](const Block & block) -> bool
+		try
 		{
 			if (st->check_cancel && st->check_cancel())
 			{
 				st->SetBorrowedError(kBinaryStreamingCanceled);
+				st->done = true;
 				return false;
 			}
 
-			if (block.GetColumnCount() == 0)
-				return true;
+			block = st->client->ReceiveSelectBlock();
+		}
+		catch (const std::exception & e)
+		{
+			st->SetOwnedError(e.what());
+			st->done = true;
+			return false;
+		}
 
-			st->current_block = const_cast<Block *>(&block);
-			st->columns_count = block.GetColumnCount();
-			st->have_block = true;
-			st->current_row = 0;
+		if (!block)
+		{
+			try
+			{
+				st->client->EndSelect();
+			}
+			catch (const std::exception & e)
+			{
+				st->SetOwnedError(e.what());
+			}
+			st->current_block.reset();
+			st->have_block = false;
+			st->done = true;
+			return false;
+		}
 
-			mco_yield(co);
-			return true;
-		}));
+		/* Match the old callback path, which ignored zero-column blocks. */
+		if (block->GetColumnCount() == 0)
+			continue;
+
+		if (st->columns_count != 0 &&
+			block->GetColumnCount() != st->columns_count)
+		{
+			st->SetBorrowedError("columns mismatch in blocks");
+			st->done = true;
+			return false;
+		}
+
+		st->current_block = std::move(block);
+		st->columns_count = st->current_block->GetColumnCount();
+		st->have_block = true;
+		st->current_row = 0;
+		return true;
 	}
-	catch (const std::exception & e)
-	{
-		st->SetOwnedError(e.what());
-	}
-
-	st->have_block = false;
-	st->done = true;
 }
 
 extern "C"
@@ -154,8 +152,6 @@ extern "C"
 							  bool (*check_cancel) (void))
 	{
 		ch_binary_streaming_state *st;
-		mco_desc	desc;
-		mco_result	res;
 
 		st = new (std::nothrow) ch_binary_streaming_state();
 		if (!st)
@@ -167,18 +163,20 @@ extern "C"
 		st->settings = ch_binary_settings(query);
 		st->params = ch_binary_params(query);
 
-		desc = mco_desc_init(binary_streaming_coro, kBinaryStreamingStackSize);
-		desc.user_data = st;
-		res = mco_create(&st->co, &desc);
-		if (res != MCO_SUCCESS)
+		try
 		{
-			st->SetOwnedError(mco_result_description(res));
+			st->client->BeginSelect(clickhouse::Query(st->sql)
+									.SetQuerySettings(st->settings)
+									.SetParams(st->params));
+		}
+		catch (const std::exception & e)
+		{
+			st->SetOwnedError(e.what());
 			st->done = true;
 			return st;
 		}
 
-		if (!binary_streaming_resume(st))
-			return st;
+		(void) binary_streaming_fill_block(st);
 
 		return st;
 	}
@@ -190,13 +188,8 @@ extern "C"
 			return false;
 		if (st->have_block)
 			return true;
-		if (mco_status(st->co) != MCO_SUSPENDED)
-			return false;
 
-		if (!binary_streaming_resume(st))
-			return false;
-
-		return st->have_block;
+		return binary_streaming_fill_block(st);
 	}
 
 	bool
@@ -208,7 +201,7 @@ extern "C"
 		if (!st || !st->have_block || !st->current_block)
 			return false;
 
-		block = st->current_block;
+		block = &*st->current_block;
 		row_count = block->GetRowCount();
 		if (st->current_row >= row_count)
 		{
@@ -280,15 +273,21 @@ extern "C"
 		if (!st)
 			return;
 
-		if (st->co)
+		try
 		{
-			bool		was_suspended = mco_status(st->co) == MCO_SUSPENDED;
-
-			mco_destroy(st->co);
-			st->co = NULL;
-
-			if (was_suspended)
-				st->client->ResetConnection();
+			if (st->client)
+				st->client->EndSelect();
+		}
+		catch (const std::exception &)
+		{
+			try
+			{
+				if (st->client)
+					st->client->ResetConnection();
+			}
+			catch (const std::exception &)
+			{
+			}
 		}
 
 		delete st;
