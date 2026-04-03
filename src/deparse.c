@@ -593,7 +593,30 @@ foreign_expr_walker(Node * node,
 						return false;
 
 					if (inner_cxt.found_AggregateFunction)
-						agg->location = -2;
+					{
+						/*
+						 * Record in fpinfo so deparseAggref appends the
+						 * -Merge combinator.  Walk down the relation chain to
+						 * store in every fpinfo (current, outer,
+						 * outer-of-outer …) so deparseAggref always finds
+						 * it regardless of which rel is used as scanrel.
+						 */
+						RelOptInfo *r = glob_cxt->foreignrel;
+
+						while (r != NULL)
+						{
+							CHFdwRelationInfo *fi =
+								(CHFdwRelationInfo *) r->fdw_private;
+
+							if (!list_member_oid(fi->merge_agg_oids,
+												 agg->aggfnoid))
+								fi->merge_agg_oids =
+									lappend_oid(fi->merge_agg_oids,
+												agg->aggfnoid);
+
+							r = fi->outerrel;
+						}
+					}
 
 					/* Prevent propagating to earlier nodes. */
 					inner_cxt.found_AggregateFunction = false;
@@ -3185,6 +3208,7 @@ appendAggOrderBy(List * orderList, List * targetList, deparse_expr_cxt * context
 	}
 }
 
+
 /*
  * Deparse an Aggref node.
  */
@@ -3214,8 +3238,12 @@ deparseAggref(Aggref * node, deparse_expr_cxt * context)
 	if (context->func && context->func->cf_type == CF_SIGN_COUNT && !node->aggstar)
 		sign_count_filter = true;
 
-	/* We use this field as indicator of aggregate functions */
-	if (node->location == -2)
+	/*
+	 * Append -Merge combinator if this aggregate operates on a ClickHouse
+	 * AggregateFunction column.  The walker records qualifying aggfnoids in
+	 * fpinfo->merge_agg_oids during the shippability check.
+	 */
+	if (list_member_oid(fpinfo->merge_agg_oids, node->aggfnoid))
 		appendStringInfoString(buf, "Merge");
 
 	if (node->aggfilter || sign_count_filter)

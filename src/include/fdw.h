@@ -208,6 +208,13 @@ typedef struct CHFdwRelationInfo
 	CHRemoteTableEngine ch_table_engine;
 
 	/*
+	 * Set of aggregate function OIDs that need the -Merge combinator because
+	 * their args reference AggregateFunction columns. Populated during
+	 * foreign_expr_walker, read during deparseAggref.
+	 */
+	List	   *merge_agg_oids; /* List of Oid values */
+
+	/*
 	 * Long enough for a quoted identifier with all but two characters
 	 * escaped.
 	 */
