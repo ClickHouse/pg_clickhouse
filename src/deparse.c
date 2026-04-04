@@ -27,6 +27,7 @@
 #include "nodes/nodeFuncs.h"
 #include "nodes/nodes.h"
 #include "nodes/primnodes.h"
+#include "optimizer/clauses.h"
 #include "optimizer/tlist.h"
 #include "parser/parsetree.h"
 #include "utils/array.h"
@@ -163,6 +164,13 @@ static void deparseVar(Var * node, deparse_expr_cxt * context);
 static void deparseConst(Const * node, deparse_expr_cxt * context, int showtype);
 static void deparseParam(Param * node, deparse_expr_cxt * context);
 static void deparseSubPlan(SubPlan * node, deparse_expr_cxt * context);
+static void deparseSubquerySelect(StringInfo buf, PlannerInfo * subroot,
+								  Query * subquery, SubPlan * subplan,
+								  deparse_expr_cxt * parent_context);
+static void deparseSubqueryQual(StringInfo buf, Node * qual,
+								PlannerInfo * subroot, Query * subquery,
+								SubPlan * subplan,
+								deparse_expr_cxt * parent_context);
 static void deparseSubscriptingRef(SubscriptingRef * node, deparse_expr_cxt * context);
 static void deparseFuncExpr(FuncExpr * node, deparse_expr_cxt * context);
 static void deparseSQLValueFunction(SQLValueFunction * node, deparse_expr_cxt * context);
@@ -383,39 +391,58 @@ foreign_expr_walker(Node * node,
 			break;
 		case T_SubPlan:
 			{
-				/*
-				 * The planner swaps a SubLink for a SubPlan; we need to get
-				 * the original SubLink to inspect its contents.
-				 */
 				SubPlan    *subplan = (SubPlan *) node;
+				PlannerInfo *subroot;
+				Query	   *subquery;
+				ListCell   *lc;
 
-				//PlannerInfo * plan = list_nth(glob_cxt->root->glob->subroots, subplan->plan_id - 1);
+				if (subplan->subLinkType != ANY_SUBLINK &&
+					subplan->subLinkType != ALL_SUBLINK &&
+					subplan->subLinkType != EXISTS_SUBLINK &&
+					subplan->subLinkType != EXPR_SUBLINK)
+					return false;
 
-				/*
-				 * Recurse to component subexpressions.
-				 */
-				switch (subplan->subLinkType)
+				/* Verify subquery tables are foreign tables on same server */
+				subroot = list_nth(glob_cxt->root->glob->subroots,
+								   subplan->plan_id - 1);
+				subquery = subroot->parse;
+
+				foreach(lc, subquery->rtable)
 				{
-						/*
-						 * Currently no support for multi-expression
-						 * subqueries or row comparisons (RowCompareExpr
-						 * nodes).
-						 */
-					case MULTIEXPR_SUBLINK:
-					case ROWCOMPARE_SUBLINK:
+					RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
+					ForeignTable *ft;
+
+					if (rte->rtekind != RTE_RELATION)
 						return false;
-					default:
-						break;
+
+					ft = GetForeignTable(rte->relid);
+					if (ft->serverid != fpinfo->server->serverid)
+						return false;
 				}
 
-				/*
-				 * Recurse to subexpressions. We should be fine if they all
-				 * refer to objects in the SubPlan itself or the parent plan
-				 * that all reference objects from the same remote server.
-				 */
-				if (!foreign_expr_walker(subplan->testexpr,
-										 glob_cxt))
+				/* Reject nested SubPlans (correlated or InitPlan) */
+				if (subroot->init_plans != NIL ||
+					(subquery->jointree &&
+					 contain_subplans(subquery->jointree->quals)) ||
+					contain_subplans(subquery->havingQual) ||
+					contain_subplans((Node *) subquery->targetList))
 					return false;
+
+				/*
+				 * ANY/ALL deparsing expects testexpr to be a simple OpExpr
+				 * (single-column correlation). Reject multi-column cases.
+				 */
+				if ((subplan->subLinkType == ANY_SUBLINK ||
+					 subplan->subLinkType == ALL_SUBLINK) &&
+					(!subplan->testexpr || !IsA(subplan->testexpr, OpExpr)))
+					return false;
+
+				/* Walk testexpr for shippability (outer-query refs) */
+				if (subplan->testexpr &&
+					!foreign_expr_walker(subplan->testexpr, glob_cxt))
+					return false;
+
+				check_type = false;
 			}
 			break;
 		case T_SubscriptingRef:
@@ -763,6 +790,34 @@ foreign_expr_walker(Node * node,
 			break;
 		case T_CaseTestExpr:
 			break;
+		case T_AlternativeSubPlan:
+			{
+				/*
+				 * PG wraps EXISTS-to-ANY conversions in AlternativeSubPlan.
+				 * Prefer ANY_SUBLINK alternative: CH can't resolve outer
+				 * column refs inside correlated EXISTS, but IN (SELECT ...)
+				 * keeps correlation in the outer expression.
+				 */
+				AlternativeSubPlan *asp = (AlternativeSubPlan *) node;
+				ListCell   *lc;
+				bool		any_ok = false;
+
+				foreach(lc, asp->subplans)
+				{
+					SubPlan    *sp = (SubPlan *) lfirst(lc);
+
+					if (sp->subLinkType == ANY_SUBLINK &&
+						foreign_expr_walker((Node *) sp, glob_cxt))
+					{
+						any_ok = true;
+						break;
+					}
+				}
+				if (!any_ok)
+					return false;
+				check_type = false;
+			}
+			break;
 		default:
 
 			/*
@@ -963,7 +1018,8 @@ ch_format_type_extended(Oid type_oid, int32 typemod, bits16 flags)
 			if (with_typemod)
 				buf = printTypmod("Decimal", typemod, typeform->typmodout);
 			else
-				buf = pstrdup("Decimal");
+				/* CH < 24 rejects bare Decimal; use max precision */
+				buf = pstrdup("Decimal(38, 10)");
 			break;
 
 		case INTERVALOID:
@@ -1411,6 +1467,9 @@ chfdw_get_jointype_name(JoinType jointype)
 		case JOIN_SEMI:
 			return "LEFT SEMI";
 
+		case JOIN_ANTI:
+			return "LEFT ANTI";
+
 		default:
 			/* Shouldn't come here, but protect from buggy code. */
 			elog(ERROR, "unsupported join type %d", jointype);
@@ -1468,6 +1527,7 @@ deparseSubqueryTargetList(deparse_expr_cxt * context)
 	RelOptInfo *foreignrel = context->foreignrel;
 	bool		first;
 	ListCell   *lc;
+	int			colno = 0;
 
 	/* Should only be called in these cases. */
 	Assert(IS_SIMPLE_REL(foreignrel) || IS_JOIN_REL(foreignrel));
@@ -1481,8 +1541,15 @@ deparseSubqueryTargetList(deparse_expr_cxt * context)
 			appendStringInfoString(buf, ", ");
 
 		first = false;
+		colno++;
 
 		deparseExpr((Expr *) node, context);
+
+		/*
+		 * ClickHouse < 24 rejects column rename on subquery alias (`sub(c1,
+		 * c2)` syntax), so alias each column inline.
+		 */
+		appendStringInfo(buf, " AS %s%d", SUBQUERY_COL_ALIAS_PREFIX, colno);
 	}
 
 	/* Don't generate bad syntax if no expressions */
@@ -1607,9 +1674,9 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo * root, RelOptInfo * foreignre
 		 *
 		 * ((outer relation) <join type> (inner relation) ON (joinclauses))
 		 *
-		 * ClickHouse doesn't use ALL modifier for SEMI joins.
+		 * ClickHouse doesn't use ALL modifier for SEMI/ANTI joins.
 		 */
-		if (fpinfo->jointype == JOIN_SEMI)
+		if (fpinfo->jointype == JOIN_SEMI || fpinfo->jointype == JOIN_ANTI)
 			appendStringInfo(buf, " %s %s JOIN %s ON ", join_sql_o.data,
 							 chfdw_get_jointype_name(fpinfo->jointype), join_sql_i.data);
 		else
@@ -1685,7 +1752,6 @@ deparseRangeTblRef(StringInfo buf, PlannerInfo * root, RelOptInfo * foreignrel,
 	if (make_subquery)
 	{
 		List	   *retrieved_attrs;
-		int			ncols;
 
 		/*
 		 * The given relation shouldn't contain the target relation, because
@@ -1703,32 +1769,14 @@ deparseRangeTblRef(StringInfo buf, PlannerInfo * root, RelOptInfo * foreignrel,
 										  &retrieved_attrs, params_list);
 		appendStringInfoChar(buf, ')');
 
-		/* Append the relation alias. */
+		/*
+		 * Append relation alias. Column aliases are embedded in the subquery
+		 * SELECT via deparseSubqueryTargetList (AS cN) rather than using
+		 * alias(c1, c2) syntax which ClickHouse versions before 24.x don't
+		 * support.
+		 */
 		appendStringInfo(buf, " %s%d", SUBQUERY_REL_ALIAS_PREFIX,
 						 fpinfo->relation_index);
-
-		/*
-		 * Append the column aliases if needed. Note that the subquery emits
-		 * expressions specified in the relation's reltarget (see
-		 * deparseSubqueryTargetList).
-		 */
-		ncols = list_length(foreignrel->reltarget->exprs);
-		if (ncols > 0)
-		{
-			int			i;
-
-			appendStringInfoChar(buf, '(');
-			for (i = 1; i <= ncols; i++)
-			{
-				if (i > 1)
-				{
-					appendStringInfoString(buf, ", ");
-				}
-
-				appendStringInfo(buf, "%s%d", SUBQUERY_COL_ALIAS_PREFIX, i);
-			}
-			appendStringInfoChar(buf, ')');
-		}
 	}
 	else
 		deparseFromExprForRel(buf, root, foreignrel, true, ignore_rel,
@@ -1900,6 +1948,24 @@ deparseExpr(Expr * node, deparse_expr_cxt * context)
 			break;
 		case T_SubPlan:
 			deparseSubPlan((SubPlan *) node, context);
+			break;
+		case T_AlternativeSubPlan:
+			{
+				/* Pick ANY_SUBLINK alternative — matches walker preference */
+				AlternativeSubPlan *asp = (AlternativeSubPlan *) node;
+				ListCell   *lc;
+
+				foreach(lc, asp->subplans)
+				{
+					SubPlan    *sp = (SubPlan *) lfirst(lc);
+
+					if (sp->subLinkType == ANY_SUBLINK)
+					{
+						deparseSubPlan(sp, context);
+						break;
+					}
+				}
+			}
 			break;
 		case T_SubscriptingRef:
 			deparseSubscriptingRef((SubscriptingRef *) node, context);
@@ -2384,75 +2450,386 @@ deparseParam(Param * node, deparse_expr_cxt * context)
 }
 
 /*
- * Deparse given SubPlan node.
+ * Deparse given SubPlan node into ClickHouse SQL.
+ *
+ * ANY_SUBLINK (IN):   outer_col IN (SELECT ...)
+ * ALL_SUBLINK (NOT IN via NOT wrapper): outer_col IN (SELECT ...)
+ *   — the NOT is handled by the parent BoolExpr deparse
+ * EXISTS_SUBLINK:     EXISTS (SELECT ...)
+ * EXPR_SUBLINK:       (SELECT ...)
  */
 static void
 deparseSubPlan(SubPlan * subplan, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
-	PlannerInfo *plan = list_nth(context->root->glob->subroots, subplan->plan_id - 1);
-	Query	   *subquery = plan->parse;
-	List	   *retrieved_attrs;
+	PlannerInfo *subroot = list_nth(context->root->glob->subroots,
+									subplan->plan_id - 1);
+	Query	   *subquery = subroot->parse;
 
-	//CHFdwRelationInfo * fpinfo = (CHFdwRelationInfo *) plan->simple_rel_array[0]->fdw_private;
-	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) (context->scanrel->fdw_private);
-
-	//fpinfo = (CHFdwRelationInfo *) fpinfo->innerrel->fdw_private;
-
-	/*
-	 * As of b345682, we probably don't handle EXISTS, preferring to use a
-	 * SEMI JOIN. But for EXISTS_SUBLINK nodes, wrap it around the subquery
-	 * just to be safe.
-	 *
-	 * EXISTS_SUBLINK is a regular subquery, and the subplan is already
-	 * parenthesized, so we don't need them here.
-	 *
-	 * ARRAY_SUBLINK relies on an ARRAY() subquery constructor, not yet
-	 * supported in ClickHouse, though it does have the groupArray() aggregate
-	 * function, so use that.
-	 */
 	switch (subplan->subLinkType)
 	{
+		case ANY_SUBLINK:
+		case ALL_SUBLINK:
+			{
+				/*
+				 * testexpr is OpExpr(=, outer_var, Param). Extract left
+				 * operand and deparse as: outer_col IN (SELECT ...).
+				 */
+				OpExpr	   *opexpr = castNode(OpExpr, subplan->testexpr);
+				Expr	   *left = (Expr *) linitial(opexpr->args);
+
+				deparseExpr(left, context);
+				appendStringInfoString(buf, " IN (");
+				deparseSubquerySelect(buf, subroot, subquery, subplan,
+									  context);
+				appendStringInfoChar(buf, ')');
+				break;
+			}
 		case EXISTS_SUBLINK:
-			appendStringInfoString(buf, "EXISTS(");
-			Assert(subplan->testexpr == NULL);
+			appendStringInfoString(buf, "EXISTS (");
+			deparseSubquerySelect(buf, subroot, subquery, subplan, context);
+			appendStringInfoChar(buf, ')');
 			break;
-		case ARRAY_SUBLINK:
-			appendStringInfoString(buf, "groupArray(");
-			Assert(subplan->testexpr == NULL);
-			break;
-		case CTE_SUBLINK:
-			appendStringInfoString(buf, "WITH(");
-			Assert(subplan->testexpr == NULL);
-			break;
-		default:
-			/* Already parenthesized, no need to add more. */
-			break;
-	}
-
-	if (subplan->testexpr != NULL)
-		deparseExpr((Expr *) subplan->testexpr, context);
-
-	/*
-	 * Pass the subquery plan as the root to
-	 * chfdw_deparse_select_stmt_for_rel() to deparse the subquery.
-	 */
-	chfdw_deparse_select_stmt_for_rel(buf, plan, fpinfo->outerrel,
-									  subquery->targetList, fpinfo->final_remote_exprs,
-									  NIL, false, subquery->limitCount > 0, false,
-									  &retrieved_attrs, context->params_list);
-
-	/* Close parentheses if opened above. */
-	switch (subplan->subLinkType)
-	{
-		case EXISTS_SUBLINK:
-		case ARRAY_SUBLINK:
-		case CTE_SUBLINK:
+		case EXPR_SUBLINK:
+			appendStringInfoChar(buf, '(');
+			deparseSubquerySelect(buf, subroot, subquery, subplan, context);
 			appendStringInfoChar(buf, ')');
 			break;
 		default:
+			elog(ERROR, "unsupported sublink type %d in deparseSubPlan",
+				 (int) subplan->subLinkType);
 			break;
-			/* No paren needs closing */
+	}
+}
+
+/*
+ * Deparse a SubPlan's subquery into a SELECT statement.
+ *
+ * SubPlan subqueries bypass FDW planning, so no RelOptInfo or
+ * CHFdwRelationInfo exists for them. Walk the Query tree directly
+ * instead of using chfdw_deparse_select_stmt_for_rel. Correlated
+ * Param refs are resolved to parent-query columns via deparseSubqueryQual.
+ */
+static void
+deparseSubquerySelect(StringInfo buf, PlannerInfo * subroot,
+					  Query * subquery, SubPlan * subplan,
+					  deparse_expr_cxt * parent_context)
+{
+	ListCell   *lc;
+	bool		first;
+	deparse_expr_cxt context;
+
+	/* Set up context for deparsing subquery expressions */
+	context.buf = buf;
+	context.root = subroot;
+	context.foreignrel = parent_context->foreignrel;
+	context.scanrel = parent_context->scanrel;
+	context.params_list = parent_context->params_list;
+	context.func = NULL;
+	context.interval_op = false;
+	context.array_as_tuple = false;
+	context.no_sort_parens = false;
+	context.fpinfo = NULL;
+
+	appendStringInfoString(buf, "SELECT ");
+
+	/* Target list */
+	first = true;
+	foreach(lc, subquery->targetList)
+	{
+		TargetEntry *tle = (TargetEntry *) lfirst(lc);
+
+		if (tle->resjunk)
+			continue;
+		if (!first)
+			appendStringInfoString(buf, ", ");
+		first = false;
+
+		if (IsA(tle->expr, Var))
+		{
+			Var		   *var = (Var *) tle->expr;
+			RangeTblEntry *rte = rt_fetch(var->varno, subquery->rtable);
+
+			deparseColumnRef(buf, NULL, var->varno, var->varattno,
+							 rte, list_length(subquery->rtable) > 1);
+		}
+		else
+		{
+			deparseExpr(tle->expr, &context);
+		}
+	}
+
+	/* EXISTS subqueries may have all-resjunk targets */
+	if (first)
+		appendStringInfoChar(buf, '1');
+
+	/* FROM clause */
+	appendStringInfoString(buf, " FROM ");
+	{
+		int			rtindex = 0;
+
+		first = true;
+		foreach(lc, subquery->rtable)
+		{
+			RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
+			Relation	rel;
+
+			rtindex++;
+			if (!first)
+				appendStringInfoString(buf, ", ");
+			first = false;
+
+			rel = table_open_compat(rte->relid, NoLock);
+			deparseRelation(buf, rel);
+			table_close_compat(rel, NoLock);
+
+			if (list_length(subquery->rtable) > 1)
+				appendStringInfo(buf, " %s%d", REL_ALIAS_PREFIX, rtindex);
+		}
+	}
+
+	/* WHERE clause — subquery quals + correlation params */
+	if (subquery->jointree && subquery->jointree->quals)
+	{
+		appendStringInfoString(buf, " WHERE ");
+		deparseSubqueryQual(buf, subquery->jointree->quals, subroot,
+							subquery, subplan, parent_context);
+	}
+
+	/* GROUP BY */
+	if (subquery->groupClause)
+	{
+		appendStringInfoString(buf, " GROUP BY ");
+		first = true;
+		foreach(lc, subquery->groupClause)
+		{
+			SortGroupClause *sgc = (SortGroupClause *) lfirst(lc);
+			TargetEntry *tle = get_sortgroupclause_tle(sgc,
+													   subquery->targetList);
+
+			if (!first)
+				appendStringInfoString(buf, ", ");
+			first = false;
+
+			if (IsA(tle->expr, Var))
+			{
+				Var		   *var = (Var *) tle->expr;
+				RangeTblEntry *rte = rt_fetch(var->varno, subquery->rtable);
+
+				deparseColumnRef(buf, NULL, var->varno, var->varattno,
+								 rte, list_length(subquery->rtable) > 1);
+			}
+			else
+				deparseExpr(tle->expr, &context);
+		}
+	}
+
+	/* HAVING */
+	if (subquery->havingQual)
+	{
+		appendStringInfoString(buf, " HAVING ");
+		deparseSubqueryQual(buf, subquery->havingQual, subroot,
+							subquery, subplan, parent_context);
+	}
+
+	/* LIMIT */
+	if (subquery->limitCount)
+	{
+		appendStringInfoString(buf, " LIMIT ");
+		deparseExpr((Expr *) subquery->limitCount, &context);
+	}
+}
+
+/*
+ * Deparse a subquery WHERE/HAVING qual, replacing PARAM_EXEC nodes
+ * with the corresponding outer-query expressions from subplan->args.
+ *
+ * Walks the expression tree recursively. For Var nodes local to the
+ * subquery, deparses using column names. For Param nodes matching
+ * a correlation parameter, deparses the outer expression instead.
+ * For nested SubPlans, recurses via deparseExpr in parent context.
+ */
+static void
+deparseSubqueryQual(StringInfo buf, Node * qual,
+					PlannerInfo * subroot, Query * subquery,
+					SubPlan * subplan, deparse_expr_cxt * parent_context)
+{
+	if (qual == NULL)
+		return;
+
+	if (IsA(qual, List))
+	{
+		ListCell   *lc;
+		bool		first = true;
+
+		foreach(lc, (List *) qual)
+		{
+			if (!first)
+				appendStringInfoString(buf, " AND ");
+			first = false;
+			appendStringInfoChar(buf, '(');
+			deparseSubqueryQual(buf, (Node *) lfirst(lc), subroot,
+								subquery, subplan, parent_context);
+			appendStringInfoChar(buf, ')');
+		}
+		return;
+	}
+
+	if (IsA(qual, BoolExpr))
+	{
+		BoolExpr   *boolexpr = (BoolExpr *) qual;
+		ListCell   *lc;
+		const char *op;
+		bool		first = true;
+
+		switch (boolexpr->boolop)
+		{
+			case AND_EXPR:
+				op = " AND ";
+				break;
+			case OR_EXPR:
+				op = " OR ";
+				break;
+			case NOT_EXPR:
+				appendStringInfoString(buf, "(NOT ");
+				deparseSubqueryQual(buf, (Node *) linitial(boolexpr->args),
+									subroot, subquery, subplan,
+									parent_context);
+				appendStringInfoChar(buf, ')');
+				return;
+			default:
+				elog(ERROR, "unrecognized boolop: %d", boolexpr->boolop);
+				return;
+		}
+
+		appendStringInfoChar(buf, '(');
+		foreach(lc, boolexpr->args)
+		{
+			if (!first)
+				appendStringInfoString(buf, op);
+			first = false;
+			deparseSubqueryQual(buf, (Node *) lfirst(lc), subroot,
+								subquery, subplan, parent_context);
+		}
+		appendStringInfoChar(buf, ')');
+	}
+	else if (IsA(qual, OpExpr))
+	{
+		OpExpr	   *opexpr = (OpExpr *) qual;
+		Form_pg_operator opform;
+		HeapTuple	tuple;
+		ListCell   *lc;
+		bool		first = true;
+
+		tuple = SearchSysCache1(OPEROID,
+								ObjectIdGetDatum(opexpr->opno));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for operator %u", opexpr->opno);
+		opform = (Form_pg_operator) GETSTRUCT(tuple);
+
+		appendStringInfoChar(buf, '(');
+		foreach(lc, opexpr->args)
+		{
+			if (!first)
+			{
+				appendStringInfoChar(buf, ' ');
+				deparseOperatorName(buf, opform);
+				appendStringInfoChar(buf, ' ');
+			}
+			first = false;
+			deparseSubqueryQual(buf, (Node *) lfirst(lc), subroot,
+								subquery, subplan, parent_context);
+		}
+		appendStringInfoChar(buf, ')');
+		ReleaseSysCache(tuple);
+	}
+	else if (IsA(qual, Var))
+	{
+		Var		   *var = (Var *) qual;
+		RangeTblEntry *rte = rt_fetch(var->varno, subquery->rtable);
+
+		deparseColumnRef(buf, NULL, var->varno, var->varattno, rte,
+						 list_length(subquery->rtable) > 1);
+	}
+	else if (IsA(qual, Param))
+	{
+		/*
+		 * PARAM_EXEC in subquery quals are correlation parameters. Find
+		 * matching entry in subplan->parParam and deparse the corresponding
+		 * outer expression from subplan->args.
+		 */
+		Param	   *param = (Param *) qual;
+
+		if (param->paramkind == PARAM_EXEC && subplan->parParam)
+		{
+			ListCell   *pp;
+			ListCell   *ap;
+
+			forboth(pp, subplan->parParam, ap, subplan->args)
+			{
+				int			paramid = lfirst_int(pp);
+				Node	   *arg = (Node *) lfirst(ap);
+
+				if (paramid == param->paramid)
+				{
+					deparseExpr((Expr *) arg, parent_context);
+					return;
+				}
+			}
+		}
+		/* Not a correlation param — deparse as regular param */
+		{
+			deparse_expr_cxt ctx = *parent_context;
+
+			ctx.buf = buf;
+			deparseParam(param, &ctx);
+		}
+	}
+	else if (IsA(qual, Const))
+	{
+		deparse_expr_cxt ctx = *parent_context;
+
+		ctx.buf = buf;
+		deparseConst((Const *) qual, &ctx, 0);
+	}
+	else if (IsA(qual, FuncExpr))
+	{
+		deparse_expr_cxt ctx = *parent_context;
+
+		ctx.buf = buf;
+		ctx.root = subroot;
+		deparseFuncExpr((FuncExpr *) qual, &ctx);
+	}
+	else if (IsA(qual, NullTest))
+	{
+		NullTest   *nt = (NullTest *) qual;
+
+		deparseSubqueryQual(buf, (Node *) nt->arg, subroot, subquery,
+							subplan, parent_context);
+		if (nt->nulltesttype == IS_NULL)
+			appendStringInfoString(buf, " IS NULL");
+		else
+			appendStringInfoString(buf, " IS NOT NULL");
+	}
+	else if (IsA(qual, SubPlan))
+	{
+		/*
+		 * Nested subplan — use parent_context which has the outer root with
+		 * the global subroots list that SubPlan.plan_id indexes into.
+		 */
+		deparse_expr_cxt ctx = *parent_context;
+
+		ctx.buf = buf;
+		deparseSubPlan((SubPlan *) qual, &ctx);
+	}
+	else
+	{
+		/* Fallback: use general deparseExpr with subroot context */
+		deparse_expr_cxt ctx = *parent_context;
+
+		ctx.buf = buf;
+		ctx.root = subroot;
+		deparseExpr((Expr *) qual, &ctx);
 	}
 }
 
@@ -4529,11 +4906,12 @@ appendOrderByClause(List * pathkeys, bool has_final_sort,
 														  target);
 		}
 		else if (IS_JOIN_REL(context->foreignrel) &&
-				 fpinfo->jointype == JOIN_SEMI)
+				 (fpinfo->jointype == JOIN_SEMI ||
+				  fpinfo->jointype == JOIN_ANTI))
 		{
 			/*
-			 * For SEMI JOINs, prefer expressions from the outer relation
-			 * since inner relation columns are not visible in the output.
+			 * For SEMI/ANTI JOINs, prefer expressions from the outer relation
+			 * since inner relation columns are not visible.
 			 */
 			em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass,
 												 fpinfo->outerrel);

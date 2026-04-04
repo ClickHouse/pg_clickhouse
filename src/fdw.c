@@ -1794,16 +1794,16 @@ foreign_join_ok(PlannerInfo * root, RelOptInfo * joinrel, JoinType jointype,
 	List	   *joinclauses;
 
 	/*
-	 * We support pushing down INNER, LEFT, RIGHT, FULL OUTER and SEMI joins.
-	 * ANTI joins are not supported.
+	 * We support pushing down INNER, LEFT, RIGHT, FULL OUTER, SEMI, and ANTI
+	 * joins. SEMI → LEFT SEMI JOIN, ANTI → LEFT ANTI JOIN.
 	 */
 	if (jointype != JOIN_INNER && jointype != JOIN_LEFT &&
 		jointype != JOIN_RIGHT && jointype != JOIN_FULL &&
-		jointype != JOIN_SEMI)
+		jointype != JOIN_SEMI && jointype != JOIN_ANTI)
 		return false;
 
-	/* Semi-join target can only reference the outer relation */
-	if (jointype == JOIN_SEMI &&
+	/* Semi/anti-join target can only reference the outer relation */
+	if ((jointype == JOIN_SEMI || jointype == JOIN_ANTI) &&
 		!semijoin_target_ok(root, joinrel, outerrel, innerrel))
 		return false;
 
@@ -1976,11 +1976,12 @@ foreign_join_ok(PlannerInfo * root, RelOptInfo * joinrel, JoinType jointype,
 			break;
 
 		case JOIN_SEMI:
+		case JOIN_ANTI:
 
 			/*
-			 * For semi-join, inner's conditions go to joinclauses (ON),
+			 * For semi/anti-join, inner's conditions go to joinclauses (ON),
 			 * outer's conditions go to remote_conds (WHERE). Extract join key
-			 * equalities to joinclauses for the ON clause.
+			 * equalities to joinclauses for ON clause.
 			 */
 			fpinfo->joinclauses = list_concat(fpinfo->joinclauses,
 											  list_copy(fpinfo_i->remote_conds));
@@ -1988,6 +1989,27 @@ foreign_join_ok(PlannerInfo * root, RelOptInfo * joinrel, JoinType jointype,
 											   list_copy(fpinfo_o->remote_conds));
 			fpinfo->remote_conds = extract_join_equals(fpinfo->remote_conds,
 													   &fpinfo->joinclauses);
+
+			/*
+			 * ClickHouse doesn't support inline nested joins like A JOIN B
+			 * JOIN C ON ... ON ... When inner/outer is itself a join, wrap as
+			 * subquery so it becomes (SELECT ... FROM B JOIN C ON ...) AS
+			 * sub.
+			 */
+			if (IS_JOIN_REL(outerrel))
+			{
+				fpinfo->make_outerrel_subquery = true;
+				fpinfo->lower_subquery_rels =
+					bms_add_members(fpinfo->lower_subquery_rels,
+									outerrel->relids);
+			}
+			if (IS_JOIN_REL(innerrel))
+			{
+				fpinfo->make_innerrel_subquery = true;
+				fpinfo->lower_subquery_rels =
+					bms_add_members(fpinfo->lower_subquery_rels,
+									innerrel->relids);
+			}
 			break;
 
 		case JOIN_FULL:
@@ -2029,7 +2051,8 @@ foreign_join_ok(PlannerInfo * root, RelOptInfo * joinrel, JoinType jointype,
 	 * XXX Change to use ClickHouse EXISTS in this case?
 	 * https://clickhouse.com/docs/sql-reference/operators/exists
 	 */
-	if (jointype == JOIN_SEMI && fpinfo->joinclauses == NIL)
+	if ((jointype == JOIN_SEMI || jointype == JOIN_ANTI) &&
+		fpinfo->joinclauses == NIL)
 		return false;
 
 	/* Mark that this join can be pushed down safely */

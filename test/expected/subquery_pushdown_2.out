@@ -105,7 +105,7 @@ ORDER BY
  Foreign Scan
    Output: orders.o_orderpriority, (count(*))
    Relations: Aggregate on ((orders) LEFT SEMI JOIN (lineitem))
-   Remote SQL: SELECT r1.o_orderpriority, count(*) FROM  subquery_test.orders r1 LEFT SEMI JOIN subquery_test.lineitem r3 ON (((r3.l_commitdate < r3.l_receiptdate)) AND ((r1.o_orderkey = r3.l_orderkey))) WHERE ((r1.o_orderdate >= '1993-07-01')) AND ((r1.o_orderdate < '1993-10-01')) GROUP BY r1.o_orderpriority ORDER BY r1.o_orderpriority ASC NULLS LAST
+   Remote SQL: SELECT r1.o_orderpriority, count(*) FROM  subquery_test.orders r1 LEFT SEMI JOIN subquery_test.lineitem r2 ON (((r2.l_commitdate < r2.l_receiptdate)) AND ((r1.o_orderkey = r2.l_orderkey))) WHERE ((r1.o_orderdate >= '1993-07-01')) AND ((r1.o_orderdate < '1993-10-01')) GROUP BY r1.o_orderpriority ORDER BY r1.o_orderpriority ASC NULLS LAST
 (4 rows)
 
 -- Execute the actual query
@@ -491,13 +491,13 @@ ORDER BY id;
 -----------------------------------------------------------------------------------------------------
  Foreign Scan on subquery_test.spd_orders
    Output: spd_orders.id, spd_orders.status
-   Filter: ((ANY (spd_orders.id = (hashed SubPlan 4).col1)) OR (spd_orders.status = 'closed'::text))
+   Filter: ((hashed SubPlan 4) OR (spd_orders.status = 'closed'::text))
    Remote SQL: SELECT id, status FROM subquery_test.spd_orders ORDER BY id ASC NULLS LAST
    SubPlan 4
      ->  Foreign Scan on subquery_test.items items_1
            Output: items_1.order_id
            Remote SQL: SELECT order_id FROM subquery_test.items WHERE ((qty > {p1:Decimal(38, 10)}))
-           InitPlan 3
+           InitPlan 3 (returns $3)
              ->  Foreign Scan
                    Output: (avg(items.qty))
                    Relations: Aggregate on (items)
@@ -539,7 +539,7 @@ ORDER BY id;
            Output: (count(*))
            Relations: Aggregate on (items)
            Remote SQL: SELECT count(*) FROM subquery_test.items WHERE ((qty > {p1:Decimal(38, 10)})) AND ((order_id = {p2:Int32}))
-           InitPlan 1
+           InitPlan 1 (returns $0)
              ->  Foreign Scan
                    Output: (avg(items.qty))
                    Relations: Aggregate on (items)

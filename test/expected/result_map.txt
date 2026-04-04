@@ -202,7 +202,9 @@ subquery_pushdown.sql
  Postgres | File
 ----------|-------------------------
  18       | subquery_pushdown.out
- 13-17    | subquery_pushdown_1.out
+ 17       | subquery_pushdown_1.out
+ 14-16    | subquery_pushdown_2.out
+ 13       | subquery_pushdown_3.out
 
  ClickHouse | File
 ------------|-----------------------

@@ -105,7 +105,7 @@ ORDER BY
  Foreign Scan
    Output: orders.o_orderpriority, (count(*))
    Relations: Aggregate on ((orders) LEFT SEMI JOIN (lineitem))
-   Remote SQL: SELECT r1.o_orderpriority, count(*) FROM  subquery_test.orders r1 LEFT SEMI JOIN subquery_test.lineitem r3 ON (((r3.l_commitdate < r3.l_receiptdate)) AND ((r1.o_orderkey = r3.l_orderkey))) WHERE ((r1.o_orderdate >= '1993-07-01')) AND ((r1.o_orderdate < '1993-10-01')) GROUP BY r1.o_orderpriority ORDER BY r1.o_orderpriority ASC NULLS LAST
+   Remote SQL: SELECT r1.o_orderpriority, count(*) FROM  subquery_test.orders r1 LEFT SEMI JOIN subquery_test.lineitem r2 ON (((r2.l_commitdate < r2.l_receiptdate)) AND ((r1.o_orderkey = r2.l_orderkey))) WHERE ((r1.o_orderdate >= '1993-07-01')) AND ((r1.o_orderdate < '1993-10-01')) GROUP BY r1.o_orderpriority ORDER BY r1.o_orderpriority ASC NULLS LAST
 (4 rows)
 
 -- Execute the actual query
@@ -262,11 +262,14 @@ ORDER BY id;
  Foreign Scan on subquery_test.spd_orders
    Output: spd_orders.id, spd_orders.status
    Remote SQL: SELECT id, status FROM subquery_test.spd_orders WHERE ((id IN (SELECT order_id FROM subquery_test.items) OR (status = 'closed'))) ORDER BY id ASC NULLS LAST
-   SubPlan 2
+   SubPlan 1
      ->  Foreign Scan on subquery_test.items
-           Output: items.order_id
+           Remote SQL: SELECT NULL FROM subquery_test.items WHERE ((order_id = {p1:Int32}))
+   SubPlan 2
+     ->  Foreign Scan on subquery_test.items items_1
+           Output: items_1.order_id
            Remote SQL: SELECT order_id FROM subquery_test.items
-(7 rows)
+(10 rows)
 
 SELECT id, status FROM spd_orders
 WHERE EXISTS (SELECT 1 FROM items WHERE order_id = id)
@@ -422,11 +425,14 @@ ORDER BY id;
  Foreign Scan on subquery_test.spd_orders
    Output: spd_orders.id, spd_orders.status
    Remote SQL: SELECT id, status FROM subquery_test.spd_orders WHERE ((id IN (SELECT order_id FROM subquery_test.items WHERE ((shipped > promised))) OR (amount > 400.00))) ORDER BY id ASC NULLS LAST
-   SubPlan 2
+   SubPlan 1
      ->  Foreign Scan on subquery_test.items
-           Output: items.order_id
+           Remote SQL: SELECT NULL FROM subquery_test.items WHERE ((shipped > promised)) AND ((order_id = {p1:Int32}))
+   SubPlan 2
+     ->  Foreign Scan on subquery_test.items items_1
+           Output: items_1.order_id
            Remote SQL: SELECT order_id FROM subquery_test.items WHERE ((shipped > promised))
-(7 rows)
+(10 rows)
 
 SELECT id, status FROM spd_orders
 WHERE EXISTS (
@@ -454,15 +460,21 @@ ORDER BY id;
  Foreign Scan on subquery_test.spd_orders
    Output: spd_orders.id, spd_orders.status
    Remote SQL: SELECT id, status FROM subquery_test.spd_orders WHERE ((id IN (SELECT order_id FROM subquery_test.items) OR id IN (SELECT order_id FROM subquery_test.returns))) ORDER BY id ASC NULLS LAST
-   SubPlan 2
+   SubPlan 1
      ->  Foreign Scan on subquery_test.items
-           Output: items.order_id
+           Remote SQL: SELECT NULL FROM subquery_test.items WHERE ((order_id = {p1:Int32}))
+   SubPlan 2
+     ->  Foreign Scan on subquery_test.items items_1
+           Output: items_1.order_id
            Remote SQL: SELECT order_id FROM subquery_test.items
-   SubPlan 4
+   SubPlan 3
      ->  Foreign Scan on subquery_test.returns
-           Output: returns.order_id
+           Remote SQL: SELECT NULL FROM subquery_test.returns WHERE ((order_id = {p1:Int32}))
+   SubPlan 4
+     ->  Foreign Scan on subquery_test.returns returns_1
+           Output: returns_1.order_id
            Remote SQL: SELECT order_id FROM subquery_test.returns
-(11 rows)
+(17 rows)
 
 SELECT id, status FROM spd_orders
 WHERE EXISTS (SELECT 1 FROM items WHERE order_id = id)
@@ -487,22 +499,30 @@ WHERE EXISTS (
 )
    OR status = 'closed'
 ORDER BY id;
-                                             QUERY PLAN                                              
------------------------------------------------------------------------------------------------------
+                                                          QUERY PLAN                                                           
+-------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on subquery_test.spd_orders
    Output: spd_orders.id, spd_orders.status
-   Filter: ((ANY (spd_orders.id = (hashed SubPlan 4).col1)) OR (spd_orders.status = 'closed'::text))
+   Filter: ((alternatives: SubPlan 2 or hashed SubPlan 4) OR (spd_orders.status = 'closed'::text))
    Remote SQL: SELECT id, status FROM subquery_test.spd_orders ORDER BY id ASC NULLS LAST
-   SubPlan 4
+   SubPlan 2
      ->  Foreign Scan on subquery_test.items items_1
-           Output: items_1.order_id
-           Remote SQL: SELECT order_id FROM subquery_test.items WHERE ((qty > {p1:Decimal(38, 10)}))
-           InitPlan 3
+           Remote SQL: SELECT NULL FROM subquery_test.items WHERE ((order_id = {p1:Int32})) AND ((qty > {p2:Decimal(38, 10)}))
+           InitPlan 1 (returns $0)
              ->  Foreign Scan
                    Output: (avg(items.qty))
                    Relations: Aggregate on (items)
                    Remote SQL: SELECT avg(qty) FROM subquery_test.items
-(13 rows)
+   SubPlan 4
+     ->  Foreign Scan on subquery_test.items items_3
+           Output: items_3.order_id
+           Remote SQL: SELECT order_id FROM subquery_test.items WHERE ((qty > {p1:Decimal(38, 10)}))
+           InitPlan 3 (returns $3)
+             ->  Foreign Scan
+                   Output: (avg(items_2.qty))
+                   Relations: Aggregate on (items)
+                   Remote SQL: SELECT avg(qty) FROM subquery_test.items
+(21 rows)
 
 SELECT id, status FROM spd_orders
 WHERE EXISTS (
@@ -539,7 +559,7 @@ ORDER BY id;
            Output: (count(*))
            Relations: Aggregate on (items)
            Remote SQL: SELECT count(*) FROM subquery_test.items WHERE ((qty > {p1:Decimal(38, 10)})) AND ((order_id = {p2:Int32}))
-           InitPlan 1
+           InitPlan 1 (returns $0)
              ->  Foreign Scan
                    Output: (avg(items.qty))
                    Relations: Aggregate on (items)

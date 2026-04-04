@@ -109,6 +109,198 @@ SELECT o_orderkey, o_orderpriority FROM orders
 WHERE EXISTS (SELECT 1 FROM lineitem WHERE l_orderkey = o_orderkey)
 ORDER BY o_orderkey;
 
+-- ===================================================================
+-- SubPlan-based subquery pushdown (deparseSubPlan / deparseSubquerySelect).
+-- OR, NOT IN, and scalar subqueries prevent PG from converting to
+-- semi/anti-joins, forcing SubPlan nodes that the FDW pushes to CH.
+-- ===================================================================
+SELECT clickhouse_raw_query($$
+    CREATE TABLE subquery_test.spd_orders (
+        id       Int32,
+        cust_id  Int32,
+        status   String,
+        amount   Decimal(15,2),
+        odate    Date
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+
+SELECT clickhouse_raw_query($$
+    CREATE TABLE subquery_test.items (
+        order_id Int32,
+        line     Int32,
+        product  String,
+        qty      Int32,
+        shipped  Date,
+        promised Date
+    ) ENGINE = MergeTree ORDER BY (order_id, line)
+$$);
+
+SELECT clickhouse_raw_query($$
+    CREATE TABLE subquery_test.returns (
+        order_id Int32,
+        line     Int32,
+        reason   String,
+        rdate    Date
+    ) ENGINE = MergeTree ORDER BY (order_id, line)
+$$);
+
+SELECT clickhouse_raw_query($$
+    INSERT INTO subquery_test.spd_orders VALUES
+        (1, 10, 'open',   100.00, '2025-01-15'),
+        (2, 10, 'open',   200.00, '2025-02-20'),
+        (3, 20, 'closed', 300.00, '2025-03-10'),
+        (4, 20, 'open',   400.00, '2025-04-05'),
+        (5, 30, 'closed', 500.00, '2025-05-12'),
+        (6, 30, 'open',   150.00, '2025-06-01'),
+        (7, 40, 'open',   250.00, '2025-07-20'),
+        (8, 40, 'closed', 350.00, '2025-08-15')
+$$);
+
+SELECT clickhouse_raw_query($$
+    INSERT INTO subquery_test.items VALUES
+        (1, 1, 'widget',  5,  '2025-01-20', '2025-01-18'),
+        (1, 2, 'gadget',  2,  '2025-01-22', '2025-01-25'),
+        (2, 1, 'widget',  10, '2025-02-25', '2025-02-28'),
+        (3, 1, 'sprocket', 3, '2025-03-15', '2025-03-12'),
+        (4, 1, 'widget',  1,  '2025-04-10', '2025-04-12'),
+        (4, 2, 'gadget',  7,  '2025-04-11', '2025-04-09'),
+        (7, 1, 'sprocket', 4, '2025-07-25', '2025-07-28')
+$$);
+
+SELECT clickhouse_raw_query($$
+    INSERT INTO subquery_test.returns VALUES
+        (1, 1, 'defective',  '2025-01-25'),
+        (3, 1, 'wrong item', '2025-03-20'),
+        (4, 2, 'damaged',    '2025-04-15')
+$$);
+
+IMPORT FOREIGN SCHEMA "subquery_test" LIMIT TO (spd_orders, items, returns)
+    FROM SERVER subquery_loopback INTO subquery_test;
+
+-- EXISTS under OR (EXISTS_SUBLINK) — OR blocks semi-join conversion
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, status FROM spd_orders
+WHERE EXISTS (SELECT 1 FROM items WHERE order_id = id)
+   OR status = 'closed'
+ORDER BY id;
+
+SELECT id, status FROM spd_orders
+WHERE EXISTS (SELECT 1 FROM items WHERE order_id = id)
+   OR status = 'closed'
+ORDER BY id;
+
+-- IN under OR (ANY_SUBLINK) — OR blocks semi-join conversion
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, amount FROM spd_orders
+WHERE id IN (SELECT order_id FROM returns)
+   OR amount > 400.00
+ORDER BY id;
+
+SELECT id, amount FROM spd_orders
+WHERE id IN (SELECT order_id FROM returns)
+   OR amount > 400.00
+ORDER BY id;
+
+-- NOT IN (ANY_SUBLINK with NOT wrapper)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, amount FROM spd_orders
+WHERE id NOT IN (SELECT order_id FROM returns)
+ORDER BY id;
+
+SELECT id, amount FROM spd_orders
+WHERE id NOT IN (SELECT order_id FROM returns)
+ORDER BY id;
+
+-- Scalar subquery in SELECT (EXPR_SUBLINK)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, status,
+       (SELECT count(*) FROM items WHERE order_id = id) AS item_count
+FROM spd_orders
+ORDER BY id;
+
+SELECT id, status,
+       (SELECT count(*) FROM items WHERE order_id = id) AS item_count
+FROM spd_orders
+ORDER BY id;
+
+-- Scalar subquery with aggregate (EXPR_SUBLINK)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id,
+       (SELECT max(qty) FROM items WHERE order_id = id) AS max_qty
+FROM spd_orders
+ORDER BY id;
+
+SELECT id,
+       (SELECT max(qty) FROM items WHERE order_id = id) AS max_qty
+FROM spd_orders
+ORDER BY id;
+
+-- EXISTS with extra filter in subquery, under OR
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, status FROM spd_orders
+WHERE EXISTS (
+    SELECT 1 FROM items
+    WHERE order_id = id AND shipped > promised
+)
+   OR amount > 400.00
+ORDER BY id;
+
+SELECT id, status FROM spd_orders
+WHERE EXISTS (
+    SELECT 1 FROM items
+    WHERE order_id = id AND shipped > promised
+)
+   OR amount > 400.00
+ORDER BY id;
+
+-- OR'd EXISTS from different tables (two SubPlans)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, status FROM spd_orders
+WHERE EXISTS (SELECT 1 FROM items WHERE order_id = id)
+   OR EXISTS (SELECT 1 FROM returns WHERE order_id = id)
+ORDER BY id;
+
+SELECT id, status FROM spd_orders
+WHERE EXISTS (SELECT 1 FROM items WHERE order_id = id)
+   OR EXISTS (SELECT 1 FROM returns WHERE order_id = id)
+ORDER BY id;
+
+
+-- Nested subquery: EXISTS with uncorrelated scalar (InitPlan inside SubPlan).
+-- Pushdown rejected; PG falls back to local SubPlan execution.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, status FROM spd_orders
+WHERE EXISTS (
+    SELECT 1 FROM items
+    WHERE order_id = id AND qty > (SELECT avg(qty) FROM items)
+)
+   OR status = 'closed'
+ORDER BY id;
+
+SELECT id, status FROM spd_orders
+WHERE EXISTS (
+    SELECT 1 FROM items
+    WHERE order_id = id AND qty > (SELECT avg(qty) FROM items)
+)
+   OR status = 'closed'
+ORDER BY id;
+
+-- Nested subquery: scalar in SELECT with nested aggregate (InitPlan)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id,
+       (SELECT count(*) FROM items
+        WHERE order_id = spd_orders.id
+        AND qty > (SELECT avg(qty) FROM items)) AS above_avg_count
+FROM spd_orders
+ORDER BY id;
+
+SELECT id,
+       (SELECT count(*) FROM items
+        WHERE order_id = spd_orders.id
+        AND qty > (SELECT avg(qty) FROM items)) AS above_avg_count
+FROM spd_orders
+ORDER BY id;
+
 -- Cleanup
 SELECT clickhouse_raw_query('DROP DATABASE subquery_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER subquery_loopback;
