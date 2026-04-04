@@ -414,11 +414,8 @@ foreign_expr_walker(Node * node,
 				 * that all reference objects from the same remote server.
 				 */
 				if (!foreign_expr_walker(subplan->testexpr,
-										 glob_cxt, &inner_cxt))
+										 glob_cxt))
 					return false;
-				//if (!foreign_expr_walker((Node *) plan->parse->targetList,
-										   //glob_cxt, &inner_cxt))
-					//return false;
 			}
 			break;
 		case T_SubscriptingRef:
