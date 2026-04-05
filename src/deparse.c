@@ -433,12 +433,18 @@ foreign_expr_walker(Node * node,
 					return false;
 
 				/*
-				 * ANY deparsing expects testexpr to be a simple OpExpr
-				 * (single-column correlation). Reject multi-column cases.
+				 * ANY deparsing expects testexpr to be a simple equality
+				 * OpExpr. Reject multi-column and non-equality cases.
+				 * Non-equality ANY (e.g. > ANY) normally goes through the
+				 * join path, but guard here too.
 				 */
-				if (subplan->subLinkType == ANY_SUBLINK &&
-					(!subplan->testexpr || !IsA(subplan->testexpr, OpExpr)))
-					return false;
+				if (subplan->subLinkType == ANY_SUBLINK)
+				{
+					if (!subplan->testexpr || !IsA(subplan->testexpr, OpExpr))
+						return false;
+					if (!chfdw_is_equal_op(((OpExpr *) subplan->testexpr)->opno))
+						return false;
+				}
 
 				/* Walk testexpr for shippability (outer-query refs) */
 				if (subplan->testexpr &&

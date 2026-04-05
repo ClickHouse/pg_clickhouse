@@ -336,6 +336,12 @@ SELECT id, amount FROM spd_orders
 WHERE amount > ALL (SELECT amount FROM spd_orders WHERE status = 'closed')
 ORDER BY id;
 
+-- > ANY(subquery) should NOT push down (non-equality ANY_SUBLINK)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, amount FROM spd_orders
+WHERE amount > ANY (SELECT amount FROM spd_orders WHERE status = 'closed')
+ORDER BY id;
+
 -- Scalar subquery with ORDER BY ... LIMIT
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id,

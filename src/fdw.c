@@ -2044,16 +2044,27 @@ foreign_join_ok(PlannerInfo * root, RelOptInfo * joinrel, JoinType jointype,
 	}
 
 	/*
-	 * ClickHouse requires SEMI JOINs to have an ON clause with join
-	 * conditions. Reject uncorrelated EXISTS subqueries that have no join
-	 * keys.
-	 *
-	 * XXX Change to use ClickHouse EXISTS in this case?
-	 * https://clickhouse.com/docs/sql-reference/operators/exists
+	 * ClickHouse SEMI/ANTI JOINs require at least one equi-join key in ON.
+	 * Reject when joinclauses has no equality referencing both sides (e.g.
+	 * uncorrelated EXISTS, or > ANY producing non-equi semi-join).
 	 */
-	if ((jointype == JOIN_SEMI || jointype == JOIN_ANTI) &&
-		fpinfo->joinclauses == NIL)
-		return false;
+	if (jointype == JOIN_SEMI || jointype == JOIN_ANTI)
+	{
+		bool		has_equi_key = false;
+
+		foreach(lc, fpinfo->joinclauses)
+		{
+			RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+
+			if (is_simple_join_clause((Expr *) rinfo))
+			{
+				has_equi_key = true;
+				break;
+			}
+		}
+		if (!has_equi_key)
+			return false;
+	}
 
 	/* Mark that this join can be pushed down safely */
 	fpinfo->pushdown_safe = true;

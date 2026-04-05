@@ -636,6 +636,26 @@ ORDER BY id;
                  Remote SQL: SELECT amount FROM subquery_test.spd_orders WHERE ((status = 'closed'))
 (10 rows)
 
+-- > ANY(subquery) should NOT push down (non-equality ANY_SUBLINK)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, amount FROM spd_orders
+WHERE amount > ANY (SELECT amount FROM spd_orders WHERE status = 'closed')
+ORDER BY id;
+                                                QUERY PLAN                                                 
+-----------------------------------------------------------------------------------------------------------
+ Nested Loop Semi Join
+   Output: spd_orders.id, spd_orders.amount
+   Join Filter: (spd_orders.amount > spd_orders_1.amount)
+   ->  Foreign Scan on subquery_test.spd_orders
+         Output: spd_orders.id, spd_orders.cust_id, spd_orders.status, spd_orders.amount, spd_orders.odate
+         Remote SQL: SELECT id, amount FROM subquery_test.spd_orders ORDER BY id ASC NULLS LAST
+   ->  Materialize
+         Output: spd_orders_1.amount
+         ->  Foreign Scan on subquery_test.spd_orders spd_orders_1
+               Output: spd_orders_1.amount
+               Remote SQL: SELECT amount FROM subquery_test.spd_orders WHERE ((status = 'closed'))
+(11 rows)
+
 -- Scalar subquery with ORDER BY ... LIMIT
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id,
