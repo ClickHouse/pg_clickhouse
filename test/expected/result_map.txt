@@ -188,27 +188,28 @@ subquery_eq.sql
 ----------------
 
  Postgres | File
-----------|-------------------
+----------|---------------------
  16-18    | subquery_eq.out
  13-15    | subquery_eq_1.out
 
  ClickHouse | File
-------------|-----------------
+------------|-------------------
  23+        | subquery_eq.out
 
 subquery_pushdown.sql
 ---------------------
 
  Postgres | File
-----------|-------------------------
+----------|---------------------------
  18       | subquery_pushdown.out
- 17       | subquery_pushdown_1.out
- 14-16    | subquery_pushdown_2.out
- 13       | subquery_pushdown_3.out
+ 17       | subquery_pushdown_2.out
+ 14-16    | subquery_pushdown_3.out
+ 13       | subquery_pushdown_4.out
 
  ClickHouse | File
-------------|-----------------------
- 22+        | subquery_pushdown.out
+------------|---------------------------
+ 23.8+      | subquery_pushdown.out
+ 23.3       | subquery_pushdown_1.out
 
 timezone.sql
 ------------

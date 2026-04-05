@@ -262,14 +262,11 @@ ORDER BY id;
  Foreign Scan on subquery_test.spd_orders
    Output: spd_orders.id, spd_orders.status
    Remote SQL: SELECT id, status FROM subquery_test.spd_orders WHERE ((id IN (SELECT order_id FROM subquery_test.items) OR (status = 'closed'))) ORDER BY id ASC NULLS LAST
-   SubPlan 1
-     ->  Foreign Scan on subquery_test.items
-           Remote SQL: SELECT NULL FROM subquery_test.items WHERE ((order_id = {p1:Int32}))
    SubPlan 2
-     ->  Foreign Scan on subquery_test.items items_1
-           Output: items_1.order_id
+     ->  Foreign Scan on subquery_test.items
+           Output: items.order_id
            Remote SQL: SELECT order_id FROM subquery_test.items
-(10 rows)
+(7 rows)
 
 SELECT id, status FROM spd_orders
 WHERE EXISTS (SELECT 1 FROM items WHERE order_id = id)
@@ -420,19 +417,16 @@ WHERE EXISTS (
 )
    OR amount > 400.00
 ORDER BY id;
-                                                                                              QUERY PLAN                                                                                               
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                             QUERY PLAN                                                                                              
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on subquery_test.spd_orders
    Output: spd_orders.id, spd_orders.status
-   Remote SQL: SELECT id, status FROM subquery_test.spd_orders WHERE ((id IN (SELECT order_id FROM subquery_test.items WHERE ((shipped > promised))) OR (amount > 400.00))) ORDER BY id ASC NULLS LAST
-   SubPlan 1
-     ->  Foreign Scan on subquery_test.items
-           Remote SQL: SELECT NULL FROM subquery_test.items WHERE ((shipped > promised)) AND ((order_id = {p1:Int32}))
+   Remote SQL: SELECT id, status FROM subquery_test.spd_orders WHERE ((id IN (SELECT order_id FROM subquery_test.items WHERE (shipped > promised)) OR (amount > 400.00))) ORDER BY id ASC NULLS LAST
    SubPlan 2
-     ->  Foreign Scan on subquery_test.items items_1
-           Output: items_1.order_id
+     ->  Foreign Scan on subquery_test.items
+           Output: items.order_id
            Remote SQL: SELECT order_id FROM subquery_test.items WHERE ((shipped > promised))
-(10 rows)
+(7 rows)
 
 SELECT id, status FROM spd_orders
 WHERE EXISTS (
@@ -460,21 +454,15 @@ ORDER BY id;
  Foreign Scan on subquery_test.spd_orders
    Output: spd_orders.id, spd_orders.status
    Remote SQL: SELECT id, status FROM subquery_test.spd_orders WHERE ((id IN (SELECT order_id FROM subquery_test.items) OR id IN (SELECT order_id FROM subquery_test.returns))) ORDER BY id ASC NULLS LAST
-   SubPlan 1
-     ->  Foreign Scan on subquery_test.items
-           Remote SQL: SELECT NULL FROM subquery_test.items WHERE ((order_id = {p1:Int32}))
    SubPlan 2
-     ->  Foreign Scan on subquery_test.items items_1
-           Output: items_1.order_id
+     ->  Foreign Scan on subquery_test.items
+           Output: items.order_id
            Remote SQL: SELECT order_id FROM subquery_test.items
-   SubPlan 3
-     ->  Foreign Scan on subquery_test.returns
-           Remote SQL: SELECT NULL FROM subquery_test.returns WHERE ((order_id = {p1:Int32}))
    SubPlan 4
-     ->  Foreign Scan on subquery_test.returns returns_1
-           Output: returns_1.order_id
+     ->  Foreign Scan on subquery_test.returns
+           Output: returns.order_id
            Remote SQL: SELECT order_id FROM subquery_test.returns
-(17 rows)
+(11 rows)
 
 SELECT id, status FROM spd_orders
 WHERE EXISTS (SELECT 1 FROM items WHERE order_id = id)
@@ -499,30 +487,22 @@ WHERE EXISTS (
 )
    OR status = 'closed'
 ORDER BY id;
-                                                          QUERY PLAN                                                           
--------------------------------------------------------------------------------------------------------------------------------
+                                             QUERY PLAN                                              
+-----------------------------------------------------------------------------------------------------
  Foreign Scan on subquery_test.spd_orders
    Output: spd_orders.id, spd_orders.status
-   Filter: ((alternatives: SubPlan 2 or hashed SubPlan 4) OR (spd_orders.status = 'closed'::text))
+   Filter: ((hashed SubPlan 4) OR (spd_orders.status = 'closed'::text))
    Remote SQL: SELECT id, status FROM subquery_test.spd_orders ORDER BY id ASC NULLS LAST
-   SubPlan 2
+   SubPlan 4
      ->  Foreign Scan on subquery_test.items items_1
-           Remote SQL: SELECT NULL FROM subquery_test.items WHERE ((order_id = {p1:Int32})) AND ((qty > {p2:Decimal(38, 10)}))
-           InitPlan 1 (returns $0)
+           Output: items_1.order_id
+           Remote SQL: SELECT order_id FROM subquery_test.items WHERE ((qty > {p1:Decimal(38, 10)}))
+           InitPlan 3 (returns $3)
              ->  Foreign Scan
                    Output: (avg(items.qty))
                    Relations: Aggregate on (items)
                    Remote SQL: SELECT avg(qty) FROM subquery_test.items
-   SubPlan 4
-     ->  Foreign Scan on subquery_test.items items_3
-           Output: items_3.order_id
-           Remote SQL: SELECT order_id FROM subquery_test.items WHERE ((qty > {p1:Decimal(38, 10)}))
-           InitPlan 3 (returns $3)
-             ->  Foreign Scan
-                   Output: (avg(items_2.qty))
-                   Relations: Aggregate on (items)
-                   Remote SQL: SELECT avg(qty) FROM subquery_test.items
-(21 rows)
+(13 rows)
 
 SELECT id, status FROM spd_orders
 WHERE EXISTS (
@@ -584,6 +564,111 @@ ORDER BY id;
   8 |               0
 (8 rows)
 
+-- Implicit cast in subquery WHERE (RelabelType wrapping Var).
+-- Validates deparseVar handles subquery context correctly.
+SELECT clickhouse_raw_query($$
+    CREATE TABLE subquery_test.big_ids (
+        id       Int64,
+        label    String
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    INSERT INTO subquery_test.big_ids VALUES
+        (1, 'one'), (3, 'three'), (5, 'five')
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+IMPORT FOREIGN SCHEMA "subquery_test" LIMIT TO (big_ids)
+    FROM SERVER subquery_loopback INTO subquery_test;
+-- int4 vs int64 comparison triggers RelabelType
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, status FROM spd_orders
+WHERE id IN (SELECT big_ids.id FROM big_ids)
+   OR status = 'closed'
+ORDER BY id;
+                                                                               QUERY PLAN                                                                               
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on subquery_test.spd_orders
+   Output: spd_orders.id, spd_orders.status
+   Remote SQL: SELECT id, status FROM subquery_test.spd_orders WHERE ((id IN (SELECT id FROM subquery_test.big_ids) OR (status = 'closed'))) ORDER BY id ASC NULLS LAST
+   SubPlan 1
+     ->  Foreign Scan on subquery_test.big_ids
+           Output: big_ids.id
+           Remote SQL: SELECT id FROM subquery_test.big_ids
+(7 rows)
+
+SELECT id, status FROM spd_orders
+WHERE id IN (SELECT big_ids.id FROM big_ids)
+   OR status = 'closed'
+ORDER BY id;
+ id | status 
+----+--------
+  1 | open
+  3 | closed
+  5 | closed
+  8 | closed
+(4 rows)
+
+-- > ALL(subquery) should NOT push down (rejected by walker)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, amount FROM spd_orders
+WHERE amount > ALL (SELECT amount FROM spd_orders WHERE status = 'closed')
+ORDER BY id;
+                                             QUERY PLAN                                              
+-----------------------------------------------------------------------------------------------------
+ Foreign Scan on subquery_test.spd_orders
+   Output: spd_orders.id, spd_orders.amount
+   Filter: (SubPlan 1)
+   Remote SQL: SELECT id, amount FROM subquery_test.spd_orders ORDER BY id ASC NULLS LAST
+   SubPlan 1
+     ->  Materialize
+           Output: spd_orders_1.amount
+           ->  Foreign Scan on subquery_test.spd_orders spd_orders_1
+                 Output: spd_orders_1.amount
+                 Remote SQL: SELECT amount FROM subquery_test.spd_orders WHERE ((status = 'closed'))
+(10 rows)
+
+-- Scalar subquery with ORDER BY ... LIMIT
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id,
+       (SELECT product FROM items WHERE order_id = id ORDER BY qty DESC LIMIT 1) AS top_product
+FROM spd_orders
+ORDER BY id;
+                                                                QUERY PLAN                                                                
+------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on subquery_test.spd_orders
+   Output: spd_orders.id, (SubPlan 1)
+   Remote SQL: SELECT id FROM subquery_test.spd_orders ORDER BY id ASC NULLS LAST
+   SubPlan 1
+     ->  Foreign Scan on subquery_test.items
+           Output: items.product, items.qty
+           Remote SQL: SELECT product, qty FROM subquery_test.items WHERE ((order_id = {p1:Int32})) ORDER BY qty DESC NULLS FIRST LIMIT 1
+(7 rows)
+
+SELECT id,
+       (SELECT product FROM items WHERE order_id = id ORDER BY qty DESC LIMIT 1) AS top_product
+FROM spd_orders
+ORDER BY id;
+ id | top_product 
+----+-------------
+  1 | widget
+  2 | widget
+  3 | sprocket
+  4 | gadget
+  5 | 
+  6 | 
+  7 | sprocket
+  8 | 
+(8 rows)
+
 -- Cleanup
 SELECT clickhouse_raw_query('DROP DATABASE subquery_test');
  clickhouse_raw_query 
@@ -593,9 +678,10 @@ SELECT clickhouse_raw_query('DROP DATABASE subquery_test');
 
 DROP USER MAPPING FOR CURRENT_USER SERVER subquery_loopback;
 DROP SERVER subquery_loopback CASCADE;
-NOTICE:  drop cascades to 5 other objects
+NOTICE:  drop cascades to 6 other objects
 DETAIL:  drop cascades to foreign table lineitem
 drop cascades to foreign table orders
 drop cascades to foreign table items
 drop cascades to foreign table returns
 drop cascades to foreign table spd_orders
+drop cascades to foreign table big_ids

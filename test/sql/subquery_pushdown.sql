@@ -301,6 +301,53 @@ SELECT id,
 FROM spd_orders
 ORDER BY id;
 
+-- Implicit cast in subquery WHERE (RelabelType wrapping Var).
+-- Validates deparseVar handles subquery context correctly.
+SELECT clickhouse_raw_query($$
+    CREATE TABLE subquery_test.big_ids (
+        id       Int64,
+        label    String
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+
+SELECT clickhouse_raw_query($$
+    INSERT INTO subquery_test.big_ids VALUES
+        (1, 'one'), (3, 'three'), (5, 'five')
+$$);
+
+IMPORT FOREIGN SCHEMA "subquery_test" LIMIT TO (big_ids)
+    FROM SERVER subquery_loopback INTO subquery_test;
+
+-- int4 vs int64 comparison triggers RelabelType
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, status FROM spd_orders
+WHERE id IN (SELECT big_ids.id FROM big_ids)
+   OR status = 'closed'
+ORDER BY id;
+
+SELECT id, status FROM spd_orders
+WHERE id IN (SELECT big_ids.id FROM big_ids)
+   OR status = 'closed'
+ORDER BY id;
+
+-- > ALL(subquery) should NOT push down (rejected by walker)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, amount FROM spd_orders
+WHERE amount > ALL (SELECT amount FROM spd_orders WHERE status = 'closed')
+ORDER BY id;
+
+-- Scalar subquery with ORDER BY ... LIMIT
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id,
+       (SELECT product FROM items WHERE order_id = id ORDER BY qty DESC LIMIT 1) AS top_product
+FROM spd_orders
+ORDER BY id;
+
+SELECT id,
+       (SELECT product FROM items WHERE order_id = id ORDER BY qty DESC LIMIT 1) AS top_product
+FROM spd_orders
+ORDER BY id;
+
 -- Cleanup
 SELECT clickhouse_raw_query('DROP DATABASE subquery_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER subquery_loopback;
