@@ -194,7 +194,7 @@ CREATE SCHEMA sub_eq_test;
 IMPORT FOREIGN SCHEMA sub_eq_test FROM SERVER sub_eq_svr INTO sub_eq_test;
 SET SESSION search_path = sub_eq_test,public;
 -- Execute query 2.
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT $$
 select
 	s_acctbal,
 	s_name,
@@ -239,6 +239,8 @@ order by
 	s_name,
 	p_partkey
 LIMIT 100;
+$$ AS query2 \gset
+EXPLAIN (VERBOSE, COSTS OFF) :query2
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
@@ -246,6 +248,20 @@ LIMIT 100;
    Relations: ((((part) INNER JOIN (partsupp)) INNER JOIN (supplier)) INNER JOIN (nation)) INNER JOIN (region)
    Remote SQL: SELECT r2.s_acctbal, r2.s_name, r4.n_name, r1.p_partkey, r1.p_mfgr, r2.s_address, r2.s_phone, r2.s_comment FROM     sub_eq_test.part r1 ALL INNER JOIN sub_eq_test.partsupp r3 ON (((r1.p_partkey = r3.ps_partkey))) ALL INNER JOIN sub_eq_test.supplier r2 ON (((r2.s_suppkey = r3.ps_suppkey))) ALL INNER JOIN sub_eq_test.nation r4 ON (((r2.s_nationkey = r4.n_nationkey))) ALL INNER JOIN sub_eq_test.region r5 ON (((r4.n_regionkey = r5.r_regionkey))) WHERE ((r5.r_name = 'EUROPE')) AND (((SELECT min(r1.ps_supplycost) FROM sub_eq_test.partsupp r1, sub_eq_test.supplier r2, sub_eq_test.nation r3, sub_eq_test.region r4 WHERE ((r1.p_partkey = r1.ps_partkey) AND (r2.s_suppkey = r1.ps_suppkey) AND (r2.s_nationkey = r3.n_nationkey) AND (r3.n_regionkey = r4.r_regionkey) AND (r4.r_name = 'EUROPE'))) = r3.ps_supplycost)) AND ((r1.p_type LIKE '%BRASS')) AND ((r1.p_size = 15)) ORDER BY r2.s_acctbal DESC NULLS FIRST, r4.n_name ASC NULLS LAST, r2.s_name ASC NULLS LAST, r1.p_partkey ASC NULLS LAST LIMIT 100
 (4 rows)
+
+:query2
+:query2
+ s_acctbal |       s_name       | n_name  | p_partkey |     p_mfgr     |                s_address                 |     s_phone     |                                       s_comment                                        
+-----------+--------------------+---------+-----------+----------------+------------------------------------------+-----------------+----------------------------------------------------------------------------------------
+    686.50 | Supplier#000001731 | GERMANY |    109220 | Manufacturer#4 | Dqy8LQtY5i8GygrdOC1lt,OVsIgrGoL8Z3PMs    | 17-115-638-8685 | lar requests. final, final platelets around the carefully even deposit
+    686.50 | Supplier#000001731 | GERMANY |    186694 | Manufacturer#4 | Dqy8LQtY5i8GygrdOC1lt,OVsIgrGoL8Z3PMs    | 17-115-638-8685 | lar requests. final, final platelets around the carefully even deposit
+    555.18 | Supplier#000002931 | GERMANY |     20428 | Manufacturer#4 | aUivhoesqMqv0FmJcPBMxBSl8DJvXBGj         | 17-905-318-3455 | t the fluffily ironic packages wake furiously
+     60.50 | Supplier#000003497 | GERMANY |    170979 | Manufacturer#4 | k,,DNvZ8XHvkepAky ,22QHj4MAoxhd          | 17-762-516-4410 | s breach accounts. express dolphins along the quickly ironic deposits hinder furiously
+    -63.88 | Supplier#000003937 | GERMANY |     73936 | Manufacturer#4 | kqEOwdVW,qJsJdcv6PwDJ6ii14mugDK3OgZN ngI | 17-621-453-7063 | y pending asymptotes. foxes are. deposits sleep quickly b
+   -271.69 | Supplier#000009733 | GERMANY |     89732 | Manufacturer#4 | XIkUGlZFKq4IiZsAIRxFwzVBw7D              | 17-789-292-3060 | ions. boldly regular requests play furiously. furiously busy
+   -604.88 | Supplier#000003113 | GERMANY |    105582 | Manufacturer#4 | HjX8M2Bjlz7pAcLzpyKT9 wNb                | 17-164-471-2650 | he ruthlessly final requests. express requests cajole quick
+   -752.27 | Supplier#000005299 | GERMANY |     70284 | Manufacturer#4 | m7Y2G8Pg,kl5AoMPK                        | 17-904-495-9057 | . carefully close foxes x-ray. carefully even package
+(8 rows)
 
 -- Cleanup
 SELECT clickhouse_raw_query('DROP DATABASE sub_eq_test');

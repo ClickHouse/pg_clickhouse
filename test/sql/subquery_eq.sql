@@ -146,8 +146,9 @@ CREATE SCHEMA sub_eq_test;
 IMPORT FOREIGN SCHEMA sub_eq_test FROM SERVER sub_eq_svr INTO sub_eq_test;
 SET SESSION search_path = sub_eq_test,public;
 
+
 -- Execute query 2.
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT $$
 select
 	s_acctbal,
 	s_name,
@@ -192,7 +193,10 @@ order by
 	s_name,
 	p_partkey
 LIMIT 100;
+$$ AS query2 \gset
 
+EXPLAIN (VERBOSE, COSTS OFF) :query2
+:query2
 
 -- Cleanup
 SELECT clickhouse_raw_query('DROP DATABASE sub_eq_test');
