@@ -59,7 +59,7 @@ jobs:
       - name: Extract Version
         id: meta
         run: |
-          VERSION=$(grep -m1 '^  "version":' META.json | sed 's/.*"\([0-9][^"]*\)".*/\1/')
+          VERSION=$(jq -r '.version' META.json)
           PKG_NAME="pg-clickhouse-${VERSION}-pg${{ matrix.pg }}-${{ matrix.arch }}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "pkg_name=$PKG_NAME" >> "$GITHUB_OUTPUT"
@@ -75,7 +75,9 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           ARCH: ${{ matrix.arch }}
           DESTDIR: ${{ github.workspace }}/dest
-        run: nfpm package -f nfpm.yml -p deb -t ${{ steps.meta.outputs.pkg_name }}.deb
+        run: |
+          envsubst < nfpm.yml > nfpm-resolved.yml
+          nfpm package -f nfpm-resolved.yml -p deb -t ${{ steps.meta.outputs.pkg_name }}.deb
 
       - name: Upload .deb Artifact
         uses: actions/upload-artifact@v4
