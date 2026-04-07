@@ -20,12 +20,10 @@ contents:
   # Extension SQL and control files.
   - src: ${DESTDIR}/usr/share/postgresql/${PG_MAJOR}/extension/*.*
     dst: /usr/share/postgresql/${PG_MAJOR}/extension/
-    type: glob
 
   # Shared library.
   - src: ${DESTDIR}/usr/lib/postgresql/${PG_MAJOR}/lib/*.so*
     dst: /usr/lib/postgresql/${PG_MAJOR}/lib/
-    type: glob
 
   # Bitcode files (for JIT).
   - src: ${DESTDIR}/usr/lib/postgresql/${PG_MAJOR}/lib/bitcode/

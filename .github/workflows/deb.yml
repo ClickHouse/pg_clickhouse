@@ -59,7 +59,7 @@ jobs:
       - name: Extract Version
         id: meta
         run: |
-          VERSION=$(grep -m1 '"version":' META.json | sed 's/.*"\([0-9][^"]*\)".*/\1/')
+          VERSION=$(grep -m1 '^  "version":' META.json | sed 's/.*"\([0-9][^"]*\)".*/\1/')
           PKG_NAME="pg-clickhouse-${VERSION}-pg${{ matrix.pg }}-${{ matrix.arch }}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "pkg_name=$PKG_NAME" >> "$GITHUB_OUTPUT"
