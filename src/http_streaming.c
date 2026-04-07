@@ -24,6 +24,10 @@
 #include "http_streaming.h"
 #include "kv_list.h"
 
+#ifndef CURL_WRITEFUNC_ERROR
+#define CURL_WRITEFUNC_ERROR 0xFFFFFFFF
+#endif
+
 #define DATABASE_HEADER "X-ClickHouse-Database"
 #define INITIAL_BUF_SIZE (64 * 1024)
 

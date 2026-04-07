@@ -1,0 +1,145 @@
+name: 📦 Build .deb Packages
+
+on:
+  push:
+    branches: [main, customer-*]
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 📦 PG ${{ matrix.pg }} ${{ matrix.os.arch }}
+    runs-on: ${{ matrix.os.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: [18, 17, 16, 15, 14, 13]
+        os:
+          - { arch: amd64, runner: ubuntu-22.04 }
+          - { arch: arm64, runner: ubuntu-22.04-arm }
+    steps:
+      - name: Install PGDG Repository
+        run: |
+          sudo apt-get install -y --no-install-recommends gnupg
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt-get update
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            postgresql-server-dev-${{ matrix.pg }} \
+            libcurl4-openssl-dev \
+            uuid-dev \
+            make \
+            cmake \
+            libssl-dev \
+            g++
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Cache Vendor Build
+        uses: actions/cache@v4
+        with:
+          path: vendor/_build
+          key: deb-${{ runner.os }}-${{ matrix.os.arch }}-pg${{ matrix.pg }}-${{ hashFiles('.git/modules/clickhouse-cpp/refs/heads/master') }}
+
+      - name: Reset Vendor Timestamp
+        run: cd vendor/clickhouse-cpp && touch -d $(git log -1 --format="@%ct" CMakeLists.txt) CMakeLists.txt
+
+      - name: Build Extension
+        run: make -j$(nproc) PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+
+      - name: Install to Staging Directory
+        run: make install DESTDIR=${{ github.workspace }}/dest PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+
+      - name: Extract Version
+        id: meta
+        run: |
+          VERSION=$(jq -r '.version' META.json)
+          PKG_NAME="pg-clickhouse-${VERSION}-pg${{ matrix.pg }}-${{ matrix.os.arch }}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "pkg_name=$PKG_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Install nfpm
+        run: |
+          curl -fsSL -o /tmp/nfpm.deb https://github.com/goreleaser/nfpm/releases/download/v2.46.0/nfpm_2.46.0_${{ matrix.os.arch }}.deb
+          sudo dpkg -i /tmp/nfpm.deb
+
+      - name: Build .deb
+        env:
+          PG_MAJOR: ${{ matrix.pg }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          ARCH: ${{ matrix.os.arch }}
+          DESTDIR: ${{ github.workspace }}/dest
+        run: |
+          envsubst < nfpm.yml > nfpm-resolved.yml
+          nfpm package -f nfpm-resolved.yml -p deb -t ${{ steps.meta.outputs.pkg_name }}.deb
+
+      - name: Upload .deb Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.pkg_name }}
+          path: ${{ steps.meta.outputs.pkg_name }}.deb
+
+  release:
+    name: 🚀 Upload to Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download All .deb Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: debs
+          pattern: pg-clickhouse-*
+          merge-multiple: true
+
+      - name: Determine Release Tag
+        id: tag
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            echo "tag=dev" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            # customer-foo -> customer-foo
+            BRANCH="${GITHUB_REF#refs/heads/}"
+            echo "tag=$BRANCH" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or Update Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          PRERELEASE: ${{ steps.tag.outputs.prerelease }}
+        run: |
+          ls -la debs/
+
+          if [[ "$PRERELEASE" == "true" ]]; then
+            # Create the release if it doesn't exist yet.
+            gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+              gh release create "$TAG" -R "$GITHUB_REPOSITORY" \
+                --prerelease \
+                --title "$TAG" \
+                --notes "Rolling pre-release for \`$TAG\`. Updated on every push."
+
+            # Upload .deb files, replacing any existing ones.
+            gh release upload "$TAG" debs/*.deb -R "$GITHUB_REPOSITORY" --clobber
+          else
+            # For version tags, the release is created by release.yml.
+            # Wait briefly for it to exist, then attach .debs.
+            for i in 1 2 3 4 5; do
+              gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break
+              echo "Waiting for release $TAG to be created..."
+              sleep 10
+            done
+            gh release upload "$TAG" debs/*.deb -R "$GITHUB_REPOSITORY" --clobber
+          fi
