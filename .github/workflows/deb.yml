@@ -10,13 +10,15 @@ permissions:
 
 jobs:
   build:
-    name: 📦 PG ${{ matrix.pg }} ${{ matrix.arch }}
-    runs-on: ubuntu-22.04
+    name: 📦 PG ${{ matrix.pg }} ${{ matrix.os.arch }}
+    runs-on: ${{ matrix.os.runner }}
     strategy:
       fail-fast: false
       matrix:
         pg: [18, 17, 16, 15, 14, 13]
-        arch: [amd64]
+        os:
+          - { arch: amd64, runner: ubuntu-22.04 }
+          - { arch: arm64, runner: ubuntu-22.04-arm }
     steps:
       - name: Install PGDG Repository
         run: |
@@ -45,7 +47,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vendor/_build
-          key: deb-${{ runner.os }}-${{ matrix.arch }}-pg${{ matrix.pg }}-${{ hashFiles('.git/modules/clickhouse-cpp/refs/heads/master') }}
+          key: deb-${{ runner.os }}-${{ matrix.os.arch }}-pg${{ matrix.pg }}-${{ hashFiles('.git/modules/clickhouse-cpp/refs/heads/master') }}
 
       - name: Reset Vendor Timestamp
         run: cd vendor/clickhouse-cpp && touch -d $(git log -1 --format="@%ct" CMakeLists.txt) CMakeLists.txt
@@ -60,20 +62,20 @@ jobs:
         id: meta
         run: |
           VERSION=$(jq -r '.version' META.json)
-          PKG_NAME="pg-clickhouse-${VERSION}-pg${{ matrix.pg }}-${{ matrix.arch }}"
+          PKG_NAME="pg-clickhouse-${VERSION}-pg${{ matrix.pg }}-${{ matrix.os.arch }}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "pkg_name=$PKG_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Install nfpm
         run: |
-          curl -fsSL -o /tmp/nfpm.deb https://github.com/goreleaser/nfpm/releases/download/v2.46.0/nfpm_2.46.0_amd64.deb
+          curl -fsSL -o /tmp/nfpm.deb https://github.com/goreleaser/nfpm/releases/download/v2.46.0/nfpm_2.46.0_${{ matrix.os.arch }}.deb
           sudo dpkg -i /tmp/nfpm.deb
 
       - name: Build .deb
         env:
           PG_MAJOR: ${{ matrix.pg }}
           VERSION: ${{ steps.meta.outputs.version }}
-          ARCH: ${{ matrix.arch }}
+          ARCH: ${{ matrix.os.arch }}
           DESTDIR: ${{ github.workspace }}/dest
         run: |
           envsubst < nfpm.yml > nfpm-resolved.yml
