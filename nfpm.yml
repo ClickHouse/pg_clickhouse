@@ -1,0 +1,31 @@
+name: pg-clickhouse
+arch: ${ARCH}
+version: ${VERSION}
+release: 1
+platform: linux
+section: database
+priority: optional
+maintainer: "David E. Wheeler <david@justatheory.com>"
+description: "Interfaces to query ClickHouse databases from PostgreSQL ${PG_MAJOR}"
+vendor: ClickHouse
+homepage: https://github.com/ClickHouse/pg_clickhouse
+license: Apache-2.0
+
+depends:
+  - postgresql-${PG_MAJOR}
+  - libcurl4
+  - uuid-runtime
+
+contents:
+  # Extension SQL and control files.
+  - src: ${DESTDIR}/usr/share/postgresql/${PG_MAJOR}/extension/*.*
+    dst: /usr/share/postgresql/${PG_MAJOR}/extension/
+
+  # Shared library.
+  - src: ${DESTDIR}/usr/lib/postgresql/${PG_MAJOR}/lib/*.so*
+    dst: /usr/lib/postgresql/${PG_MAJOR}/lib/
+
+  # Bitcode files (for JIT).
+  - src: ${DESTDIR}/usr/lib/postgresql/${PG_MAJOR}/lib/bitcode/
+    dst: /usr/lib/postgresql/${PG_MAJOR}/lib/bitcode/
+    type: tree
