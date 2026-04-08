@@ -1,0 +1,95 @@
+SET datestyle = 'ISO';
+CREATE SERVER binary_time_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'time_test', driver 'binary');
+CREATE SERVER http_time_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'time_test', driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_time_loopback;
+CREATE USER MAPPING FOR CURRENT_USER SERVER http_time_loopback;
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS time_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE DATABASE time_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    CREATE TABLE time_test.times (
+        id     Int32     NOT NULL,
+        t32    Time      NOT NULL,
+        t64    Time64    NOT NULL,
+        t64n   Time64(6) NOT NULL
+    ) ENGINE = MergeTree PARTITION BY id ORDER BY (id);
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    INSERT INTO time_test.times (id, t32, t64, t64n) VALUES
+        (1, '12:43:53', '12:43:53.123', '12:43:53.123456'),
+        (2, '03:27:09', '03:27:09.987', '03:27:09.987654'),
+        (3, '12:43:53', '12:43:53.123', '12:43:53.123456')
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+CREATE SCHEMA time_bin;
+CREATE SCHEMA time_http;
+IMPORT FOREIGN SCHEMA time_test FROM SERVER binary_time_loopback INTO time_bin;
+\d time_bin.times
+                         Foreign table "time_bin.times"
+ Column |          Type          | Collation | Nullable | Default | FDW options 
+--------+------------------------+-----------+----------+---------+-------------
+ id     | integer                |           | not null |         | 
+ t32    | time without time zone |           | not null |         | 
+ t64    | time without time zone |           | not null |         | 
+ t64n   | time without time zone |           | not null |         | 
+Server: binary_time_loopback
+FDW options: (database 'time_test', table_name 'times', engine 'MergeTree')
+
+IMPORT FOREIGN SCHEMA time_test FROM SERVER http_time_loopback INTO time_http;
+\d time_http.times
+                        Foreign table "time_http.times"
+ Column |          Type          | Collation | Nullable | Default | FDW options 
+--------+------------------------+-----------+----------+---------+-------------
+ id     | integer                |           | not null |         | 
+ t32    | time without time zone |           | not null |         | 
+ t64    | time without time zone |           | not null |         | 
+ t64n   | time without time zone |           | not null |         | 
+Server: http_time_loopback
+FDW options: (database 'time_test', table_name 'times', engine 'MergeTree')
+
+SELECT * FROM time_http.times ORDER BY id;
+ id |   t32    |     t64      |      t64n       
+----+----------+--------------+-----------------
+  1 | 12:43:53 | 12:43:53.123 | 12:43:53.123456
+  2 | 03:27:09 | 03:27:09.987 | 03:27:09.987654
+  3 | 12:43:53 | 12:43:53.123 | 12:43:53.123456
+(3 rows)
+
+SELECT * FROM time_bin.times ORDER BY id;
+ id |   t32    |     t64      |      t64n       
+----+----------+--------------+-----------------
+  1 | 12:43:53 | 12:43:53.123 | 12:43:53.123456
+  2 | 03:27:09 | 03:27:09.987 | 03:27:09.987654
+  3 | 12:43:53 | 12:43:53.123 | 12:43:53.123456
+(3 rows)
+
+SELECT clickhouse_raw_query('DROP DATABASE time_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP USER MAPPING FOR CURRENT_USER SERVER binary_time_loopback;
+DROP USER MAPPING FOR CURRENT_USER SERVER http_time_loopback;
+DROP SERVER binary_time_loopback CASCADE;
+NOTICE:  drop cascades to foreign table time_bin.times
+DROP SERVER http_time_loopback CASCADE;
+NOTICE:  drop cascades to foreign table time_http.times

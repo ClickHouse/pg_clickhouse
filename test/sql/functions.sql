@@ -377,20 +377,18 @@ BEGIN
 		RAISE NOTICE 'CURRENT_TIME PUSHED DOWN: %', jsonb_path_query(
 			output, '$[0].Plan'
 		)->>'Remote SQL' = 'SELECT t64 FROM functions_test.times WHERE ((t64 <> toTime64(now64(6, ''America/Los_Angeles''), 6)))';
-		-- XXX Add Time64 support to binary the drivers.
-		-- FOR result IN SELECT * FROM times WHERE t64 <> CURRENT_TIME ORDER BY t64 LOOP
-		-- 	RAISE NOTICE '%', result;
-		-- END LOOP;
+		FOR result IN SELECT * FROM times WHERE t64 <> CURRENT_TIME ORDER BY t64 LOOP
+			RAISE NOTICE '%', result;
+		END LOOP;
 
 		-- Test that CURRENT_TIME passes down properly.
 		EXPLAIN (VERBOSE, FORMAT JSON) SELECT * FROM times WHERE t64 <> CURRENT_TIME(3) INTO output;
 		RAISE NOTICE 'CURRENT_TIME(n) PUSHED DOWN: %', jsonb_path_query(
 			output, '$[0].Plan'
 		)->>'Remote SQL' = 'SELECT t64 FROM functions_test.times WHERE ((t64 <> toTime64(now64(3, ''America/Los_Angeles''), 3)))';
-		-- XXX Add Time64 support to binary the drivers.
-		-- FOR result IN SELECT * FROM times WHERE t64 <> CURRENT_TIME(6) ORDER BY t64 LOOP
-		-- 	RAISE NOTICE '%', result;
-		-- END LOOP;
+		FOR result IN SELECT * FROM times WHERE t64 <> CURRENT_TIME(6) ORDER BY t64 LOOP
+			RAISE NOTICE '%', result;
+		END LOOP;
     ELSE
 		-- Fake it on earlier versions.
 		RAISE NOTICE 'CURRENT_TIME PUSHED DOWN: t';

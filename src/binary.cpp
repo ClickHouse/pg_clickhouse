@@ -322,6 +322,10 @@ extern "C"
 				return TIMESTAMPTZOID;
 			case Type::Code::DateTime64:
 				return TIMESTAMPTZOID;
+			case Type::Code::Time:
+				return TIMEOID;
+			case Type::Code::Time64:
+				return TIMEOID;
 			case Type::Code::UUID:
 				return UUIDOID;
 			case Type::Code::Array:
@@ -652,6 +656,33 @@ extern "C"
 					}
 					default:
 						THROW_UNEXPECTED_COLUMN("TIMESTAMP", col);
+				}
+				break;
+			}
+			case TIMEOID:
+			case TIMETZOID:
+			{
+				switch (col->Type()->GetCode())
+				{
+					case Type::Code::Time:
+					{
+						pg_time_t d = timestamptz_to_time_t(DatumGetTimestamp(val));
+						col->AsStrict<ColumnTime>()->Append(d);
+						break;
+					}
+					case Type::Code::Time64:
+					{
+						auto	  dt64_col = col->AsStrict<ColumnTime64>();
+						Timestamp t = DatumGetTimestamp(val);
+						Int64	  dt64
+						= ((1.0 * t) / USECS_PER_SEC + ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY))
+						  * pow(10.0, dt64_col->GetPrecision());
+
+						dt64_col->Append(dt64);
+						break;
+					}
+					default:
+						THROW_UNEXPECTED_COLUMN("TIME", col);
 				}
 				break;
 			}
@@ -1037,6 +1068,22 @@ extern "C"
 				int64 power = pow(10, dt_col->GetPrecision());
 				*valtype = TIMESTAMPTZOID;
 				ret = TimestampTzGetDatum(time_t_to_timestamptz(val / power)) + (val % power) * (USECS_PER_SEC / power);
+			}
+			break;
+			case Type::Code::Time:
+			{
+				auto val = static_cast<pg_time_t>(col->AsStrict<ColumnTime>()->At(row));
+				*valtype = TIMEOID;
+				ret = DirectFunctionCall1(timestamp_time, time_t_to_timestamptz(val));
+			}
+			break;
+			case Type::Code::Time64:
+			{
+				auto  dt_col = col->AsStrict<ColumnTime64>();
+				auto  val = dt_col->At(row);
+				int64 power = pow(10, dt_col->GetPrecision());
+				*valtype = TIMEOID;
+				ret = DirectFunctionCall1(timestamp_time, time_t_to_timestamptz(val / power)) + (val % power) * (USECS_PER_SEC / power);
 			}
 			break;
 			case Type::Code::UUID:

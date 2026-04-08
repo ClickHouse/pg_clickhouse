@@ -722,6 +722,8 @@ chfdw_datum_to_ch_literal(Datum value, Oid type)
 				pfree(extval);
 				return retval;
 			}
+		case TIMETZOID:
+			return DatumGetCString(DirectFunctionCall1(ch_time_out, value));
 		case TIMESTAMPOID:
 		case TIMESTAMPTZOID:
 			/* we expect DateTime on other side */
@@ -1143,7 +1145,9 @@ binary_insert_tuple(void *istate, TupleTableSlot * slot)
 		('UUID',     'uuid',             ''),
 		('IPv4',     'inet',             ''),
 		('IPv6',     'inet',             ''),
-		('JSON',     'jsonb',            'HTTP engine only')
+		('JSON',     'jsonb',            'HTTP engine only').
+		('Time',     'time',             ''),
+		('Time64',   'time',             ''),
 	) AS v(\"ClickHouse\", \"PostgreSQL\", \"Notes\")
 	ORDER BY \"ClickHouse\";
 	" | perl -ne 'my $m = $.%2; print $buf[$m] if defined $buf[$m]; $buf[$m] = s/\+/|/gr if $.>1' | pbcopy
@@ -1171,6 +1175,8 @@ static char *str_types_map[][2] = {
 	{"IPv4", "inet"},
 	{"IPv6", "inet"},
 	{"JSON", "JSONB"},
+	{"Time", "TIME"},
+	{"Time64", "TIME"},
 	{NULL, NULL},
 };
 
@@ -1202,6 +1208,8 @@ parse_type(char *table_name, char *colname, char *part, bool *is_nullable, List 
 			return "TIMESTAMPTZ";
 		else if (strncmp(typepart, "DateTime", strlen("DateTime")) == 0)
 			return "TIMESTAMPTZ";
+		else if (strncmp(typepart, "Time64", strlen("Time64")) == 0)
+			return "TIME";
 		else if (strncmp(typepart, "Tuple", strlen("Tuple")) == 0)
 		{
 			elog(NOTICE, "pg_clickhouse: ClickHouse <Tuple> type was "
