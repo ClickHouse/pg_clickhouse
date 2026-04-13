@@ -11,8 +11,8 @@ jobs:
       matrix:
         pg: [18, 17, 16, 15, 14, 13]
         os:
-          - { icon: 🐧, arch: amd64, on: ubuntu-latest }
-          # - { icon: 🐧, arch: arm64, on: ubuntu-24.04-arm } # XXX
+          - { icon: 🐧, arch: amd64, on: depot-ubuntu-24.04-16 }
+          # - { icon: 🐧, arch: arm64, on: depot-ubuntu-24.04-arm-16 } # XXX
     name: 🐘 PostgreSQL ${{ matrix.pg }} ${{ matrix.os.icon }} ${{ matrix.os.arch }}
     runs-on: ${{ matrix.os.on }}
     container: pgxn/pgxn-tools

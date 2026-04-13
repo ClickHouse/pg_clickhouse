@@ -5,7 +5,7 @@ permissions:
 jobs:
   release:
     name: Release on GitHub and PGXN
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-16
     container: pgxn/pgxn-tools
     steps:
       - name: Check out the repo

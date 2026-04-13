@@ -5,7 +5,7 @@ on:
 jobs:
   lint:
     name: 🔎 Lint Code
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-16
     container: pgxn/pgxn-tools
     env: { pg: 18 }
     steps:

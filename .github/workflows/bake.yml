@@ -11,7 +11,7 @@ permissions:
 jobs:
   bake:
     name: 🍪 Bake with Postgres ${{ matrix.pgv }}
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-16
     if: ${{ github.repository == 'ClickHouse/pg_clickhouse' }}
     strategy:
       fail-fast: false

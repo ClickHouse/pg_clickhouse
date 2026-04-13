@@ -22,7 +22,7 @@ jobs:
           - 23.8.16.40-lts
           - 23.3.22.3-lts
     name: 🏠 ClickHouse ${{ matrix.ch }}
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-16
     container: pgxn/pgxn-tools
     steps:
       - name: Start Postgres
