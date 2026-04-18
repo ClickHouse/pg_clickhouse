@@ -29,9 +29,12 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### 🚀 Distribution
 
-*   Added the [re2 extension] to the OCI images.
+*   Added the [ca-certificates package] and the [re2 extension] to the OCI
+    (née Docker) images.
 
   [v0.2.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.2.0...v0.2.1
+  [ca-certificates package]: https://packages.debian.org/source/trixie/ca-certificates
+    "Debian Packages: Common CA certificates"
   [re2 extension]: https://github.com/ClickHouse/pg_re2
     "pg_re2: ClickHouse-compatible regex functions using RE2"
   [#204]: https://github.com/ClickHouse/pg_clickhouse/pull/204
@@ -60,7 +63,7 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.2';
     *   `CURRENT_DATE` -> `toDate(now(TZ))`
     *   `CURRENT_TIMESTAMP` and `LOCALTIMESTAMP` => `now64(9, TZ)`
     *   `CURRENT_TIMESTAMP(n)` and `LOCALTIMESTAMP(n)` => `now64(n, TZ)`
-    *   `clock_timestamp()`, `statement_timestamp()` &
+    *   `clock_timestamp()`, `statement_timestamp()`, &
         `transaction_timestamp()` => `nowInBlock64(n, TZ)`
 *   Added pushdown for the `CURRENT_TIME` and `LOCALTIME` SQL Value Functions
     to `toTime64(now64(6, TZ), 6)`, supported by ClickHouse 25.8+.
