@@ -17,6 +17,14 @@ RETURNS TEXT
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
+-- clickhouse_raw_query accepts an arbitrary connection string, including
+-- any host the caller chooses.  Leaving it executable by PUBLIC would
+-- allow any database user to reach internal services (metadata endpoints,
+-- private APIs, etc.) from the PostgreSQL server — a classic SSRF vector.
+-- Grant it back only to roles that legitimately need ad-hoc ClickHouse
+-- access (e.g. a dedicated clickhouse_admin role).
+REVOKE EXECUTE ON FUNCTION clickhouse_raw_query(text, text) FROM PUBLIC;
+
 CREATE FUNCTION clickhouse_fdw_validator(text[], oid)
 RETURNS VOID
 AS 'MODULE_PATHNAME'
