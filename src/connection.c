@@ -46,9 +46,11 @@ clickhouse_connect(ForeignServer * server, UserMapping * user)
 	ch_connection_details details = {"127.0.0.1", 0, NULL, NULL, "default"};
 
 	chfdw_extract_options(server->options, &driver, &details.host,
-						  &details.port, &details.dbname, &details.username, &details.password);
+						  &details.port, &details.dbname, &details.username, &details.password,
+						  &details.tls);
 	chfdw_extract_options(user->options, &driver, &details.host,
-						  &details.port, &details.dbname, &details.username, &details.password);
+						  &details.port, &details.dbname, &details.username, &details.password,
+						  &details.tls);
 
 	if (strcmp(driver, "http") == 0)
 	{

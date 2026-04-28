@@ -37,8 +37,30 @@ jobs:
         run: cd vendor/clickhouse-cpp && touch -d $(git log -1 --format="@%ct" CMakeLists.txt) CMakeLists.txt
       - name: Test DSO
         run: pg-build-test
+      - name: Show regression diffs (DSO)
+        if: failure()
+        run: cat regression.diffs || true
+      - name: Upload actual results (DSO)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-results-pg${{ matrix.pg }}-${{ matrix.os.arch }}-dso
+          path: |
+            regression.diffs
+            results/
       - name: Clean
         run: make clean NO_VENDOR_CLEAN=1
       - name: Test Static
         run: pg-build-test
         env: { CH_BUILD: static }
+      - name: Show regression diffs (Static)
+        if: failure()
+        run: cat regression.diffs || true
+      - name: Upload actual results (Static)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-results-pg${{ matrix.pg }}-${{ matrix.os.arch }}-static
+          path: |
+            regression.diffs
+            results/

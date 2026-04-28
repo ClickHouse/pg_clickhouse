@@ -82,8 +82,26 @@ ch_http_connection(ch_connection_details * details)
 	if (!host || !*host)
 		host = "localhost";
 
-	if (!port)
-		port = ch_is_cloud_host(host) ? CLICKHOUSE_TLS_PORT : CLICKHOUSE_PORT;
+	bool		use_tls;
+
+	switch (details->tls)
+	{
+		case CH_TLS_ON:
+			if (!port)
+				port = CLICKHOUSE_TLS_PORT;
+			use_tls = true;
+			break;
+		case CH_TLS_OFF:
+			if (!port)
+				port = CLICKHOUSE_PORT;
+			use_tls = false;
+			break;
+		default:				/* CH_TLS_AUTO */
+			if (!port)
+				port = ch_is_cloud_host(host) ? CLICKHOUSE_TLS_PORT : CLICKHOUSE_PORT;
+			use_tls = (port == CLICKHOUSE_TLS_PORT || port == HTTP_TLS_PORT);
+			break;
+	}
 
 	len += strlen(host) + snprintf(NULL, 0, "%d", port);
 
@@ -103,7 +121,7 @@ ch_http_connection(ch_connection_details * details)
 	if (!connstring)
 		goto cleanup;
 
-	char	   *scheme = port == CLICKHOUSE_TLS_PORT || port == HTTP_TLS_PORT ? "https" : "http";
+	char	   *scheme = use_tls ? "https" : "http";
 
 	if (username && password)
 	{

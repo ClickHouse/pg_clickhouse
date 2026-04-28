@@ -6,6 +6,14 @@
 /*
  * ch_connection_details defines the details for connecting to ClickHouse.
  */
+/* TLS mode for the "secure" FDW option (auto=heuristic, on=force, off=never) */
+typedef enum
+{
+	CH_TLS_AUTO = 0,			/* cloud-hostname heuristic (default) */
+	CH_TLS_ON,					/* always HTTPS; default port 8443 */
+	CH_TLS_OFF,					/* always HTTP;  default port 8123 */
+}			ch_tls_mode;
+
 typedef struct
 {
 	char	   *host;
@@ -13,6 +21,7 @@ typedef struct
 	char	   *username;
 	char	   *password;
 	char	   *dbname;
+	ch_tls_mode tls;			/* TLS mode; CH_TLS_AUTO when not specified */
 }			ch_connection_details;
 
 /*

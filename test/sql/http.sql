@@ -297,6 +297,34 @@ CREATE FOREIGN TABLE ft_bad_fetch (
 DROP USER MAPPING FOR CURRENT_USER SERVER http_no_stream;
 DROP SERVER http_no_stream CASCADE;
 
+/* ===== secure option tests ===== */
+
+/* All accepted values for the secure option should pass validation. */
+CREATE SERVER http_secure_on FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', secure 'on');
+DROP SERVER http_secure_on;
+
+CREATE SERVER http_secure_off FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', secure 'off');
+DROP SERVER http_secure_off;
+
+CREATE SERVER http_secure_auto FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', secure 'auto');
+DROP SERVER http_secure_auto;
+
+/* Boolean aliases for on/off must be accepted too. */
+CREATE SERVER http_secure_true FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', secure 'true');
+DROP SERVER http_secure_true;
+
+CREATE SERVER http_secure_false FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', secure 'false');
+DROP SERVER http_secure_false;
+
+/* An unknown value must be rejected. */
+CREATE SERVER http_secure_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', secure 'maybe');
+
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback_bad;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback2;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback;

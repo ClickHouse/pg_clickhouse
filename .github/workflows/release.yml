@@ -22,6 +22,17 @@ jobs:
       - name: Test the Bundle
         env: { PGUSER: postgres }
         run: make dist-test
+      - name: Show regression diffs
+        if: failure()
+        run: cat pg_clickhouse-*/regression.diffs || cat regression.diffs || true
+      - name: Upload regression results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-results
+          path: |
+            pg_clickhouse-*/regression.diffs
+            pg_clickhouse-*/results/
       - name: Release on PGXN
         if: startsWith( github.ref, 'refs/tags/v' )
         env:
