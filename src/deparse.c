@@ -132,6 +132,15 @@ typedef struct deparse_expr_cxt
 		appendStringInfo((buf), "%s%d.", REL_ALIAS_PREFIX, (varno))
 #define SUBQUERY_REL_ALIAS_PREFIX	"s"
 #define SUBQUERY_COL_ALIAS_PREFIX	"c"
+/*
+ * SubPlan-internal aliases. plan_id is unique across PlannedStmt.subplans
+ * (primnodes.h:1089), so {plan_id, varno} pairs never collide with the outer
+ * query's r{N}/s{N} or with sibling/nested SubPlan scopes.
+ */
+#define SUBPLAN_REL_ALIAS_PREFIX	"q"
+#define ADD_SUBPLAN_REL_QUALIFIER(buf, plan_id, varno)	\
+		appendStringInfo((buf), "%s%d_%d.", SUBPLAN_REL_ALIAS_PREFIX,	\
+						 (plan_id), (varno))
 
 #define CSTRING_TOLOWER(str) \
 do { \
@@ -401,16 +410,38 @@ foreign_expr_walker(Node * node,
 				Query	   *subquery;
 				ListCell   *lc;
 
+				/*
+				 * Supported SubLinkTypes:
+				 *   ANY_SUBLINK    -> col IN (SELECT ...)   (equality only)
+				 *   EXISTS_SUBLINK -> EXISTS (SELECT ...)
+				 *   EXPR_SUBLINK   -> (SELECT ...)
+				 *
+				 * Unsupported (and why):
+				 *   ALL_SUBLINK         CH lacks ALL; would need NOT EXISTS
+				 *                       rewrite. NOT IN already arrives as
+				 *                       NOT(ANY_SUBLINK).
+				 *   ROWCOMPARE_SUBLINK  Multi-column compare not deparsed.
+				 *   MULTIEXPR_SUBLINK   UPDATE-only path, also blocked by the
+				 *                       PARAM_MULTIEXPR guard above.
+				 *   ARRAY_SUBLINK       ARRAY() construction differs in CH.
+				 *   CTE_SUBLINK         Recursive/materialised CTE survives
+				 *                       past inline_cte_walker; CH cannot host.
+				 */
 				if (subplan->subLinkType != ANY_SUBLINK &&
 					subplan->subLinkType != EXISTS_SUBLINK &&
 					subplan->subLinkType != EXPR_SUBLINK)
 					return false;
 
-				/* Verify subquery tables are foreign tables on same server */
+				/*
+				 * Look up the planner state for this SubPlan. plan_id is
+				 * 1-based and indexes both glob->subplans and glob->subroots
+				 * (postgresql/src/include/nodes/pathnodes.h:185-186).
+				 */
 				subroot = list_nth(glob_cxt->root->glob->subroots,
 								   subplan->plan_id - 1);
 				subquery = subroot->parse;
 
+				/* All RTEs must be foreign tables on the same CH server. */
 				foreach(lc, subquery->rtable)
 				{
 					RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
@@ -424,7 +455,20 @@ foreign_expr_walker(Node * node,
 						return false;
 				}
 
-				/* Reject nested SubPlans (correlated or InitPlan) */
+				/*
+				 * Reject SubPlans that themselves contain SubPlans:
+				 *   - subroot->init_plans  : uncorrelated InitPlans hanging off
+				 *     the subquery. Each has its own plan_id and correlation
+				 *     params; a recursive deparse loop is not implemented.
+				 *   - contain_subplans()   : a nested SubPlan inside the
+				 *     subquery's WHERE/HAVING/targetList. deparseParam walks
+				 *     a single parent_ctx link, not many, so multi-level
+				 *     correlation cannot be resolved.
+				 *
+				 * Both restrictions are conservative and can be lifted later;
+				 * the q{plan_id}_{varno} alias scheme is already collision-free
+				 * across nested scopes.
+				 */
 				if (subroot->init_plans != NIL ||
 					(subquery->jointree &&
 					 contain_subplans(subquery->jointree->quals)) ||
@@ -1971,7 +2015,9 @@ deparseExpr(Expr * node, deparse_expr_cxt * context)
 					}
 				}
 				if (!found)
-					elog(ERROR, "no ANY_SUBLINK alternative for pushdown");
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("no ANY_SUBLINK alternative available for pushdown")));
 			}
 			break;
 		case T_SubscriptingRef:
@@ -2063,8 +2109,18 @@ deparseVar(Var * node, deparse_expr_cxt * context)
 		if (!cdef)
 			cdef = chfdw_check_for_custom_type(node->vartype);
 
+		/*
+		 * Emit q{plan_id}_{varno}. qualifier ourselves so the alias does not
+		 * collide with the outer query's r{N}/s{N} namespace nor with any
+		 * sibling or future nested SubPlan scope. Pass qualify_col=false to
+		 * deparseColumnRef so it does not add its own r{N}. qualifier.
+		 */
+		if (qualify)
+			ADD_SUBPLAN_REL_QUALIFIER(context->buf,
+									  context->subplan->plan_id, node->varno);
+
 		deparseColumnRef(context->buf, cdef,
-						 node->varno, node->varattno, rte, qualify);
+						 node->varno, node->varattno, rte, false);
 	}
 	else
 	{
@@ -2622,8 +2678,16 @@ deparseSubquerySelect(StringInfo buf, PlannerInfo * subroot,
 			deparseRelation(buf, rel);
 			table_close_compat(rel, NoLock);
 
+			/*
+			 * Use plan_id-namespaced alias so multi-table subqueries do not
+			 * collide with the outer query's r{N} aliases (which are scoped
+			 * to a different PlannerInfo and can reuse the same integers).
+			 * See ADD_SUBPLAN_REL_QUALIFIER.
+			 */
 			if (list_length(subquery->rtable) > 1)
-				appendStringInfo(buf, " %s%d", REL_ALIAS_PREFIX, rtindex);
+				appendStringInfo(buf, " %s%d_%d",
+								 SUBPLAN_REL_ALIAS_PREFIX,
+								 subplan->plan_id, rtindex);
 		}
 	}
 
