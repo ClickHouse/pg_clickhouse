@@ -51,9 +51,15 @@ ch_http_read_state_init(ch_http_read_state * state, char *data, size_t datalen)
  * ClickHouse literals including unquoted strings and arrays. Returns CH_CONT
  * if there are moe fields on the line to read, CH_EOL if it has reached the
  * end of the line, and CH_EOF if it has reached the end of the file.
+ *
+ * `is_array` tells the parser whether the destination Postgres column is an
+ * array. TabSeparated is ambiguous: a `String` value beginning with `[` is not
+ * escaped on the wire and is indistinguishable byte-for-byte from an array
+ * literal until you know the column type. The caller knows the type, so it
+ * makes the call.
  */
 int
-ch_http_read_next(ch_http_read_state * state)
+ch_http_read_next(ch_http_read_state * state, bool is_array)
 {
 	char	   *data = state->data;
 
@@ -66,7 +72,7 @@ ch_http_read_next(ch_http_read_state * state)
 	if (state->curpos >= state->datalen)
 		return ch_http_read_eof(state);
 
-	if (data[state->curpos] == '[')
+	if (is_array && data[state->curpos] == '[')
 		/* Parse array literal. */
 		ch_http_read_array(state);
 	else

@@ -527,7 +527,7 @@ http_fetch_row_from_state(ChFdwScanRowContext * ctx, ch_http_read_state * state)
 	if (attcount == 0)
 	{
 		Assert(ctx->values && ctx->nulls);
-		rc = ch_http_read_next(state);
+		rc = ch_http_read_next(state, false);
 		if (rc != CH_CONT && http_value_is_null(&state->val))
 		{
 			ctx->nulls[0] = true;
@@ -555,8 +555,11 @@ http_fetch_row_from_state(ChFdwScanRowContext * ctx, ch_http_read_state * state)
 		Assert(ctx->values && ctx->nulls && ctx->attinmeta);
 		foreach(lc, ctx->retrieved_attrs)
 		{
+			Oid			pgtype;
+
 			i = lfirst_int(lc) - 1;
-			rc = ch_http_read_next(state);
+			pgtype = TupleDescAttr(ctx->tupdesc, i)->atttypid;
+			rc = ch_http_read_next(state, type_is_array(pgtype));
 			char_to_datum(ctx, i, state->val.data, state->val.len);
 		}
 	}
@@ -566,7 +569,7 @@ http_fetch_row_from_state(ChFdwScanRowContext * ctx, ch_http_read_state * state)
 		values = palloc(attcount * sizeof(Datum));
 		for (int idx = 0; idx < attcount; idx++)
 		{
-			rc = ch_http_read_next(state);
+			rc = ch_http_read_next(state, false);
 			if (http_value_is_null(&state->val))
 				values[idx] = (Datum) 0;
 			else

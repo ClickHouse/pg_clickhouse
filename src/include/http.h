@@ -63,7 +63,7 @@ char	   *ch_http_last_error(void);
 
 /* read */
 void		ch_http_read_state_init(ch_http_read_state * state, char *data, size_t datalen);
-int			ch_http_read_next(ch_http_read_state * state);
+int			ch_http_read_next(ch_http_read_state * state, bool is_array);
 void		ch_http_response_free(ch_http_response_t * resp);
 
 #endif							/* CLICKHOUSE_HTTP_H */
