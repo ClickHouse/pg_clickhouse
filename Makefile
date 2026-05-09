@@ -62,7 +62,7 @@ PG_LDFLAGS = -lstdc++ -lssl -lcrypto $(shell $(CURL_CONFIG) --libs)
 PG_CXXFLAGS = -std=c++17
 
 # Suppress annoying pre-c99 warning and include curl flags.
-PG_CFLAGS = -Wno-declaration-after-statement $(shell $(CURL_CONFIG) --cflags)
+PG_CFLAGS = -Wno-declaration-after-statement -Werror=type-limits $(shell $(CURL_CONFIG) --cflags)
 
 # We'll need libuuid except on darwin, where it's included in the OS.
 ifneq ($(OS),darwin)
@@ -217,8 +217,8 @@ lsp: compile_commands.json
 
 # Requires https://github.com/rizsotto/Bear.
 compile_commands.json:
-	$(MAKE) clean
-	bear -- $(MAKE) all
+	$(MAKE) clean -j $$(nproc) NO_VENDOR_CLEAN=$(NO_VENDOR_CLEAN)
+	bear -- $(MAKE) all -j $$(nproc) NO_VENDOR_CLEAN=$(NO_VENDOR_CLEAN)
 
 # ClickHouse Docker Containers
 start-containers: dev/Makefile dev/docker-compose.yml

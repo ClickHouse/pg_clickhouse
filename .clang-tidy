@@ -8,12 +8,13 @@ Checks: >
   -*,
   bugprone-assert-side-effect,
   bugprone-double-free,
-  bugprone-unchecked-optional-access
+  bugprone-unchecked-optional-access,
   bugprone-unchecked-string-to-number-conversion,
   bugprone-use-after-move,
   clang-analyzer-*,
   -clang-analyzer-optin.performance*,
   -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  clang-diagnostic-tautological-*,
   misc-redundant-expression,
   misc-unused-using-decls,
   readability-duplicate-include,
@@ -23,6 +24,7 @@ WarningsAsErrors: >
   bugprone-double-free,
   bugprone-use-after-move,
   clang-analyzer-core.*,
+  clang-diagnostic-tautological-*,
 
 CheckOptions:
   - key: bugprone-assert-side-effect.AssertMacros

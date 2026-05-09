@@ -12,6 +12,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/clauses.h"
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
@@ -19,7 +20,6 @@
 #include "optimizer/restrictinfo.h"
 #include "optimizer/tlist.h"
 #include "parser/parsetree.h"
-#include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/palloc.h"
 #include "utils/rel.h"
@@ -592,6 +592,82 @@ clickhouseGetForeignPaths(PlannerInfo * root,
 }
 
 /*
+ * Substitute WindowFunc nodes with FuncExpr placeholders in both
+ * fdw_scan_tlist and the outer targetlist of a ForeignScan. Needed because
+ * EXPLAIN VERBOSE deparses WindowFunc via a WindowClause/WindowAgg lookup
+ * that is not available when windowing is pushed down to ClickHouse
+ * (ruleutils.c:get_windowfunc_expr_helper).
+ *
+ * Placeholder must be non-Const/Var/Param so setrefs' fix_upper_expr will
+ * rewrite outer tlist entries to INDEX_VAR references against fdw_scan_tlist
+ * (search_indexed_tlist_for_non_var explicitly skips Consts). An un-rewritten
+ * Const would emit its literal at execution time instead of reading the
+ * computed column from the scan tuple.
+ *
+ * FuncExpr on wf->winfnoid deparses as "funcname(args)", close to the
+ * original minus the OVER clause (which the Remote SQL line already prints).
+ *
+ * Two WindowFuncs with identical args but different winref refer to distinct
+ * windows, so their placeholders must stay distinguishable to equal(),
+ * otherwise setrefs collapses both outer refs to the first fdw_scan_tlist
+ * slot and execution reads the wrong column. inputcollid is abused as a
+ * counter: equal() compares it, while the executor only consults when
+ * function is actually invoked; this never happens as placeholder
+ * lives only as schema in fdw_scan_tlist or is rewritten to INDEX_VAR in
+ * outer tlist.
+ */
+typedef struct WindowFuncSubstState
+{
+	List	   *originals;		/* WindowFunc nodes seen so far */
+	List	   *placeholders;	/* matching placeholder nodes (same index) */
+	int			counter;
+}			WindowFuncSubstState;
+
+static Node * replace_windowfuncs_mutator(Node * node, WindowFuncSubstState * state);
+
+static Node *
+replace_windowfuncs_mutator_callback(Node * node, void *state)
+{
+	return replace_windowfuncs_mutator(node, state);
+}
+
+static Node *
+replace_windowfuncs_mutator(Node * node, WindowFuncSubstState * state)
+{
+	if (node == NULL)
+		return NULL;
+	if (IsA(node, WindowFunc))
+	{
+		WindowFunc *wf = (WindowFunc *) node;
+		ListCell   *lo,
+				   *lp;
+		FuncExpr   *ph;
+
+		forboth(lo, state->originals, lp, state->placeholders)
+		{
+			if (equal(lfirst(lo), wf))
+				return (Node *) copyObject(lfirst(lp));
+		}
+
+		ph = makeNode(FuncExpr);
+		ph->funcid = wf->winfnoid;
+		ph->funcresulttype = wf->wintype;
+		ph->funcretset = false;
+		ph->funcvariadic = false;
+		ph->funcformat = COERCE_EXPLICIT_CALL;
+		ph->funccollid = wf->wincollid;
+		ph->inputcollid = ++state->counter;
+		ph->args = (List *) copyObject(wf->args);
+		ph->location = -1;
+
+		state->originals = lappend(state->originals, copyObject(wf));
+		state->placeholders = lappend(state->placeholders, ph);
+		return (Node *) ph;
+	}
+	return expression_tree_mutator(node, replace_windowfuncs_mutator_callback, state);
+}
+
+/*
  * clickhouseGetForeignPlan
  *		Create ForeignScan plan node which implements selected best path
  */
@@ -770,6 +846,26 @@ clickhouseGetForeignPlan(PlannerInfo * root,
 
 	/* Remember remote_exprs for possible use by clickhousePlanDirectModify */
 	fpinfo->final_remote_exprs = remote_exprs;
+
+	/*
+	 * When window functions are pushed down, ForeignScan takes the place of
+	 * what would otherwise be a WindowAgg plan node. Core EXPLAIN VERBOSE
+	 * deparses WindowFunc via a WindowClause (query context) or WindowAgg in
+	 * the plan; neither exists here, so deparse would error with "could not
+	 * find window clause for winref N". Remote SQL has already been deparsed
+	 * above, so swap WindowFunc for FuncExpr placeholders in both
+	 * fdw_scan_tlist and the outer tlist. setrefs' equal() match rewrites the
+	 * outer tlist to INDEX_VAR references against fdw_scan_tlist so execution
+	 * reads real values from the scan tuple; VERBOSE deparse sees the
+	 * placeholder instead of a WindowFunc.
+	 */
+	if (contain_window_function((Node *) fdw_scan_tlist))
+	{
+		WindowFuncSubstState state = {NIL, NIL, 0};
+
+		fdw_scan_tlist = (List *) replace_windowfuncs_mutator((Node *) fdw_scan_tlist, &state);
+		tlist = (List *) replace_windowfuncs_mutator((Node *) tlist, &state);
+	}
 
 	/*
 	 * Build the fdw_private list that will be available to the executor.

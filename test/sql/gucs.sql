@@ -136,7 +136,9 @@ SELECT remote.name, remote.value IS NOT DISTINCT FROM def.value
 WHERE remote.name = ANY(:'set_list')
 ORDER BY remote.name;
 
--- date_time_output_format and format_tsv_null_representation are distinct.
+-- date_time_output_format and format_tsv_null_representation are distinct
+-- because the http driver post-processes time/timestamp output and requires
+-- \N for nulls.
 SELECT remote.name, remote.value IS NOT DISTINCT FROM def.value
  FROM http_remote_settings remote
  JOIN default_settings def ON remote.name = def.name

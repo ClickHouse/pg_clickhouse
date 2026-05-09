@@ -294,6 +294,68 @@ CREATE FOREIGN TABLE ft_bad_fetch (
     c3 text
 ) SERVER http_loopback OPTIONS (table_name 't1', fetch_size '-1');
 
+/*
+ * TabSeparated does not escape `[` or `]` in String values, so a value like
+ * `[foo]bar` is wire-indistinguishable from a CH array literal. The parser
+ * uses the destination Postgres column type to decide.
+ */
+SELECT clickhouse_raw_query('CREATE TABLE http_test.t_brk
+    (id String, term String) ENGINE = MergeTree ORDER BY id');
+
+CREATE FOREIGN TABLE ft_brk (id text, term text)
+    SERVER http_loopback OPTIONS (table_name 't_brk');
+
+INSERT INTO ft_brk VALUES
+    ('1', '[abc_def]_ghi.jkl_mno'),
+    ('2', 'plainstring'),
+    ('3', '[just_brackets]'),
+    ('4', '[]'),
+    ('5', '[a,b,c]_trailing'),
+    ('6', 'leading text [bracketed] trailing');
+
+SELECT id, term FROM ft_brk ORDER BY id;
+
+/* Streaming path with a small fetch_size forces multi-batch parsing. */
+CREATE FOREIGN TABLE ft_brk_stream (id text, term text)
+    SERVER http_loopback OPTIONS (table_name 't_brk', fetch_size '32');
+SELECT id, term FROM ft_brk_stream ORDER BY id;
+
+/*
+ * Mixed row: real Array(String) column alongside a String column whose value
+ * starts with `[`. The parser must stay in sync across columns.
+ */
+SELECT clickhouse_raw_query('CREATE TABLE http_test.t_brk_mix
+    (id String, tags Array(String), term String) ENGINE = MergeTree ORDER BY id');
+
+CREATE FOREIGN TABLE ft_brk_mix (id text, tags text[], term text)
+    SERVER http_loopback OPTIONS (table_name 't_brk_mix');
+
+INSERT INTO ft_brk_mix VALUES
+    ('1', ARRAY['x', 'y'], '[bracket_string]'),
+    ('2', ARRAY[]::text[], '[]_not_array');
+
+SELECT id, tags, term FROM ft_brk_mix ORDER BY id;
+
+/*
+ * The wire NULL marker is the 2-byte sequence `\N`. A non-NULL String value
+ * whose unescaped content happens to start with `\N` (or be exactly `\N`)
+ * must not be misread as NULL.
+ */
+SELECT clickhouse_raw_query('CREATE TABLE http_test.t_nullmark
+    (id String, s String) ENGINE = MergeTree ORDER BY id');
+SELECT clickhouse_raw_query(
+    'INSERT INTO http_test.t_nullmark VALUES'
+    || ' (''1'', ''\\N''),'             /* exactly the 2-char NULL marker as data */
+    || ' (''2'', ''\\N foo bar''),'     /* starts with \N */
+    || ' (''3'', ''leading text \\N''),'/* contains \N at end */
+    || ' (''4'', ''ordinary'')');
+
+CREATE FOREIGN TABLE ft_nullmark (id text, s text)
+    SERVER http_loopback OPTIONS (table_name 't_nullmark');
+
+SELECT id, s, length(s), s IS NULL AS is_null
+FROM ft_nullmark ORDER BY id;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER http_no_stream;
 DROP SERVER http_no_stream CASCADE;
 

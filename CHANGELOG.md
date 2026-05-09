@@ -7,7 +7,17 @@ All notable changes to this project will be documented in this file. It uses the
   [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
     "Semantic Versioning 2.0.0"
 
-## [v0.2.1] — Unreleased
+## [v0.3.0] — Unreleased
+
+This release makes binary-compatible changes to the v0.2 releases. Once
+installed, any existing use of pg_clickhouse v0.2 will benefit from its
+improvements on reload. The only change that requires an upgrade revokes
+`EXECUTE` from `clickhouse_raw_query()`. We recommend running this command
+make this security-sensitive change:
+
+```sql
+ALTER EXTENSION pg_clickhouse UPDATE TO '0.3';
+```
 
 ### ⚡ Improvements
 
@@ -18,6 +28,22 @@ All notable changes to this project will be documented in this file. It uses the
     `levenshtein()` (2-arg, mapped to `editDistance`).  Thanks to
     Philip Dubé for the PR ([#210]).
 
+### 🐞 Bug Fixes
+
+*   Fixed `EXPLAIN (VERBOSE)` failing with "could not find window clause for
+    winref N" when window functions are pushed down to ClickHouse. Thanks to
+    Philip Dubé for the PR ([#223]).
+*   Fixed the parsing of strings that start with `[` in the http driver so
+    that it no longer assumes it's the start of an array. Thanks to Kaushik
+    Iska for the PR ([#234]).
+*   Fixed the parsing of strings in the http driver to distinguish a true
+    `NULL` value from a string containing `\N`. Thanks to Kaushik
+    Iska for the PR ([#235]).
+*   Fixed the `column_name` foreign-table column option being ignored by
+    `INSERT`, which caused the binary engine to fail to match ClickHouse block
+    columns and the HTTP engine to deparse PostgreSQL attribute names. Thanks
+    to Philip Dubé for the PR ([#231]).
+
 ### 📚 Documentation
 
 *   Added "Extensions Pushdown" section to the [reference
@@ -26,23 +52,47 @@ All notable changes to this project will be documented in this file. It uses the
 *   Added recommendation to the [reference docs](doc/pg_clickhouse.md) to
     consider using the [re2 extension] and disabling Postgres regular
     expression pushdown.
+*   Documented the `column_name` foreign-table column option in the [reference
+    docs](doc/pg_clickhouse.md).
 
 ### 🚀 Distribution
 
 *   Added the [ca-certificates package] and the [re2 extension] to the OCI
     (née Docker) images.
 
-  [v0.2.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.2.0...v0.2.1
+### 🚨 Security Fixes
+
+*   Added SQL to revoke `EXECUTE` permission on `clickhouse_raw_query()` from
+    `PUBLIC`. Leaving it executable by `PUBLIC` would allow any database user
+    to reach internal services (metadata endpoints, private APIs, etc.) from
+    the PostgreSQL server — a classic SSRF vector. This ensures that admins
+    can limit access only those who legitimately need to execute ad-hoc
+    ClickHouse queries (e.g., a dedicated ClickHouse admin role). Thanks to
+    Andrey Borodin for the PR ([#228]).
+
+  [v0.3.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.2.0...v0.3.0
   [ca-certificates package]: https://packages.debian.org/source/trixie/ca-certificates
     "Debian Packages: Common CA certificates"
   [re2 extension]: https://github.com/ClickHouse/pg_re2
-    "pg_re2: ClickHouse-compatible regex functions using RE2"
+    "ClickHouse/pg_re2: ClickHouse-compatible regex functions using RE2"
   [#204]: https://github.com/ClickHouse/pg_clickhouse/pull/204
-    "pg_clickhouse#204 Support pushdown for re2 extension"
+    "ClickHouse/pg_clickhouse#204 Support pushdown for re2 extension"
   [fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html
     "PostgreSQL Docs: fuzzystrmatch"
   [#210]: https://github.com/ClickHouse/pg_clickhouse/pull/210
-    "pg_clickhouse#210 Support pushing down soundex & levenshtein from fuzzystrmatch"
+    "ClickHouse/pg_clickhouse#210 Support pushing down soundex & levenshtein from fuzzystrmatch"
+  [#223]: https://github.com/ClickHouse/pg_clickhouse/pull/223
+    "ClickHouse/pg_clickhouse#223 Fix EXPLAIN (VERBOSE) for window functions"
+  [#234]: https://github.com/ClickHouse/pg_clickhouse/pull/234
+    "ClickHouse/pg_clickhouse#234 Make TSV parser column-type-aware for bracket-leading strings"
+  [#235]: https://github.com/ClickHouse/pg_clickhouse/pull/235
+    "ClickHouse/pg_clickhouse#235 Detect TSV NULL marker before unescaping"
+  [#231]: https://github.com/ClickHouse/pg_clickhouse/pull/231
+    "ClickHouse/pg_clickhouse#231 Fix column_name option not being respected by inserts"
+  [#223]: https://github.com/ClickHouse/pg_clickhouse/pull/223
+    "pg_clickhouse#223 Fix EXPLAIN (VERBOSE) for window functions"
+  [#228]: https://github.com/ClickHouse/pg_clickhouse/pull/228
+    "pg_clickhouse#228 Security: revoke PUBLIC execute on clickhouse_raw_query"
 
 ## [v0.2.0] — 2026-04-13
 

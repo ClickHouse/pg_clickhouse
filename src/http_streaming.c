@@ -238,7 +238,9 @@ capture_transfer_info(HttpStream * stream)
 
 /* ----------------------------------------------------------------
  * find_batch_end — find a row-aligned split point near fetch_size
- * bytes. Looks forward then backward for nearest newline.
+ * bytes. Looks forward then backward for nearest newline. Never
+ * returns a partial row: if no newline is buffered, returns 0 so
+ * the caller keeps ingesting.
  * ----------------------------------------------------------------
  */
 static size_t
@@ -260,9 +262,9 @@ find_batch_end(const HttpStream * stream)
 			return (found - base) + 1;
 
 		/* Look backward */
-		for (size_t i = stream->fetch_size - 1; i >= 0; i--)
-			if (base[i] == '\n')
-				return i + 1;
+		for (size_t i = stream->fetch_size; i > 0; i--)
+			if (base[i - 1] == '\n')
+				return i;
 	}
 
 	if (stream->transfer_done)
@@ -529,4 +531,45 @@ double
 ch_http_stream_total_time(HttpStream * stream)
 {
 	return stream->total_time * 1000;
+}
+
+/*
+ * ch_http_stream_take_body — transfer ownership of the response body.
+ *
+ * On return, *out_data is a malloc()'d buffer the caller must free(). When
+ * status is CH_HTTP_STATUS_TRANSPORT_ERROR the body is the strdup'd libcurl
+ * error message; otherwise it is the accumulated response bytes (shifted to
+ * offset 0 and NUL-terminated). *out_size is set to the length in bytes,
+ * excluding the NUL. Sets *out_data to NULL and *out_size to 0 when there is
+ * nothing to hand off. Safe to call at most once per stream; the stream
+ * itself should still be released with ch_http_stream_end().
+ */
+void
+ch_http_stream_take_body(HttpStream * stream, char **out_data, size_t * out_size)
+{
+	size_t		avail;
+
+	if (stream->http_status == CH_HTTP_STATUS_TRANSPORT_ERROR && stream->error_msg)
+	{
+		*out_data = stream->error_msg;
+		*out_size = strlen(stream->error_msg);
+		stream->error_msg = NULL;
+		return;
+	}
+
+	avail = ch_http_stream_available(stream);
+	if (avail == 0 || !stream->buf)
+	{
+		*out_data = NULL;
+		*out_size = 0;
+		return;
+	}
+
+	if (stream->parse_pos > 0)
+		memmove(stream->buf, stream->buf + stream->parse_pos, avail);
+	stream->buf[avail] = '\0';
+
+	*out_data = stream->buf;
+	*out_size = avail;
+	stream->buf = NULL;
 }

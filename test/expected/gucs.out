@@ -69,7 +69,7 @@ NOTICE:  ERR 42601 - pg_clickhouse: missing comma after "join_use_nulls" value i
  connect_timeout                    | 2
  count_distinct_implementation      | uniq
  date_time_output_format            | iso
- format_tsv_null_representation     | 
+ format_tsv_null_representation     | \N
  join_algorithm                     | prefer_partial_merge
  join_use_nulls                     | 1
  log_queries_min_type               | QUERY_FINISH
@@ -107,7 +107,7 @@ NOTICE:  ERR 42601 - pg_clickhouse: missing comma after "join_use_nulls" value i
  connect_timeout                    | t
  count_distinct_implementation      | t
  date_time_output_format            | f
- format_tsv_null_representation     | f
+ format_tsv_null_representation     | t
  join_algorithm                     | t
  join_use_nulls                     | t
  log_queries_min_type               | t

@@ -393,7 +393,7 @@ init_output_convert_state(ch_convert_output_state * state)
 }
 
 void	   *
-ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc)
+ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc, Oid relid)
 {
 	ch_convert_output_state *states;
 	int			n;
@@ -426,10 +426,17 @@ ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc)
 			for (j = 0; j < indesc->natts; j++)
 			{
 				Form_pg_attribute attin = TupleDescAttr(indesc, j);
-				char	   *inattname = NameStr(attin->attname);
+				char	   *inattname;
+				CustomColumnInfo *cinfo;
 
 				if (attin->attisdropped)
 					continue;
+
+				/* Honor column_name FDW option, falls through to attname */
+				cinfo = OidIsValid(relid)
+					? chfdw_get_custom_column_info(relid, j + 1) : NULL;
+				inattname = (cinfo && cinfo->colname[0])
+					? cinfo->colname : NameStr(attin->attname);
 
 				curstate->intype = attin->atttypid;
 

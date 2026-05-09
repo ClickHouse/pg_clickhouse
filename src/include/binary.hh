@@ -60,6 +60,8 @@ extern "C"
 		size_t		len;
 		void	   *conversion_states;
 		char	   *table_name;
+		Oid			relid;		/* foreign table relid, for column_name
+								 * lookups */
 
 		Datum	   *values;
 		bool	   *nulls;
@@ -87,7 +89,7 @@ extern "C"
 										 ch_binary_insert_state * state);
 	void		ch_binary_insert_columns(ch_binary_insert_state * state);
 	void		ch_binary_column_append_data(ch_binary_insert_state * state, size_t colidx);
-	void	   *ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc);
+	void	   *ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc, Oid relid);
 	void		ch_binary_insert_state_free(void *c);
 	void		ch_binary_do_output_conversion(ch_binary_insert_state * insert_state,
 											   TupleTableSlot * slot);

@@ -237,6 +237,71 @@ WHERE event_name = 'lead_created'
 ORDER BY entity_id, ts_event
 LIMIT 3;
 
+-- ============================================================
+-- EXPLAIN VERBOSE with pushed-down window functions
+-- Regression: deparse of WindowFunc in fdw_scan_tlist used to fail
+-- with "could not find window clause for winref N".
+-- ============================================================
+\echo -- VERBOSE ROW_NUMBER pushdown (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, ts_event,
+       row_number() OVER (PARTITION BY entity_id ORDER BY ts_event DESC) AS rn
+FROM wf_bin.events
+WHERE event_name = 'lead_created';
+
+\echo -- VERBOSE ROW_NUMBER pushdown (http)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, ts_event,
+       row_number() OVER (PARTITION BY entity_id ORDER BY ts_event DESC) AS rn
+FROM wf_http.events
+WHERE event_name = 'lead_created';
+
+\echo -- VERBOSE MIN/MAX OVER pushdown (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, amount,
+       min(amount) OVER (PARTITION BY entity_id) AS min_amount,
+       max(amount) OVER (PARTITION BY entity_id) AS max_amount
+FROM wf_bin.events
+WHERE event_name = 'lead_created';
+
+\echo -- VERBOSE LEAD pushdown (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, ts_event,
+       lead(ts_event) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) AS next_event
+FROM wf_bin.events
+WHERE event_name = 'lead_created';
+
+\echo -- VERBOSE ntile pushdown (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, ts_event,
+       ntile(2) OVER (ORDER BY ts_event) AS bucket
+FROM wf_bin.events
+WHERE event_name = 'lead_created'
+ORDER BY ts_event;
+
+\echo -- VERBOSE window + ORDER BY + LIMIT pushdown (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, ts_event, amount,
+       row_number() OVER (PARTITION BY entity_id ORDER BY ts_event DESC) AS rn
+FROM wf_bin.events
+WHERE event_name = 'lead_created'
+ORDER BY entity_id, ts_event
+LIMIT 3;
+
+\echo -- VERBOSE duplicate window call (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, ts_event,
+       row_number() OVER (PARTITION BY entity_id ORDER BY ts_event) AS rn1,
+       row_number() OVER (PARTITION BY entity_id ORDER BY ts_event) AS rn2
+FROM wf_bin.events
+WHERE event_name = 'lead_created';
+
+SELECT entity_id, ts_event,
+       row_number() OVER (PARTITION BY entity_id ORDER BY ts_event) AS rn1,
+       row_number() OVER (PARTITION BY entity_id ORDER BY ts_event) AS rn2
+FROM wf_bin.events
+WHERE event_name = 'lead_created';
+
 -- Clean up.
 SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS wf_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER wf_bin_svr;

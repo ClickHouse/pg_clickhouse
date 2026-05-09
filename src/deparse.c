@@ -2591,7 +2591,6 @@ deparseFuncExpr(FuncExpr * node, deparse_expr_cxt * context)
 	 * Normal function: display as proname(args). CF_ARRAY_SORT_DESC name
 	 * depends on boolean arg, resolve before printing.
 	 */
-	cdef = chfdw_check_for_custom_function(node->funcid);
 	cdef = appendFunctionName(node->funcid, context);
 
 	if (cdef)

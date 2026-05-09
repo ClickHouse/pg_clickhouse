@@ -708,6 +708,11 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form)
  *
  * New options might also require tweaking merge_fdw_options().
  */
+static void
+			populate_custom_column_entry(CustomColumnInfo * entry, Oid relid,
+										 AttrNumber attnum, const char *attname,
+										 CHRemoteTableEngine table_engine);
+
 void
 chfdw_apply_custom_table_options(CHFdwRelationInfo * fpinfo, Oid relid)
 {
@@ -715,7 +720,6 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo * fpinfo, Oid relid)
 	TupleDesc	tupdesc;
 	int			attnum;
 	Relation	rel;
-	List	   *options;
 
 	foreach(lc, fpinfo->table->options)
 	{
@@ -772,43 +776,66 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo * fpinfo, Oid relid)
 		if (found)
 			continue;
 
-		entry->relid = relid;
-		entry->varattno = attnum;
-		entry->table_engine = fpinfo->ch_table_engine;
-		entry->coltype = CF_USUAL;
-		entry->is_AggregateFunction = CF_AGGR_USUAL;
-		strlcpy(entry->colname, NameStr(attr->attname), NAMEDATALEN);
-
-		/* If a column has the column_name FDW option, use that value */
-		options = GetForeignColumnOptions(relid, attnum);
-		foreach(lc, options)
-		{
-			DefElem    *def = (DefElem *) lfirst(lc);
-
-			if (STR_EQUAL(def->defname, "column_name"))
-			{
-				strncpy(entry->colname, defGetString(def), NAMEDATALEN);
-				entry->colname[NAMEDATALEN - 1] = '\0';
-			}
-			else if (STR_EQUAL(def->defname, "aggregatefunction"))
-			{
-				entry->is_AggregateFunction = CF_AGGR_FUNC;
-			}
-			else if (STR_EQUAL(def->defname, "simpleaggregatefunction"))
-			{
-				entry->is_AggregateFunction = CF_AGGR_SIMPLE;
-			}
-		}
+		populate_custom_column_entry(entry, relid, attnum,
+									 NameStr(attr->attname),
+									 fpinfo->ch_table_engine);
 	}
 	table_close_compat(rel, NoLock);
 }
 
-/* Get foreign relation options */
+/*
+ * Populate one cache entry from pg_attribute + FDW column options.
+ * Caller has already inserted the entry under (relid, attnum).
+ */
+static void
+populate_custom_column_entry(CustomColumnInfo * entry, Oid relid,
+							 AttrNumber attnum, const char *attname,
+							 CHRemoteTableEngine table_engine)
+{
+	List	   *options;
+	ListCell   *lc;
+
+	entry->relid = relid;
+	entry->varattno = attnum;
+	entry->table_engine = table_engine;
+	entry->coltype = CF_USUAL;
+	entry->is_AggregateFunction = CF_AGGR_USUAL;
+	strlcpy(entry->colname, attname, NAMEDATALEN);
+
+	/* column_name FDW option overrides attname */
+	options = GetForeignColumnOptions(relid, attnum);
+	foreach(lc, options)
+	{
+		DefElem    *def = (DefElem *) lfirst(lc);
+
+		if (STR_EQUAL(def->defname, "column_name"))
+		{
+			strncpy(entry->colname, defGetString(def), NAMEDATALEN);
+			entry->colname[NAMEDATALEN - 1] = '\0';
+		}
+		else if (STR_EQUAL(def->defname, "aggregatefunction"))
+		{
+			entry->is_AggregateFunction = CF_AGGR_FUNC;
+		}
+		else if (STR_EQUAL(def->defname, "simpleaggregatefunction"))
+		{
+			entry->is_AggregateFunction = CF_AGGR_SIMPLE;
+		}
+	}
+}
+
+/*
+ * Look up CustomColumnInfo for (relid, varattno), populating on demand.
+ * INSERT paths skip GetForeignRelSize, so eager priming via
+ * chfdw_apply_custom_table_options does not run, leaving deparse without
+ * column_name overrides. Populate lazily so any caller sees them.
+ */
 CustomColumnInfo *
 chfdw_get_custom_column_info(Oid relid, uint16 varattno)
 {
 	CustomColumnInfo entry_key,
 			   *entry;
+	bool		found;
 
 	entry_key.relid = relid;
 	entry_key.varattno = varattno;
@@ -817,7 +844,38 @@ chfdw_get_custom_column_info(Oid relid, uint16 varattno)
 		custom_columns_cache = create_custom_columns_cache();
 
 	entry = hash_search(custom_columns_cache,
-						(void *) &entry_key.relid, HASH_FIND, NULL);
+						(void *) &entry_key.relid, HASH_ENTER, &found);
+	if (!found)
+	{
+		Relation	rel;
+		TupleDesc	tupdesc;
+
+		rel = table_open_compat(relid, NoLock);
+		tupdesc = RelationGetDescr(rel);
+
+		if (varattno > 0 && varattno <= tupdesc->natts)
+		{
+			Form_pg_attribute attr = TupleDescAttr(tupdesc, varattno - 1);
+
+			if (!attr->attisdropped)
+				populate_custom_column_entry(entry, relid, varattno,
+											 NameStr(attr->attname),
+											 CH_DEFAULT);
+			else
+			{
+				hash_search(custom_columns_cache,
+							(void *) &entry_key.relid, HASH_REMOVE, NULL);
+				entry = NULL;
+			}
+		}
+		else
+		{
+			hash_search(custom_columns_cache,
+						(void *) &entry_key.relid, HASH_REMOVE, NULL);
+			entry = NULL;
+		}
+		table_close_compat(rel, NoLock);
+	}
 
 	return entry;
 }

@@ -29,4 +29,14 @@ const char *ch_http_stream_error(HttpStream * stream);
 double		ch_http_stream_request_time(HttpStream * stream);
 double		ch_http_stream_total_time(HttpStream * stream);
 
+/*
+ * Transfer ownership of the response body to the caller. On return, *out_data
+ * is a malloc()'d buffer (or the strdup'd transport error message when status
+ * is CH_HTTP_STATUS_TRANSPORT_ERROR) that the caller must free(). The stream
+ * itself is unchanged otherwise and should still be released with
+ * ch_http_stream_end().
+ */
+void		ch_http_stream_take_body(HttpStream * stream,
+									 char **out_data, size_t * out_size);
+
 #endif							/* CLICKHOUSE_HTTP_STREAMING_H */

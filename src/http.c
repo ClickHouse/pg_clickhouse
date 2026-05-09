@@ -3,17 +3,10 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <assert.h>
 
-#include <uuid/uuid.h>
 #include <http.h>
+#include <http_streaming.h>
 #include <internal.h>
-
-#define DATABASE_HEADER "X-ClickHouse-Database"
-
-#ifndef CURL_WRITEFUNC_ERROR
-#define CURL_WRITEFUNC_ERROR 0xFFFFFFFF
-#endif
 
 static char curl_error_buffer[CURL_ERROR_SIZE];
 static bool curl_error_happened = false;
@@ -51,26 +44,6 @@ long
 ch_http_get_verbose(void)
 {
 	return curl_verbose;
-}
-
-static size_t write_data(void *contents, size_t size, size_t nmemb, void *userp)
-{
-	size_t		realsize = size * nmemb;
-	ch_http_response_t *res = userp;
-
-	if (res->data == NULL)
-		res->data = malloc(realsize + 1);
-	else
-		res->data = realloc(res->data, res->datasize + realsize + 1);
-
-	if (res->data == NULL)
-		return CURL_WRITEFUNC_ERROR;
-
-	memcpy(&(res->data[res->datasize]), contents, realsize);
-	res->datasize += realsize;
-	res->data[res->datasize] = 0;
-
-	return realsize;
 }
 
 #define CLICKHOUSE_PORT 8123
@@ -169,179 +142,40 @@ cleanup:
 	return NULL;
 }
 
-static void
-set_query_id(ch_http_response_t * resp)
-{
-	uuid_t		id;
-
-	uuid_generate(id);
-	uuid_unparse(id, resp->query_id);
-}
-
+/*
+ * ch_http_simple_query — buffer the full response in memory.
+ *
+ * Built on top of the streaming driver with an effectively-unbounded
+ * fetch_size, so the whole response lands in one batch that we then hand off
+ * to the caller as a ch_http_response_t.
+ */
 ch_http_response_t *
 ch_http_simple_query(ch_http_connection_t * conn, const ch_query * query)
 {
-	char	   *url;
-	CURLcode	errcode;
-	static char errbuffer[CURL_ERROR_SIZE];
-	struct curl_slist *headers = NULL;
-	CURLU	   *cu = curl_url();
-	kv_iter		iter;
-	char	   *buf = NULL;
-	curl_mime  *form = NULL;
-	int			i;
+	HttpStream *stream;
+	ch_http_response_t *resp;
 
-	ch_http_response_t *resp = calloc(sizeof(ch_http_response_t), 1);
-
-	if (resp == NULL)
+	stream = ch_http_stream_begin(conn, query, INT32_MAX);
+	if (stream == NULL)
 		return NULL;
 
-	set_query_id(resp);
-
-	assert(conn && conn->curl);
-
-	/* Construct the base URL with the query ID. */
-	curl_url_set(cu, CURLUPART_URL, conn->base_url, 0);
-	buf = psprintf("query_id=%s", resp->query_id);
-	curl_url_set(cu, CURLUPART_QUERY, buf, CURLU_APPENDQUERY | CURLU_URLENCODE);
-	pfree(buf);
-
-	/* Append each of the settings as a query param. */
-	for (iter = new_kv_iter(query->settings); !kv_iter_done(&iter); kv_iter_next(&iter))
+	resp = calloc(1, sizeof(*resp));
+	if (resp == NULL)
 	{
-		/* Skip settings that would break parsing and type conversion. */
-		if (
-			strcmp(iter.name, "date_time_output_format") == 0 ||
-			strcmp(iter.name, "format_tsv_null_representation") == 0 ||
-			strcmp(iter.name, "output_format_tsv_crlf_end_of_line") == 0
-			)
-			continue;
-		buf = psprintf("%s=%s", iter.name, iter.value);
-		curl_url_set(cu, CURLUPART_QUERY, buf, CURLU_APPENDQUERY | CURLU_URLENCODE);
-		pfree(buf);
+		ch_http_stream_end(stream);
+		return NULL;
 	}
 
-	/* Always use ISO date format, \N for NULL, \n for EOL. */
-	curl_url_set(cu, CURLUPART_QUERY, "date_time_output_format=iso", CURLU_APPENDQUERY | CURLU_URLENCODE);
-	curl_url_set(cu, CURLUPART_QUERY, "format_tsv_null_representation=\\N", CURLU_APPENDQUERY | CURLU_URLENCODE);
-	curl_url_set(cu, CURLUPART_QUERY, "output_format_tsv_crlf_end_of_line=0", CURLU_APPENDQUERY | CURLU_URLENCODE);
-	curl_url_get(cu, CURLUPART_URL, &url, 0);
-	curl_url_cleanup(cu);
+	resp->http_status = ch_http_stream_status(stream);
+	resp->pretransfer_time = ch_http_stream_request_time(stream) / 1000.0;
+	resp->total_time = ch_http_stream_total_time(stream) / 1000.0;
+	memcpy(resp->query_id, ch_http_stream_query_id(stream), CH_HTTP_QUERY_ID_LEN);
+	ch_http_stream_take_body(stream, &resp->data, &resp->datasize);
 
-	/* constant */
-	errbuffer[0] = '\0';
-	curl_easy_reset(conn->curl);
-	curl_easy_setopt(conn->curl, CURLOPT_WRITEFUNCTION, write_data);
-	curl_easy_setopt(conn->curl, CURLOPT_ERRORBUFFER, errbuffer);
-	curl_easy_setopt(conn->curl, CURLOPT_PATH_AS_IS, 1L);
-	curl_easy_setopt(conn->curl, CURLOPT_URL, url);
-	curl_easy_setopt(conn->curl, CURLOPT_NOSIGNAL, 1L);
-
-	/* variable */
-	curl_easy_setopt(conn->curl, CURLOPT_WRITEDATA, resp);
-	curl_easy_setopt(conn->curl, CURLOPT_VERBOSE, curl_verbose);
-	if (curl_progressfunc)
-	{
-		curl_easy_setopt(conn->curl, CURLOPT_NOPROGRESS, 0L);
-		curl_easy_setopt(conn->curl, CURLOPT_XFERINFOFUNCTION, curl_progressfunc);
-		curl_easy_setopt(conn->curl, CURLOPT_XFERINFODATA, conn);
-	}
-	else
-		curl_easy_setopt(conn->curl, CURLOPT_NOPROGRESS, 1L);
-	if (conn->dbname)
-	{
-		headers = curl_slist_append(headers, psprintf("%s: %s", DATABASE_HEADER, conn->dbname));
-		if (!headers)
-		{
-			curl_free(url);
-			free(resp);
-			return NULL;
-		}
-		curl_easy_setopt(conn->curl, CURLOPT_HTTPHEADER, headers);
-	}
-
-	if (query->num_params == 0)
-
-		/*
-		 * Send the query as the POST body. This ensures that
-		 * date_time_output_format=iso will work for ClickHouse versions prior
-		 * to 25.8.
-		 */
-		curl_easy_setopt(conn->curl, CURLOPT_POSTFIELDS, query->sql);
-	else
-	{
-		/*
-		 * Construct and add the the POST form data. Sadly, the
-		 * date_time_output_format=iso setting will have no impact prior to
-		 * ClickHouse 25.8. Details:
-		 * https://github.com/ClickHouse/ClickHouse/pull/85570.
-		 */
-		curl_mimepart *part;
-
-		form = curl_mime_init(conn->curl);
-		if (!form)
-		{
-			curl_free(url);
-			if (headers)
-				curl_slist_free_all(headers);
-			free(resp);
-			return NULL;
-		}
-		part = curl_mime_addpart(form);
-		curl_mime_name(part, "query");
-		curl_mime_data(part, query->sql, CURL_ZERO_TERMINATED);
-		for (i = 0; i < query->num_params; i++)
-		{
-			part = curl_mime_addpart(form);
-			curl_mime_name(part, psprintf("param_p%d", i + 1));
-			curl_mime_data(part, query->param_values[i], CURL_ZERO_TERMINATED);
-		}
-		curl_easy_setopt(conn->curl, CURLOPT_MIMEPOST, form);
-	}
-
-	curl_error_happened = false;
-	errcode = curl_easy_perform(conn->curl);
-	curl_free(url);
-	if (form)
-		curl_mime_free(form);
-	if (headers)
-		curl_slist_free_all(headers);
-
-	if (errcode == CURLE_ABORTED_BY_CALLBACK)
-	{
-		resp->http_status = CH_HTTP_STATUS_CANCELED;
-		return resp;
-	}
-	else if (errcode != CURLE_OK)
-	{
-		resp->http_status = CH_HTTP_STATUS_TRANSPORT_ERROR;
-		resp->data = strdup(errbuffer);
-		if (resp->data == NULL)
-		{
-			free(resp);
-			return NULL;
-		}
-		resp->datasize = strlen(errbuffer);
-		return resp;
-	}
-
-	errcode = curl_easy_getinfo(conn->curl, CURLINFO_PRETRANSFER_TIME,
-								&resp->pretransfer_time);
-	if (errcode != CURLE_OK)
-		resp->pretransfer_time = 0;
-
-	errcode = curl_easy_getinfo(conn->curl, CURLINFO_TOTAL_TIME, &resp->total_time);
-	if (errcode != CURLE_OK)
-		resp->total_time = 0;
-
-	/*
-	 * All good with request, but we need http status to make sure query went
-	 * ok
-	 */
-	curl_easy_getinfo(conn->curl, CURLINFO_RESPONSE_CODE, &resp->http_status);
-	if (curl_verbose && resp->http_status != CH_HTTP_STATUS_OK)
+	if (curl_verbose && resp->http_status != CH_HTTP_STATUS_OK && resp->data)
 		fprintf(stderr, "%s", resp->data);
 
+	ch_http_stream_end(stream);
 	return resp;
 }
 

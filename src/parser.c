@@ -40,6 +40,7 @@ ch_http_read_state_init(ch_http_read_state * state, char *data, size_t datalen)
 	state->datalen = datalen;
 	state->curpos = 0;
 	state->done = false;
+	state->is_null = false;
 	if (state->val.data == NULL)
 		initStringInfo(&state->val);
 	else
@@ -51,9 +52,15 @@ ch_http_read_state_init(ch_http_read_state * state, char *data, size_t datalen)
  * ClickHouse literals including unquoted strings and arrays. Returns CH_CONT
  * if there are moe fields on the line to read, CH_EOL if it has reached the
  * end of the line, and CH_EOF if it has reached the end of the file.
+ *
+ * `is_array` tells the parser whether the destination Postgres column is an
+ * array. TabSeparated is ambiguous: a `String` value beginning with `[` is not
+ * escaped on the wire and is indistinguishable byte-for-byte from an array
+ * literal until you know the column type. The caller knows the type, so it
+ * makes the call.
  */
 int
-ch_http_read_next(ch_http_read_state * state)
+ch_http_read_next(ch_http_read_state * state, bool is_array)
 {
 	char	   *data = state->data;
 
@@ -63,10 +70,29 @@ ch_http_read_next(ch_http_read_state * state)
 		return ch_http_read_eof(state);
 
 	resetStringInfo(&state->val);
+	state->is_null = false;
 	if (state->curpos >= state->datalen)
 		return ch_http_read_eof(state);
 
-	if (data[state->curpos] == '[')
+	/*
+	 * Detect the wire NULL marker. ClickHouse's TabSeparated format encodes
+	 * NULL as the bare 2-byte sequence `\N`. A literal backslash in data is
+	 * sent as `\\`, so legitimate non-null output never contains `\N` at the
+	 * start of a field followed by a delimiter. Detect it here, before
+	 * unescaping, so a non-null String value whose unescaped content happens
+	 * to be `\N` is not collapsed with the NULL marker.
+	 */
+	if (state->curpos + 1 < state->datalen
+		&& data[state->curpos] == '\\'
+		&& data[state->curpos + 1] == 'N'
+		&& (state->curpos + 2 == state->datalen
+			|| data[state->curpos + 2] == '\t'
+			|| data[state->curpos + 2] == '\n'))
+	{
+		state->is_null = true;
+		state->curpos += 2;
+	}
+	else if (is_array && data[state->curpos] == '[')
 		/* Parse array literal. */
 		ch_http_read_array(state);
 	else

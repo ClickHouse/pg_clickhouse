@@ -225,6 +225,78 @@
  lead_200  | 2026-03-10 09:00:00+00 |    150 |  2
 (3 rows)
 
+-- VERBOSE ROW_NUMBER pushdown (binary)
+                                                                                    QUERY PLAN                                                                                     
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, ts_event, (row_number())
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, ts_event, row_number() OVER (PARTITION BY entity_id ORDER BY ts_event DESC NULLS FIRST) FROM wf_test.events WHERE ((event_name = 'lead_created'))
+(4 rows)
+
+-- VERBOSE ROW_NUMBER pushdown (http)
+                                                                                    QUERY PLAN                                                                                     
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, ts_event, (row_number())
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, ts_event, row_number() OVER (PARTITION BY entity_id ORDER BY ts_event DESC NULLS FIRST) FROM wf_test.events WHERE ((event_name = 'lead_created'))
+(4 rows)
+
+-- VERBOSE MIN/MAX OVER pushdown (binary)
+                                                                                       QUERY PLAN                                                                                       
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, amount, (min(amount)), (max(amount))
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, amount, min(amount) OVER (PARTITION BY entity_id), max(amount) OVER (PARTITION BY entity_id) FROM wf_test.events WHERE ((event_name = 'lead_created'))
+(4 rows)
+
+-- VERBOSE LEAD pushdown (binary)
+                                                                               QUERY PLAN                                                                               
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, ts_event, (lead(ts_event))
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, ts_event, lead(ts_event) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created'))
+(4 rows)
+
+-- VERBOSE ntile pushdown (binary)
+                                                                                 QUERY PLAN                                                                                 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, ts_event, (ntile(2))
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, ts_event, ntile(2) OVER (ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created')) ORDER BY ts_event ASC NULLS LAST
+(4 rows)
+
+-- VERBOSE window + ORDER BY + LIMIT pushdown (binary)
+                                                                                                                          QUERY PLAN                                                                                                                          
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, ts_event, amount, (row_number())
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, ts_event, amount, row_number() OVER (PARTITION BY entity_id ORDER BY ts_event DESC NULLS FIRST) FROM wf_test.events WHERE ((event_name = 'lead_created')) ORDER BY entity_id ASC NULLS LAST, ts_event ASC NULLS LAST LIMIT 3
+(4 rows)
+
+-- VERBOSE duplicate window call (binary)
+                                                                                                               QUERY PLAN                                                                                                               
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, ts_event, (row_number()), (row_number())
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, ts_event, row_number() OVER (PARTITION BY entity_id ORDER BY ts_event ASC), row_number() OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created'))
+(4 rows)
+
+ entity_id |        ts_event        | rn1 | rn2 
+-----------+------------------------+-----+-----
+ lead_100  | 2026-03-01 10:00:00+00 |   1 |   1
+ lead_100  | 2026-03-15 14:00:00+00 |   2 |   2
+ lead_200  | 2026-03-10 09:00:00+00 |   1 |   1
+ lead_200  | 2026-03-20 11:00:00+00 |   2 |   2
+ lead_300  | 2026-03-05 08:00:00+00 |   1 |   1
+(5 rows)
+
  clickhouse_raw_query 
 ----------------------
  

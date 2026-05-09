@@ -105,9 +105,8 @@ http.sql
 
  ClickHouse | File
 ------------|------------
- 23+        | http.out
- 23         | http_4.out
- 22         | http_5.out
+ 23.8+      | http.out
+ 23.3       | http_4.out
 
 http_inserts.sql
 ----------------

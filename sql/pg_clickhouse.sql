@@ -17,6 +17,10 @@ RETURNS TEXT
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
+-- Make sure PUBLIC can't call clickhouse_raw_query(); roles must be granted
+-- explicit access.
+REVOKE EXECUTE ON FUNCTION clickhouse_raw_query(text, text) FROM PUBLIC;
+
 CREATE FUNCTION clickhouse_fdw_validator(text[], oid)
 RETURNS VOID
 AS 'MODULE_PATHNAME'
