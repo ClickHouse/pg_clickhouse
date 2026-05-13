@@ -36,7 +36,7 @@
 
 /* extension includes. */
 #include "utils/builtins.h"
-#include "binary.hh"
+#include "binary_pg.h"
 #include "internal.h"
 #include "fdw.h"
 #include "version.h"

@@ -2,8 +2,9 @@
 #define PG_CLICKHOUSE_KV_LIST_H
 
 #include <stdbool.h>
-#include "postgres.h"
-#include "nodes/pathnodes.h"
+
+/* Forward decl avoids pulling postgres.h into pure-C/C++ TUs. */
+struct List;
 
 /*
  * A simple data structure with a list of key/value string pairs. Use
@@ -47,7 +48,7 @@ enum kv_pair_alloc
  * Create a new kv_list from a PostgreSQL List of DefElem. Allocate the memory
  * using the specified allocator.
 */
-kv_list    *new_kv_list_from_pg_list(List * list, int allocate);
+kv_list    *new_kv_list_from_pg_list(struct List *list, int allocate);
 
 /* Create a new kv_iter for a key_pairs. */
 kv_iter		new_kv_iter(const kv_list * ns);

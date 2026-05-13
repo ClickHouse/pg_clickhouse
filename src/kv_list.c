@@ -1,3 +1,5 @@
+#include "postgres.h"
+
 #include <stddef.h>
 #include "kv_list.h"
 #include "utils/elog.h"

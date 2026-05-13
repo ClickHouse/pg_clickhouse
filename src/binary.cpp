@@ -1,50 +1,49 @@
+/*
+ * binary.cpp
+ *
+ * The only C++ TU in pg_clickhouse. Wraps clickhouse-cpp and exposes a pure-C
+ * ABI to the rest of the extension. Contains no PostgreSQL headers, no
+ * Datum/Oid types, no palloc and no elog. PG-bound logic for the binary
+ * driver lives in binary_decode.c (SELECT) and binary_encode.c (INSERT).
+ */
 #include <cassert>
+#include <cstring>
 #include <iostream>
+#include <memory>
+#include <new>
 #include <sstream>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
+#include "clickhouse/columns/array.h"
 #include "clickhouse/columns/date.h"
+#include "clickhouse/columns/decimal.h"
+#include "clickhouse/columns/enum.h"
 #include "clickhouse/columns/factory.h"
 #include "clickhouse/columns/ip4.h"
+#include "clickhouse/columns/ip6.h"
 #include "clickhouse/columns/lowcardinality.h"
 #include "clickhouse/columns/nullable.h"
+#include "clickhouse/columns/numeric.h"
+#include "clickhouse/columns/string.h"
+#include "clickhouse/columns/tuple.h"
+#include "clickhouse/columns/uuid.h"
 #include <clickhouse/client.h>
 #include <clickhouse/query.h>
 #include <clickhouse/types/types.h>
 
-#if __cplusplus > 199711L
-#define register /* Deprecated in C++11. */
-#endif			 /* #if __cplusplus > 199711L */
-
 extern "C"
 {
-
-#include "postgres.h"
-
-#include "fmgr.h"
-#include "funcapi.h"
-#include "internal.h"
-#include "pgtime.h"
-
-#include "access/htup_details.h"
-#include "access/tupdesc.h"
-#include "catalog/pg_type_d.h"
-#include "utils/array.h"
-#include "utils/builtins.h"
-#include "utils/date.h"
-#include "utils/elog.h"
-#include "utils/inet.h"
-#include "utils/lsyscache.h"
-#include "utils/memdebug.h"
-#include "utils/palloc.h"
-#include "utils/timestamp.h"
-#include "utils/uuid.h"
-
 #include "binary.hh"
+#include "ch_block.h"
+#include "internal.h"
+#include "kv_list.h"
+}
 
-	using namespace clickhouse;
+using namespace clickhouse;
 
-#if defined(__APPLE__) /* Byte ordering on macOS */
+#if defined(__APPLE__)
 #include <libkern/OSByteOrder.h>
 #include <machine/endian.h>
 #define HOST_TO_BIG_ENDIAN_64(x) OSSwapHostToBigInt64(x)
@@ -55,1299 +54,1366 @@ extern "C"
 #define BIG_ENDIAN_64_TO_HOST(x) be64toh(x)
 #endif
 
-#define THROW_UNEXPECTED_COLUMN(exp_type, col)                                                                         \
-	throw std::runtime_error("unexpected column type for " + std::string(exp_type) + ": " + col->Type()->GetName())
-
-	/* palloc which will throw exceptions */
-	static void *
-	exc_palloc(Size size)
-	{
-		/* duplicates MemoryContextAlloc to avoid increased overhead */
-		void		 *ret;
-		MemoryContext context = CurrentMemoryContext;
-
-		Assert(MemoryContextIsValid(context));
-
-		if (!AllocSizeIsValid(size))
-			throw std::bad_alloc();
-
-		context->isReset = false;
-
-#if PG_VERSION_NUM >= 170000
-		ret = context->methods->alloc(context, size, 0);
-#else
-		ret = context->methods->alloc(context, size);
-#endif
-		if (unlikely(ret == NULL))
-			throw std::bad_alloc();
-
-		VALGRIND_MEMPOOL_ALLOC(context, ret, size);
-
-		return ret;
-	}
-
-	void *
-	exc_palloc0(Size size)
-	{
-		/* duplicates MemoryContextAllocZero to avoid increased overhead */
-		void		 *ret;
-		MemoryContext context = CurrentMemoryContext;
-
-		Assert(MemoryContextIsValid(context));
-
-		if (!AllocSizeIsValid(size))
-			throw std::bad_alloc();
-
-		context->isReset = false;
-
-#if PG_VERSION_NUM >= 170000
-		ret = context->methods->alloc(context, size, 0);
-#else
-		ret = context->methods->alloc(context, size);
-#endif
-		if (unlikely(ret == NULL))
-			throw std::bad_alloc();
-
-		VALGRIND_MEMPOOL_ALLOC(context, ret, size);
-
-		MemSetAligned(ret, 0, size);
-
-		return ret;
-	}
-
 #define CLICKHOUSE_SECURE_PORT 9440
 
-	ch_binary_connection_t *
-	ch_binary_connect(ch_connection_details *details, char **error)
-	{
-		ClientOptions		   *options = NULL;
-		ch_binary_connection_t *conn = NULL;
-
-		try
-		{
-			options = new ClientOptions();
-			options->SetPingBeforeQuery(true);
-
-			if (details->host)
-			{
-				options->SetHost(std::string(details->host));
-				if (!details->port && ch_is_cloud_host(details->host))
-					options->SetPort(CLICKHOUSE_SECURE_PORT);
-			}
-			if (details->port)
-				options->SetPort(details->port);
-			if (details->dbname)
-				options->SetDefaultDatabase(std::string(details->dbname));
-			if (details->username)
-				options->SetUser(std::string(details->username));
-			if (details->password)
-				options->SetPassword(std::string(details->password));
-			if (options->port == CLICKHOUSE_SECURE_PORT)
-				options->SetSSLOptions(ClientOptions::SSLOptions());
-
-			/* options->SetRethrowException(false); */
-			conn = new ch_binary_connection_t();
-
-			Client *client = new Client(*options);
-			conn->client = client;
-			conn->options = options;
-		}
-		catch (const std::exception &e)
-		{
-			if (error)
-				*error = strdup(e.what());
-
-			if (conn != NULL)
-				delete conn;
-
-			if (options != NULL)
-				delete options;
-
-			conn = NULL;
-		}
-		return conn;
-	}
-
-	static void
-	set_resp_error(ch_binary_response_t *resp, const char *str)
-	{
-		if (resp->error)
-			return;
-
-		resp->error = strdup(str);
-	}
-
-	/*
-	 * Converts query->settings to QuerySettings.
-	 */
-	static QuerySettings
-	ch_binary_settings(const Client *client, const ch_query *query)
-	{
-		kv_iter iter;
-		auto	res = QuerySettings{};
-
-		for (iter = new_kv_iter(query->settings); !kv_iter_done(&iter); kv_iter_next(&iter))
-		{
-			res.insert_or_assign(iter.name, QuerySettingsField{ iter.value, 1 });
-		}
-		auto info = client->GetServerInfo();
-		if (info.version_major >= 25 || (info.version_major == 24 && info.version_minor >= 10))
-			res.insert_or_assign("output_format_native_write_json_as_string", QuerySettingsField{ "1", 1 });
-
-		return res;
-	}
-
-	/*
-	 * Converts query->param_values to QueryParams.
-	 */
-	static QueryParams
-	ch_binary_params(const ch_query *query)
-	{
-		int	 i;
-		auto res = QueryParams{};
-
-		for (i = 0; i < query->num_params; i++)
-			res.insert_or_assign(psprintf("p%d", i + 1), QueryParamValue(query->param_values[i]));
-
-		return res;
-	}
-
-	static void
-	set_state_error(ch_binary_read_state_t *state, const char *str)
-	{
-		assert(state->error == NULL);
-		state->error = strdup(str);
-	}
-
-	ch_binary_response_t *
-	ch_binary_simple_query(ch_binary_connection_t *conn, const ch_query *query, bool (*check_cancel)(void))
-	{
-		Client											*client = (Client *)conn->client;
-		ch_binary_response_t							*resp;
-		std::vector<std::vector<clickhouse::ColumnRef>> *values;
-
-		try
-		{
-			resp = new ch_binary_response_t();
-			values = new std::vector<std::vector<clickhouse::ColumnRef>>();
-			client->Select(clickhouse::Query(query->sql)
-						   .SetQuerySettings(ch_binary_settings(client, query))
-						   .SetParams(ch_binary_params(query))
-						   .OnProgress(
-						   [&check_cancel](const Progress &)
-						   {
-							   if (check_cancel && check_cancel())
-								   throw std::runtime_error("query was canceled");
-						   })
-						   .OnDataCancelable(
-						   [&resp, &values, &check_cancel](const Block &block)
-						   {
-							   if (check_cancel && check_cancel())
-							   {
-								   set_resp_error(resp, "query was canceled");
-								   return false;
-							   }
-
-							   /* some empty block */
-							   if (block.GetColumnCount() == 0)
-								   return true;
-
-							   auto vec = std::vector<clickhouse::ColumnRef>();
-
-							   if (resp->columns_count && block.GetColumnCount() != resp->columns_count)
-							   {
-								   set_resp_error(resp, "columns mismatch in blocks");
-								   return false;
-							   }
-
-							   resp->columns_count = block.GetColumnCount();
-							   resp->blocks_count++;
-
-							   for (size_t i = 0; i < resp->columns_count; ++i)
-								   vec.push_back(block[i]);
-
-							   values->push_back(std::move(vec));
-							   return true;
-						   }));
-
-			resp->values = (void *)values;
-		}
-		catch (const std::exception &e)
-		{
-			client->ResetConnection();
-
-			values->clear();
-			set_resp_error(resp, e.what());
-			delete values;
-			values = NULL;
-		}
-
-		resp->success = (resp->error == NULL);
-		return resp;
-	}
-
-	/*
-	 * Given TypeRef for the value returned by a clickhouse-cpp query and the
-	 * Postgres data type from the corresponding column in the foreign table,
-	 * return the Oid of the type that should be created for the TypeRef.
-	 */
-	static Oid
-	get_corr_postgres_type(const TypeRef &type, Oid pg_type)
-	{
-		switch (type->GetCode())
-		{
-			case Type::Code::Int8:
-			case Type::Code::Int16:
-			case Type::Code::UInt8:
-				return INT2OID;
-			case Type::Code::Int32:
-			case Type::Code::UInt16:
-				return INT4OID;
-			case Type::Code::Int64:
-			case Type::Code::UInt64:
-			case Type::Code::UInt32:
-				return INT8OID;
-			case Type::Code::Float32:
-				return FLOAT4OID;
-			case Type::Code::Float64:
-				return FLOAT8OID;
-			case Type::Code::Decimal128:
-			case Type::Code::Decimal64:
-			case Type::Code::Decimal32:
-			case Type::Code::Decimal:
-				return NUMERICOID;
-			case Type::Code::FixedString:
-			case Type::Code::Enum8:
-			case Type::Code::Enum16:
-			case Type::Code::String:
-				return TEXTOID;
-			case Type::Code::LowCardinality:
-				return get_corr_postgres_type(type->As<LowCardinalityType>()->GetNestedType(), pg_type);
-			case Type::Code::Date:
-			case Type::Code::Date32:
-				return DATEOID;
-			case Type::Code::DateTime:
-				return TIMESTAMPTZOID;
-			case Type::Code::DateTime64:
-				return TIMESTAMPTZOID;
-			case Type::Code::UUID:
-				return UUIDOID;
-			case Type::Code::Array:
-			{
-				/* postgres uses one array type for any number of dimensions, so
-				 * walk past nested Array layers to the leaf element type. */
-				auto leaf = type->As<clickhouse::ArrayType>()->GetItemType();
-				while (leaf->GetCode() == Type::Code::Array)
-					leaf = leaf->As<clickhouse::ArrayType>()->GetItemType();
-
-				Oid array_type = get_array_type(get_corr_postgres_type(leaf, get_element_type(pg_type)));
-				if (array_type == InvalidOid)
-					throw std::runtime_error("pg_clickhouse: could not find array "
-											 " type for column type "
-											 + type->GetName());
-
-				return array_type;
-			}
-			case Type::Code::Tuple:
-				return RECORDOID;
-			case Type::Code::Nullable:
-				return get_corr_postgres_type(type->As<NullableType>()->GetNestedType(), pg_type);
-			case Type::Code::IPv4:
-			case Type::Code::IPv6:
-				return INETOID;
-			case Type::Code::JSON:
-				/* We support json and default to jsonb. */
-				return pg_type == JSONOID ? JSONOID : JSONBOID;
-			default:
-				throw std::runtime_error("pg_clickhouse: unsupported column type " + type->GetName());
-		}
-	}
-
-	void
-	ch_binary_insert_state_free(void *c)
-	{
-		auto *state = (ch_binary_insert_state *)c;
-		if (state->insert_block)
-		{
-			/* Finish the insert to set the proper ClickHouse state */
-			delete (Block *)state->insert_block;
-			Client *client = (Client *)state->conn->client;
-			try
-			{
-				client->EndInsert();
-			}
-			catch (const std::exception &e)
-			{
-				client->ResetConnection();
-				elog(ERROR, "pg_clickhouse: could not finish INSERT - %s", e.what());
-			}
-		}
-	}
-
-	void
-	ch_binary_prepare_insert(void *conn, const ch_query *query, ch_binary_insert_state *state)
-	{
-		/* Start the INSERT. */
-		Block  *block;
-		Client *client = (Client *)((ch_binary_connection_t *)conn)->client;
-		try
-		{
-			block = new Block(client->BeginInsert(std::string(query->sql) + " VALUES"));
-			/* XXX https://github.com/ClickHouse/clickhouse-cpp/pull/453/
-			block = new Block(client->BeginInsert(
-				clickhouse::Query(std::string(query->sql)+ " VALUES").SetQuerySettings(
-					ch_binary_settings(client, query)
-				).SetParams(
-					ch_binary_params(query)
-				)
-			));
-			*/
-		}
-		catch (const std::exception &e)
-		{
-			client->ResetConnection();
-			elog(ERROR, "pg_clickhouse: could not prepare insert - %s", e.what());
-		}
-
-		/* Setup the column config (or return if no columns). */
-		state->len = block->GetColumnCount();
-		if (state->len == 0)
-		{
-			delete block;
-			return;
-		}
-		state->outdesc = CreateTemplateTupleDesc(state->len);
-
-		/* Iterate over the list of columns returned by ClickHouse. */
-		AttrNumber i = 0;
-		for (Block::Iterator bi(*block); bi.IsValid(); bi.Next())
-		{
-			/* Start with the data type from the foreign table. */
-			Oid pg_type = query->tupdesc
-						  ? TupleDescAttr(query->tupdesc, lfirst_int(list_nth_cell(query->attr_nums, i)) - 1)->atttypid
-						  : InvalidOid;
-			const char *colname = bi.Name().c_str();
-			try
-			{
-				/*
-				 * Determine the Postgres type to which to convert values so
-				 * that column_append() knows how to append it to a ClickHouse
-				 * column.
-				 */
-				pg_type = get_corr_postgres_type(bi.Type(), pg_type);
-				colname = bi.Name().c_str();
-			}
-			catch (const std::exception &e)
-			{
-				elog(ERROR, "pg_clickhouse: could not prepare insert - %s", e.what());
-			}
-			PG_TRY();
-			{
-				TupleDescInitEntry(state->outdesc, ++i, colname, pg_type, -1, 0);
-			}
-			PG_CATCH();
-			{
-				/* Clean up and re-throw. */
-				client->ResetConnection();
-				delete block;
-				PG_RE_THROW();
-			}
-			PG_END_TRY();
-		}
-
-		state->insert_block = (ch_insert_block_h *)block;
-	}
-
-	/*
-	 * Append val to col. If isnull is true and val is nullable, append a
-	 * null. Otherwise, determine how to convert val, of type valtype, to a
-	 * value appropriate to col, and append that value. Raises an exception if
-	 * valtype is not compatible with col's type.
-	 */
-	static void column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, bool isnull);
-
-	/*
-	 * Build a single ColumnArray row's worth of data from a (possibly nested)
-	 * ch_binary_array_t. items_type is the per-row element type of the parent
-	 * ColumnArray: scalar T for Array(T), Array(T) for Array(Array(T)), etc.
-	 *
-	 * For nested types, recurses to build child ColumnArrays and stitches them
-	 * via AppendAsColumn so the outer column's offsets describe the row shape.
-	 */
-	static clickhouse::ColumnRef
-	build_array_row_column(ch_binary_array_t *arr, clickhouse::TypeRef items_type)
-	{
-		using namespace clickhouse;
-
-		auto col = CreateColumnByType(items_type->GetName());
-
-		/* Empty postgres array fits any nesting depth: nothing to walk, so
-		 * skip the dim check and return an empty column at this level. */
-		if (arr->len == 0)
-			return col;
-
-		if (items_type->GetCode() == Type::Code::Array)
-		{
-			if (arr->ndim < 2)
-				throw std::runtime_error("pg_clickhouse: insert array has fewer dimensions than column type");
-
-			auto inner_arr = col->AsStrict<ColumnArray>();
-			auto inner_items_t = items_type->As<clickhouse::ArrayType>()->GetItemType();
-
-			for (size_t i = 0; i < arr->len; i++)
-			{
-				auto child = (ch_binary_array_t *)DatumGetPointer(arr->datums[i]);
-				auto sub = build_array_row_column(child, inner_items_t);
-
-				inner_arr->AppendAsColumn(sub);
-			}
-			return col;
-		}
-
-		if (arr->ndim != 1)
-			throw std::runtime_error("pg_clickhouse: insert array has more dimensions than column type");
-
-		for (size_t i = 0; i < arr->len; i++)
-			column_append(col, arr->datums[i], arr->item_type, arr->nulls[i]);
-		return col;
-	}
-
-	static void
-	column_append(clickhouse::ColumnRef col, Datum val, Oid valtype, bool isnull)
-	{
-		bool nullable = false;
-
-		if (col->Type()->GetCode() == Type::Code::Nullable)
-			nullable = true;
-
-		/*
-		 * Prevent insertion if the column isn't Nullable. This differs from the
-		 * http engine, which isn't aware of Nullable but just sends values off,
-		 * in which case ClickHouse inserts default values (e.g., 0 for numbers,
-		 * "" for strings, etc.).
-		 *
-		 * XXX Do we want to consider rejecting NULL inserts when the Postgres
-		 * `NOT NULL` constraint exits? And when it doesn't exist and the column
-		 * is not nullable, do we want to send the default value instead? Dropping
-		 * this block should do that.
-		 */
-		if (isnull && !nullable)
-			throw std::runtime_error("cannot append NULL to NOT NULL " + col->Type()->GetName() + " column");
-
-		if (nullable)
-		{
-			auto nullable = col->AsStrict<ColumnNullable>();
-			nullable->Append(isnull);
-			col = nullable->Nested();
-		}
-
-		switch (valtype)
-		{
-			case INT2OID:
-			{
-				switch (col->Type()->GetCode())
-				{
-					case Type::Code::UInt8:
-						col->AsStrict<ColumnUInt8>()->Append((uint8_t)val);
-						break;
-					case Type::Code::Int8:
-						col->AsStrict<ColumnInt8>()->Append((int8_t)val);
-						break;
-					case Type::Code::Int16:
-						col->AsStrict<ColumnInt16>()->Append((int16_t)val);
-						break;
-					default:
-						THROW_UNEXPECTED_COLUMN("INT2", col);
-				}
-				break;
-			}
-			case INT4OID:
-			{
-				switch (col->Type()->GetCode())
-				{
-					case Type::Code::Int32:
-						col->AsStrict<ColumnInt32>()->Append((int32_t)val);
-						break;
-					case Type::Code::UInt16:
-						col->AsStrict<ColumnUInt16>()->Append((uint16_t)val);
-						break;
-					default:
-						THROW_UNEXPECTED_COLUMN("INT4", col);
-				}
-				break;
-			}
-			case INT8OID:
-			{
-				switch (col->Type()->GetCode())
-				{
-					case Type::Code::Int64:
-						col->AsStrict<ColumnInt64>()->Append((int64_t)val);
-						break;
-					case Type::Code::UInt32:
-						col->AsStrict<ColumnUInt32>()->Append((uint32_t)val);
-						break;
-					case Type::Code::UInt64:
-						col->AsStrict<ColumnUInt64>()->Append((uint64_t)val);
-						break;
-					default:
-						THROW_UNEXPECTED_COLUMN("INT8", col);
-				}
-				break;
-			}
-			case FLOAT4OID:
-			{
-				switch (col->Type()->GetCode())
-				{
-					case Type::Code::Float32:
-						col->AsStrict<ColumnFloat32>()->Append(DatumGetFloat4(val));
-						break;
-					default:
-						THROW_UNEXPECTED_COLUMN("FLOAT4", col);
-				}
-				break;
-			}
-			case FLOAT8OID:
-			{
-				switch (col->Type()->GetCode())
-				{
-					case Type::Code::Float64:
-						col->AsStrict<ColumnFloat64>()->Append(DatumGetFloat8(val));
-						break;
-					default:
-						THROW_UNEXPECTED_COLUMN("FLOAT8", col);
-				}
-				break;
-			}
-			case NUMERICOID:
-			{
-				/* Convert numeric to string and let ColumnDecimal parse it. */
-				switch (col->Type()->GetCode())
-				{
-					case Type::Code::Decimal128:
-					case Type::Code::Decimal64:
-					case Type::Code::Decimal32:
-					case Type::Code::Decimal:
-						if (isnull)
-							col->AsStrict<ColumnDecimal>()->Append(Int128{});
-						else
-						{
-							char *s = DatumGetCString(DirectFunctionCall1(numeric_out, val));
-							col->AsStrict<ColumnDecimal>()->Append(std::string(s));
-							pfree(s);
-						}
-						break;
-					default:
-						THROW_UNEXPECTED_COLUMN("NUMERIC", col);
-				}
-				break;
-			}
-			case TEXTOID:
-			{
-				/*
-				 * ClickHouse allows nuls in strings, and val can be bytea, so
-				 * don't rely on nul termination but copy the full length of the
-				 * data.
-				 */
-				std::string s;
-				if (!isnull)
-				{
-					text *string = PG_DETOAST_DATUM(val);
-					s.assign(VARDATA(string), VARSIZE_ANY_EXHDR(string));
-				}
-
-				switch (col->Type()->GetCode())
-				{
-					case Type::Code::FixedString:
-						col->AsStrict<ColumnFixedString>()->Append(s);
-						break;
-					case Type::Code::String:
-						col->AsStrict<ColumnString>()->Append(s);
-						break;
-					case Type::Code::Enum8:
-						if (isnull)
-							col->AsStrict<ColumnEnum8>()->Append(0, false);
-						else
-							col->AsStrict<ColumnEnum8>()->Append(s);
-						break;
-					case Type::Code::Enum16:
-						if (isnull)
-							col->AsStrict<ColumnEnum16>()->Append(0, false);
-						else
-							col->AsStrict<ColumnEnum16>()->Append(s);
-						break;
-					case Type::Code::LowCardinality:
-						/* XXX Handle LowCardinality(Nullable(x)) */
-						if (col->AsStrict<ColumnLowCardinality>()->GetNestedType()->GetCode() == Type::Nullable)
-							throw std::runtime_error("nested Nullable is not supported");
-						col->AsStrict<ColumnLowCardinalityT<ColumnString>>()->Append(s);
-						break;
-					default:
-						THROW_UNEXPECTED_COLUMN("TEXT", col);
-				}
-
-				break;
-			}
-			case DATEOID:
-			{
-				Timestamp t = date2timestamp_no_overflow(DatumGetDateADT(val));
-				pg_time_t d = timestamptz_to_time_t(t);
-
-				switch (col->Type()->GetCode())
-				{
-					case Type::Code::Date:
-						col->AsStrict<ColumnDate>()->Append(d);
-						break;
-					case Type::Code::Date32:
-						col->AsStrict<ColumnDate32>()->Append(d);
-						break;
-					default:
-						THROW_UNEXPECTED_COLUMN("DATE", col);
-				}
-				break;
-			}
-			case TIMESTAMPOID:
-			case TIMESTAMPTZOID:
-			{
-				switch (col->Type()->GetCode())
-				{
-					case Type::Code::DateTime:
-					{
-						pg_time_t d = timestamptz_to_time_t(DatumGetTimestamp(val));
-						col->AsStrict<ColumnDateTime>()->Append(d);
-						break;
-					}
-					case Type::Code::DateTime64:
-					{
-						auto	  dt64_col = col->AsStrict<ColumnDateTime64>();
-						Timestamp t = DatumGetTimestamp(val);
-						Int64	  dt64
-						= ((1.0 * t) / USECS_PER_SEC + ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY))
-						  * pow(10.0, dt64_col->GetPrecision());
-
-						dt64_col->Append(dt64);
-						break;
-					}
-					default:
-						THROW_UNEXPECTED_COLUMN("TIMESTAMP", col);
-				}
-				break;
-			}
-			case ANYARRAYOID:
-			{
-				switch (col->Type()->GetCode())
-				{
-					case Type::Array:
-					{
-						auto arrcol = col->AsStrict<ColumnArray>();
-						auto items_type = arrcol->GetType().As<clickhouse::ArrayType>()->GetItemType();
-						auto arr = (ch_binary_array_t *)DatumGetPointer(val);
-						auto one_row = build_array_row_column(arr, items_type);
-
-						arrcol->AppendAsColumn(one_row);
-						break;
-					}
-					default:
-						THROW_UNEXPECTED_COLUMN("array", col);
-				}
-				break;
-			}
-			case UUIDOID:
-			{
-				auto uuid_val = DatumGetUUIDP(val)->data;
-				auto ch_uuid = UUID{};
-				if (!isnull)
-				{
-					memcpy(&ch_uuid.first, uuid_val, 8);
-					memcpy(&ch_uuid.second, uuid_val + 8, 8);
-					ch_uuid.first = BIG_ENDIAN_64_TO_HOST(ch_uuid.first);
-					ch_uuid.second = BIG_ENDIAN_64_TO_HOST(ch_uuid.second);
-				}
-				col->AsStrict<ColumnUUID>()->Append(ch_uuid);
-			}
-			break;
-			case INETOID:
-			{
-				if (isnull)
-				{
-					switch (col->Type()->GetCode())
-					{
-						case Type::Code::IPv4:
-							col->AsStrict<ColumnIPv4>()->Append(0);
-							break;
-						case Type::Code::IPv6:
-							col->AsStrict<ColumnIPv6>()->Append("::");
-							break;
-						default:
-							THROW_UNEXPECTED_COLUMN("INET", col);
-					}
-				}
-				else
-				{
-					char *s = DatumGetCString(DirectFunctionCall1(inet_out, val));
-					switch (col->Type()->GetCode())
-					{
-						case Type::Code::IPv4:
-							col->AsStrict<ColumnIPv4>()->Append(s);
-							break;
-						case Type::Code::IPv6:
-							col->AsStrict<ColumnIPv6>()->Append(s);
-							break;
-						default:
-							THROW_UNEXPECTED_COLUMN("INET", col);
-					}
-				}
-			}
-			break;
-			case JSONBOID:
-			{
-				char *s = DatumGetCString(DirectFunctionCall1(jsonb_out, val));
-				col->AsStrict<ColumnJSON>()->Append(s);
-			}
-			break;
-			case JSONOID:
-			{
-				char *s = DatumGetCString(DirectFunctionCall1(json_out, val));
-				col->AsStrict<ColumnJSON>()->Append(s);
-			}
-			break;
-			default:
-			{
-				THROW_UNEXPECTED_COLUMN(format_type_extended(valtype, -1, FORMAT_TYPE_ALLOW_INVALID), col);
-			}
-		}
-	}
-
-	/*
-	 * Append state->values[colidx] to state->insert_block[colidx] or raise an
-	 * exception.
-	 */
-	void
-	ch_binary_column_append_data(ch_binary_insert_state *state, size_t colidx)
-	{
-		try
-		{
-			auto block = (Block *)state->insert_block;
-			auto col = (*block)[colidx];
-
-			Datum val = state->values[colidx];
-
-			Oid	 valtype = TupleDescAttr(state->outdesc, colidx)->atttypid;
-			bool isnull = state->nulls[colidx];
-
-			column_append(col, val, valtype, isnull);
-		}
-		catch (const std::exception &e)
-		{
-			elog(ERROR, "pg_clickhouse: could not append data to column - %s", e.what());
-		}
-	}
-
-	void
-	ch_binary_insert_columns(ch_binary_insert_state *state)
-	{
-		Client *client = (Client *)state->conn->client;
-		auto	block = (Block *)state->insert_block;
-		try
-		{
-			block->RefreshRowCount();
-			client->SendInsertBlock(*block);
-			block->Clear();
-		}
-		catch (const std::exception &e)
-		{
-			client->ResetConnection();
-			delete block;
-			elog(ERROR, "pg_clickhouse: could not insert columns - %s", e.what());
-		}
-	}
-
-	void
-	ch_binary_close(ch_binary_connection_t *conn)
-	{
-		delete (Client *)conn->client;
-		delete (ClientOptions *)conn->options;
-	}
-
-	void
-	ch_binary_response_free(ch_binary_response_t *resp)
-	{
-		if (resp->values)
-		{
-			auto values = (std::vector<std::vector<clickhouse::ColumnRef>> *)resp->values;
-			values->clear();
-			delete values;
-		}
-
-		if (resp->error)
-			free(resp->error);
-
-		delete resp;
-	}
-
-	void
-	ch_binary_read_state_init(ch_binary_read_state_t *state, ch_binary_response_t *resp, const ch_query *query)
-	{
-		state->resp = resp;
-		state->block = 0;
-		state->row = 0;
-		state->done = false;
-		state->error = NULL;
-		state->coltypes = NULL;
-		state->values = NULL;
-		state->nulls = NULL;
-
-		/* it response was errored just set error in state too */
-		if (resp->error)
-		{
-			state->done = true;
-			set_state_error(state, resp->error);
-			return;
-		}
-
-		try
-		{
-			assert(resp->values);
-			auto &values = *((std::vector<std::vector<clickhouse::ColumnRef>> *)resp->values);
-
-			if (resp->columns_count && values.size() > 0)
-			{
-				state->coltypes = new Oid[resp->columns_count];
-				state->values = new Datum[resp->columns_count];
-				state->nulls = new bool[resp->columns_count];
-			}
-		}
-		catch (const std::exception &e)
-		{
-			set_state_error(state, e.what());
-			return;
-		}
-
-		/* Initialize coltypes to SELECT types, when provided. */
-		if (query->tupdesc)
-			for (size_t i = 0; i < (size_t)list_length(query->attr_nums); i++)
-				state->coltypes[i]
-				= TupleDescAttr(query->tupdesc, lfirst_int(list_nth_cell(query->attr_nums, i)) - 1)->atttypid;
-		else
-			for (size_t i = 0; i < resp->columns_count; i++)
-				state->coltypes[i] = InvalidOid;
-	}
-
-	/*
-	 * This function prepares values for `convert_datum` which is called in
-	 * upper code.
-	 *
-	 * This function calls postgres functions, which can call `palloc` so we can end up
-	 * with elog(ERROR) and longjmp to upper postgres code with leaking c++ memory.
-	 *
-	 * There is not an adequate (without huge overheads) solution, we just consider
-	 * this state unfixable.
-	 *
-	 * Expects `valtype` to already be set to the type of the foreign table
-	 * column for the value, but it may replace it with another type that will
-	 * later be cast to valtype.
-	 *
-	 * Always sets `is_null`.
-	 */
-	static Datum
-	make_datum(clickhouse::ColumnRef col, size_t row, Oid *valtype, bool *is_null)
-	{
-		Datum ret = (Datum)0;
-
-	nested_col:
-		auto type_code = col->Type()->GetCode();
-
-		*is_null = false;
-
-		switch (type_code)
-		{
-			case Type::Code::UInt8:
-			{
-				int16 val = col->AsStrict<ColumnUInt8>()->At(row);
-				ret = (Datum)val;
-				*valtype = INT2OID;
-			}
-			break;
-			case Type::Code::UInt16:
-			{
-				int16 val = col->AsStrict<ColumnUInt16>()->At(row);
-				ret = (Datum)val;
-				*valtype = INT4OID;
-			}
-			break;
-			case Type::Code::UInt32:
-			{
-				int64 val = col->AsStrict<ColumnUInt32>()->At(row);
-				ret = Int64GetDatum(val);
-				*valtype = INT8OID;
-			}
-			break;
-			case Type::Code::UInt64:
-			{
-				uint64 val = col->AsStrict<ColumnUInt64>()->At(row);
-				/* XXX Consider using, e.g., https://pgxn.org/dist/uint128. */
-				if (val > LONG_MAX)
-					throw std::overflow_error("value " + std::to_string(val) + " is out of range of bigint");
-
-				ret = Int64GetDatum((int64)val);
-				*valtype = INT8OID;
-			}
-			break;
-			case Type::Code::Int8:
-			{
-				int16 val = col->AsStrict<ColumnInt8>()->At(row);
-				ret = (Datum)val;
-				*valtype = INT2OID;
-			}
-			break;
-			case Type::Code::Int16:
-			{
-				int16 val = col->AsStrict<ColumnInt16>()->At(row);
-				ret = (Datum)val;
-				*valtype = INT2OID;
-			}
-			break;
-			case Type::Code::Int32:
-			{
-				int val = col->AsStrict<ColumnInt32>()->At(row);
-				ret = (Datum)val;
-				*valtype = INT4OID;
-			}
-			break;
-			case Type::Code::Int64:
-			{
-				int64 val = col->AsStrict<ColumnInt64>()->At(row);
-				ret = Int64GetDatum(val);
-				*valtype = INT8OID;
-			}
-			break;
-			case Type::Code::Float32:
-			{
-				float val = col->AsStrict<ColumnFloat32>()->At(row);
-				ret = Float4GetDatum(val);
-				*valtype = FLOAT4OID;
-			}
-			break;
-			case Type::Code::Float64:
-			{
-				double val = col->AsStrict<ColumnFloat64>()->At(row);
-				ret = Float8GetDatum(val);
-				*valtype = FLOAT8OID;
-			}
-			break;
-			case Type::Code::Decimal128:
-			case Type::Code::Decimal64:
-			case Type::Code::Decimal32:
-			case Type::Code::Decimal:
-			{
-				auto decCol = col->AsStrict<ColumnDecimal>();
-				auto val = decCol->At(row);
-
-				/* Convert the Int128 to a string. */
-				std::stringstream ss;
-				ss << val;
-				std::string str = ss.str();
-
-				/* Start a destination string. */
-				std::stringstream res;
-				auto			  scale = decCol->GetScale();
-
-				/* Output a dash for negative values */
-				if (val < 0)
-				{
-					res << '-';
-					str.erase(0, 1);
-				}
-
-				if (scale == 0)
-				{
-					/* No decimal point, just output the entire value. */
-					res << str;
-				}
-				else if (str.length() <= scale)
-				{
-					/* Append the entire value prepended with zeros after the decimal. */
-					res << "0." << std::string(scale - str.length(), '0') << str;
-				}
-				else
-				{
-					/* There are digits before the decimal. */
-					auto decAt = str.length() - scale;
-					res << str.substr(0, decAt);
-
-					/* Append any digits after the decimal. */
-					if (decAt < str.length())
-					{
-						res << '.' << str.substr(decAt);
-					}
-				}
-
-				ret = DirectFunctionCall3(numeric_in, CStringGetDatum(res.str().c_str()), ObjectIdGetDatum(0),
-										  Int32GetDatum(-1));
-				*valtype = NUMERICOID;
-			}
-			break;
-			case Type::Code::FixedString:
-			{
-				auto s = std::string(col->AsStrict<ColumnFixedString>()->At(row));
-				/* ClickHouse allows nuls in strings, so copy by full length. */
-				ret = PointerGetDatum(cstring_to_text_with_len(s.data(), s.size()));
-				*valtype = TEXTOID;
-			}
-			break;
-			case Type::Code::String:
-			{
-				auto s = std::string(col->AsStrict<ColumnString>()->At(row));
-				/* ClickHouse allows nuls in strings, so copy by full length. */
-				ret = PointerGetDatum(cstring_to_text_with_len(s.data(), s.size()));
-				*valtype = TEXTOID;
-			}
-			break;
-			case Type::Code::Enum8:
-			{
-				auto s = std::string(col->AsStrict<ColumnEnum8>()->NameAt(row));
-				ret = CStringGetTextDatum(s.c_str());
-				*valtype = TEXTOID;
-			}
-			break;
-			case Type::Code::Enum16:
-			{
-				auto s = std::string(col->AsStrict<ColumnEnum16>()->NameAt(row));
-				ret = CStringGetTextDatum(s.c_str());
-				*valtype = TEXTOID;
-			}
-			break;
-			case Type::Code::Date:
-			{
-				auto val = static_cast<pg_time_t>(col->AsStrict<ColumnDate>()->At(row));
-				*valtype = DATEOID;
-				ret = DirectFunctionCall1(timestamp_date, time_t_to_timestamptz(val));
-			}
-			break;
-			case Type::Code::Date32:
-			{
-				auto val = static_cast<pg_time_t>(col->AsStrict<ColumnDate32>()->At(row));
-				*valtype = DATEOID;
-				ret = DirectFunctionCall1(timestamp_date, time_t_to_timestamptz(val));
-			}
-			break;
-			case Type::Code::DateTime:
-			{
-				auto val = static_cast<pg_time_t>(col->AsStrict<ColumnDateTime>()->At(row));
-				*valtype = TIMESTAMPTZOID;
-				ret = TimestampTzGetDatum(time_t_to_timestamptz(val));
-			}
-			break;
-			case Type::Code::DateTime64:
-			{
-				auto  dt_col = col->AsStrict<ColumnDateTime64>();
-				auto  val = dt_col->At(row);
-				int64 power = pow(10, dt_col->GetPrecision());
-				*valtype = TIMESTAMPTZOID;
-				ret = TimestampTzGetDatum(time_t_to_timestamptz(val / power)) + (val % power) * (USECS_PER_SEC / power);
-			}
-			break;
-			case Type::Code::UUID:
-			{
-				/* we form char[16] from two uint64 numbers, and they should
-				 * be big endian */
-				auto	   val = col->AsStrict<ColumnUUID>()->At(row);
-				pg_uuid_t *uuid_val = (pg_uuid_t *)exc_palloc(sizeof(pg_uuid_t));
-
-				val.first = HOST_TO_BIG_ENDIAN_64(val.first);
-				val.second = HOST_TO_BIG_ENDIAN_64(val.second);
-				memcpy(uuid_val->data, &val.first, 8);
-				memcpy(uuid_val->data + 8, &val.second, 8);
-
-				ret = UUIDPGetDatum(uuid_val);
-				*valtype = UUIDOID;
-			}
-			break;
-			case Type::Code::Nullable:
-			{
-				auto nullable = col->AsStrict<ColumnNullable>();
-				if (nullable->IsNull(row))
-				{
-					*is_null = true;
-				}
-				else
-				{
-					col = nullable->Nested();
-					goto nested_col;
-				}
-			}
-			break;
-			case Type::Code::Array:
-			{
-				auto   arr = col->AsStrict<ColumnArray>()->GetAsColumn(row);
-				size_t len = arr->Size();
-				auto   slot = (ch_binary_array_t *)exc_palloc(sizeof(ch_binary_array_t));
-
-				/* find leaf scalar type & nesting depth, since postgres has one
-				 * array type per element type regardless of ndim */
-				int	 ndim = 1;
-				auto leaf_type = arr->Type();
-				while (leaf_type->GetCode() == Type::Code::Array)
-				{
-					leaf_type = leaf_type->As<clickhouse::ArrayType>()->GetItemType();
-					ndim++;
-				}
-
-				Oid item_type = get_corr_postgres_type(leaf_type, get_element_type(*valtype));
-				Oid array_type = get_array_type(item_type);
-
-				if (array_type == InvalidOid)
-					throw std::runtime_error(std::string("pg_clickhouse: could not") + " find array type for "
-											 + std::to_string(item_type));
-
-				slot->len = len;
-				slot->ndim = ndim;
-				slot->array_type = array_type;
-				slot->item_type = item_type;
-
-				if (len > 0)
-				{
-					slot->datums = (Datum *)exc_palloc0(sizeof(Datum) * len);
-					slot->nulls = (bool *)exc_palloc0(sizeof(bool) * len);
-
-					/* For ndim==1 inner make_datum returns leaf scalars; for
-					 * ndim>1 it recurses into the Array branch and produces
-					 * nested ch_binary_array_t* values. Use a scratch valtype
-					 * to avoid clobbering slot->item_type. */
-					Oid scratch;
-					for (size_t i = 0; i < len; ++i)
-						slot->datums[i] = make_datum(arr, i, &scratch, &slot->nulls[i]);
-				}
-
-				/* this one will need additional work, since we just return raw slot */
-				ret = PointerGetDatum(slot);
-				*valtype = ANYARRAYOID;
-			}
-			break;
-			case Type::Code::Tuple:
-			{
-				auto tuple = col->AsStrict<ColumnTuple>();
-				auto len = tuple->TupleSize();
-
-				if (len == 0)
-					throw std::runtime_error("pg_clickhouse: returned tuple is empty");
-
-				auto slot = (ch_binary_tuple_t *)exc_palloc(sizeof(ch_binary_tuple_t));
-
-				slot->datums = (Datum *)exc_palloc(sizeof(Datum) * len);
-				slot->nulls = (bool *)exc_palloc0(sizeof(bool) * len);
-				slot->types = (Oid *)exc_palloc0(sizeof(Oid) * len);
-				slot->len = len;
-
-				for (size_t i = 0; i < len; ++i)
-					slot->datums[i] = make_datum((*tuple)[i], row, &slot->types[i], &slot->nulls[i]);
-
-				/* this one will need additional work, since we just return raw slot */
-				ret = PointerGetDatum(slot);
-				*valtype = RECORDOID;
-			}
-			break;
-			case Type::Code::LowCardinality:
-			{
-				auto item = col->AsStrict<ColumnLowCardinality>()->GetItem(row);
-				auto data = item.AsBinaryData();
-				ret = PointerGetDatum(cstring_to_text_with_len(data.data(), data.size()));
-				*valtype = TEXTOID;
-			}
-			break;
-			case Type::Code::IPv4:
-			{
-				auto item = col->AsStrict<ColumnIPv4>()->AsString(row);
-				ret = DirectFunctionCall1(inet_in, CStringGetDatum(item.c_str()));
-				*valtype = INETOID;
-			}
-			break;
-			case Type::Code::IPv6:
-			{
-				auto item = col->AsStrict<ColumnIPv6>()->AsString(row);
-				ret = DirectFunctionCall1(inet_in, CStringGetDatum(item.c_str()));
-				*valtype = INETOID;
-			}
-			break;
-			case Type::Code::JSON:
-			{
-				if (!*valtype)
-					*valtype = JSONBOID;
-				/* Sadly must copy to a null-terminated string as Postgres expects. */
-				auto item = std::string(col->AsStrict<ColumnJSON>()->At(row));
-				ret = DirectFunctionCall1(*valtype == JSONBOID ? jsonb_in : json_in, CStringGetDatum(item.c_str()));
-			}
-			break;
-			default:
-				throw std::runtime_error("unsupported type " + std::string(Type::TypeName(type_code))
-										 + " in binary protocol");
-		}
-
-		return ret;
-	}
-
-	/*
-	 * Read a row from state->block and fill state->values with the
-	 * corresponding values.
-	 */
-	bool
-	ch_binary_read_row(ch_binary_read_state_t *state, TupleDesc tupdesc, List *attrs)
-	{
-		/* coltypes is NULL means there are no blocks */
-		bool res = false;
-
-		if (state->done || state->coltypes == NULL || state->error)
-			return false;
-
-		assert(state->resp->values);
-		auto &values = *((std::vector<std::vector<clickhouse::ColumnRef>> *)state->resp->values);
-		try
-		{
-		again:
-			assert(state->block < state->resp->blocks_count);
-			auto  &block = values[state->block];
-			size_t row_count = block[0]->Size();
-
-			if (row_count == 0)
-				goto next_row;
-
-			for (size_t i = 0; i < state->resp->columns_count; i++)
-			{
-				/* fill value and null arrays */
-				state->values[i] = make_datum(block[i], state->row, &state->coltypes[i], &state->nulls[i]);
-			}
-			res = true;
-
-		next_row:
-			state->row++;
-			if (state->row >= row_count)
-			{
-				state->row = 0;
-				state->block++;
-				if (state->block >= state->resp->blocks_count)
-					state->done = true;
-				else if (row_count == 0)
-					goto again;
-			}
-		}
-		catch (const std::exception &e)
-		{
-			set_state_error(state, e.what());
-		}
-
-		return res;
-	}
-
-	void
-	ch_binary_read_state_free(ch_binary_read_state_t *state)
-	{
-		if (state->coltypes)
-		{
-			delete[] state->coltypes;
-			delete[] state->values;
-			delete[] state->nulls;
-		}
-
-		if (state->error)
-			free(state->error);
-	}
+#define UNEXPECTED_COLUMN(exp_type, col)                                                                               \
+    std::runtime_error("unexpected column type for " + std::string(exp_type) + ": " + (col)->Type()->GetName())
+
+/*
+ * Caller-supplied error buffer. Never allocates — PG runs with overcommit
+ * disabled, so a strdup(...) returning NULL silently dropped the message.
+ */
+static void
+set_errbuf(char *errbuf, size_t errbuf_size, const char *msg)
+{
+    if (!errbuf || errbuf_size == 0)
+        return;
+    std::snprintf(errbuf, errbuf_size, "%s", msg ? msg : "");
+}
+
+/* ---- Arena ---------------------------------------------------------- */
+
+/*
+ * Owns every malloc'd buffer, ch_type tree node and ch_block_column array
+ * referenced by materialised ch_block instances produced from a response.
+ * Stored as vectors of unique_ptr so growing the vector never invalidates
+ * pointers into already-owned objects.
+ */
+struct ChArena
+{
+    std::vector<std::unique_ptr<std::vector<uint8_t>>> bufs;
+    std::vector<std::unique_ptr<std::vector<uint64_t>>> u64s;
+    std::vector<std::unique_ptr<std::vector<ch_block_column>>> cols;
+    std::vector<std::unique_ptr<ch_type>> types;
+    std::vector<std::unique_ptr<std::string>> strings;
+    std::vector<std::unique_ptr<std::vector<ch_type *>>> child_arrs;
+    std::vector<std::unique_ptr<std::vector<char *>>> child_name_arrs;
+};
+
+static uint8_t *
+arena_alloc_bytes(ChArena &a, size_t n)
+{
+    auto p = std::make_unique<std::vector<uint8_t>>(n);
+    uint8_t *raw = p->data();
+    a.bufs.push_back(std::move(p));
+    return raw;
+}
+
+static uint64_t *
+arena_alloc_u64(ChArena &a, size_t n)
+{
+    auto p = std::make_unique<std::vector<uint64_t>>(n);
+    uint64_t *raw = p->data();
+    a.u64s.push_back(std::move(p));
+    return raw;
+}
+
+static ch_block_column *
+arena_alloc_cols(ChArena &a, size_t n)
+{
+    auto p = std::make_unique<std::vector<ch_block_column>>(n);
+    std::memset(p->data(), 0, n * sizeof(ch_block_column));
+    ch_block_column *raw = p->data();
+    a.cols.push_back(std::move(p));
+    return raw;
+}
+
+static ch_type *
+arena_alloc_type(ChArena &a)
+{
+    auto p = std::make_unique<ch_type>();
+    std::memset(p.get(), 0, sizeof(ch_type));
+    ch_type *raw = p.get();
+    a.types.push_back(std::move(p));
+    return raw;
+}
+
+static char *
+arena_alloc_string(ChArena &a, const std::string &s)
+{
+    auto p = std::make_unique<std::string>(s);
+    char *raw = p->data();
+    a.strings.push_back(std::move(p));
+    return raw;
+}
+
+/* ---- Type-tree construction from clickhouse-cpp TypeRef ------------- */
+
+static ch_type *build_ch_type(ChArena &arena, const TypeRef &t);
+
+static ch_type *
+build_ch_type(ChArena &arena, const TypeRef &t)
+{
+    ch_type *out = arena_alloc_type(arena);
+
+    switch (t->GetCode())
+    {
+        case Type::Void:    out->kind = CH_T_VOID; break;
+        case Type::Int8:    out->kind = CH_T_INT8; break;
+        case Type::Int16:   out->kind = CH_T_INT16; break;
+        case Type::Int32:   out->kind = CH_T_INT32; break;
+        case Type::Int64:   out->kind = CH_T_INT64; break;
+        case Type::Int128:  out->kind = CH_T_INT128; break;
+        case Type::UInt8:   out->kind = CH_T_UINT8; break;
+        case Type::UInt16:  out->kind = CH_T_UINT16; break;
+        case Type::UInt32:  out->kind = CH_T_UINT32; break;
+        case Type::UInt64:  out->kind = CH_T_UINT64; break;
+        case Type::UInt128: out->kind = CH_T_UINT128; break;
+        case Type::Float32: out->kind = CH_T_FLOAT32; break;
+        case Type::Float64: out->kind = CH_T_FLOAT64; break;
+        case Type::String:  out->kind = CH_T_STRING; break;
+        case Type::FixedString:
+            out->kind = CH_T_FIXEDSTRING;
+            out->fixed_size = (uint32_t) t->As<FixedStringType>()->GetSize();
+            break;
+        case Type::Date:    out->kind = CH_T_DATE; break;
+        case Type::Date32:  out->kind = CH_T_DATE32; break;
+        case Type::DateTime:
+            out->kind = CH_T_DATETIME;
+            out->tz = arena_alloc_string(arena, t->As<DateTimeType>()->Timezone());
+            break;
+        case Type::DateTime64:
+        {
+            auto dt = t->As<DateTime64Type>();
+            out->kind = CH_T_DATETIME64;
+            out->scale = (uint32_t) dt->GetPrecision();
+            out->tz = arena_alloc_string(arena, dt->Timezone());
+            break;
+        }
+        case Type::UUID:    out->kind = CH_T_UUID; break;
+        case Type::IPv4:    out->kind = CH_T_IPV4; break;
+        case Type::IPv6:    out->kind = CH_T_IPV6; break;
+        case Type::Enum8:   out->kind = CH_T_ENUM8; break;
+        case Type::Enum16:  out->kind = CH_T_ENUM16; break;
+        case Type::Decimal:
+        case Type::Decimal32:
+        case Type::Decimal64:
+        case Type::Decimal128:
+        {
+            auto d = t->As<DecimalType>();
+            switch (t->GetCode())
+            {
+                case Type::Decimal32:  out->kind = CH_T_DECIMAL32; break;
+                case Type::Decimal64:  out->kind = CH_T_DECIMAL64; break;
+                case Type::Decimal128: out->kind = CH_T_DECIMAL128; break;
+                default:               out->kind = CH_T_DECIMAL128; break;
+            }
+            out->decimal_precision = (uint32_t) d->GetPrecision();
+            out->decimal_scale = (uint32_t) d->GetScale();
+            break;
+        }
+        case Type::Nullable:
+            /*
+             * Nullability is tracked at the column level (is_nullable +
+             * nulls bitmap) by strip_nullable in materialize_column, so the
+             * type tree itself never carries CH_T_NULLABLE — return the
+             * inner type directly.
+             */
+            return build_ch_type(arena, t->As<NullableType>()->GetNestedType());
+        case Type::Array:
+        {
+            out->kind = CH_T_ARRAY;
+            auto child = t->As<clickhouse::ArrayType>()->GetItemType();
+            auto kids = std::make_unique<std::vector<ch_type *>>();
+            kids->push_back(build_ch_type(arena, child));
+            out->child = kids->data();
+            out->n_child = 1;
+            arena.child_arrs.push_back(std::move(kids));
+            break;
+        }
+        case Type::Tuple:
+        {
+            out->kind = CH_T_TUPLE;
+            auto items = t->As<TupleType>()->GetTupleType();
+            auto kids = std::make_unique<std::vector<ch_type *>>();
+            for (auto &c : items)
+                kids->push_back(build_ch_type(arena, c));
+            out->child = kids->data();
+            out->n_child = kids->size();
+            arena.child_arrs.push_back(std::move(kids));
+            break;
+        }
+        case Type::LowCardinality:
+            /* Surface as the underlying type for the PG side (preserves the
+             * legacy treatment of LowCardinality(String) as TEXT). */
+            return build_ch_type(arena, t->As<LowCardinalityType>()->GetNestedType());
+        default:
+            throw std::runtime_error("unsupported type " + t->GetName());
+    }
+    return out;
+}
+
+/* ---- Column materialisation: ColumnRef → ch_block_column ------------ */
+
+static void materialize_column(ChArena &arena, const std::string &name,
+                               ColumnRef col, ch_block_column *out);
+
+/* Strip Nullable wrapper; populate is_nullable + nulls in `out`. */
+static ColumnRef
+strip_nullable(ChArena &arena, ColumnRef col, ch_block_column *out, size_t rows)
+{
+    if (col->Type()->GetCode() != Type::Nullable)
+        return col;
+
+    auto n = col->AsStrict<ColumnNullable>();
+    uint8_t *mask = arena_alloc_bytes(arena, rows);
+    for (size_t i = 0; i < rows; i++)
+        mask[i] = n->IsNull(i) ? 1 : 0;
+    out->is_nullable = true;
+    out->nulls = mask;
+    return n->Nested();
+}
+
+static void
+materialize_primitive(ChArena &arena, ColumnRef col, ch_block_column *out,
+                      size_t elem_size)
+{
+    size_t rows = col->Size();
+    uint8_t *buf = arena_alloc_bytes(arena, rows * elem_size);
+
+    /* All ColumnVector<T>::At returns a const T&; copy by element. */
+    switch (col->Type()->GetCode())
+    {
+        case Type::Int8:
+            for (size_t i = 0; i < rows; i++)
+                ((int8_t *) buf)[i] = col->AsStrict<ColumnInt8>()->At(i);
+            break;
+        case Type::Int16:
+            for (size_t i = 0; i < rows; i++)
+                ((int16_t *) buf)[i] = col->AsStrict<ColumnInt16>()->At(i);
+            break;
+        case Type::Int32:
+            for (size_t i = 0; i < rows; i++)
+                ((int32_t *) buf)[i] = col->AsStrict<ColumnInt32>()->At(i);
+            break;
+        case Type::Int64:
+            for (size_t i = 0; i < rows; i++)
+                ((int64_t *) buf)[i] = col->AsStrict<ColumnInt64>()->At(i);
+            break;
+        case Type::UInt8:
+            for (size_t i = 0; i < rows; i++)
+                buf[i] = col->AsStrict<ColumnUInt8>()->At(i);
+            break;
+        case Type::UInt16:
+            for (size_t i = 0; i < rows; i++)
+                ((uint16_t *) buf)[i] = col->AsStrict<ColumnUInt16>()->At(i);
+            break;
+        case Type::UInt32:
+            for (size_t i = 0; i < rows; i++)
+                ((uint32_t *) buf)[i] = col->AsStrict<ColumnUInt32>()->At(i);
+            break;
+        case Type::UInt64:
+            for (size_t i = 0; i < rows; i++)
+                ((uint64_t *) buf)[i] = col->AsStrict<ColumnUInt64>()->At(i);
+            break;
+        case Type::Float32:
+            for (size_t i = 0; i < rows; i++)
+                ((float *) buf)[i] = col->AsStrict<ColumnFloat32>()->At(i);
+            break;
+        case Type::Float64:
+            for (size_t i = 0; i < rows; i++)
+                ((double *) buf)[i] = col->AsStrict<ColumnFloat64>()->At(i);
+            break;
+        default:
+            throw UNEXPECTED_COLUMN("primitive", col);
+    }
+    out->d.raw = buf;
+    out->num_rows = rows;
+}
+
+/*
+ * Layout strings/decimals/inet/enum names as (offsets, data). offsets[i] is
+ * the cumulative end byte offset for row i.
+ */
+struct StrBuilder
+{
+    std::vector<uint64_t> offs;
+    std::vector<uint8_t> data;
+};
+
+static void
+sb_push(StrBuilder &sb, const char *p, size_t n)
+{
+    sb.data.insert(sb.data.end(), (const uint8_t *) p, (const uint8_t *) p + n);
+    sb.offs.push_back(sb.data.size());
+}
+
+static void
+finish_str_builder(ChArena &arena, StrBuilder &sb, ch_block_column *out)
+{
+    uint64_t rows = sb.offs.size();
+    uint64_t *offs = arena_alloc_u64(arena, rows);
+    uint8_t *data = arena_alloc_bytes(arena, sb.data.size());
+    if (rows)
+        std::memcpy(offs, sb.offs.data(), rows * sizeof(uint64_t));
+    if (!sb.data.empty())
+        std::memcpy(data, sb.data.data(), sb.data.size());
+    out->d.str.offsets = offs;
+    out->d.str.data = data;
+    out->num_rows = rows;
+}
+
+static void
+materialize_string(ChArena &arena, ColumnRef col, ch_block_column *out)
+{
+    auto s = col->AsStrict<ColumnString>();
+    StrBuilder sb;
+    sb.offs.reserve(s->Size());
+    for (size_t i = 0; i < s->Size(); i++)
+    {
+        auto v = s->At(i);
+        sb_push(sb, v.data(), v.size());
+    }
+    finish_str_builder(arena, sb, out);
+}
+
+static void
+materialize_fixedstring(ChArena &arena, ColumnRef col, ch_block_column *out)
+{
+    auto s = col->AsStrict<ColumnFixedString>();
+    size_t width = col->Type()->As<FixedStringType>()->GetSize();
+    size_t rows = s->Size();
+    uint8_t *buf = arena_alloc_bytes(arena, rows * width);
+    for (size_t i = 0; i < rows; i++)
+    {
+        auto v = s->At(i);
+        std::memcpy(buf + i * width, v.data(), v.size());
+        if (v.size() < width)
+            std::memset(buf + i * width + v.size(), 0, width - v.size());
+    }
+    out->d.raw = buf;
+    out->num_rows = rows;
+}
+
+static void
+materialize_uuid(ChArena &arena, ColumnRef col, ch_block_column *out)
+{
+    auto u = col->AsStrict<ColumnUUID>();
+    size_t rows = u->Size();
+    uint8_t *buf = arena_alloc_bytes(arena, rows * 16);
+    for (size_t i = 0; i < rows; i++)
+    {
+        auto v = u->At(i);
+        uint64_t a = HOST_TO_BIG_ENDIAN_64(v.first);
+        uint64_t b = HOST_TO_BIG_ENDIAN_64(v.second);
+        std::memcpy(buf + i * 16, &a, 8);
+        std::memcpy(buf + i * 16 + 8, &b, 8);
+    }
+    out->d.raw = buf;
+    out->num_rows = rows;
+}
+
+/* Format Int128 with sign and decimal point honoring scale. */
+static std::string
+format_decimal(const Int128 &val, size_t scale)
+{
+    std::stringstream ss;
+    ss << val;
+    std::string str = ss.str();
+    std::stringstream res;
+
+    if (val < 0)
+    {
+        res << '-';
+        str.erase(0, 1);
+    }
+    if (scale == 0)
+    {
+        res << str;
+    }
+    else if (str.length() <= scale)
+    {
+        res << "0." << std::string(scale - str.length(), '0') << str;
+    }
+    else
+    {
+        auto decAt = str.length() - scale;
+        res << str.substr(0, decAt);
+        if (decAt < str.length())
+            res << '.' << str.substr(decAt);
+    }
+    return res.str();
+}
+
+static void
+materialize_decimal(ChArena &arena, ColumnRef col, ch_block_column *out)
+{
+    auto d = col->AsStrict<ColumnDecimal>();
+    size_t scale = (size_t) col->Type()->As<DecimalType>()->GetScale();
+    StrBuilder sb;
+    sb.offs.reserve(d->Size());
+    for (size_t i = 0; i < d->Size(); i++)
+    {
+        auto s = format_decimal(d->At(i), scale);
+        sb_push(sb, s.data(), s.size());
+    }
+    finish_str_builder(arena, sb, out);
+}
+
+static void
+materialize_enum(ChArena &arena, ColumnRef col, ch_block_column *out)
+{
+    StrBuilder sb;
+    /* NameAt() throws on values not present in the dict; nullable rows can
+     * hold arbitrary underlying ints, so emit empty for null rows. */
+    auto is_null = [out](size_t i) {
+        return out->is_nullable && out->nulls && out->nulls[i];
+    };
+    if (col->Type()->GetCode() == Type::Enum8)
+    {
+        auto e = col->AsStrict<ColumnEnum8>();
+        sb.offs.reserve(e->Size());
+        for (size_t i = 0; i < e->Size(); i++)
+        {
+            if (is_null(i))
+            {
+                sb_push(sb, "", 0);
+                continue;
+            }
+            auto v = e->NameAt(i);
+            sb_push(sb, v.data(), v.size());
+        }
+    }
+    else
+    {
+        auto e = col->AsStrict<ColumnEnum16>();
+        sb.offs.reserve(e->Size());
+        for (size_t i = 0; i < e->Size(); i++)
+        {
+            if (is_null(i))
+            {
+                sb_push(sb, "", 0);
+                continue;
+            }
+            auto v = e->NameAt(i);
+            sb_push(sb, v.data(), v.size());
+        }
+    }
+    finish_str_builder(arena, sb, out);
+}
+
+static void
+materialize_ip(ChArena &arena, ColumnRef col, ch_block_column *out)
+{
+    StrBuilder sb;
+    if (col->Type()->GetCode() == Type::IPv4)
+    {
+        auto ip = col->AsStrict<ColumnIPv4>();
+        sb.offs.reserve(ip->Size());
+        for (size_t i = 0; i < ip->Size(); i++)
+        {
+            auto s = ip->AsString(i);
+            sb_push(sb, s.data(), s.size());
+        }
+    }
+    else
+    {
+        auto ip = col->AsStrict<ColumnIPv6>();
+        sb.offs.reserve(ip->Size());
+        for (size_t i = 0; i < ip->Size(); i++)
+        {
+            auto s = ip->AsString(i);
+            sb_push(sb, s.data(), s.size());
+        }
+    }
+    finish_str_builder(arena, sb, out);
+}
+
+static void
+materialize_lowcardinality(ChArena &arena, ColumnRef col, ch_block_column *out)
+{
+    auto lc = col->AsStrict<ColumnLowCardinality>();
+    StrBuilder sb;
+    sb.offs.reserve(lc->Size());
+    for (size_t i = 0; i < lc->Size(); i++)
+    {
+        auto item = lc->GetItem(i);
+        auto bin = item.AsBinaryData();
+        sb_push(sb, bin.data(), bin.size());
+    }
+    finish_str_builder(arena, sb, out);
+}
+
+static void
+materialize_date_seconds(ChArena &arena, ColumnRef col, ch_block_column *out)
+{
+    size_t rows = col->Size();
+    uint8_t *buf = arena_alloc_bytes(arena, rows * sizeof(int64_t));
+    int64_t *typed = (int64_t *) buf;
+
+    switch (col->Type()->GetCode())
+    {
+        case Type::Date:
+            for (size_t i = 0; i < rows; i++)
+                typed[i] = (int64_t) col->AsStrict<ColumnDate>()->At(i);
+            break;
+        case Type::Date32:
+            for (size_t i = 0; i < rows; i++)
+                typed[i] = (int64_t) col->AsStrict<ColumnDate32>()->At(i);
+            break;
+        case Type::DateTime:
+            for (size_t i = 0; i < rows; i++)
+                typed[i] = (int64_t) col->AsStrict<ColumnDateTime>()->At(i);
+            break;
+        case Type::DateTime64:
+            for (size_t i = 0; i < rows; i++)
+                typed[i] = (int64_t) col->AsStrict<ColumnDateTime64>()->At(i);
+            break;
+        default:
+            throw UNEXPECTED_COLUMN("date/time", col);
+    }
+    out->d.raw = buf;
+    out->num_rows = rows;
+}
+
+static void
+materialize_array(ChArena &arena, ColumnRef col, ch_block_column *out)
+{
+    auto arr = col->AsStrict<ColumnArray>();
+    size_t rows = arr->Size();
+    uint64_t *offs = arena_alloc_u64(arena, rows);
+
+    /* Build a flat inner column by appending each row's slice. */
+    auto inner_type = arr->GetType().As<clickhouse::ArrayType>()->GetItemType();
+    ColumnRef inner = CreateColumnByType(inner_type->GetName());
+    uint64_t cum = 0;
+    for (size_t i = 0; i < rows; i++)
+    {
+        ColumnRef slice = arr->GetAsColumn(i);
+        inner->Append(slice);
+        cum += slice->Size();
+        offs[i] = cum;
+    }
+
+    ch_block_column *inner_col = arena_alloc_cols(arena, 1);
+    materialize_column(arena, std::string(), inner, inner_col);
+
+    out->d.arr.offsets = offs;
+    out->d.arr.inner = inner_col;
+    out->num_rows = rows;
+}
+
+static void
+materialize_tuple(ChArena &arena, ColumnRef col, ch_block_column *out)
+{
+    auto t = col->AsStrict<ColumnTuple>();
+    size_t n = t->TupleSize();
+    ch_block_column *fields = arena_alloc_cols(arena, n);
+    for (size_t i = 0; i < n; i++)
+        materialize_column(arena, std::string(), (*t)[i], &fields[i]);
+    out->d.tup.fields = fields;
+    out->num_rows = col->Size();
+}
+
+static void
+materialize_column(ChArena &arena, const std::string &name,
+                   ColumnRef col, ch_block_column *out)
+{
+    if (!name.empty())
+        out->name = arena_alloc_string(arena, name);
+
+    size_t rows = col->Size();
+    out->num_rows = rows;
+
+    ColumnRef inner = strip_nullable(arena, col, out, rows);
+
+    /* Underlying type after stripping Nullable. */
+    out->type = build_ch_type(arena, inner->Type());
+
+    switch (inner->Type()->GetCode())
+    {
+        case Type::Void:
+            /* ColumnNothing has no data; out->num_rows already set. */
+            break;
+        case Type::Int8:
+        case Type::UInt8:
+            materialize_primitive(arena, inner, out, 1);
+            break;
+        case Type::Int16:
+        case Type::UInt16:
+            materialize_primitive(arena, inner, out, 2);
+            break;
+        case Type::Int32:
+        case Type::UInt32:
+        case Type::Float32:
+            materialize_primitive(arena, inner, out, 4);
+            break;
+        case Type::Int64:
+        case Type::UInt64:
+        case Type::Float64:
+            materialize_primitive(arena, inner, out, 8);
+            break;
+        case Type::String:
+            materialize_string(arena, inner, out);
+            break;
+        case Type::FixedString:
+            materialize_fixedstring(arena, inner, out);
+            break;
+        case Type::UUID:
+            materialize_uuid(arena, inner, out);
+            break;
+        case Type::Decimal:
+        case Type::Decimal32:
+        case Type::Decimal64:
+        case Type::Decimal128:
+            materialize_decimal(arena, inner, out);
+            break;
+        case Type::Enum8:
+        case Type::Enum16:
+            materialize_enum(arena, inner, out);
+            break;
+        case Type::IPv4:
+        case Type::IPv6:
+            materialize_ip(arena, inner, out);
+            break;
+        case Type::LowCardinality:
+            materialize_lowcardinality(arena, inner, out);
+            break;
+        case Type::Date:
+        case Type::Date32:
+        case Type::DateTime:
+        case Type::DateTime64:
+            materialize_date_seconds(arena, inner, out);
+            break;
+        case Type::Array:
+            materialize_array(arena, inner, out);
+            break;
+        case Type::Tuple:
+            materialize_tuple(arena, inner, out);
+            break;
+        default:
+            throw UNEXPECTED_COLUMN("column", inner);
+    }
+}
+
+/* ---- response ------------------------------------------------------- */
+
+struct ch_binary_response_t
+{
+    std::vector<std::vector<ColumnRef>> blocks;
+    std::vector<std::string> column_names; /* names from block 0 */
+    size_t columns_count = 0;
+    /* Empty string => no error. std::string (not a fixed buffer) because
+     * ClickHouse errors can embed the full query and easily exceed CH_ERR_LEN. */
+    std::string error;
+    bool success = false;
+
+    /* materialised state */
+    std::vector<bool> mat_valid;
+    std::vector<ch_block> mat;
+    std::vector<std::unique_ptr<ChArena>> mat_arenas;
+};
+
+static void
+set_resp_error(ch_binary_response_t *resp, const char *str)
+{
+    if (!resp->error.empty())
+        return;
+    try
+    {
+        resp->error = (str && *str) ? str : "?";
+    }
+    catch (...)
+    {
+        /* bad_alloc fallback — must not leave error empty when one occurred. */
+        resp->error = "?";
+    }
+}
+
+ch_binary_connection_t *
+ch_binary_connect(ch_connection_details *details, char *errbuf, size_t errbuf_size)
+{
+    ClientOptions *options = nullptr;
+    ch_binary_connection_t *conn = nullptr;
+
+    try
+    {
+        options = new ClientOptions();
+        options->SetPingBeforeQuery(true);
+
+        if (details->host)
+        {
+            options->SetHost(std::string(details->host));
+            if (!details->port && ch_is_cloud_host(details->host))
+                options->SetPort(CLICKHOUSE_SECURE_PORT);
+        }
+        if (details->port)
+            options->SetPort(details->port);
+        if (details->dbname)
+            options->SetDefaultDatabase(std::string(details->dbname));
+        if (details->username)
+            options->SetUser(std::string(details->username));
+        if (details->password)
+            options->SetPassword(std::string(details->password));
+        if (options->port == CLICKHOUSE_SECURE_PORT)
+            options->SetSSLOptions(ClientOptions::SSLOptions());
+
+        conn = new ch_binary_connection_t();
+        Client *client = new Client(*options);
+        conn->client = client;
+        conn->options = options;
+    }
+    catch (const std::exception &e)
+    {
+        set_errbuf(errbuf, errbuf_size, e.what());
+        if (conn)
+            delete conn;
+        if (options)
+            delete options;
+        conn = nullptr;
+    }
+    return conn;
+}
+
+void
+ch_binary_close(ch_binary_connection_t *conn)
+{
+    delete (Client *) conn->client;
+    delete (ClientOptions *) conn->options;
+}
+
+static QuerySettings
+build_settings(const ch_query *query)
+{
+    kv_iter iter;
+    QuerySettings res;
+    for (iter = new_kv_iter(query->settings); !kv_iter_done(&iter); kv_iter_next(&iter))
+        res.insert_or_assign(iter.name, QuerySettingsField{iter.value, 1});
+    return res;
+}
+
+static QueryParams
+build_params(const ch_query *query)
+{
+    QueryParams res;
+    for (int i = 0; i < query->num_params; i++)
+    {
+        char key[32];
+        std::snprintf(key, sizeof(key), "p%d", i + 1);
+        res.insert_or_assign(key, QueryParamValue(query->param_values[i]));
+    }
+    return res;
+}
+
+ch_binary_response_t *
+ch_binary_simple_query(ch_binary_connection_t *conn, const ch_query *query,
+                       bool (*check_cancel)(void))
+{
+    Client *client = (Client *) conn->client;
+    auto *resp = new ch_binary_response_t();
+
+    try
+    {
+        client->Select(clickhouse::Query(query->sql)
+                           .SetQuerySettings(build_settings(query))
+                           .SetParams(build_params(query))
+                           .OnProgress([&check_cancel](const Progress &) {
+                               if (check_cancel && check_cancel())
+                                   throw std::runtime_error("query was canceled");
+                           })
+                           .OnDataCancelable([resp, &check_cancel](const Block &block) {
+                               if (check_cancel && check_cancel())
+                               {
+                                   set_resp_error(resp, "query was canceled");
+                                   return false;
+                               }
+                               if (block.GetColumnCount() == 0)
+                                   return true;
+                               if (resp->columns_count && block.GetColumnCount() != resp->columns_count)
+                               {
+                                   set_resp_error(resp, "columns mismatch in blocks");
+                                   return false;
+                               }
+                               if (resp->columns_count == 0)
+                               {
+                                   resp->columns_count = block.GetColumnCount();
+                                   resp->column_names.reserve(resp->columns_count);
+                                   for (Block::Iterator bi(block); bi.IsValid(); bi.Next())
+                                       resp->column_names.emplace_back(bi.Name());
+                               }
+                               std::vector<ColumnRef> vec;
+                               vec.reserve(resp->columns_count);
+                               for (size_t i = 0; i < resp->columns_count; ++i)
+                                   vec.push_back(block[i]);
+                               resp->blocks.push_back(std::move(vec));
+                               return true;
+                           }));
+    }
+    catch (const std::exception &e)
+    {
+        client->ResetConnection();
+        resp->blocks.clear();
+        set_resp_error(resp, e.what());
+    }
+
+    resp->success = resp->error.empty();
+    resp->mat.resize(resp->blocks.size());
+    resp->mat_valid.assign(resp->blocks.size(), false);
+    resp->mat_arenas.resize(resp->blocks.size());
+    return resp;
+}
+
+void
+ch_binary_response_free(ch_binary_response_t *resp)
+{
+    delete resp;
+}
+
+const char *
+ch_binary_response_error(const ch_binary_response_t *resp)
+{
+    return (resp && !resp->error.empty()) ? resp->error.c_str() : nullptr;
+}
+
+bool
+ch_binary_response_success(const ch_binary_response_t *resp)
+{
+    return resp && resp->success;
+}
+
+size_t
+ch_binary_response_block_count(const ch_binary_response_t *resp)
+{
+    return resp ? resp->blocks.size() : 0;
+}
+
+size_t
+ch_binary_response_columns(const ch_binary_response_t *resp)
+{
+    return resp ? resp->columns_count : 0;
+}
+
+int
+ch_binary_response_block_at(ch_binary_response_t *resp, size_t idx,
+                            ch_block *out, char *errbuf, size_t errbuf_size)
+{
+    if (idx >= resp->blocks.size())
+    {
+        set_errbuf(errbuf, errbuf_size, "pg_clickhouse: block index out of range");
+        return -1;
+    }
+    if (resp->mat_valid[idx])
+    {
+        *out = resp->mat[idx];
+        return 0;
+    }
+
+    try
+    {
+        auto arena = std::make_unique<ChArena>();
+        auto &block_cols = resp->blocks[idx];
+        size_t ncols = resp->columns_count;
+        ch_block_column *out_cols = arena_alloc_cols(*arena, ncols);
+        uint64_t nrows = ncols ? block_cols[0]->Size() : 0;
+
+        for (size_t i = 0; i < ncols; i++)
+            materialize_column(*arena, resp->column_names[i], block_cols[i], &out_cols[i]);
+
+        ch_block blk{};
+        blk.num_columns = ncols;
+        blk.num_rows = nrows;
+        blk.columns = out_cols;
+        blk.arena = arena.get();
+        resp->mat[idx] = blk;
+        resp->mat_valid[idx] = true;
+        resp->mat_arenas[idx] = std::move(arena);
+        *out = blk;
+        return 0;
+    }
+    catch (const std::exception &e)
+    {
+        set_errbuf(errbuf, errbuf_size, e.what());
+        return -1;
+    }
+}
+
+void
+ch_block_free(ch_block * /*blk*/)
+{
+    /* No-op: response_free owns the arena. */
+}
+
+/* ---- INSERT --------------------------------------------------------- */
+
+struct ch_binary_insert_handle
+{
+    Client *client = nullptr;     /* borrowed; owned by connection */
+    Block *block = nullptr;       /* owned here */
+    ChArena type_arena;           /* owns ch_type trees */
+    std::vector<ch_binary_column_info> infos;
+    std::vector<std::string> name_storage;
+
+    /*
+     * Active array context. For nested Array(Array(...)) writes each
+     * ch_binary_array_begin pushes a new items column; stack.back() is
+     * the current append target. array_col_idx names the outermost
+     * column when stack is non-empty.
+     */
+    std::vector<ColumnRef> array_stack;
+    size_t array_col_idx = 0;
+
+    ~ch_binary_insert_handle()
+    {
+        delete block;
+    }
+};
+
+ch_binary_insert_handle *
+ch_binary_begin_insert(ch_binary_connection_t *conn, const ch_query *query,
+                       ch_binary_column_info **out_cols, size_t *out_n,
+                       char *errbuf, size_t errbuf_size)
+{
+    auto h = std::unique_ptr<ch_binary_insert_handle>(new ch_binary_insert_handle());
+    h->client = (Client *) conn->client;
+
+    try
+    {
+        h->block = new Block(h->client->BeginInsert(std::string(query->sql) + " VALUES"));
+    }
+    catch (const std::exception &e)
+    {
+        h->client->ResetConnection();
+        set_errbuf(errbuf, errbuf_size, e.what());
+        return nullptr;
+    }
+
+    size_t n = h->block->GetColumnCount();
+    h->infos.resize(n);
+    h->name_storage.reserve(n);
+    size_t i = 0;
+    for (Block::Iterator bi(*h->block); bi.IsValid(); bi.Next())
+    {
+        h->name_storage.emplace_back(bi.Name());
+        h->infos[i].name = h->name_storage[i].c_str();
+        TypeRef t = bi.Type();
+        bool is_nullable = (t->GetCode() == Type::Nullable);
+        if (is_nullable)
+            t = t->As<NullableType>()->GetNestedType();
+        try
+        {
+            h->infos[i].type = build_ch_type(h->type_arena, t);
+        }
+        catch (const std::exception &e)
+        {
+            set_errbuf(errbuf, errbuf_size, e.what());
+            return nullptr;
+        }
+        h->infos[i].is_nullable = is_nullable;
+        i++;
+    }
+    *out_cols = h->infos.data();
+    *out_n = n;
+    return h.release();
+}
+
+/*
+ * Resolve the column to append to (top-level or active array's inner)
+ * AND strip a Nullable wrapper, appending the null bit if needed.
+ *
+ * Throws on NULL-into-non-Nullable.
+ */
+static ColumnRef
+resolve_append_col(ch_binary_insert_handle *h, size_t col_idx, bool isnull)
+{
+    ColumnRef col;
+    if (!h->array_stack.empty())
+        col = h->array_stack.back();
+    else
+        col = (*h->block)[col_idx];
+
+    bool is_nullable = (col->Type()->GetCode() == Type::Nullable);
+    if (isnull && !is_nullable)
+        throw std::runtime_error("cannot append NULL to NOT NULL " + col->Type()->GetName() + " column");
+    if (is_nullable)
+    {
+        auto n = col->AsStrict<ColumnNullable>();
+        n->Append(isnull);
+        col = n->Nested();
+    }
+    return col;
+}
+
+template <class F>
+static int
+guarded(char *errbuf, size_t errbuf_size, F &&f)
+{
+    try
+    {
+        f();
+        return 0;
+    }
+    catch (const std::exception &e)
+    {
+        set_errbuf(errbuf, errbuf_size, e.what());
+        return -1;
+    }
+}
+
+int
+ch_binary_append_int(ch_binary_insert_handle *h, size_t col, int64_t val,
+                     bool isnull, char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef c = resolve_append_col(h, col, isnull);
+        switch (c->Type()->GetCode())
+        {
+            case Type::Int8:  c->AsStrict<ColumnInt8>()->Append((int8_t) val); break;
+            case Type::Int16: c->AsStrict<ColumnInt16>()->Append((int16_t) val); break;
+            case Type::Int32: c->AsStrict<ColumnInt32>()->Append((int32_t) val); break;
+            case Type::Int64: c->AsStrict<ColumnInt64>()->Append((int64_t) val); break;
+            default:
+                throw UNEXPECTED_COLUMN("int", c);
+        }
+    });
+}
+
+int
+ch_binary_append_uint(ch_binary_insert_handle *h, size_t col, uint64_t val,
+                      bool isnull, char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef c = resolve_append_col(h, col, isnull);
+        switch (c->Type()->GetCode())
+        {
+            case Type::UInt8:  c->AsStrict<ColumnUInt8>()->Append((uint8_t) val); break;
+            case Type::UInt16: c->AsStrict<ColumnUInt16>()->Append((uint16_t) val); break;
+            case Type::UInt32: c->AsStrict<ColumnUInt32>()->Append((uint32_t) val); break;
+            case Type::UInt64: c->AsStrict<ColumnUInt64>()->Append((uint64_t) val); break;
+            default:
+                throw UNEXPECTED_COLUMN("uint", c);
+        }
+    });
+}
+
+int
+ch_binary_append_double(ch_binary_insert_handle *h, size_t col, double val,
+                        bool isnull, char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef c = resolve_append_col(h, col, isnull);
+        if (c->Type()->GetCode() != Type::Float64)
+            throw UNEXPECTED_COLUMN("Float64", c);
+        c->AsStrict<ColumnFloat64>()->Append(val);
+    });
+}
+
+int
+ch_binary_append_float(ch_binary_insert_handle *h, size_t col, float val,
+                       bool isnull, char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef c = resolve_append_col(h, col, isnull);
+        if (c->Type()->GetCode() != Type::Float32)
+            throw UNEXPECTED_COLUMN("Float32", c);
+        c->AsStrict<ColumnFloat32>()->Append(val);
+    });
+}
+
+int
+ch_binary_append_bytes(ch_binary_insert_handle *h, size_t col, const void *p,
+                       size_t n, bool isnull, char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef c = resolve_append_col(h, col, isnull);
+        std::string s;
+        if (!isnull && p && n > 0)
+            s.assign((const char *) p, n);
+        switch (c->Type()->GetCode())
+        {
+            case Type::FixedString:
+                c->AsStrict<ColumnFixedString>()->Append(s);
+                break;
+            case Type::String:
+                c->AsStrict<ColumnString>()->Append(s);
+                break;
+            case Type::Enum8:
+                if (isnull)
+                    c->AsStrict<ColumnEnum8>()->Append(0, false);
+                else
+                    c->AsStrict<ColumnEnum8>()->Append(s);
+                break;
+            case Type::Enum16:
+                if (isnull)
+                    c->AsStrict<ColumnEnum16>()->Append(0, false);
+                else
+                    c->AsStrict<ColumnEnum16>()->Append(s);
+                break;
+            case Type::LowCardinality:
+                if (c->AsStrict<ColumnLowCardinality>()->GetNestedType()->GetCode() == Type::Nullable)
+                    throw std::runtime_error("nested Nullable is not supported");
+                c->AsStrict<ColumnLowCardinalityT<ColumnString>>()->Append(s);
+                break;
+            default:
+                throw UNEXPECTED_COLUMN("text", c);
+        }
+    });
+}
+
+int
+ch_binary_append_decimal(ch_binary_insert_handle *h, size_t col,
+                         const char *digits, bool isnull,
+                         char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef c = resolve_append_col(h, col, isnull);
+        switch (c->Type()->GetCode())
+        {
+            case Type::Decimal:
+            case Type::Decimal32:
+            case Type::Decimal64:
+            case Type::Decimal128:
+                if (isnull || !digits)
+                    c->AsStrict<ColumnDecimal>()->Append(Int128{});
+                else
+                    c->AsStrict<ColumnDecimal>()->Append(std::string(digits));
+                break;
+            default:
+                throw UNEXPECTED_COLUMN("decimal", c);
+        }
+    });
+}
+
+int
+ch_binary_append_uuid(ch_binary_insert_handle *h, size_t col,
+                      const uint8_t bytes[16], bool isnull,
+                      char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef c = resolve_append_col(h, col, isnull);
+        if (c->Type()->GetCode() != Type::UUID)
+            throw UNEXPECTED_COLUMN("UUID", c);
+        UUID u{};
+        if (!isnull)
+        {
+            uint64_t a, b;
+            std::memcpy(&a, bytes, 8);
+            std::memcpy(&b, bytes + 8, 8);
+            u.first = BIG_ENDIAN_64_TO_HOST(a);
+            u.second = BIG_ENDIAN_64_TO_HOST(b);
+        }
+        c->AsStrict<ColumnUUID>()->Append(u);
+    });
+}
+
+int
+ch_binary_append_inet(ch_binary_insert_handle *h, size_t col,
+                      const char *ip_text, bool isnull,
+                      char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef c = resolve_append_col(h, col, isnull);
+        if (isnull || !ip_text)
+        {
+            switch (c->Type()->GetCode())
+            {
+                case Type::IPv4: c->AsStrict<ColumnIPv4>()->Append(0); break;
+                case Type::IPv6: c->AsStrict<ColumnIPv6>()->Append("::"); break;
+                default: throw UNEXPECTED_COLUMN("INET", c);
+            }
+        }
+        else
+        {
+            switch (c->Type()->GetCode())
+            {
+                case Type::IPv4: c->AsStrict<ColumnIPv4>()->Append(ip_text); break;
+                case Type::IPv6: c->AsStrict<ColumnIPv6>()->Append(ip_text); break;
+                default: throw UNEXPECTED_COLUMN("INET", c);
+            }
+        }
+    });
+}
+
+int
+ch_binary_append_date_seconds(ch_binary_insert_handle *h, size_t col,
+                              int64_t seconds, bool isnull,
+                              char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef c = resolve_append_col(h, col, isnull);
+        switch (c->Type()->GetCode())
+        {
+            case Type::Date:   c->AsStrict<ColumnDate>()->Append((std::time_t) seconds); break;
+            case Type::Date32: c->AsStrict<ColumnDate32>()->Append((std::time_t) seconds); break;
+            default: throw UNEXPECTED_COLUMN("DATE", c);
+        }
+    });
+}
+
+int
+ch_binary_append_datetime_seconds(ch_binary_insert_handle *h, size_t col,
+                                  int64_t seconds, bool isnull,
+                                  char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef c = resolve_append_col(h, col, isnull);
+        if (c->Type()->GetCode() != Type::DateTime)
+            throw UNEXPECTED_COLUMN("DateTime", c);
+        c->AsStrict<ColumnDateTime>()->Append((std::time_t) seconds);
+    });
+}
+
+int
+ch_binary_append_datetime64_raw(ch_binary_insert_handle *h, size_t col,
+                                int64_t raw, bool isnull,
+                                char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef c = resolve_append_col(h, col, isnull);
+        if (c->Type()->GetCode() != Type::DateTime64)
+            throw UNEXPECTED_COLUMN("DateTime64", c);
+        c->AsStrict<ColumnDateTime64>()->Append(raw);
+    });
+}
+
+int
+ch_binary_array_begin(ch_binary_insert_handle *h, size_t col_idx, size_t,
+                      char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        ColumnRef parent;
+        if (h->array_stack.empty())
+        {
+            parent = (*h->block)[col_idx];
+            h->array_col_idx = col_idx;
+        }
+        else
+            parent = h->array_stack.back();
+
+        /* Top-level column may be Nullable(Array(...)); CH disallows
+         * Nullable inside Array so only the outer level needs unwrapping. */
+        if (parent->Type()->GetCode() == Type::Nullable)
+            parent = parent->AsStrict<ColumnNullable>()->Nested();
+        if (parent->Type()->GetCode() != Type::Array)
+            throw UNEXPECTED_COLUMN("array", parent);
+
+        auto arrcol = parent->AsStrict<ColumnArray>();
+        auto items =
+            CreateColumnByType(arrcol->GetType().As<clickhouse::ArrayType>()->GetItemType()->GetName());
+        h->array_stack.push_back(items);
+    });
+}
+
+int
+ch_binary_array_end(ch_binary_insert_handle *h, char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        if (h->array_stack.empty())
+            throw std::runtime_error("ch_binary_array_end without matching begin");
+
+        ColumnRef inner = h->array_stack.back();
+        h->array_stack.pop_back();
+
+        ColumnRef parent;
+        if (h->array_stack.empty())
+            parent = (*h->block)[h->array_col_idx];
+        else
+            parent = h->array_stack.back();
+        if (parent->Type()->GetCode() == Type::Nullable)
+            parent = parent->AsStrict<ColumnNullable>()->Nested();
+        parent->AsStrict<ColumnArray>()->AppendAsColumn(inner);
+    });
+}
+
+bool
+ch_binary_array_active(const ch_binary_insert_handle *h)
+{
+    return h && !h->array_stack.empty();
+}
+
+ch_type_kind
+ch_binary_column_kind(const ch_binary_insert_handle *h, size_t col)
+{
+    ColumnRef c;
+    if (!h->array_stack.empty())
+        c = h->array_stack.back();
+    else
+        c = (*h->block)[col];
+
+    /* Strip Nullable. */
+    if (c->Type()->GetCode() == Type::Nullable)
+        c = c->AsStrict<ColumnNullable>()->Nested();
+
+    switch (c->Type()->GetCode())
+    {
+        case Type::Int8:        return CH_T_INT8;
+        case Type::Int16:       return CH_T_INT16;
+        case Type::Int32:       return CH_T_INT32;
+        case Type::Int64:       return CH_T_INT64;
+        case Type::UInt8:       return CH_T_UINT8;
+        case Type::UInt16:      return CH_T_UINT16;
+        case Type::UInt32:      return CH_T_UINT32;
+        case Type::UInt64:      return CH_T_UINT64;
+        case Type::Float32:     return CH_T_FLOAT32;
+        case Type::Float64:     return CH_T_FLOAT64;
+        case Type::String:      return CH_T_STRING;
+        case Type::FixedString: return CH_T_FIXEDSTRING;
+        case Type::Date:        return CH_T_DATE;
+        case Type::Date32:      return CH_T_DATE32;
+        case Type::DateTime:    return CH_T_DATETIME;
+        case Type::DateTime64:  return CH_T_DATETIME64;
+        case Type::UUID:        return CH_T_UUID;
+        case Type::IPv4:        return CH_T_IPV4;
+        case Type::IPv6:        return CH_T_IPV6;
+        case Type::Enum8:       return CH_T_ENUM8;
+        case Type::Enum16:      return CH_T_ENUM16;
+        case Type::Decimal:
+        case Type::Decimal32:   return CH_T_DECIMAL32;
+        case Type::Decimal64:   return CH_T_DECIMAL64;
+        case Type::Decimal128:  return CH_T_DECIMAL128;
+        case Type::Array:       return CH_T_ARRAY;
+        case Type::Tuple:       return CH_T_TUPLE;
+        case Type::LowCardinality: return CH_T_LOWCARDINALITY;
+        default:                return CH_T_UNKNOWN;
+    }
+}
+
+uint32_t
+ch_binary_column_datetime64_precision(const ch_binary_insert_handle *h, size_t col)
+{
+    ColumnRef c;
+    if (!h->array_stack.empty())
+        c = h->array_stack.back();
+    else
+        c = (*h->block)[col];
+
+    if (c->Type()->GetCode() == Type::Nullable)
+        c = c->AsStrict<ColumnNullable>()->Nested();
+    if (c->Type()->GetCode() != Type::DateTime64)
+        return 0;
+    return (uint32_t) c->Type()->As<DateTime64Type>()->GetPrecision();
+}
+
+int
+ch_binary_flush_block(ch_binary_insert_handle *h, char *errbuf, size_t errbuf_size)
+{
+    return guarded(errbuf, errbuf_size, [&] {
+        h->block->RefreshRowCount();
+        try
+        {
+            h->client->SendInsertBlock(*h->block);
+            h->block->Clear();
+        }
+        catch (...)
+        {
+            h->client->ResetConnection();
+            throw;
+        }
+    });
+}
+
+void
+ch_binary_end_insert(ch_binary_insert_handle *h, char *errbuf, size_t errbuf_size)
+{
+    if (!h)
+        return;
+    try
+    {
+        h->client->EndInsert();
+    }
+    catch (const std::exception &e)
+    {
+        h->client->ResetConnection();
+        set_errbuf(errbuf, errbuf_size, e.what());
+    }
+    delete h;
 }

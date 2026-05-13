@@ -19,7 +19,7 @@
 #include "fdw.h"
 #include "http.h"
 #include "http_streaming.h"
-#include "binary.hh"
+#include "binary_pg.h"
 
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -818,29 +818,15 @@ http_insert_tuple(void *istate, TupleTableSlot * slot)
 ch_connection
 chfdw_binary_connect(ch_connection_details * details)
 {
-	char	   *ch_error = NULL;
+	char		errbuf[CH_ERR_LEN] = {0};
 	ch_connection res;
-	ch_binary_connection_t *conn = ch_binary_connect(details, &ch_error);
+	ch_binary_connection_t *conn = ch_binary_connect(details, errbuf, sizeof(errbuf));
 
 	if (conn == NULL)
-	{
-		if (ch_error == NULL)
-		{
-			ereport(ERROR,
-					(errcode(ERRCODE_FDW_OUT_OF_MEMORY),
-					 errmsg("out of memory")));
-		}
-		else
-		{
-			char	   *error = pstrdup(ch_error);
-
-			free(ch_error);
-
-			ereport(ERROR,
-					(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-					 errmsg("pg_clickhouse: connection error: %s", error)));
-		}
-	}
+		ereport(ERROR,
+				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
+				 errmsg("pg_clickhouse: connection error: %s",
+						errbuf[0] ? errbuf : "unknown")));
 
 	res.conn = conn;
 	res.methods = &binary_methods;
@@ -865,9 +851,9 @@ binary_simple_query(void *conn, const ch_query * query)
 
 	ch_binary_response_t *resp = ch_binary_simple_query(conn, query, &is_canceled);
 
-	if (!resp->success)
+	if (!ch_binary_response_success(resp))
 	{
-		char	   *error = pstrdup(resp->error);
+		char	   *error = pstrdup(ch_binary_response_error(resp));
 
 		ch_binary_response_free(resp);
 		ereport(ERROR, (
@@ -887,8 +873,8 @@ binary_simple_query(void *conn, const ch_query * query)
 	state = (ch_binary_read_state_t *) palloc0(sizeof(ch_binary_read_state_t));
 	cursor->query = pstrdup(query->sql);
 	cursor->read_state = state;
-	cursor->columns_count = resp->columns_count;
-	ch_binary_read_state_init(cursor->read_state, resp, query);
+	cursor->columns_count = ch_binary_response_columns(resp);
+	ch_binary_read_state_init(cursor->read_state, resp);
 	cursor->conversion_states = palloc0(sizeof(uintptr_t) * cursor->columns_count);
 
 	cursor->memcxt = tempcxt;
@@ -933,7 +919,7 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 	Datum	   *values = ctx->values;
 	bool	   *nulls = ctx->nulls;
 	ch_binary_read_state_t *state = cursor->read_state;
-	bool		have_data = ch_binary_read_row(state, tupdesc, attrs);
+	bool		have_data = ch_binary_read_row(state);
 	size_t		attcount = list_length(attrs);
 
 	if (state->error)
@@ -947,7 +933,7 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 
 	if (attcount == 0)
 	{
-		if (state->resp->columns_count == 1 && state->nulls[0])
+		if (ch_binary_response_columns(state->resp) == 1 && state->nulls[0])
 		{
 			nulls[0] = true;
 			goto ok;
@@ -958,14 +944,14 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 					 errmsg("pg_clickhouse: unexpected state: attributes "
 							"count == 0 and haven't got NULL in the response")));
 	}
-	else if (attcount != state->resp->columns_count)
+	else if (attcount != ch_binary_response_columns(state->resp))
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
 				 errmsg_internal("pg_clickhouse: columns mismatch"),
 				 errdetail("Number of returned columns (%lu) does not match "
 						   "expected column count (%lu).",
-						   state->resp->columns_count, attcount)));
+						   ch_binary_response_columns(state->resp), attcount)));
 	}
 
 	if (tupdesc)
