@@ -29,11 +29,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cache Vendor Build
-        uses: actions/cache@v4
-        with:
-          path: vendor/_build
-          key: ${{ runner.os }}-vendor-build
       - name: Set Bake Variables
         run: make bake-vars REGISTRY=ghcr.io/clickhouse PG_VERSIONS=${{ matrix.pgv }} >> $GITHUB_ENV
       - name: Build${{ startsWith(github.ref, 'refs/tags') && ' and Push' || '' }}

@@ -36,7 +36,7 @@
 
 /* extension includes. */
 #include "utils/builtins.h"
-#include "binary_pg.h"
+#include "binary.h"
 #include "internal.h"
 #include "fdw.h"
 #include "version.h"
@@ -1420,6 +1420,15 @@ clickhouseEndForeignInsert(EState * estate,
 		/* flush */
 		oldcontext = MemoryContextSwitchTo(fmstate->temp_cxt);
 		fmstate->conn.methods->insert_tuple(fmstate->state, NULL);
+
+		/*
+		 * Finalize on the happy path so the binary driver can ereport on a
+		 * server-side INSERT exception without raising from inside the
+		 * MemoryContext reset callback that fires during abort.
+		 */
+		if (fmstate->conn.methods->finalize_insert)
+			fmstate->conn.methods->finalize_insert(fmstate->state);
+
 		MemoryContextSwitchTo(oldcontext);
 		MemoryContextReset(fmstate->temp_cxt);
 

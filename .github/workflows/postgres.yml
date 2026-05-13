@@ -19,7 +19,7 @@ jobs:
     container: pgxn/pgxn-tools
     steps:
       - name: Start Postgres ${{ matrix.pg }}
-        run: pg-start ${{ matrix.pg }} libcurl4-openssl-dev uuid-dev libre2-dev
+        run: pg-start ${{ matrix.pg }} libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev libre2-dev
       - name: Install Extensions
         run: pgxn install re2
       - name: Checkout the Repository
@@ -27,19 +27,5 @@ jobs:
         with: { submodules: true }
       - name: Start ClickHouse
         run: .github/ubuntu/clickhouse.sh
-      - name: Cache Dependencies
-        uses: actions/cache@v5
-        with:
-          path: vendor/_build/*
-          key: vendor-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.git/modules/clickhouse-cpp/refs/heads/master') }}
-      # Required to prevent clickhouse-cpp from rebuilding because it depends
-      # on this file in the Makefile. https://github.com/actions/checkout/issues/968
-      - name: Reset Vendor Timestamp
-        run: cd vendor/clickhouse-cpp && touch -d $(git log -1 --format="@%ct" CMakeLists.txt) CMakeLists.txt
-      - name: Test DSO
+      - name: Test
         run: pg-build-test
-      - name: Clean
-        run: make clean NO_VENDOR_CLEAN=1
-      - name: Test Static
-        run: pg-build-test
-        env: { CH_BUILD: static }

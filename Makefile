@@ -16,97 +16,38 @@ CURL_CONFIG ?= curl-config
 OS 	        ?= $(shell uname -s | tr A-Z a-z)
 ARCH         = $(shell uname -m)
 
-# Collect all the C++ and C files to compile into MODULE_big.
-OBJS = $(subst .cpp,.o, $(wildcard src/*.cpp src/*/*.cpp)) \
-       $(subst .c,.o, $(wildcard src/*.c src/*/*.c))
+# Collect all the C files to compile into MODULE_big.
+OBJS = $(subst .c,.o, $(wildcard src/*.c src/*/*.c))
 
-# Build static on Darwin by default.
-ifndef CH_BUILD
-# ifeq ($(OS),darwin)
-	CH_BUILD = static
-# else
-# 	CH_BUILD = dynamic
-# endif
-endif
-
-# clickhouse-cpp source and build directories.
-CH_CPP_DIR = vendor/clickhouse-cpp
-CH_CPP_BUILD_DIR = vendor/_build/$(OS)-$(ARCH)-$(CH_BUILD)-$(shell git submodule status $(CH_CPP_DIR) | awk '{print substr($$1, 0, 7)}')
-
-# List the clickhouse-cpp libraries we require.
-CH_CPP_LIB = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib$(DLSUFFIX)
-CH_CPP_FLAGS = -D CMAKE_BUILD_TYPE=Release -D WITH_OPENSSL=ON
-
-# Are we statically compiling clickhouse-cpp into the extension or no?
-ifeq ($(CH_BUILD), static)
-# We'll need all the clickhouse-cpp static libraries.
-	CH_CPP_LIB = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib.a
-	SHLIB_LINK = $(CH_CPP_LIB) \
-	  $(CH_CPP_BUILD_DIR)/contrib/cityhash/cityhash/libcityhash.a \
-	  $(CH_CPP_BUILD_DIR)/contrib/absl/absl/libabsl_int128.a \
-	  $(CH_CPP_BUILD_DIR)/contrib/lz4/lz4/liblz4.a \
-	  $(CH_CPP_BUILD_DIR)/contrib/zstd/zstd/libzstdstatic.a
-else
-#   Build and install the shared library.
-	SHLIB_LINK = -L$(CH_CPP_BUILD_DIR)/clickhouse -lclickhouse-cpp-lib
-	CH_CPP_FLAGS += -D BUILD_SHARED_LIBS=ON
-endif
+# clickhouse-c is a header-only single-header library. Override
+# CH_C_DIR to point elsewhere when developing against a local checkout.
+CH_C_DIR ?= vendor/clickhouse-c
 
 # Add include directories.
-PG_CPPFLAGS = -I./src/include -I$(CH_CPP_DIR) -I$(CH_CPP_DIR)/contrib/absl
+PG_CPPFLAGS = -I./src/include -I$(CH_C_DIR)
 
-# Include other libraries compiled into clickhouse-cpp.
-PG_LDFLAGS = -lstdc++ -lssl -lcrypto $(shell $(CURL_CONFIG) --libs)
+# Link OpenSSL (for TLS in the binary driver), curl (for the HTTP driver),
+# libuuid (for http_streaming.c's query-id generator), and lz4 / zstd
+# (for the binary driver's compressed-frame codecs).
+PG_LDFLAGS = -lssl -lcrypto -llz4 -lzstd $(shell $(CURL_CONFIG) --libs)
 
-# clickhouse-cpp requires C++ v17.
-PG_CXXFLAGS = -std=c++17
-
-# Suppress annoying pre-c99 warning and include curl flags.
-PG_CFLAGS = -Wno-declaration-after-statement -Werror=type-limits $(shell $(CURL_CONFIG) --cflags)
-
-# We'll need libuuid except on darwin, where it's included in the OS.
+# libuuid is provided by the OS on darwin; explicit link elsewhere.
 ifneq ($(OS),darwin)
 	PG_LDFLAGS += -luuid
 endif
 
-# Clean up the clickhouse-cpp build directory and generated files.
+# Suppress annoying pre-c99 warning and include curl flags.
+PG_CFLAGS = -Wno-declaration-after-statement -Werror=type-limits $(shell $(CURL_CONFIG) --cflags)
+
+# Clean up generated files.
 EXTRA_CLEAN = sql/$(EXTENSION)--$(EXTVERSION).sql src/include/version.h compile_commands.json test/schedule $(EXTENSION)-$(DISTVERSION).zip
-ifndef NO_VENDOR_CLEAN
-	EXTRA_CLEAN += $(CH_CPP_BUILD_DIR)
-endif
 
 # Import PGXS.
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-# We'll need the clickhouse-cpp library and rpath so it can be found.
-SHLIB_LINK += -Wl,-rpath,$(pkglibdir)/
-
-# PostgreSQL 15 and earlier violate a C++ v17 storage specifier error.
-ifeq ($(shell test $(MAJORVERSION) -lt 16; echo $$?),0)
-	PG_CXXFLAGS += -Wno-register
-endif
-
-# Add the flags to the bitcode compiler variables.
-COMPILE.cc.bc += $(PG_CPPFLAGS)
-COMPILE.cxx.bc += $(PG_CXXFLAGS)
-
-# shlib is the final output product: clickhouse-cpp and all .o dependencies.
-$(shlib): $(CH_CPP_LIB) $(OBJS)
-
-# Clone clickhouse-cpp submodule.
-$(CH_CPP_DIR)/CMakeLists.txt:
-	git submodule update --init
-
-# Require the vendored clickhouse-cpp and the version header.
-$(OBJS): $(CH_CPP_LIB) src/include/version.h
-
-# Build clickhouse-cpp.
-$(CH_CPP_LIB): export CXXFLAGS=-fPIC
-$(CH_CPP_LIB): export CFLAGS=-fPIC
-$(CH_CPP_LIB): $(CH_CPP_DIR)/CMakeLists.txt # Sync with "Reset Vendor Timestamp" steps in workflows.
-	cmake -B $(CH_CPP_BUILD_DIR) -S $(CH_CPP_DIR) $(CH_CPP_FLAGS) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-	cmake --build $(CH_CPP_BUILD_DIR) --parallel $$(nproc) --target all
+# Require the version header.
+$(OBJS): src/include/version.h
 
 # Require the versioned C source and SQL script.
 all: sql/$(EXTENSION)--$(EXTVERSION).sql
@@ -118,17 +59,6 @@ sql/$(EXTENSION)--$(EXTVERSION).sql: sql/$(EXTENSION).sql
 # Versioned source file.
 src/include/version.h: src/include/version.h.in
 	sed -e 's,__VERSION__,$(DISTVERSION),g' $< > $@
-
-# Configure install/uninstall of the clickhouse-cpp library.
-ifneq ($(CH_BUILD), static)
-# Copy all dynamic files; use -a to preserve symlinks.
-install-ch-cpp: $(CH_CPP_LIB) $(shlib)
-	cp -a $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib*$(DLSUFFIX)* $(DESTDIR)$(pkglibdir)/
-uninstall-ch-cpp:
-	rm -f $(DESTDIR)$(pkglibdir)/libclickhouse-cpp-lib*$(DLSUFFIX)*
-install: install-ch-cpp
-uninstall: uninstall-ch-cpp
-endif
 
 # Build a PGXN distribution bundle.
 dist: $(EXTENSION)-$(DISTVERSION).zip
@@ -187,7 +117,7 @@ bake-vars:
 	@echo "revision=$(REVISION)"
 	@echo "pg_versions=$(PG_VERSIONS)"
 
-# Format the .c, .h, and .hh files according to the PostgreSQL indentation
+# Format the .c and .h files according to the PostgreSQL indentation
 # standard. Requires `pg_bsd_indent` to be in the path.
 indent: dev/indent.sh
 	@$<
@@ -199,7 +129,7 @@ lint: .pre-commit-config.yaml
 
 .PHONY: clang-tidy # Run clang-tidy static analysis (requires compile_commands.json)
 clang-tidy: compile_commands.json
-	clang-tidy -p . $(wildcard src/*.c src/*.cpp)
+	clang-tidy -p . $(wildcard src/*.c)
 
 ## .git/hooks/pre-commit: Install the pre-commit hook
 .git/hooks/pre-commit:
@@ -216,8 +146,8 @@ lsp: compile_commands.json
 
 # Requires https://github.com/rizsotto/Bear.
 compile_commands.json:
-	$(MAKE) clean -j $$(nproc) NO_VENDOR_CLEAN=$(NO_VENDOR_CLEAN)
-	bear -- $(MAKE) all -j $$(nproc) NO_VENDOR_CLEAN=$(NO_VENDOR_CLEAN)
+	$(MAKE) clean -j $$(nproc)
+	bear -- $(MAKE) all -j $$(nproc)
 
 # ClickHouse Docker Containers
 start-containers: dev/Makefile dev/docker-compose.yml

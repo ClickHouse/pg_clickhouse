@@ -14,7 +14,7 @@ jobs:
     env: { pg: 18 }
     steps:
       - name: Install Postgres
-        run: NO_CLUSTER=1 pg-start ${{ env.pg }} libcurl4-openssl-dev uuid-dev clang-tidy
+        run: NO_CLUSTER=1 pg-start ${{ env.pg }} libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev clang-tidy
       - name: Install clang-format # version in Ubuntu is too old
         run: curl -sLo /usr/local/bin/clang-format https://github.com/cpp-linter/clang-tools-static-binaries/releases/latest/download/clang-format-22_linux-amd64 && chmod +x /usr/local/bin/clang-format
       - name: Checkout the Repository

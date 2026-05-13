@@ -298,7 +298,7 @@ SELECT * FROM nested_arrays ORDER BY c1;
 
 /* shape mismatch with column type must error rather than silently corrupt */
 INSERT INTO nested_arrays VALUES (4, ARRAY[1,2,3], ARRAY['x']);
-ERROR:  pg_clickhouse: could not append data to column - pg_clickhouse: insert array has fewer dimensions than column type
+ERROR:  pg_clickhouse: unexpected PG/CH type pair for column 0
 /* Check UUIDs and IPs */
 \d addr
            Foreign table "binary_inserts_test.addr"

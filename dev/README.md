@@ -14,7 +14,6 @@ make start
 docker logs -f ch_25_11
 # Wait a few minutes for the services to start (log output will stop)
 docker exec -it ch_25_11 bash
-make clean NO_VENDOR_CLEAN=1 # Option to prevent clickhouse-cpp rebuild
 pg-build-test # or make && make install && make installcheck
 ```
 

@@ -123,10 +123,20 @@ chfdw_get_connection(UserMapping * user)
 	}
 
 	/*
-	 * We don't check the health of cached connection here, because it would
-	 * require some overhead. Broken connection will be detected when the
-	 * connection is actually used.
+	 * Drop connections that hit an unrecoverable protocol/IO error on the
+	 * previous statement (server raised mid-INSERT and closed the socket,
+	 * write hit EPIPE, etc). Without this, a subsequent statement would write
+	 * to the dead socket and surface a useless "Broken pipe" instead of the
+	 * real error from the next request.
 	 */
+	if (entry->gate.conn != NULL &&
+		entry->gate.methods->is_broken != NULL &&
+		entry->gate.methods->is_broken(entry->gate.conn))
+	{
+		elog(LOG, "closing broken pg_clickhouse connection");
+		entry->gate.methods->disconnect(entry->gate.conn);
+		entry->gate.conn = NULL;
+	}
 
 	/*
 	 * If cache entry doesn't have a connection, we have to establish a new

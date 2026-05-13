@@ -19,7 +19,7 @@
 #include "executor/tuptable.h"
 
 #include "fdw.h"
-#include "binary_pg.h"
+#include "binary.h"
 #include <stdint.h>
 
 typedef struct ch_convert_state ch_convert_state;
@@ -319,10 +319,60 @@ convert_bool(ch_convert_state * state, Datum val)
 	return BoolGetDatum(dat);
 }
 
+/*
+ * json ↔ jsonb round-trip via text I/O for the CH → PG read direction.
+ * Same rationale as the output-side helpers below.
+ */
+static Datum
+convert_in_jsonb_to_json(ch_convert_state * state, Datum val)
+{
+	char	   *txt = DatumGetCString(DirectFunctionCall1(jsonb_out, val));
+	Datum		out = DirectFunctionCall1(json_in, CStringGetDatum(txt));
+
+	pfree(txt);
+	return out;
+}
+
+static Datum
+convert_in_json_to_jsonb(ch_convert_state * state, Datum val)
+{
+	char	   *txt = DatumGetCString(DirectFunctionCall1(json_out, val));
+	Datum		out = DirectFunctionCall1(jsonb_in, CStringGetDatum(txt));
+
+	pfree(txt);
+	return out;
+}
+
 inline static Datum
 convert_bool_to_int16(ch_convert_output_state * state, Datum val)
 {
 	return Int16GetDatum(DatumGetBool(val) ? 1 : 0);
+}
+
+/*
+ * json ↔ jsonb round-trip via text I/O. PG's pg_cast entry for both
+ * directions has castmethod='i' (I/O), so find_coercion_pathway returns
+ * COERCION_PATH_COERCEVIAIO, which convert.c's init_output_convert_state
+ * switch doesn't currently dispatch — provide the conversion directly.
+ */
+static Datum
+convert_json_to_jsonb(ch_convert_output_state * state, Datum val)
+{
+	char	   *txt = DatumGetCString(DirectFunctionCall1(json_out, val));
+	Datum		out = DirectFunctionCall1(jsonb_in, CStringGetDatum(txt));
+
+	pfree(txt);
+	return out;
+}
+
+static Datum
+convert_jsonb_to_json(ch_convert_output_state * state, Datum val)
+{
+	char	   *txt = DatumGetCString(DirectFunctionCall1(jsonb_out, val));
+	Datum		out = DirectFunctionCall1(json_in, CStringGetDatum(txt));
+
+	pfree(txt);
+	return out;
 }
 
 Datum
@@ -416,7 +466,8 @@ ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 				if (typentry->tupDesc == NULL)
 					ereport(ERROR,
 							(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-							 errmsg("type %s is not composite",
+							 errmsg("pg_clickhouse: cannot return %s as %s",
+									slot->ch_type_name ? slot->ch_type_name : "?",
 									format_type_be(outtype))));
 
 				tupdesc = typentry->tupDesc;
@@ -453,6 +504,16 @@ ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype)
 		else if (outtype == BOOLOID && intype == INT2OID)
 		{
 			state->func = convert_bool;
+		}
+		else if (intype == JSONBOID && outtype == JSONOID)
+		{
+			state->func = convert_in_jsonb_to_json;
+			state->ctype = COERCION_PATH_FUNC;
+		}
+		else if (intype == JSONOID && outtype == JSONBOID)
+		{
+			state->func = convert_in_json_to_jsonb;
+			state->ctype = COERCION_PATH_FUNC;
 		}
 		else
 		{
@@ -514,12 +575,23 @@ init_output_convert_state(ch_convert_output_state * state)
 	if (state->intype == BYTEAOID && state->outtype == TEXTOID)
 		return;
 
-	/* column_append() handles both JSON and JSONB, so no need to convert. */
-	if (
-		(state->intype == JSONBOID && state->outtype == JSONOID)
-		|| (state->intype == JSONOID && state->outtype == JSONBOID)
-		)
+	/*
+	 * PG's pg_cast for json↔jsonb is castmethod='i' (I/O), which produces
+	 * COERCION_PATH_COERCEVIAIO from find_coercion_pathway. The switch below
+	 * doesn't dispatch that path — set the convert func directly.
+	 */
+	if (state->intype == JSONOID && state->outtype == JSONBOID)
+	{
+		state->func = convert_json_to_jsonb;
+		state->ctype = COERCION_PATH_FUNC;
 		return;
+	}
+	if (state->intype == JSONBOID && state->outtype == JSONOID)
+	{
+		state->func = convert_jsonb_to_json;
+		state->ctype = COERCION_PATH_FUNC;
+		return;
+	}
 
 	/* Postgres has no cast from bool to INT16, so provide our own. */
 	if (state->outtype == INT2OID && state->intype == BOOLOID)
@@ -673,9 +745,10 @@ build_nested_binary_array(int level, int ndim, int *dims, Oid item_type,
 
 /*
  * For each value to be output, convert it, if necessary, from the Postgres
- * Datum type defined for the foreign table to a Datum that column_append() in
- * binary.cpp knows how to convert to a ClickHouse type. No conversion for
- * binary-compatible types; other types require a CAST.
+ * Datum type defined for the foreign table to a Datum that the binary
+ * INSERT path in binary_encode.c knows how to convert to a ClickHouse
+ * type. No conversion for binary-compatible types; other types require a
+ * CAST.
  * ch_binary_make_tuple_map() makes this determination for each type, stored
  * in insert_state->conversion_states)
  */

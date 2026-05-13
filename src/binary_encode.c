@@ -2,7 +2,7 @@
  * binary_encode.c
  *
  * PG-side INSERT path. Reads PG Datums and dispatches into the typed
- * ch_binary_append_* shims exposed by binary.cpp. No C++.
+ * ch_binary_append_* shims exposed by binary.c.
  */
 
 #include "postgres.h"
@@ -24,81 +24,69 @@
 #include "utils/timestamp.h"
 #include "utils/uuid.h"
 
-#include "binary.hh"
-#include "binary_pg.h"
-#include "ch_block.h"
-
-static void
-raise_errbuf(const char *prefix, const char *errbuf)
-{
-	bool		have_msg = (errbuf && errbuf[0] != '\0');
-
-	ereport(ERROR,
-			(errcode(ERRCODE_FDW_ERROR),
-			 errmsg("pg_clickhouse: %s%s%s",
-					prefix,
-					have_msg ? " - " : "",
-					have_msg ? errbuf : "")));
-}
+#include "binary.h"
 
 /*
  * Map a CH column kind to the PG type our import path uses. Used when
- * constructing the TupleDesc for INSERT...VALUES, mirroring the legacy
- * get_corr_postgres_type from binary.cpp.
+ * constructing the TupleDesc for INSERT...VALUES.
  */
 static Oid
-ch_kind_to_pg_oid_for_insert(const ch_type * type, const char *colname)
+ch_kind_to_pg_oid_for_insert(const chc_type * type, const char *colname)
 {
-	switch (type->kind)
+	switch (chc_type_kind(type))
 	{
-		case CH_T_INT8:
-		case CH_T_INT16:
-		case CH_T_UINT8:
-		case CH_T_BOOL:
+		case CHC_INT8:
+		case CHC_INT16:
+		case CHC_UINT8:
+		case CHC_BOOL:
 			return INT2OID;
-		case CH_T_INT32:
-		case CH_T_UINT16:
+		case CHC_INT32:
+		case CHC_UINT16:
 			return INT4OID;
-		case CH_T_INT64:
-		case CH_T_UINT32:
-		case CH_T_UINT64:
+		case CHC_INT64:
+		case CHC_UINT32:
+		case CHC_UINT64:
 			return INT8OID;
-		case CH_T_FLOAT32:
+		case CHC_FLOAT32:
 			return FLOAT4OID;
-		case CH_T_FLOAT64:
+		case CHC_FLOAT64:
 			return FLOAT8OID;
-		case CH_T_DECIMAL32:
-		case CH_T_DECIMAL64:
-		case CH_T_DECIMAL128:
-		case CH_T_DECIMAL256:
+		case CHC_DECIMAL32:
+		case CHC_DECIMAL64:
+		case CHC_DECIMAL128:
+		case CHC_DECIMAL256:
 			return NUMERICOID;
-		case CH_T_STRING:
-		case CH_T_FIXEDSTRING:
-		case CH_T_ENUM8:
-		case CH_T_ENUM16:
-		case CH_T_LOWCARDINALITY:
+		case CHC_STRING:
+		case CHC_FIXED_STRING:
+		case CHC_ENUM8:
+		case CHC_ENUM16:
 			return TEXTOID;
-		case CH_T_DATE:
-		case CH_T_DATE32:
+		case CHC_JSON:
+		case CHC_OBJECT:
+			return JSONBOID;
+		case CHC_DATE:
+		case CHC_DATE32:
 			return DATEOID;
-		case CH_T_DATETIME:
-		case CH_T_DATETIME64:
+		case CHC_DATETIME:
+		case CHC_DATETIME64:
 			return TIMESTAMPTZOID;
-		case CH_T_UUID:
+		case CHC_UUID:
 			return UUIDOID;
-		case CH_T_IPV4:
-		case CH_T_IPV6:
+		case CHC_IPV4:
+		case CHC_IPV6:
 			return INETOID;
-		case CH_T_ARRAY:
+		case CHC_ARRAY:
 			{
-				/* postgres uses one array type per element type regardless of
-				 * nesting, so unwrap nested Array layers before looking up. */
-				const		ch_type *leaf = type;
+				/*
+				 * postgres uses one array type per element type regardless of
+				 * nesting, so unwrap nested Array layers before looking up.
+				 */
+				const		chc_type *leaf = type;
 				Oid			item_type;
 				Oid			array_type;
 
-				while (leaf->kind == CH_T_ARRAY)
-					leaf = leaf->n_child > 0 ? leaf->child[0] : leaf;
+				while (chc_type_kind(leaf) == CHC_ARRAY)
+					leaf = chc_type_child(leaf, 0);
 				item_type = ch_kind_to_pg_oid_for_insert(leaf, colname);
 				array_type = get_array_type(item_type);
 
@@ -109,10 +97,11 @@ ch_kind_to_pg_oid_for_insert(const ch_type * type, const char *colname)
 									colname ? colname : "?")));
 				return array_type;
 			}
-		case CH_T_TUPLE:
+		case CHC_TUPLE:
 			return RECORDOID;
-		case CH_T_NULLABLE:
-			return ch_kind_to_pg_oid_for_insert(type->child[0], colname);
+		case CHC_NULLABLE:
+		case CHC_LOW_CARDINALITY:
+			return ch_kind_to_pg_oid_for_insert(chc_type_child(type, 0), colname);
 		default:
 			ereport(ERROR,
 					(errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
@@ -126,15 +115,11 @@ void
 ch_binary_prepare_insert(void *conn, const ch_query * query,
 						 ch_binary_insert_state * state)
 {
-	char		errbuf[CH_ERR_LEN] = {0};
 	ch_binary_column_info *cols = NULL;
 	size_t		n = 0;
 	ch_binary_insert_handle *h;
 
-	h = ch_binary_begin_insert((ch_binary_connection_t *) conn, query,
-							   &cols, &n, errbuf, sizeof(errbuf));
-	if (h == NULL)
-		raise_errbuf("could not prepare insert", errbuf);
+	h = ch_binary_begin_insert((ch_binary_connection_t *) conn, query, &cols, &n);
 
 	state->len = n;
 	state->insert_block = h;
@@ -153,96 +138,68 @@ ch_binary_prepare_insert(void *conn, const ch_query * query,
 	}
 }
 
+/* Any CH integer kind whose value fits in int64 (column width truncates). */
+static inline bool
+chc_kind_fits_int64(chc_kind kind)
+{
+	return kind == CHC_BOOL
+		|| (kind >= CHC_INT8 && kind <= CHC_INT64)
+		|| (kind >= CHC_UINT8 && kind <= CHC_UINT64);
+}
+
 /*
  * Append a single value (already extracted from a Datum + isnull) into the
- * current column, dispatching on (PG Oid, CH kind).
+ * current column, dispatching on (PG Oid, CH kind). ereports on mismatch.
  */
 static void
 append_one(ch_binary_insert_handle * h, size_t colidx,
-		   ch_type_kind kind, Datum val, Oid valtype, bool isnull)
+		   chc_kind kind, Datum val, Oid valtype, bool isnull)
 {
-	char		errbuf[CH_ERR_LEN] = {0};
-	int			rc = 0;
-
 	switch (valtype)
 	{
 		case INT2OID:
-			switch (kind)
-			{
-				case CH_T_UINT8:
-				case CH_T_BOOL:
-					rc = ch_binary_append_uint(h, colidx, (uint64_t) (uint16) DatumGetInt16(val),
-											   isnull, errbuf, sizeof(errbuf));
-					break;
-				case CH_T_INT8:
-				case CH_T_INT16:
-					rc = ch_binary_append_int(h, colidx, (int64_t) DatumGetInt16(val),
-											  isnull, errbuf, sizeof(errbuf));
-					break;
-				default:
-					goto type_mismatch;
-			}
-			break;
 		case INT4OID:
-			switch (kind)
-			{
-				case CH_T_INT32:
-					rc = ch_binary_append_int(h, colidx, (int64_t) DatumGetInt32(val),
-											  isnull, errbuf, sizeof(errbuf));
-					break;
-				case CH_T_UINT16:
-					rc = ch_binary_append_uint(h, colidx, (uint64_t) (uint16) DatumGetInt32(val),
-											   isnull, errbuf, sizeof(errbuf));
-					break;
-				default:
-					goto type_mismatch;
-			}
-			break;
 		case INT8OID:
-			switch (kind)
 			{
-				case CH_T_INT64:
-					rc = ch_binary_append_int(h, colidx, DatumGetInt64(val),
-											  isnull, errbuf, sizeof(errbuf));
-					break;
-				case CH_T_UINT32:
-					rc = ch_binary_append_uint(h, colidx,
-											   (uint64_t) (uint32) DatumGetInt64(val),
-											   isnull, errbuf, sizeof(errbuf));
-					break;
-				case CH_T_UINT64:
-					rc = ch_binary_append_uint(h, colidx, (uint64_t) DatumGetInt64(val),
-											   isnull, errbuf, sizeof(errbuf));
-					break;
-				default:
+				int64_t		v = 0;
+
+				if (!chc_kind_fits_int64(kind))
 					goto type_mismatch;
+				if (!isnull)
+				{
+					if (valtype == INT2OID)
+						v = (int64_t) DatumGetInt16(val);
+					else if (valtype == INT4OID)
+						v = (int64_t) DatumGetInt32(val);
+					else
+						v = DatumGetInt64(val);
+				}
+				ch_binary_append_int(h, colidx, v, isnull);
+				return;
 			}
-			break;
 		case FLOAT4OID:
-			if (kind != CH_T_FLOAT32)
+			if (kind != CHC_FLOAT32)
 				goto type_mismatch;
-			rc = ch_binary_append_float(h, colidx, DatumGetFloat4(val),
-										isnull, errbuf, sizeof(errbuf));
-			break;
+			ch_binary_append_float(h, colidx, DatumGetFloat4(val), isnull);
+			return;
 		case FLOAT8OID:
-			if (kind != CH_T_FLOAT64)
+			if (kind != CHC_FLOAT64)
 				goto type_mismatch;
-			rc = ch_binary_append_double(h, colidx, DatumGetFloat8(val),
-										 isnull, errbuf, sizeof(errbuf));
-			break;
+			ch_binary_append_double(h, colidx, DatumGetFloat8(val), isnull);
+			return;
 		case NUMERICOID:
 			{
 				char	   *s = NULL;
 
-				if (kind != CH_T_DECIMAL32 && kind != CH_T_DECIMAL64
-					&& kind != CH_T_DECIMAL128 && kind != CH_T_DECIMAL256)
+				if (kind != CHC_DECIMAL32 && kind != CHC_DECIMAL64
+					&& kind != CHC_DECIMAL128 && kind != CHC_DECIMAL256)
 					goto type_mismatch;
 				if (!isnull)
 					s = DatumGetCString(DirectFunctionCall1(numeric_out, val));
-				rc = ch_binary_append_decimal(h, colidx, s, isnull, errbuf, sizeof(errbuf));
+				ch_binary_append_decimal(h, colidx, s, isnull);
 				if (s)
 					pfree(s);
-				break;
+				return;
 			}
 		case TEXTOID:
 			{
@@ -258,24 +215,21 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 				}
 				switch (kind)
 				{
-					case CH_T_FIXEDSTRING:
-					case CH_T_STRING:
-					case CH_T_ENUM8:
-					case CH_T_ENUM16:
-					case CH_T_LOWCARDINALITY:
-						rc = ch_binary_append_bytes(h, colidx, p, len,
-													isnull, errbuf, sizeof(errbuf));
-						break;
+					case CHC_FIXED_STRING:
+					case CHC_STRING:
+					case CHC_ENUM8:
+					case CHC_ENUM16:
+						ch_binary_append_bytes(h, colidx, p, len, isnull);
+						return;
 					default:
 						goto type_mismatch;
 				}
-				break;
 			}
 		case DATEOID:
 			{
 				int64_t		seconds;
 
-				if (kind != CH_T_DATE && kind != CH_T_DATE32)
+				if (kind != CHC_DATE && kind != CHC_DATE32)
 					goto type_mismatch;
 				if (!isnull)
 				{
@@ -285,23 +239,21 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 				}
 				else
 					seconds = 0;
-				rc = ch_binary_append_date_seconds(h, colidx, seconds,
-												   isnull, errbuf, sizeof(errbuf));
-				break;
+				ch_binary_append_date_seconds(h, colidx, seconds, isnull);
+				return;
 			}
 		case TIMESTAMPOID:
 		case TIMESTAMPTZOID:
 			{
-				if (kind == CH_T_DATETIME)
+				if (kind == CHC_DATETIME)
 				{
 					int64_t		seconds = isnull
 						? 0
 						: (int64_t) timestamptz_to_time_t(DatumGetTimestamp(val));
 
-					rc = ch_binary_append_datetime_seconds(h, colidx, seconds,
-														   isnull, errbuf, sizeof(errbuf));
+					ch_binary_append_datetime_seconds(h, colidx, seconds, isnull);
 				}
-				else if (kind == CH_T_DATETIME64)
+				else if (kind == CHC_DATETIME64)
 				{
 					int64_t		raw = 0;
 
@@ -315,27 +267,23 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 										  + ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY))
 										 * power);
 					}
-					rc = ch_binary_append_datetime64_raw(h, colidx, raw,
-														 isnull, errbuf, sizeof(errbuf));
+					ch_binary_append_datetime64_raw(h, colidx, raw, isnull);
 				}
 				else
 					goto type_mismatch;
-				break;
+				return;
 			}
 		case ANYARRAYOID:
 			{
 				ch_binary_array_t *arr;
-				ch_type_kind item_kind;
+				chc_kind	item_kind;
 				Oid			child_valtype;
 
-				if (kind != CH_T_ARRAY)
+				if (kind != CHC_ARRAY)
 					goto type_mismatch;
 
 				arr = (ch_binary_array_t *) DatumGetPointer(val);
-				rc = ch_binary_array_begin(h, colidx, arr->len,
-										   errbuf, sizeof(errbuf));
-				if (rc != 0)
-					goto fail;
+				ch_binary_array_begin(h, colidx);
 
 				/*
 				 * While array_begin is active ch_binary_column_kind targets
@@ -348,50 +296,64 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 				for (size_t i = 0; i < arr->len; i++)
 					append_one(h, 0, item_kind, arr->datums[i], child_valtype, arr->nulls[i]);
 
-				rc = ch_binary_array_end(h, errbuf, sizeof(errbuf));
-				break;
+				ch_binary_array_end(h);
+				return;
 			}
 		case UUIDOID:
 			{
 				uint8_t		bytes[16];
 
-				if (kind != CH_T_UUID)
+				if (kind != CHC_UUID)
 					goto type_mismatch;
 				if (!isnull)
 					memcpy(bytes, DatumGetUUIDP(val)->data, 16);
 				else
 					memset(bytes, 0, 16);
-				rc = ch_binary_append_uuid(h, colidx, bytes,
-										   isnull, errbuf, sizeof(errbuf));
-				break;
+				ch_binary_append_uuid(h, colidx, bytes, isnull);
+				return;
 			}
 		case INETOID:
 			{
 				char	   *s = NULL;
 
-				if (kind != CH_T_IPV4 && kind != CH_T_IPV6)
+				if (kind != CHC_IPV4 && kind != CHC_IPV6)
 					goto type_mismatch;
 				if (!isnull)
 					s = DatumGetCString(DirectFunctionCall1(inet_out, val));
-				rc = ch_binary_append_inet(h, colidx, s, isnull, errbuf, sizeof(errbuf));
+				ch_binary_append_inet(h, colidx, s, isnull);
 				if (s)
 					pfree(s);
-				break;
+				return;
+			}
+		case JSONOID:
+		case JSONBOID:
+			{
+				char	   *s = NULL;
+				size_t		len = 0;
+
+				if (kind != CHC_JSON && kind != CHC_OBJECT)
+					goto type_mismatch;
+				if (!isnull)
+				{
+					s = DatumGetCString(DirectFunctionCall1(valtype == JSONBOID
+															? jsonb_out
+															: json_out,
+															val));
+					len = strlen(s);
+				}
+				ch_binary_append_bytes(h, colidx, s, len, isnull);
+				if (s)
+					pfree(s);
+				return;
 			}
 		default:
 			goto type_mismatch;
 	}
 
-	if (rc != 0)
-		goto fail;
-	return;
-
 type_mismatch:
 	ereport(ERROR,
 			(errcode(ERRCODE_DATATYPE_MISMATCH),
 			 errmsg("pg_clickhouse: unexpected PG/CH type pair for column %zu", colidx)));
-fail:
-	raise_errbuf("could not append data to column", errbuf);
 }
 
 void
@@ -400,7 +362,7 @@ ch_binary_column_append_data(ch_binary_insert_state * state, size_t colidx)
 	Datum		val = state->values[colidx];
 	Oid			valtype = TupleDescAttr(state->outdesc, colidx)->atttypid;
 	bool		isnull = state->nulls[colidx];
-	ch_type_kind kind = ch_binary_column_kind(state->insert_block, colidx);
+	chc_kind	kind = ch_binary_column_kind(state->insert_block, colidx);
 
 	append_one(state->insert_block, colidx, kind, val, valtype, isnull);
 }
@@ -408,23 +370,22 @@ ch_binary_column_append_data(ch_binary_insert_state * state, size_t colidx)
 void
 ch_binary_insert_columns(ch_binary_insert_state * state)
 {
-	char		errbuf[CH_ERR_LEN] = {0};
-
-	if (ch_binary_flush_block(state->insert_block, errbuf, sizeof(errbuf)) != 0)
-		raise_errbuf("could not insert columns", errbuf);
+	ch_binary_flush_block(state->insert_block);
 }
 
 void
 ch_binary_insert_state_free(void *c)
 {
 	ch_binary_insert_state *state = (ch_binary_insert_state *) c;
-	char		errbuf[CH_ERR_LEN] = {0};
 
 	if (state->insert_block == NULL)
 		return;
 
-	ch_binary_end_insert(state->insert_block, errbuf, sizeof(errbuf));
+	/*
+	 * Reset-callback context: cannot ereport. Finalize runs from the FDW
+	 * happy path before we get here; if it did not (mid-query abort), the
+	 * release call flags the connection broken so the next query rebuilds.
+	 */
+	ch_binary_release_insert(state->insert_block);
 	state->insert_block = NULL;
-	if (errbuf[0] != '\0')
-		raise_errbuf("could not finish INSERT", errbuf);
 }

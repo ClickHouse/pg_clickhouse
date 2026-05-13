@@ -309,6 +309,7 @@ SELECT * FROM farrays ORDER BY c1;
 
 SELECT * FROM farrays2 ORDER BY c1;
 ERROR:  pg_clickhouse: could not cast value from integer[] to bigint[]
+DETAIL:  Remote Query: SELECT c1, c2 FROM binary_test.arrays ORDER BY c1 ASC NULLS LAST
 -- nested arrays
 SELECT * FROM fnested_arrays ORDER BY c1;
  c1 |      c2       |      c3       
@@ -319,7 +320,7 @@ SELECT * FROM fnested_arrays ORDER BY c1;
 
 SELECT * FROM fragged_arrays ORDER BY c1;
 ERROR:  malformed array literal: "{{"1","2","3"},{"4"}}"
-DETAIL:  Multidimensional arrays must have sub-arrays with matching dimensions.
+DETAIL:  Remote Query: SELECT c1, c2 FROM binary_test.ragged_arrays ORDER BY c1 ASC NULLS LAST
 -- tuples
 SELECT * FROM ftuples ORDER BY c1;
  c1 |    c2    | c3 

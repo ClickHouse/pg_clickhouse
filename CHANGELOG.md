@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### ⚡ Improvements
 
+*   Replaced the `clickhouse-cpp` driver with [ClickHouse/clickhouse-c],
+    pulled in as a git submodule under `vendor/clickhouse-c`.
+
 *   Added multidimensional array support across SELECT and INSERT to both the
     binary and http drivers. Rectangular ClickHouse `Array(Array(...))` values
     now map to PostgreSQL multidimensional arrays, jagged arrays not supported,
@@ -27,6 +30,7 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#232 pushdown for new functions in pg_re2 0.3"
   [#233]: https://github.com/ClickHouse/pg_clickhouse/pull/233
     "ClickHouse/pg_clickhouse#233 Support multidimensional arrays"
+  [ClickHouse/clickhouse-c]: https://github.com/ClickHouse/clickhouse-c
 
 ## [v0.3.0] — 2026-05-11
 

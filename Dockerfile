@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     cmake \
     libssl-dev \
+    liblz4-dev \
+    libzstd-dev \
     libre2-dev \
     pgxnclient \
     unzip \
@@ -24,7 +26,7 @@ RUN cd /tmp && pgxn download re2 && unzip re2-*.zip && rm re2-*.zip && cd re2-* 
 FROM postgres:$PG_MAJOR-trixie
 
 # Install dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends libcurl4t64 uuid libre2-11 ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends libcurl4t64 uuid libre2-11 liblz4-1 libzstd1 ca-certificates \
     && apt-get clean \
     && rm -rf /var/cache/apt/* /var/lib/apt/lists/*
 

@@ -19,7 +19,7 @@
 #include "fdw.h"
 #include "http.h"
 #include "http_streaming.h"
-#include "binary_pg.h"
+#include "binary.h"
 
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -58,10 +58,12 @@ static libclickhouse_methods http_methods =
 static void binary_disconnect(void *conn);
 static ch_cursor * binary_simple_query(void *conn, const ch_query * query);
 static void binary_cursor_free(void *cursor);
+static bool binary_is_broken(const void *conn);
 
 /* static void binary_simple_insert(void *conn, const char *query); */
 static Datum * binary_fetch_row(ChFdwScanRowContext * ctx);
 static void binary_insert_tuple(void *, TupleTableSlot * slot);
+static void binary_finalize_insert(void *istate);
 static void *binary_prepare_insert(void *, ResultRelInfo *, List *,
 								   const ch_query * query, char *table_name);
 static char *ch_escape_string(const char *s, size_t len);
@@ -76,8 +78,10 @@ static libclickhouse_methods binary_methods =
 		.fetch_row = binary_fetch_row,
 		.prepare_insert = binary_prepare_insert,
 		.insert_tuple = binary_insert_tuple,
+		.finalize_insert = binary_finalize_insert,
 		.streaming_query = NULL,
 		.streaming_fetch_row = NULL,
+		.is_broken = binary_is_broken,
 };
 
 static int
@@ -818,17 +822,9 @@ http_insert_tuple(void *istate, TupleTableSlot * slot)
 ch_connection
 chfdw_binary_connect(ch_connection_details * details)
 {
-	char		errbuf[CH_ERR_LEN] = {0};
 	ch_connection res;
-	ch_binary_connection_t *conn = ch_binary_connect(details, errbuf, sizeof(errbuf));
 
-	if (conn == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-				 errmsg("pg_clickhouse: connection error: %s",
-						errbuf[0] ? errbuf : "unknown")));
-
-	res.conn = conn;
+	res.conn = ch_binary_connect(details);
 	res.methods = &binary_methods;
 	res.is_binary = true;
 	return res;
@@ -839,6 +835,12 @@ binary_disconnect(void *conn)
 {
 	if (conn != NULL)
 		ch_binary_close((ch_binary_connection_t *) conn);
+}
+
+static bool
+binary_is_broken(const void *conn)
+{
+	return ch_binary_is_broken((const ch_binary_connection_t *) conn);
 }
 
 static ch_cursor *
@@ -909,6 +911,14 @@ binary_simple_query(void *conn, const ch_query * query)
  * text `Datum`s. This is the use case for `chfdw_construct_create_tables()`,
  * which only cares about text.
  */
+static void
+binary_fetch_row_errcb(void *arg)
+{
+	const char *sql = (const char *) arg;
+
+	errdetail_internal("Remote Query: %.64000s", sql);
+}
+
 static Datum *
 binary_fetch_row(ChFdwScanRowContext * ctx)
 {
@@ -919,6 +929,36 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 	Datum	   *values = ctx->values;
 	bool	   *nulls = ctx->nulls;
 	ch_binary_read_state_t *state = cursor->read_state;
+	ErrorContextCallback errcallback;
+
+	errcallback.callback = binary_fetch_row_errcb;
+	errcallback.arg = (void *) cursor->query;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	/*
+	 * CH JSON columns default to JSONBOID in state->coltypes. When the
+	 * foreign-table column is declared `json` (JSONOID), override so
+	 * binary_make_datum hands back a json Datum constructed straight from
+	 * CH's STRING-serialised bytes — skipping a jsonb_in / jsonb_out
+	 * round-trip that would re-canonicalise CH's emit and break expected
+	 * outputs that pin CH's exact formatting.
+	 */
+	if (tupdesc && state->coltypes)
+	{
+		size_t		j = 0;
+
+		foreach(lc, attrs)
+		{
+			int			i = lfirst_int(lc);
+
+			if (state->coltypes[j] == JSONBOID &&
+				TupleDescAttr(tupdesc, i - 1)->atttypid == JSONOID)
+				state->coltypes[j] = JSONOID;
+			j++;
+		}
+	}
+
 	bool		have_data = ch_binary_read_row(state);
 	size_t		attcount = list_length(attrs);
 
@@ -929,7 +969,10 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 						state->error)));
 
 	if (!have_data)
+	{
+		error_context_stack = errcallback.previous;
 		return NULL;
+	}
 
 	if (attcount == 0)
 	{
@@ -948,10 +991,8 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
-				 errmsg_internal("pg_clickhouse: columns mismatch"),
-				 errdetail("Number of returned columns (%lu) does not match "
-						   "expected column count (%lu).",
-						   ch_binary_response_columns(state->resp), attcount)));
+				 errmsg_internal("pg_clickhouse: returned %lu columns, expected %lu",
+								 ch_binary_response_columns(state->resp), attcount)));
 	}
 
 	if (tupdesc)
@@ -1025,6 +1066,7 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 	}
 
 ok:
+	error_context_stack = errcallback.previous;
 	return state->values;
 }
 
@@ -1097,10 +1139,10 @@ binary_insert_tuple(void *istate, TupleTableSlot * slot)
 			/*
 			 * Set up conversion states so that Postgres Datums of types
 			 * defined by the foreign table can be converted to a well-known
-			 * Postgres type that column_append() in binary.cpp knows how to
-			 * convert to the appropriate ClickHouse type. Binary compatible
-			 * types don't convert; others require a CAST. Fails if there is
-			 * no cast.
+			 * Postgres type that the binary INSERT path knows how to convert
+			 * to the appropriate ClickHouse type. Binary compatible types
+			 * don't convert; others require a CAST. Fails if there is no
+			 * cast.
 			 */
 			state->conversion_states = ch_binary_make_tuple_map(slot->tts_tupleDescriptor, state->outdesc, state->relid);
 			MemoryContextSwitchTo(old_mcxt);
@@ -1115,6 +1157,15 @@ binary_insert_tuple(void *istate, TupleTableSlot * slot)
 	{
 		ch_binary_insert_columns(state);
 	}
+}
+
+static void
+binary_finalize_insert(void *istate)
+{
+	ch_binary_insert_state *state = istate;
+
+	if (state && state->insert_block)
+		ch_binary_finalize_insert(state->insert_block);
 }
 
 /*

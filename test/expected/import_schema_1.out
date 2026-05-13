@@ -603,6 +603,7 @@ SELECT * FROM clickhouse_bin.ints
 WHERE c1 IN (127, -128)
 ORDER BY c1;
 ERROR:  pg_clickhouse: error while reading row: value 18446744073709551615 is out of range of bigint
+DETAIL:  Remote Query: SELECT c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 FROM import_test.ints WHERE ((c1 IN (127,(-128)))) ORDER BY c1 ASC NULLS LAST
 SELECT * FROM clickhouse.ints
 WHERE c1 IN (127, -128)
 ORDER BY c1;

@@ -80,10 +80,11 @@ sudo apt install \
   postgresql-server-18 \
   libcurl4-openssl-dev \
   uuid-dev \
+  liblz4-dev \
+  libzstd-dev \
   libssl-dev \
   make \
-  cmake \
-  g++
+  gcc
 ```
 
 #### RedHat / CentOS / Yum
@@ -93,9 +94,10 @@ sudo yum install \
   postgresql-server \
   libcurl-devel \
   libuuid-devel \
+  lz4-devel \
+  libzstd-devel \
   openssl-libs \
   automake \
-  cmake \
   gcc
 ```
 
@@ -120,18 +122,6 @@ To build and install the ClickHouse library and `pg_clickhouse`, run:
 make
 sudo make install
 ```
-
-<!-- XXX DSO currently disabled.
-By default `make` dynamically links the `clickhouse-cpp` library (except on
-macOS, where a dynamic `clickhouse-cpp` library is not yet supported). To
-statically compile the ClickHouse library into `pg_clickhouse`, pass
-`CH_BUILD=static`:
-
-```sh
-make CH_BUILD=static
-sudo make install CH_BUILD=static
-```
- -->
 
 If your host has several PostgreSQL installations, you might need to specify
 the appropriate version of `pg_config`:
@@ -239,8 +229,8 @@ CREATE EXTENSION pg_clickhouse SCHEMA env;
 ## Dependencies
 
 The `pg_clickhouse` extension requires [PostgreSQL] 13 or higher, [libcurl],
-[libuuid]. Building the extension requires a C and C++ compiler, [libSSL], [GNU
-make], and [CMake].
+[libuuid], [liblz4], and [libzstd]. Building the extension requires a C
+compiler, [libSSL], and [GNU make].
 
 ## Road Map
 
@@ -294,8 +284,9 @@ adding DML features. Our road map:
   [PostgreSQL]: https://www.postgresql.org "PostgreSQL: The World's Most Advanced Open Source Relational Database"
   [libcurl]: https://curl.se/libcurl/ "libcurl — your network transfer library"
   [libuuid]: https://linux.die.net/man/3/libuuid "libuuid - DCE compatible Universally Unique Identifier library"
+  [liblz4]: https://lz4.org "LZ4 - Extremely fast compression"
+  [libzstd]: https://facebook.github.io/zstd/ "Zstandard - Fast real-time compression algorithm"
   [GNU make]: https://www.gnu.org/software/make "GNU Make"
-  [CMake]: https://cmake.org/ "CMake: A Powerful Software Build System"
   [LibSSL]: https://openssl-library.org "OpenSSL Library"
   [TPC-H]: https://www.tpc.org/tpch/
   [re2]: https://github.com/ClickHouse/pg_re2 "pg_re2: ClickHouse-compatible regex functions using RE2"

@@ -75,9 +75,11 @@ typedef Datum * (*cursor_fetch_row_method) (ChFdwScanRowContext * ctx);
 typedef void *(*prepare_insert_method) (void *conn, ResultRelInfo *, List *,
 										const ch_query *, char *);
 typedef void (*insert_tuple_method) (void *state, TupleTableSlot * slot);
+typedef void (*finalize_insert_method) (void *state);
 typedef ch_cursor * (*streaming_query_method) (void *conn,
 											   const ch_query * query,
 											   int32 fetch_size);
+typedef bool (*is_broken_method) (const void *conn);
 
 typedef struct
 {
@@ -86,8 +88,11 @@ typedef struct
 	cursor_fetch_row_method fetch_row;
 	prepare_insert_method prepare_insert;
 	insert_tuple_method insert_tuple;
+	finalize_insert_method finalize_insert; /* NULL if no explicit finalize
+											 * step needed */
 	streaming_query_method streaming_query; /* NULL if not supported */
 	cursor_fetch_row_method streaming_fetch_row;	/* NULL if not supported */
+	is_broken_method is_broken; /* NULL means connection is never broken */
 }			libclickhouse_methods;
 
 typedef struct
