@@ -1,5 +1,5 @@
 /*
- * binary_decode.c
+ * decode.c
  *
  * Build PG Datums from a chc_column produced by clickhouse-c. Walks the
  * wire-shaped column accessors directly; per-row transforms (decimal to

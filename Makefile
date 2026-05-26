@@ -129,7 +129,7 @@ lint: .pre-commit-config.yaml
 
 .PHONY: clang-tidy # Run clang-tidy static analysis (requires compile_commands.json)
 clang-tidy: compile_commands.json
-	clang-tidy -p . $(wildcard src/*.c)
+	clang-tidy -p . $(wildcard src/*.c src/*/*.c)
 
 ## .git/hooks/pre-commit: Install the pre-commit hook
 .git/hooks/pre-commit:

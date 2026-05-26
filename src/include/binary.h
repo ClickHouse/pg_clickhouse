@@ -95,7 +95,7 @@ extern void ch_binary_append_inet(ch_binary_insert_handle * h, size_t col,
 /*
  * Per-row Date/DateTime/DateTime64 sent as seconds-since-epoch (int64).
  * For DateTime64 value is wire-level integer at column's scale;
- * binary_encode.c does scaling.
+ * encode.c does scaling.
  */
 extern void ch_binary_append_date_seconds(ch_binary_insert_handle * h, size_t col,
 										  int64_t seconds, bool isnull);
@@ -116,7 +116,7 @@ extern void ch_binary_array_end(ch_binary_insert_handle * h);
 extern bool ch_binary_array_active(const ch_binary_insert_handle * h);
 
 /*
- * Inspect underlying CH column kind. Used by binary_encode.c to
+ * Inspect underlying CH column kind. Used by encode.c to
  * dispatch on (Oid pg, chc_kind ch). When an array context is open
  * (between ch_binary_array_begin/_end) returned kind is element kind,
  * not CHC_ARRAY.
@@ -206,7 +206,7 @@ typedef struct
 	ch_binary_connection_t *conn;
 }			ch_binary_insert_state;
 
-/* SELECT helpers (binary_decode.c). */
+/* SELECT helpers (decode.c). */
 extern void ch_binary_read_state_init(ch_binary_read_state_t * state, ch_binary_response_t * resp);
 extern void ch_binary_read_state_free(ch_binary_read_state_t * state);
 extern bool ch_binary_read_row(ch_binary_read_state_t * state);
@@ -216,7 +216,7 @@ extern Datum ch_binary_convert_datum(void *state, Datum val);
 extern void *ch_binary_init_convert_state(Datum val, Oid intype, Oid outtype);
 extern void ch_binary_free_convert_state(void *state);
 
-/* INSERT helpers (binary_encode.c). */
+/* INSERT helpers (encode.c). */
 extern void ch_binary_prepare_insert(void *conn, const ch_query * query,
 									 ch_binary_insert_state * state);
 extern void ch_binary_insert_columns(ch_binary_insert_state * state);

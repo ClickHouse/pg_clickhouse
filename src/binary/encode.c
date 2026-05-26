@@ -1,8 +1,8 @@
 /*
- * binary_encode.c
+ * encode.c
  *
  * PG-side INSERT path. Reads PG Datums and dispatches into the typed
- * ch_binary_append_* shims exposed by binary.c.
+ * ch_binary_append_* shims exposed by insert.c.
  */
 
 #include "postgres.h"
