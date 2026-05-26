@@ -37,6 +37,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include "common/hashfn.h"
 #include "utils/memutils.h"
 #include "utils/palloc.h"
 
@@ -1874,10 +1875,34 @@ ch_binary_column_datetime64_precision(const ch_binary_insert_handle * h, size_t 
 	return h->cols[col].dt64_precision;
 }
 
+/* Dedup map for LowCardinality dict */
+typedef struct lcd_key
+{
+	const uint8_t *bytes;
+	size_t		len;
+} lcd_key;
+
+typedef struct lcd_entry
+{
+	uint32		status;
+	lcd_key		key;
+	uint32		idx;
+} lcd_entry;
+
+#define SH_PREFIX				lcd
+#define SH_ELEMENT_TYPE			lcd_entry
+#define SH_KEY_TYPE				lcd_key
+#define SH_KEY					key
+#define SH_HASH_KEY(tb, key)	hash_bytes((key).bytes, (int) (key).len)
+#define SH_EQUAL(tb, a, b)		\
+	((a).len == (b).len && memcmp((a).bytes, (b).bytes, (a).len) == 0)
+#define SH_SCOPE				static inline
+#define SH_DECLARE
+#define SH_DEFINE
+#include "lib/simplehash.h"
+
 /*
- * Build LC dict (collect unique strings in insertion order). dict[0] is
- * the null sentinel for the Nullable variant. Output buffers are palloc'd
- * into the current context (the handle's cxt at flush time).
+ * Build LC dict (collect unique strings in insertion order)
  */
 static void
 build_lc_dict(ic_col * c, bool nullable,
@@ -1886,16 +1911,18 @@ build_lc_dict(ic_col * c, bool nullable,
 			  size_t * out_n_rows)
 {
 	size_t		n_rows = c->body_offs.len;
-	size_t		reserved = nullable ? 1 : 0;
 	uint64_t   *dict_offs = NULL;
 	uint8_t    *dict_data = NULL;
+	uint32_t   *keys = n_rows ? palloc(n_rows * sizeof(uint32_t)) : NULL;
 	size_t		dict_n = 0;
 	size_t		dict_cap = 0;
-	size_t		data_cap = 0;
 	size_t		data_len = 0;
-	uint32_t   *keys = n_rows ? palloc(n_rows * sizeof(uint32_t)) : NULL;
+	lcd_hash   *ht = n_rows
+		? lcd_create(CurrentMemoryContext,
+					 (uint32) Min(n_rows, (size_t) PG_UINT32_MAX), NULL)
+		: NULL;
 
-	if (reserved)
+	if (nullable)
 	{
 		/* dict[0] = "" sentinel. */
 		dict_cap = 8;
@@ -1909,7 +1936,10 @@ build_lc_dict(ic_col * c, bool nullable,
 		uint64_t	start = i == 0 ? 0 : c->body_offs.data[i - 1];
 		uint64_t	end = c->body_offs.data[i];
 		size_t		len = (size_t) (end - start);
-		const		uint8_t *bytes = c->body.data + start;
+		const uint8_t *bytes = c->body.data + start;
+		lcd_key		k = {bytes, len};
+		lcd_entry  *entry;
+		bool		found;
 
 		/* If nullable and this row was null (signalled by null bit), key 0. */
 		if (nullable && c->nulls.data[i])
@@ -1918,51 +1948,44 @@ build_lc_dict(ic_col * c, bool nullable,
 			continue;
 		}
 
-		/* Linear search current dict (skip slot 0 for Nullable). */
-		uint32_t	found = UINT32_MAX;
-
-		for (size_t j = reserved; j < dict_n; j++)
+		entry = lcd_insert(ht, k, &found);
+		if (found)
 		{
-			uint64_t	s = j == 0 ? 0 : dict_offs[j - 1];
-			uint64_t	e = dict_offs[j];
-
-			if ((size_t) (e - s) == len && memcmp(dict_data + s, bytes, len) == 0)
-			{
-				found = (uint32_t) j;
-				break;
-			}
+			keys[i] = entry->idx;
+			continue;
 		}
-		if (found == UINT32_MAX)
+
+		if (dict_n == dict_cap)
 		{
-			if (dict_n + 1 > dict_cap)
-			{
-				size_t		ncap = dict_cap ? dict_cap * 2 : 8;
-
-				dict_offs = dict_offs
-					? repalloc(dict_offs, ncap * sizeof(uint64_t))
-					: palloc(ncap * sizeof(uint64_t));
-				dict_cap = ncap;
-			}
-			if (data_len + len > data_cap)
-			{
-				size_t		ncap = data_cap ? data_cap : 64;
-
-				while (ncap < data_len + len)
-					ncap *= 2;
-				dict_data = dict_data
-					? repalloc_huge(dict_data, ncap)
-					: MemoryContextAllocExtended(CurrentMemoryContext, ncap, MCXT_ALLOC_HUGE);
-				data_cap = ncap;
-			}
-			if (len)
-				memcpy(dict_data + data_len, bytes, len);
-			data_len += len;
-			dict_offs[dict_n] = data_len;
-			found = (uint32_t) dict_n;
-			dict_n++;
+			dict_cap = dict_cap ? dict_cap * 2 : 64;
+			dict_offs = dict_offs
+				? repalloc(dict_offs, dict_cap * sizeof(uint64_t))
+				: palloc(dict_cap * sizeof(uint64_t));
 		}
-		keys[i] = found;
+		data_len += len;
+		dict_offs[dict_n] = data_len;
+		entry->idx = (uint32) dict_n;
+		keys[i] = (uint32) dict_n;
+		dict_n++;
 	}
+
+	if (data_len)
+	{
+		lcd_iterator it;
+		lcd_entry  *e;
+
+		dict_data = MemoryContextAllocExtended(CurrentMemoryContext, data_len,
+											   MCXT_ALLOC_HUGE);
+		lcd_start_iterate(ht, &it);
+		while ((e = lcd_iterate(ht, &it)) != NULL)
+		{
+			uint64_t	s = e->idx == 0 ? 0 : dict_offs[e->idx - 1];
+
+			memcpy(dict_data + s, e->key.bytes, e->key.len);
+		}
+	}
+	if (ht)
+		lcd_destroy(ht);
 	*out_dict_offs = dict_offs;
 	*out_dict_data = dict_data;
 	*out_dict_n = dict_n;
