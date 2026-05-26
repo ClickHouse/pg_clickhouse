@@ -763,12 +763,15 @@ read_value(const chc_column * col, const chc_type * type, uint64_t row,
 /* ---- read state ----------------------------------------------------- */
 
 static bool
-load_block(ch_binary_read_state_t * state, size_t idx)
+load_block(ch_binary_read_state_t * state)
 {
-	state->cur = ch_binary_response_block_at(state->resp, idx);
+	state->cur = ch_binary_response_fetch_next_block(state->resp);
 	if (state->cur == NULL)
 	{
-		state->error = pstrdup("pg_clickhouse: failed to read block");
+		const char *resp_err = ch_binary_response_error(state->resp);
+
+		if (resp_err)
+			state->error = pstrdup(resp_err);
 		state->done = true;
 		return false;
 	}
@@ -779,7 +782,6 @@ void
 ch_binary_read_state_init(ch_binary_read_state_t * state, ch_binary_response_t * resp)
 {
 	const char *resp_err;
-	size_t		blocks;
 	size_t		ncols;
 
 	state->resp = resp;
@@ -800,9 +802,8 @@ ch_binary_read_state_init(ch_binary_read_state_t * state, ch_binary_response_t *
 		return;
 	}
 
-	blocks = ch_binary_response_block_count(resp);
 	ncols = ch_binary_response_columns(resp);
-	if (ncols == 0 || blocks == 0)
+	if (ncols == 0)
 	{
 		state->done = true;
 		return;
@@ -812,7 +813,7 @@ ch_binary_read_state_init(ch_binary_read_state_t * state, ch_binary_response_t *
 	state->values = palloc0(sizeof(Datum) * ncols);
 	state->nulls = palloc0(sizeof(bool) * ncols);
 
-	if (!load_block(state, 0))
+	if (!load_block(state))
 		return;
 
 	for (size_t i = 0; i < ncols; i++)
@@ -822,37 +823,24 @@ ch_binary_read_state_init(ch_binary_read_state_t * state, ch_binary_response_t *
 bool
 ch_binary_read_row(ch_binary_read_state_t * state)
 {
-	size_t		blocks;
 	size_t		ncols;
 
 	if (state->done || state->coltypes == NULL || state->error)
 		return false;
 
-	blocks = ch_binary_response_block_count(state->resp);
 	ncols = ch_binary_response_columns(state->resp);
 
 again:
 	if (state->cur == NULL)
 	{
-		if (state->block >= blocks)
-		{
-			state->done = true;
-			return false;
-		}
-		if (!load_block(state, state->block))
+		if (!load_block(state))
 			return false;
 	}
 
 	if (state->row >= chc_block_n_rows(state->cur))
 	{
 		state->row = 0;
-		state->block++;
 		state->cur = NULL;
-		if (state->block >= blocks)
-		{
-			state->done = true;
-			return false;
-		}
 		goto again;
 	}
 

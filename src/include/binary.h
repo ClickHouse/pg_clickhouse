@@ -55,15 +55,16 @@ extern ch_binary_response_t * ch_binary_simple_query(ch_binary_connection_t * co
 extern void ch_binary_response_free(ch_binary_response_t * resp);
 extern const char *ch_binary_response_error(const ch_binary_response_t * resp);
 extern bool ch_binary_response_success(const ch_binary_response_t * resp);
-extern size_t ch_binary_response_block_count(const ch_binary_response_t * resp);
 extern size_t ch_binary_response_columns(const ch_binary_response_t * resp);
 
 /*
- * Borrow block #idx. Pointer is owned by the response (valid until
- * ch_binary_response_free); NULL when idx is out of range.
+ * Pump the next non-empty Data block off the wire. Returned pointer is
+ * borrowed; valid until the next call to fetch_next_block or to
+ * ch_binary_response_free. NULL when the stream ends (eos, error, or
+ * canceled). After NULL, ch_binary_response_error reports the cause if
+ * any.
  */
-extern const chc_block *ch_binary_response_block_at(ch_binary_response_t * resp,
-													size_t idx);
+extern const chc_block *ch_binary_response_fetch_next_block(ch_binary_response_t * resp);
 
 /* INSERT. */
 extern ch_binary_insert_handle * ch_binary_begin_insert(ch_binary_connection_t * conn,

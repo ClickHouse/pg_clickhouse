@@ -886,12 +886,10 @@ binary_simple_query(void *conn, const ch_query * query)
 	MemoryContextSwitchTo(oldcxt);
 
 	if (state->error)
-	{
 		ereport(ERROR,
-				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-				 errmsg("pg_clickhouse: could not initialize read state: %s",
-						state->error)));
-	}
+				(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+				 errmsg("pg_clickhouse: %s", state->error),
+				 errdetail_internal("Remote Query: %.64000s", query->sql)));
 
 	return cursor;
 }
@@ -1362,16 +1360,36 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt * stmt, ForeignServer * se
 		NULL
 	};
 
+	/*
+	 * Drain the outer query into private strings before opening the per-table
+	 * column queries: both use the same connection, and binary streaming only
+	 * permits one in-flight response at a time.
+	 */
+	List	   *tables = NIL;
+
 	while ((row_values = conn.methods->fetch_row(&tables_ctx)) != NULL)
 	{
+		List	   *triple = list_make3(pstrdup(TextDatumGetCString(row_values[0])),
+										pstrdup(TextDatumGetCString(row_values[1])),
+										pstrdup(TextDatumGetCString(row_values[2])));
+
+		CHECK_FOR_INTERRUPTS();
+		tables = lappend(tables, triple);
+	}
+	MemoryContextDelete(cursor->memcxt);
+
+	ListCell   *tlc;
+
+	foreach(tlc, tables)
+	{
+		List	   *triple = (List *) lfirst(tlc);
+		char	   *table_name = (char *) linitial(triple);
+		char	   *engine = (char *) lsecond(triple);
+		char	   *engine_full = (char *) lthird(triple);
 		StringInfoData buf;
-		char	   *table_name = TextDatumGetCString(row_values[0]);
-		char	   *engine = TextDatumGetCString(row_values[1]);
-		char	   *engine_full = TextDatumGetCString(row_values[2]);
 		Datum	   *dvalues;
 		bool		first = true;
 
-		CHECK_FOR_INTERRUPTS();
 		if (table_name == NULL)
 			continue;
 
@@ -1491,7 +1509,6 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt * stmt, ForeignServer * se
 		MemoryContextDelete(cols_ctx.cursor->memcxt);
 	}
 
-	MemoryContextDelete(cursor->memcxt);
 	return result;
 }
 
