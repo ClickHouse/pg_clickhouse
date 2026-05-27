@@ -6,13 +6,13 @@
  * cap), error mapping into ereport, and a couple of small type helpers
  * shared across the subdir.
  *
- * This TU also holds the CHC_IMPLEMENTATION define for the clickhouse-c
- * single-header library; the other .c files in src/binary include the
+ * This also holds the CHC_IMPLEMENTATION define for the clickhouse-c
+ * header-only library; the other .c files in src/binary include the
  * same headers without that define and link against the bodies emitted
  * here.
  *
- * Public ABI lives in src/include/binary.h. Driver internals shared
- * between connection.c / select.c / insert.c live in binary_internal.h
+ * API lives in src/include/binary.h. Driver internals shared between
+ * connection.c / select.c / insert.c live in binary_internal.h
  * alongside this file.
  */
 
@@ -76,22 +76,6 @@ server_supports_json_as_string(const chc_client * c)
 	if (info->version_major == 24 && info->version_minor >= 10)
 		return true;
 	return false;
-}
-
-const chc_type *
-unwrap_for_block_column(const chc_type * t)
-{
-	if (!t)
-		return NULL;
-	if (chc_type_kind(t) == CHC_NULLABLE)
-		t = chc_type_child(t, 0);
-	if (chc_type_kind(t) == CHC_LOW_CARDINALITY)
-	{
-		t = chc_type_child(t, 0);
-		if (chc_type_kind(t) == CHC_NULLABLE)
-			t = chc_type_child(t, 0);
-	}
-	return t;
 }
 
 void

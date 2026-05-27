@@ -147,15 +147,6 @@ ch_binary_prepare_insert(void *conn, const ch_query * query,
 	}
 }
 
-/* Any CH integer kind whose value fits in int64 (column width truncates). */
-static inline bool
-chc_kind_fits_int64(chc_kind kind)
-{
-	return kind == CHC_BOOL
-		|| (kind >= CHC_INT8 && kind <= CHC_INT64)
-		|| (kind >= CHC_UINT8 && kind <= CHC_UINT64);
-}
-
 /*
  * Append a single value (already extracted from a Datum + isnull) into the
  * current column, dispatching on (PG Oid, CH kind). ereports on mismatch.
@@ -172,7 +163,9 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 			{
 				int64_t		v = 0;
 
-				if (!chc_kind_fits_int64(kind))
+				if (!(kind == CHC_BOOL
+					|| (kind >= CHC_INT8 && kind <= CHC_INT64)
+					|| (kind >= CHC_UINT8 && kind <= CHC_UINT64)))
 					goto type_mismatch;
 				if (!isnull)
 				{

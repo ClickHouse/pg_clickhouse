@@ -390,12 +390,11 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 		sql[sql_len + 7] = '\0';
 
 		/*
-		 * On servers that support it (24.10+), tell the server to serialise
-		 * any JSON columns it emits as the STRING wire format. INSERT path
-		 * doesn't need this — the server reads the per-column version
-		 * prefix the builder writes — but we set it on the same packet for
-		 * symmetry with the SELECT path and so any RETURNING-style projection
-		 * on top still decodes.
+		 * On servers that support it (24.10+), tell the server to serialize
+		 * any JSON columns it emits as STRING wire format. INSERT path
+		 * doesn't need this, server reads per-column version prefix builder
+		 * writes, but set it on same packet for symmetry with SELECT path and
+		 * so any RETURNING-style projection on top still decodes.
 		 */
 		chc_query_setting json_setting = {
 			.name = "output_format_native_write_json_as_string",
@@ -445,7 +444,17 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 			nm = chc_block_column_name(h->initial_block, i, &nlen);
 			c->info.name = pnstrdup(nm ? nm : "", nlen);
 			c->info.is_nullable = c->is_nullable;
-			c->info.type = unwrap_for_block_column(c->inner_t);
+
+			/* inner_t already Nullable-stripped; unwrap LowCardinality
+			 * and perhaps its inner Nullable to expose innermost type. */
+			const chc_type *vt = c->inner_t;
+			if (chc_type_kind(vt) == CHC_LOW_CARDINALITY)
+			{
+				vt = chc_type_child(vt, 0);
+				if (chc_type_kind(vt) == CHC_NULLABLE)
+					vt = chc_type_child(vt, 0);
+			}
+			c->info.type = vt;
 		}
 
 		*out_cols = NULL;
@@ -638,9 +647,7 @@ append_int_kind(ic_col * c, int64_t val)
 		case CHC_INT64:
 		case CHC_UINT64:
 			{
-				int64_t		v = val;
-
-				append_fixed_bytes(c, &v, 8);
+				append_fixed_bytes(c, &val, 8);
 				return;
 			}
 		default:
@@ -963,7 +970,7 @@ ch_binary_array_begin(ch_binary_insert_handle * h, size_t col)
 {
 	/*
 	 * Nested arrays recurse via append_one with col=0, so once an array is
-	 * open the caller's col is meaningless — resolve from array_col_idx.
+	 * open the caller's col is meaningless, resolve from array_col_idx.
 	 */
 	size_t		idx = h->array_active ? h->array_col_idx : col;
 

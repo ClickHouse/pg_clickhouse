@@ -937,10 +937,9 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 	/*
 	 * CH JSON columns default to JSONBOID in state->coltypes. When the
 	 * foreign-table column is declared `json` (JSONOID), override so
-	 * binary_make_datum hands back a json Datum constructed straight from
-	 * CH's STRING-serialised bytes — skipping a jsonb_in / jsonb_out
-	 * round-trip that would re-canonicalise CH's emit and break expected
-	 * outputs that pin CH's exact formatting.
+	 * binary_make_datum returns json Datum from CH's STRING bytes, skipping a
+	 * jsonb_in / jsonb_out round-trip that would reformat CH's emit and break
+	 * expected outputs that pin CH's exact formatting.
 	 */
 	if (tupdesc && state->coltypes)
 	{

@@ -138,14 +138,16 @@ tls_connect(struct ch_binary_state *s, const char *host)
 	if (!s->ssl_ctx)
 		ereport(ERROR,
 				(errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
-				 errmsg("pg_clickhouse: SSL_CTX_new failed")));
+				 errmsg("pg_clickhouse: failed to initialize opensssl"),
+				 errdetail("SSL_CTX_new failed")));
 	SSL_CTX_set_verify(s->ssl_ctx, SSL_VERIFY_NONE, NULL);
 
 	s->ssl = SSL_new(s->ssl_ctx);
 	if (!s->ssl)
 		ereport(ERROR,
 				(errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
-				 errmsg("pg_clickhouse: SSL_new failed")));
+				 errmsg("pg_clickhouse: failed to initialize opensssl"),
+				 errdetail("SSL_new failed")));
 	SSL_set_tlsext_host_name(s->ssl, host);
 	SSL_set_fd(s->ssl, s->fd);
 	if (SSL_connect(s->ssl) != 1)
@@ -156,7 +158,8 @@ tls_connect(struct ch_binary_state *s, const char *host)
 		ERR_error_string_n(e, ebuf, sizeof(ebuf));
 		ereport(ERROR,
 				(errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
-				 errmsg("pg_clickhouse: SSL_connect: %s", ebuf)));
+				 errmsg("pg_clickhouse: openssl failed to connect"),
+				 errdetail("%s", ebuf)));
 	}
 }
 

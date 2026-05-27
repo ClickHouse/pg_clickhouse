@@ -1,7 +1,7 @@
 /*
  * binary.h
  *
- * ABI exposed by the binary driver. Allocates against caller's
+ * API exposed by the binary driver. Allocates against caller's
  * CurrentMemoryContext at every public entry point and ereports on
  * error. Returned objects own a dedicated MemoryContext; explicit
  * *_free / *_close calls do MemoryContextDelete.

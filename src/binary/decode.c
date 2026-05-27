@@ -416,7 +416,7 @@ read_enum_as_text(const chc_column * col, const chc_type * type, uint64_t row)
 }
 
 /*
- * JSON body bytes are STRING-serialised JSON document text. Run them
+ * JSON body bytes are STRING-serialized JSON document text. Run them
  * through json_in / jsonb_in depending on the caller's target valtype
  * (set by ch_kind_to_pg_oid to JSONBOID, overridable when the foreign
  * table declares the column as `json`).
@@ -851,7 +851,7 @@ again:
 			 * incoming value so callers (binary_fetch_row) can pin the Datum
 			 * type to JSONOID for `data json` foreign columns and avoid the
 			 * jsonb_in -> jsonb_out round-trip that would strip CH's verbatim
-			 * STRING- serialised formatting.
+			 * STRING- serialized formatting.
 			 */
 			Oid			t = state->coltypes[i];
 			const		chc_column *col = chc_block_column(state->cur, i);
