@@ -216,31 +216,32 @@ static Datum read_value(const chc_column * col, const chc_type * type,
 /*
  * Format a Decimal value (LE bytes of width 4/8/16/32 with `scale`
  * fractional digits) into `out`. Returns bytes written, -1 on overflow.
- * 128/256-bit decimals use base-10 division on the LE byte array.
+ * 128/256-bit decimals use base-10 division on the LE word array.
  */
 static int
 format_decimal_text(const uint8_t * bytes, size_t width, uint32_t scale,
 					char *out, size_t out_cap)
 {
-	uint8_t		mag[32];
-	int			neg = 0;
+	uint32_t	mag[8];
+	size_t		nwords = width / 4;
+	bool		neg = false;
 
-	if (width > 32 || width == 0)
+	if (width == 0 || width > 32 || width % 4 != 0)
 		return -1;
 	memcpy(mag, bytes, width);
-	if (mag[width - 1] & 0x80)
+	if (mag[nwords - 1] & 0x80000000u)
 	{
-		neg = 1;
-		for (size_t i = 0; i < width; i++)
+		neg = true;
+		for (size_t i = 0; i < nwords; i++)
 			mag[i] = ~mag[i];
-		uint16_t	carry = 1;
+		uint64_t	carry = 1;
 
-		for (size_t i = 0; i < width && carry; i++)
+		for (size_t i = 0; i < nwords && carry; i++)
 		{
-			uint16_t	v = (uint16_t) mag[i] + carry;
+			uint64_t	v = (uint64_t) mag[i] + carry;
 
-			mag[i] = (uint8_t) v;
-			carry = v >> 8;
+			mag[i] = (uint32_t) v;
+			carry = v >> 32;
 		}
 	}
 
@@ -250,25 +251,25 @@ format_decimal_text(const uint8_t * bytes, size_t width, uint32_t scale,
 
 	do
 	{
-		uint32_t	rem = 0;
+		uint64_t	rem = 0;
 
 		nonzero = 0;
-		for (ssize_t i = (ssize_t) width - 1; i >= 0; i--)
+		for (ssize_t i = (ssize_t) nwords - 1; i >= 0; i--)
 		{
-			uint32_t	v = (rem << 8) | mag[i];
+			uint64_t	v = (rem << 32) | mag[i];
 
-			mag[i] = (uint8_t) (v / 10);
+			mag[i] = (uint32_t) (v / 10);
 			rem = v % 10;
 			if (mag[i])
 				nonzero = 1;
 		}
-		buf[n++] = (char) ('0' + rem);
+		buf[n++] = (char) ('0' + (uint32_t) rem);
 	} while (nonzero && n < (int) sizeof(buf));
 
 	while (n <= (int) scale)
 		buf[n++] = '0';
 
-	size_t		need = (neg ? 1 : 0) + (size_t) n + (scale ? 1 : 0) + 1;
+	size_t		need = (size_t) neg + (size_t) n + (scale ? 1 : 0) + 1;
 
 	if (need > out_cap)
 		return -1;
@@ -276,11 +277,10 @@ format_decimal_text(const uint8_t * bytes, size_t width, uint32_t scale,
 
 	if (neg)
 		*p++ = '-';
-	int			dot_at = (int) scale;
 
 	for (int i = n - 1; i >= 0; i--)
 	{
-		if (scale && i + 1 == dot_at)
+		if (i + 1 == scale)
 			*p++ = '.';
 		*p++ = buf[i];
 	}
@@ -636,22 +636,16 @@ read_value(const chc_column * col, const chc_type * type, uint64_t row,
 		case CHC_UINT8:
 		case CHC_BOOL:
 			*valtype = INT2OID;
-			return (Datum) (int16) rd_u8(fixed_data(col), row);
+			return (Datum) rd_u8(fixed_data(col), row);
 		case CHC_INT8:
 			*valtype = INT2OID;
-			return (Datum) (int16) rd_i8(fixed_data(col), row);
+			return (Datum) rd_i8(fixed_data(col), row);
 		case CHC_INT16:
 			*valtype = INT2OID;
 			return (Datum) rd_i16(fixed_data(col), row);
 		case CHC_UINT16:
-
-			/*
-			 * Legacy binary FDW reads UInt16 via narrowing to int16, so 65535
-			 * surfaces as -1 once the INT4OID Datum is interpreted. Cast
-			 * through int16 to preserve that behavior.
-			 */
 			*valtype = INT4OID;
-			return (Datum) (int32) (int16) rd_u16(fixed_data(col), row);
+			return (Datum) rd_u16(fixed_data(col), row);
 		case CHC_INT32:
 			*valtype = INT4OID;
 			return (Datum) rd_i32(fixed_data(col), row);
