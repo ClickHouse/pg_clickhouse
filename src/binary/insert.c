@@ -586,34 +586,37 @@ decimal_text_to_bytes(const char *s, uint32_t scale, size_t width, uint8_t * out
 		digits++;
 	size_t		ndig = strlen(digits);
 
-	uint8_t		mag[32] = {0};
+	/* width is 4/8/16/32 for Decimal32/64/128/256; nwords is host words. */
+	uint32_t	mag[8] = {0};
+	size_t		nwords = width / 4;
 
 	for (size_t i = 0; i < ndig; i++)
 	{
-		uint16_t	carry = (uint16_t) (digits[i] - '0');
+		uint64_t	carry = (uint64_t) (digits[i] - '0');
 
-		for (size_t b = 0; b < width; b++)
+		for (size_t b = 0; b < nwords; b++)
 		{
-			uint16_t	v = (uint16_t) mag[b] * 10 + carry;
+			uint64_t	v = (uint64_t) mag[b] * 10 + carry;
 
-			mag[b] = (uint8_t) (v & 0xff);
-			carry = (uint16_t) (v >> 8);
+			mag[b] = (uint32_t) v;
+			carry = v >> 32;
 		}
 	}
 	if (neg)
 	{
-		for (size_t b = 0; b < width; b++)
+		for (size_t b = 0; b < nwords; b++)
 			mag[b] = ~mag[b];
-		uint16_t	carry = 1;
+		uint64_t	carry = 1;
 
-		for (size_t b = 0; b < width && carry; b++)
+		for (size_t b = 0; b < nwords && carry; b++)
 		{
-			uint16_t	v = (uint16_t) mag[b] + carry;
+			uint64_t	v = (uint64_t) mag[b] + carry;
 
-			mag[b] = (uint8_t) v;
-			carry = v >> 8;
+			mag[b] = (uint32_t) v;
+			carry = v >> 32;
 		}
 	}
+
 	memcpy(out, mag, width);
 }
 
