@@ -12,6 +12,7 @@
 
 #include "access/tupdesc.h"
 #include "catalog/pg_type_d.h"
+#include "nodes/pg_list.h"
 #include "fmgr.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
@@ -132,6 +133,20 @@ ch_binary_prepare_insert(void *conn, const ch_query * query,
 	for (size_t i = 0; i < n; i++)
 	{
 		Oid			pg_type = ch_kind_to_pg_oid_for_insert(cols[i].type, cols[i].name);
+
+		/*
+		 * CHC_JSON defaults to JSONBOID; honor foreign-table's JSONOID
+		 * declaration when present so outdesc matches the source slot and no
+		 * json↔jsonb conversion is needed.
+		 */
+		if (pg_type == JSONBOID && query->tupdesc && query->attr_nums)
+		{
+			AttrNumber	attnum = list_nth_int((List *) query->attr_nums, i);
+
+			if (attnum >= 1 && attnum <= query->tupdesc->natts &&
+				TupleDescAttr(query->tupdesc, attnum - 1)->atttypid == JSONOID)
+				pg_type = JSONOID;
+		}
 
 		TupleDescInitEntry(state->outdesc, (AttrNumber) (i + 1),
 						   cols[i].name ? cols[i].name : "",
