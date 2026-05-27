@@ -19,6 +19,7 @@
 #include "utils/date.h"
 #include "utils/inet.h"
 #include "utils/lsyscache.h"
+#include "utils/memutils.h"
 #include "utils/numeric.h"
 #include "utils/timestamp.h"
 #include "utils/uuid.h"

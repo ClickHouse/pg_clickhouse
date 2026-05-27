@@ -2,16 +2,18 @@
 	A PostgreSQL extension for connecting to ClickHouse servers.
 */
 
+#include <sys/time.h>
+
 /* PostgreSQL includes. */
 #include "postgres.h"
 #include "catalog/pg_class_d.h"
 #include "commands/defrem.h"
-#include "commands/explain.h"
 #include "foreign/fdwapi.h"
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "nodes/parsenodes.h"
 #include "optimizer/clauses.h"
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
@@ -32,12 +34,12 @@
 #if PG_VERSION_NUM >= 180000
 #include "commands/explain_format.h"
 #include "commands/explain_state.h"
+#else
+#include "commands/explain.h"
 #endif
 
 /* extension includes. */
 #include "utils/builtins.h"
-#include "binary.h"
-#include "internal.h"
 #include "fdw.h"
 #include "version.h"
 

@@ -19,7 +19,7 @@
 #include "executor/tuptable.h"
 
 #include "fdw.h"
-#include "binary.h"
+#include "binary_internal.h"
 #include <stdint.h>
 
 typedef struct ch_convert_state ch_convert_state;

@@ -18,7 +18,6 @@
 
 #include "access/tupdesc.h"
 #include "executor/tuptable.h"
-#include "utils/memutils.h"
 #include "utils/palloc.h"
 
 #include "clickhouse.h"
@@ -27,14 +26,6 @@
 typedef struct ch_binary_connection_t ch_binary_connection_t;
 typedef struct ch_binary_response_t ch_binary_response_t;
 typedef struct ch_binary_insert_handle ch_binary_insert_handle;
-
-/* Column metadata returned from ch_binary_begin_insert. */
-typedef struct ch_binary_column_info
-{
-	const char *name;
-	const		chc_type *type; /* type unwrapped of Nullable + LowCardinality */
-	bool		is_nullable;
-}			ch_binary_column_info;
 
 /* Connection. */
 extern ch_binary_connection_t * ch_binary_connect(ch_connection_details * details);
@@ -56,20 +47,7 @@ extern const char *ch_binary_response_error(const ch_binary_response_t * resp);
 extern bool ch_binary_response_success(const ch_binary_response_t * resp);
 extern size_t ch_binary_response_columns(const ch_binary_response_t * resp);
 
-/*
- * Pump the next non-empty Data block off the wire. Returned pointer is
- * borrowed; valid until the next call to fetch_next_block or to
- * ch_binary_response_free. NULL when the stream ends (eos, error, or
- * canceled). After NULL, ch_binary_response_error reports the cause if
- * any.
- */
-extern const chc_block *ch_binary_response_fetch_next_block(ch_binary_response_t * resp);
-
 /* INSERT. */
-extern ch_binary_insert_handle * ch_binary_begin_insert(ch_binary_connection_t * conn,
-														const ch_query * query,
-														ch_binary_column_info * *out_cols,
-														size_t * out_n);
 
 /*
  * Finish the insert: send final empty Data, drain the response, ereport
@@ -77,13 +55,6 @@ extern ch_binary_insert_handle * ch_binary_begin_insert(ch_binary_connection_t *
  * path before tearing down the handle.
  */
 extern void ch_binary_finalize_insert(ch_binary_insert_handle * h);
-
-/*
- * Tear down the handle. Never raises and never talks to the server, so it
- * is safe to call from a MemoryContext reset callback during transaction
- * abort. Flags the connection broken if finalize did not run.
- */
-extern void ch_binary_release_insert(ch_binary_insert_handle * h);
 
 /* PG-typed surface follows. */
 
@@ -101,32 +72,6 @@ typedef struct
 	char	   *error;
 	bool		done;
 }			ch_binary_read_state_t;
-
-typedef struct
-{
-	Datum	   *datums;
-	bool	   *nulls;
-	size_t		len;
-	Oid		   *types;
-	const char *ch_type_name;
-}			ch_binary_tuple_t;
-
-/*
- * Holds an array decoded from ClickHouse or built for INSERT. For nested
- * arrays (Array(Array(...))) ndim > 1 and datums[i] points to a child
- * ch_binary_array_t with ndim-1. item_type is leaf scalar PG type,
- * array_type is postgres array type (same across nesting depths since
- * postgres uses one array type per element type regardless of ndim).
- */
-typedef struct
-{
-	Datum	   *datums;
-	bool	   *nulls;
-	size_t		len;
-	int			ndim;			/* nesting depth, >=1 */
-	Oid			item_type;		/* leaf scalar PG type */
-	Oid			array_type;		/* PG array type (same at every level) */
-}			ch_binary_array_t;
 
 typedef struct
 {

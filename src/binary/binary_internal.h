@@ -24,6 +24,60 @@
 #define pg_noreturn pg_attribute_noreturn()
 #endif
 
+typedef struct
+{
+	Datum	   *datums;
+	bool	   *nulls;
+	size_t		len;
+	Oid		   *types;
+	const char *ch_type_name;
+}			ch_binary_tuple_t;
+
+/*
+ * Holds an array decoded from ClickHouse or built for INSERT. For nested
+ * arrays (Array(Array(...))) ndim > 1 and datums[i] points to a child
+ * ch_binary_array_t with ndim-1. item_type is leaf scalar PG type,
+ * array_type is postgres array type (same across nesting depths since
+ * postgres uses one array type per element type regardless of ndim).
+ */
+typedef struct
+{
+	Datum	   *datums;
+	bool	   *nulls;
+	size_t		len;
+	int			ndim;			/* nesting depth, >=1 */
+	Oid			item_type;		/* leaf scalar PG type */
+	Oid			array_type;		/* PG array type (same at every level) */
+}			ch_binary_array_t;
+
+/* Column metadata returned from ch_binary_begin_insert. */
+typedef struct ch_binary_column_info
+{
+	const char *name;
+	const		chc_type *type; /* type unwrapped of Nullable + LowCardinality */
+	bool		is_nullable;
+}			ch_binary_column_info;
+
+/*
+ * Pump next non-empty Data block off wire. Returned pointer is borrowed,
+ * valid until next fetch_next_block or ch_binary_response_free. NULL when
+ * stream ends (eos, error, canceled), ch_binary_response_error reports
+ * cause if any.
+ */
+extern const chc_block *ch_binary_response_fetch_next_block(ch_binary_response_t * resp);
+
+extern ch_binary_insert_handle * ch_binary_begin_insert(ch_binary_connection_t * conn,
+														const ch_query * query,
+														ch_binary_column_info * *out_cols,
+														size_t * out_n);
+
+/*
+ * Tear down handle. Never raises and never talks to server, safe to call
+ * from a MemoryContext reset callback during transaction abort. Flags
+ * connection broken if finalize did not run.
+ */
+extern void ch_binary_release_insert(ch_binary_insert_handle * h);
+
 /*
  * Per-connection state smuggled through ch_binary_connection_t.client.
  *

@@ -138,9 +138,9 @@ pump_one(ch_binary_response_t * resp)
 
 /*
  * Best-effort drain of any unconsumed stream so the connection is left clean
- * for the next query. Never raises. Disables cancel polling while draining
- * so QueryCancelPending doesn't short-circuit every refill. Sets
- * state->broken on transport failure so the cache drops the connection.
+ * for the next query. Disables cancel polling while draining so
+ * QueryCancelPending doesn't short-circuit every refill. Sets state->broken on
+ * transport failure so the cache drops the connection.
  */
 static void
 drain_until_eos(ch_binary_response_t * resp)
