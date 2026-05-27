@@ -46,8 +46,12 @@ EXTRA_CLEAN = sql/$(EXTENSION)--$(EXTVERSION).sql src/include/version.h compile_
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-# Require the version header.
-$(OBJS): src/include/version.h
+# Clone clickhouse-c submodule.
+$(CH_C_DIR)/clickhouse.h: .gitmodules
+	git submodule update --init
+
+# Require clickhouse-c and the version header.
+$(OBJS): $(CH_C_DIR)/clickhouse.h src/include/version.h
 
 # Require the versioned C source and SQL script.
 all: sql/$(EXTENSION)--$(EXTVERSION).sql
