@@ -390,11 +390,12 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 		sql[sql_len + 7] = '\0';
 
 		/*
-		 * On servers that support it (24.10+), tell server to serialize any JSON
-		 * columns using STRING wire format. INSERT path doesn't need this, server
-		 * reads the per-column version prefix the builder writes, but we set it
-		 * on the same packet for symmetry with the SELECT path and so any
-		 * RETURNING-style projection on top still decodes.
+		 * On servers that support it (24.10+), tell server to serialize any
+		 * JSON columns using STRING wire format. INSERT path doesn't need
+		 * this, server reads the per-column version prefix the builder
+		 * writes, but we set it on the same packet for symmetry with the
+		 * SELECT path and so any RETURNING-style projection on top still
+		 * decodes.
 		 */
 		chc_query_setting json_setting = {
 			.name = "output_format_native_write_json_as_string",
