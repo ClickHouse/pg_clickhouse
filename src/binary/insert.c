@@ -14,20 +14,11 @@
 
 #include <ctype.h>
 #include <string.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 
 #include "common/hashfn.h"
+#include "port/pg_bswap.h"
 #include "utils/memutils.h"
 #include "utils/palloc.h"
-
-#if defined(__APPLE__)
-#include <libkern/OSByteOrder.h>
-#define BE_TO_HOST_64(x) OSSwapBigToHostInt64(x)
-#else
-#include <endian.h>
-#define BE_TO_HOST_64(x) be64toh(x)
-#endif
 
 #include "binary_internal.h"
 
@@ -862,8 +853,8 @@ ch_binary_append_uuid(ch_binary_insert_handle * h, size_t col,
 
 		memcpy(&a, bytes, 8);
 		memcpy(&b, bytes + 8, 8);
-		a = BE_TO_HOST_64(a);
-		b = BE_TO_HOST_64(b);
+		a = pg_ntoh64(a);
+		b = pg_ntoh64(b);
 		memcpy(wire, &a, 8);
 		memcpy(wire + 8, &b, 8);
 	}
@@ -871,63 +862,41 @@ ch_binary_append_uuid(ch_binary_insert_handle * h, size_t col,
 	MemoryContextSwitchTo(old);
 }
 
+/*
+ * addr_be is BE bytes (PG inet ip_addr layout). For IPv4 CH wire is a
+ * host-order uint32; pg_ntoh32 turns BE bytes into the right host value.
+ * For IPv6 CH wire matches PG byte order.
+ */
 void
 ch_binary_append_inet(ch_binary_insert_handle * h, size_t col,
-					  const char *ip_text, bool isnull)
+					  const uint8_t *addr_be, size_t addrlen, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
 	ic_col	   *c = resolve_col(h, col, isnull);
 	const		chc_type *t = ic_layout_array_fixed(c->layout) ? c->elem_t : c->inner_t;
 	chc_kind	k = chc_type_kind(t);
 
-	if (k == CHC_IPV4)
+	if (k == CHC_IPV4 && addrlen == 4)
 	{
 		uint32_t	addr = 0;
 
-		if (!isnull && ip_text)
+		if (!isnull && addr_be)
 		{
-			struct in_addr ia;
+			uint32_t	be;
 
-			/* PG inet may carry CIDR suffix; trim. */
-			char		buf[64];
-			const char *slash = strchr(ip_text, '/');
-			size_t		nn = slash ? (size_t) (slash - ip_text) : strlen(ip_text);
-
-			if (nn >= sizeof(buf))
-				nn = sizeof(buf) - 1;
-			memcpy(buf, ip_text, nn);
-			buf[nn] = '\0';
-			if (inet_pton(AF_INET, buf, &ia) != 1)
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
-						 errmsg("pg_clickhouse: bad IPv4: %s", ip_text)));
-			addr = ntohl(ia.s_addr);
+			memcpy(&be, addr_be, 4);
+			addr = pg_ntoh32(be);
 		}
 		append_fixed_bytes(c, &addr, 4);
 		MemoryContextSwitchTo(old);
 		return;
 	}
-	if (k == CHC_IPV6)
+	if (k == CHC_IPV6 && addrlen == 16)
 	{
 		uint8_t		raw[16] = {0};
 
-		if (!isnull && ip_text)
-		{
-			struct in6_addr ia;
-			char		buf[80];
-			const char *slash = strchr(ip_text, '/');
-			size_t		nn = slash ? (size_t) (slash - ip_text) : strlen(ip_text);
-
-			if (nn >= sizeof(buf))
-				nn = sizeof(buf) - 1;
-			memcpy(buf, ip_text, nn);
-			buf[nn] = '\0';
-			if (inet_pton(AF_INET6, buf, &ia) != 1)
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
-						 errmsg("pg_clickhouse: bad IPv6: %s", ip_text)));
-			memcpy(raw, &ia, 16);
-		}
+		if (!isnull && addr_be)
+			memcpy(raw, addr_be, 16);
 		append_fixed_bytes(c, raw, 16);
 		MemoryContextSwitchTo(old);
 		return;

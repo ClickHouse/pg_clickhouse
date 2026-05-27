@@ -7,8 +7,8 @@
 
 #include "postgres.h"
 
-#include <math.h>
 #include <string.h>
+#include <sys/socket.h>			/* AF_INET, expanded by PG inet macros */
 
 #include "access/htup_details.h"
 #include "access/tupdesc.h"
@@ -25,6 +25,15 @@
 #include "utils/uuid.h"
 
 #include "binary.h"
+
+/* power-of-10 lookup; CH bounds DateTime64 scale to [0, 9] */
+static const int64_t pow10i[10] = {
+	1, 10, 100, 1000, 10000, 100000, 1000000,
+	10000000, 100000000, 1000000000
+};
+
+/* CH Date epoch is unix; offset to PG epoch (2000-01-01) */
+#define CH_TO_PG_DATE_OFFSET (POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE)
 
 /*
  * Map a CH column kind to the PG type our import path uses. Used when
@@ -227,18 +236,13 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 			}
 		case DATEOID:
 			{
-				int64_t		seconds;
+				int64_t		seconds = 0;
 
 				if (kind != CHC_DATE && kind != CHC_DATE32)
 					goto type_mismatch;
 				if (!isnull)
-				{
-					Timestamp	t = date2timestamp_no_overflow(DatumGetDateADT(val));
-
-					seconds = (int64_t) timestamptz_to_time_t(t);
-				}
-				else
-					seconds = 0;
+					seconds = ((int64_t) DatumGetDateADT(val)
+							   + CH_TO_PG_DATE_OFFSET) * SECS_PER_DAY;
 				ch_binary_append_date_seconds(h, colidx, seconds, isnull);
 				return;
 			}
@@ -261,11 +265,18 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 					{
 						uint32_t	prec = ch_binary_column_datetime64_precision(h, colidx);
 						Timestamp	t = DatumGetTimestamp(val);
-						double		power = pow(10.0, prec);
+						int64		power = pow10i[prec];
+						int64		secs = t / USECS_PER_SEC;
+						int64		us_rem = t % USECS_PER_SEC;
 
-						raw = (int64_t) (((1.0 * t) / USECS_PER_SEC
-										  + ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY))
-										 * power);
+						/* floor-divide; C trunc-to-zero leaves negative remainder */
+						if (us_rem < 0)
+						{
+							secs -= 1;
+							us_rem += USECS_PER_SEC;
+						}
+						secs += CH_TO_PG_DATE_OFFSET * SECS_PER_DAY;
+						raw = secs * power + us_rem * power / USECS_PER_SEC;
 					}
 					ch_binary_append_datetime64_raw(h, colidx, raw, isnull);
 				}
@@ -314,15 +325,28 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 			}
 		case INETOID:
 			{
-				char	   *s = NULL;
+				const uint8_t *addr = NULL;
+				size_t		addrlen = 0;
 
 				if (kind != CHC_IPV4 && kind != CHC_IPV6)
 					goto type_mismatch;
 				if (!isnull)
-					s = DatumGetCString(DirectFunctionCall1(inet_out, val));
-				ch_binary_append_inet(h, colidx, s, isnull);
-				if (s)
-					pfree(s);
+				{
+					inet	   *ipa = DatumGetInetPP(val);
+					int			fam = ip_family(ipa);
+					int			expected = (kind == CHC_IPV4) ? PGSQL_AF_INET : PGSQL_AF_INET6;
+
+					if (fam != expected)
+						ereport(ERROR,
+								(errcode(ERRCODE_DATATYPE_MISMATCH),
+								 errmsg("pg_clickhouse: inet family mismatch for column %zu",
+										colidx)));
+					addr = ip_addr(ipa);
+					addrlen = ip_addrsize(ipa);
+				}
+				else
+					addrlen = (kind == CHC_IPV4) ? 4 : 16;
+				ch_binary_append_inet(h, colidx, addr, addrlen, isnull);
 				return;
 			}
 		case JSONOID:

@@ -90,8 +90,14 @@ extern void ch_binary_append_decimal(ch_binary_insert_handle * h, size_t col,
 									 const char *digits, bool isnull);
 extern void ch_binary_append_uuid(ch_binary_insert_handle * h, size_t col,
 								  const uint8_t bytes[16], bool isnull);
+
+/*
+ * IPv4: addr_be is 4 BE bytes (matches PG inet ip_addr layout).
+ * IPv6: addr_be is 16 BE bytes. Pass NULL with isnull=true.
+ */
 extern void ch_binary_append_inet(ch_binary_insert_handle * h, size_t col,
-								  const char *ip_text, bool isnull);
+								  const uint8_t * addr_be, size_t addrlen,
+								  bool isnull);
 
 /*
  * Per-row Date/DateTime/DateTime64 sent as seconds-since-epoch (int64).

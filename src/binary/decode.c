@@ -9,8 +9,8 @@
 
 #include "postgres.h"
 
-#include <math.h>
 #include <string.h>
+#include <sys/socket.h>			/* AF_INET, expanded by PG inet macros */
 
 #include "access/htup_details.h"
 #include "access/tupdesc.h"
@@ -18,6 +18,7 @@
 #include "fmgr.h"
 #include "funcapi.h"
 #include "pgtime.h"
+#include "port/pg_bswap.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
@@ -27,17 +28,16 @@
 #include "utils/timestamp.h"
 #include "utils/uuid.h"
 
-#include <arpa/inet.h>
-
 #include "binary.h"
 
-#if defined(__APPLE__)
-#include <libkern/OSByteOrder.h>
-#define HOST_TO_BE_64(x) OSSwapHostToBigInt64(x)
-#else
-#include <endian.h>
-#define HOST_TO_BE_64(x) htobe64(x)
-#endif
+/* power-of-10 lookup; CH bounds DateTime64 / Decimal scale to [0, 9] */
+static const int64_t pow10i[10] = {
+	1, 10, 100, 1000, 10000, 100000, 1000000,
+	10000000, 100000000, 1000000000
+};
+
+/* CH Date / Date32 epoch is unix; offset to PG epoch (2000-01-01) */
+#define CH_TO_PG_DATE_OFFSET (POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE)
 
 /* Little-endian fixed-width reads at row offset. */
 static inline int8_t
@@ -344,47 +344,43 @@ read_uuid(const chc_column * col, uint64_t row)
 
 	memcpy(&a, p, 8);
 	memcpy(&b, p + 8, 8);
-	a = HOST_TO_BE_64(a);
-	b = HOST_TO_BE_64(b);
+	a = pg_hton64(a);
+	b = pg_hton64(b);
 	memcpy(u->data, &a, 8);
 	memcpy(u->data + 8, &b, 8);
 	return UUIDPGetDatum(u);
 }
 
+/*
+ * IPv4 wire format: native uint32 (LE on supported hosts). PG inet wants
+ * BE bytes of dotted-quad, so pg_hton32 the value into ip_addr directly.
+ */
 static Datum
 read_ipv4(const chc_column * col, uint64_t row)
 {
-	const		uint8_t *p = fixed_data(col) + row * 4;
+	inet	   *res = (inet *) palloc0(sizeof(inet));
 	uint32_t	addr;
-	struct in_addr ia;
-	char		buf[INET_ADDRSTRLEN + 1];
 
-	/*
-	 * IPv4 wire format: 4 LE bytes; CH's ColumnIPv4::AsString writes the
-	 * address in dotted-quad with bytes in reversed order (be32 -> normal).
-	 */
-	memcpy(&addr, p, 4);
-	ia.s_addr = htonl(addr);
-	if (inet_ntop(AF_INET, &ia, buf, sizeof(buf)) == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_FDW_ERROR),
-				 errmsg("pg_clickhouse: inet_ntop failed for IPv4")));
-	return DirectFunctionCall1(inet_in, CStringGetDatum(buf));
+	memcpy(&addr, fixed_data(col) + row * 4, 4);
+	addr = pg_hton32(addr);
+	ip_family(res) = PGSQL_AF_INET;
+	ip_bits(res) = 32;
+	memcpy(ip_addr(res), &addr, 4);
+	SET_INET_VARSIZE(res);
+	return InetPGetDatum(res);
 }
 
+/* IPv6 wire is already network order; same layout as PG inet ip_addr. */
 static Datum
 read_ipv6(const chc_column * col, uint64_t row)
 {
-	const		uint8_t *p = fixed_data(col) + row * 16;
-	struct in6_addr ia;
-	char		buf[INET6_ADDRSTRLEN + 1];
+	inet	   *res = (inet *) palloc0(sizeof(inet));
 
-	memcpy(&ia, p, 16);
-	if (inet_ntop(AF_INET6, &ia, buf, sizeof(buf)) == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_FDW_ERROR),
-				 errmsg("pg_clickhouse: inet_ntop failed for IPv6")));
-	return DirectFunctionCall1(inet_in, CStringGetDatum(buf));
+	ip_family(res) = PGSQL_AF_INET6;
+	ip_bits(res) = 128;
+	memcpy(ip_addr(res), fixed_data(col) + row * 16, 16);
+	SET_INET_VARSIZE(res);
+	return InetPGetDatum(res);
 }
 
 static Datum
@@ -713,23 +709,13 @@ read_value(const chc_column * col, const chc_type * type, uint64_t row,
 			*valtype = TEXTOID;
 			return read_fixedstring_as_text(col, type, row);
 		case CHC_DATE:
-			{
-				uint16_t	days = rd_u16(fixed_data(col), row);
-				int64_t		seconds = (int64_t) days * 86400;
-
-				*valtype = DATEOID;
-				return DirectFunctionCall1(timestamp_date,
-										   time_t_to_timestamptz((pg_time_t) seconds));
-			}
+			*valtype = DATEOID;
+			return DateADTGetDatum((DateADT) rd_u16(fixed_data(col), row)
+								   - CH_TO_PG_DATE_OFFSET);
 		case CHC_DATE32:
-			{
-				int32_t		days = rd_i32(fixed_data(col), row);
-				int64_t		seconds = (int64_t) days * 86400;
-
-				*valtype = DATEOID;
-				return DirectFunctionCall1(timestamp_date,
-										   time_t_to_timestamptz((pg_time_t) seconds));
-			}
+			*valtype = DATEOID;
+			return DateADTGetDatum((DateADT) rd_i32(fixed_data(col), row)
+								   - CH_TO_PG_DATE_OFFSET);
 		case CHC_DATETIME:
 			{
 				uint32_t	secs = rd_u32(fixed_data(col), row);
@@ -740,11 +726,12 @@ read_value(const chc_column * col, const chc_type * type, uint64_t row,
 		case CHC_DATETIME64:
 			{
 				int64		raw = rd_i64(fixed_data(col), row);
-				int64		power = (int64) pow(10, chc_type_datetime64_scale(type));
+				uint32_t	scale = chc_type_datetime64_scale(type);
+				int64		power = pow10i[scale];
 
 				*valtype = TIMESTAMPTZOID;
-				return TimestampTzGetDatum(time_t_to_timestamptz(raw / power))
-					+ (raw % power) * (USECS_PER_SEC / power);
+				return TimestampTzGetDatum(time_t_to_timestamptz(raw / power)
+										   + (raw % power) * (USECS_PER_SEC / power));
 			}
 		case CHC_UUID:
 			*valtype = UUIDOID;
