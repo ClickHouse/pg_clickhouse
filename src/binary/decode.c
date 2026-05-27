@@ -23,6 +23,7 @@
 #include "utils/date.h"
 #include "utils/inet.h"
 #include "utils/lsyscache.h"
+#include "utils/numeric.h"
 #include "utils/timestamp.h"
 #include "utils/uuid.h"
 
@@ -294,8 +295,17 @@ read_decimal(const chc_column * col, const chc_type * type, uint64_t row)
 	const		uint8_t *p = (const uint8_t *) chc_column_fixed_data(col, &es);
 	uint32_t	scale = (uint32_t) chc_type_decimal_scale(type);
 	char		buf[80];
-	int			rc = format_decimal_text(p + row * es, es, scale, buf, sizeof(buf));
+	int			rc;
 
+#if PG_VERSION_NUM >= 140000
+	/* Decimal32/64 fit in int64; skip the byte-array text path. */
+	if (es == 4)
+		return NumericGetDatum(int64_div_fast_to_numeric(rd_i32(p, row), (int) scale));
+	if (es == 8)
+		return NumericGetDatum(int64_div_fast_to_numeric(rd_i64(p, row), (int) scale));
+#endif
+
+	rc = format_decimal_text(p + row * es, es, scale, buf, sizeof(buf));
 	if (rc < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FDW_ERROR),
