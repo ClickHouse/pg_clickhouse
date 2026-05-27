@@ -490,7 +490,7 @@ INSERT INTO default_vals VALUES(
 	   NULL, NULL, NULL, NULL, ARRAY[NULL]::int[],
 	   NULL, NULL, NULL
 );
-ERROR:  pg_clickhouse: could not append data to column - cannot append NULL to NOT NULL UInt8 column
+ERROR:  pg_clickhouse: cannot append NULL to NOT NULL UInt8 column
 SELECT * FROM default_vals;
  c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 | c9 | c10 | c11 | c12 | c13 | c14 | c15 | c16 | c17 | c18 | c19 | c20 | c21 | c22 | c23 | c24 | c25 | c26 | c27 | c28 
 ----+----+----+----+----+----+----+----+----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----
@@ -498,7 +498,7 @@ SELECT * FROM default_vals;
 
 -- Test unsupported Nullables.
 INSERT INTO not_nullable VALUES (1, 'x', 'x', NULL);
-ERROR:  pg_clickhouse: could not append data to column - cannot append NULL to NOT NULL LowCardinality(Nullable(String)) column
+ERROR:  pg_clickhouse: cannot append NULL to NOT NULL LowCardinality(Nullable(String)) column
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE binary_inserts_test');
  clickhouse_raw_query 

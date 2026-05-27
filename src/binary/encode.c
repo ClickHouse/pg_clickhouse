@@ -10,12 +10,9 @@
 #include <string.h>
 #include <sys/socket.h>			/* AF_INET, expanded by PG inet macros */
 
-#include "access/htup_details.h"
 #include "access/tupdesc.h"
 #include "catalog/pg_type_d.h"
 #include "fmgr.h"
-#include "pgtime.h"
-#include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/inet.h"
@@ -24,13 +21,7 @@
 #include "utils/timestamp.h"
 #include "utils/uuid.h"
 
-#include "binary.h"
-
-/* power-of-10 lookup; CH bounds DateTime64 scale to [0, 9] */
-static const int64_t pow10i[10] = {
-	1, 10, 100, 1000, 10000, 100000, 1000000,
-	10000000, 100000000, 1000000000
-};
+#include "binary_internal.h"
 
 /* CH Date epoch is unix; offset to PG epoch (2000-01-01) */
 #define CH_TO_PG_DATE_OFFSET (POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE)
@@ -114,7 +105,8 @@ ch_kind_to_pg_oid_for_insert(const chc_type * type, const char *colname)
 		default:
 			ereport(ERROR,
 					(errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-					 errmsg("pg_clickhouse: unsupported column type for \"%s\"",
+					 errmsg("pg_clickhouse: unsupported column type \"%s\" for \"%s\"",
+							chc_type_name(type, NULL),
 							colname ? colname : "?")));
 	}
 	return InvalidOid;
@@ -242,42 +234,45 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 		case TIMESTAMPOID:
 		case TIMESTAMPTZOID:
 			{
-				if (kind == CHC_DATETIME)
+				switch (kind)
 				{
-					int64_t		seconds = isnull
-						? 0
-						: (int64_t) timestamptz_to_time_t(DatumGetTimestamp(val));
-
-					ch_binary_append_datetime_seconds(h, colidx, seconds, isnull);
-				}
-				else if (kind == CHC_DATETIME64)
-				{
-					int64_t		raw = 0;
-
-					if (!isnull)
-					{
-						uint32_t	prec = ch_binary_column_datetime64_precision(h, colidx);
-						Timestamp	t = DatumGetTimestamp(val);
-						int64		power = pow10i[prec];
-						int64		secs = t / USECS_PER_SEC;
-						int64		us_rem = t % USECS_PER_SEC;
-
-						/*
-						 * floor-divide; C trunc-to-zero leaves negative
-						 * remainder
-						 */
-						if (us_rem < 0)
+					case CHC_DATETIME:
 						{
-							secs -= 1;
-							us_rem += USECS_PER_SEC;
-						}
-						secs += CH_TO_PG_DATE_OFFSET * SECS_PER_DAY;
-						raw = secs * power + us_rem * power / USECS_PER_SEC;
-					}
-					ch_binary_append_datetime64_raw(h, colidx, raw, isnull);
+							int64_t		seconds = isnull
+								? 0
+								: (int64_t) timestamptz_to_time_t(DatumGetTimestamp(val));
+
+							ch_binary_append_datetime_seconds(h, colidx, seconds, isnull);
+						} break;
+					case CHC_DATETIME64:
+						{
+							int64_t		raw = 0;
+
+							if (!isnull)
+							{
+								uint32_t	prec = ch_binary_column_datetime64_precision(h, colidx);
+								Timestamp	t = DatumGetTimestamp(val);
+								int64		power = pow10i[prec];
+								int64		secs = t / USECS_PER_SEC;
+								int64		us_rem = t % USECS_PER_SEC;
+
+								/*
+								 * floor-divide; C trunc-to-zero leaves
+								 * negative remainder
+								 */
+								if (us_rem < 0)
+								{
+									secs -= 1;
+									us_rem += USECS_PER_SEC;
+								}
+								secs += CH_TO_PG_DATE_OFFSET * SECS_PER_DAY;
+								raw = secs * power + us_rem * power / USECS_PER_SEC;
+							}
+							ch_binary_append_datetime64_raw(h, colidx, raw, isnull);
+						} break;
+					default:
+						goto type_mismatch;
 				}
-				else
-					goto type_mismatch;
 				return;
 			}
 		case ANYARRAYOID:

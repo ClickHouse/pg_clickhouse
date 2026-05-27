@@ -12,14 +12,9 @@
 #include <string.h>
 #include <sys/socket.h>			/* AF_INET, expanded by PG inet macros */
 
-#include "access/htup_details.h"
-#include "access/tupdesc.h"
 #include "catalog/pg_type_d.h"
 #include "fmgr.h"
-#include "funcapi.h"
-#include "pgtime.h"
 #include "port/pg_bswap.h"
-#include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/inet.h"
@@ -28,13 +23,7 @@
 #include "utils/timestamp.h"
 #include "utils/uuid.h"
 
-#include "binary.h"
-
-/* power-of-10 lookup; CH bounds DateTime64 / Decimal scale to [0, 9] */
-static const int64_t pow10i[10] = {
-	1, 10, 100, 1000, 10000, 100000, 1000000,
-	10000000, 100000000, 1000000000
-};
+#include "binary_internal.h"
 
 /* CH Date / Date32 epoch is unix; offset to PG epoch (2000-01-01) */
 #define CH_TO_PG_DATE_OFFSET (POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE)
@@ -539,8 +528,8 @@ read_array(const chc_column * col, const chc_type * type, uint64_t row,
 	if (slot->array_type == InvalidOid)
 		ereport(ERROR,
 				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-				 errmsg("pg_clickhouse: could not find array type for column type %u",
-						slot->item_type)));
+				 errmsg("pg_clickhouse: could not find array type for column type \"%s\"",
+						chc_type_name(leaf, NULL))));
 
 	if (len > 0)
 	{
@@ -840,7 +829,7 @@ again:
 		for (size_t i = 0; i < ncols; i++)
 		{
 			/*
-			 * For most types read_value overwrites *valtype with the
+			 * Currently, read_value overwrites *valtype for most types
 			 * canonical PG type for that CH kind. For CHC_JSON we honour the
 			 * incoming value so callers (binary_fetch_row) can pin the Datum
 			 * type to JSONOID for `data json` foreign columns and avoid the

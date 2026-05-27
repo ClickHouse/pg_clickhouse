@@ -12,7 +12,6 @@
 
 #include "postgres.h"
 
-#include <ctype.h>
 #include <string.h>
 
 #include "common/hashfn.h"
@@ -99,8 +98,8 @@ u64buf_reset(u64buf * b)
 }
 
 /*
- * Per-column accumulator. Layout decided at begin_insert from the column's
- * chc_type. Each typed append_* appends into one of three storage groups:
+ * Insert column layout decided at begin_insert from the column's chc_type.
+ * Each typed append_* appends into one of three storage groups:
  *   - body / body_offs:  fixed-width or string values for the top-level
  *     column or, when an array context is open, the inner items.
  *   - arr_offs:          cumulative outer ends for Array(*) columns.
@@ -133,8 +132,9 @@ ic_layout_array_string(ic_layout l)
 typedef struct ic_col
 {
 	const		chc_type *t;	/* full column type (incl. Nullable wrapper) */
-	const		chc_type *inner_t;	/* Nullable-stripped */
-	const		chc_type *elem_t;	/* Array element type (Nullable-stripped) */
+	const		chc_type *inner_t;	/* possibly unwrapped Nullable */
+	const		chc_type *elem_t;	/* Array element type, with Nullable
+									 * unwrapped */
 	ic_layout	layout;
 	bool		is_nullable;
 	int			array_depth;	/* current open begin/end nesting */
@@ -157,7 +157,7 @@ typedef struct ic_col
 
 	/*
 	 * Cached column info exposed to callers. info.type borrows from the
-	 * initial_block's chc_type tree (Nullable + outer LC stripped).
+	 * initial_block's chc_type tree, unwrapping Nullable + outer LC.
 	 */
 	ch_binary_column_info info;
 }			ic_col;
@@ -178,11 +178,9 @@ struct ch_binary_insert_handle
 };
 
 static void
-classify_column(ic_col * ic, const chc_type * col_t)
+classify_column(ic_col * ic, const chc_type * t)
 {
-	const		chc_type *t = col_t;
-
-	ic->t = col_t;
+	ic->t = t;
 	if (chc_type_kind(t) == CHC_NULLABLE)
 	{
 		ic->is_nullable = true;
@@ -199,9 +197,12 @@ classify_column(ic_col * ic, const chc_type * col_t)
 		const		chc_type *base = inner_nullable ? chc_type_child(inner, 0) : inner;
 
 		if (chc_type_kind(base) != CHC_STRING)
+		{
 			ereport(ERROR,
 					(errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-					 errmsg("pg_clickhouse: unsupported LowCardinality variant")));
+					 errmsg("pg_clickhouse: unsupported LowCardinality variant: %s",
+							chc_type_name(base, NULL))));
+		}
 		ic->layout = IC_LC_STRING;
 		ic->elem_t = base;
 		return;
@@ -222,9 +223,16 @@ classify_column(ic_col * ic, const chc_type * col_t)
 		}
 		bool		elem_nullable = chc_type_kind(base) == CHC_NULLABLE;
 
-		(void) elem_nullable;	/* not supported yet */
+		/*
+		 * Array(Nullable(T)) not supported yet.
+		 */
 		if (elem_nullable)
-			base = chc_type_child(base, 0);
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
+					 errmsg("pg_clickhouse: %s not currently supported",
+							chc_type_name(base, NULL))));
+		}
 		chc_kind	ek = chc_type_kind(base);
 
 		ic->elem_t = base;
@@ -242,7 +250,7 @@ classify_column(ic_col * ic, const chc_type * col_t)
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-					 errmsg("pg_clickhouse: unsupported Array element type")));
+					 errmsg("pg_clickhouse: unsupported Array element type: %s", chc_type_name(base, NULL))));
 		if (ndim > 1)
 			ic->arr_offs_inner = palloc0((size_t) (ndim - 1) * sizeof(u64buf));
 		return;
@@ -273,15 +281,10 @@ classify_column(ic_col * ic, const chc_type * col_t)
 		ic->elem_size = (size_t) chc_type_fixed_size(t);
 		return;
 	}
-	{
-		size_t		tnlen;
-		const char *tname = chc_type_name(t, &tnlen);
-
-		ereport(ERROR,
-				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-				 errmsg("pg_clickhouse: could not prepare insert - unsupported column type: %.*s",
-						(int) tnlen, tname ? tname : "?")));
-	}
+	ereport(ERROR,
+			(errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
+			 errmsg("pg_clickhouse: could not prepare insert - unsupported column type: %s",
+					chc_type_name(t, NULL))));
 }
 
 static void
@@ -447,7 +450,7 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 			c->info.is_nullable = c->is_nullable;
 
 			/*
-			 * inner_t already Nullable-stripped; unwrap LowCardinality and
+			 * inner_t already unwrapped Nullable; unwrap LowCardinality and
 			 * perhaps its inner Nullable to expose innermost type.
 			 */
 			const		chc_type *vt = c->inner_t;
@@ -504,7 +507,7 @@ resolve_col(ch_binary_insert_handle * h, size_t col_idx, bool isnull)
 
 		ereport(ERROR,
 				(errcode(ERRCODE_NOT_NULL_VIOLATION),
-				 errmsg("pg_clickhouse: could not append data to column - cannot append NULL to NOT NULL %.*s column",
+				 errmsg("pg_clickhouse: cannot append NULL to NOT NULL %.*s column",
 						(int) tnlen, tname ? tname : "?")));
 	}
 	if (!h->array_active && c->is_nullable)
@@ -914,7 +917,7 @@ ch_binary_append_inet(ch_binary_insert_handle * h, size_t col,
 	}
 	ereport(ERROR,
 			(errcode(ERRCODE_DATATYPE_MISMATCH),
-			 errmsg("pg_clickhouse: inet into non-inet column")));
+			 errmsg("pg_clickhouse: cannot insert inet into non-inet column")));
 }
 
 void

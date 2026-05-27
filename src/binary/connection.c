@@ -22,7 +22,6 @@
 #include "utils/memutils.h"
 #include "utils/palloc.h"
 
-#include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 

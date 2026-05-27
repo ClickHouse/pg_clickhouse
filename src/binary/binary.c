@@ -18,7 +18,6 @@
 
 #include "postgres.h"
 
-#include "utils/memutils.h"
 #include "utils/palloc.h"
 
 #define CHC_IMPLEMENTATION
@@ -57,6 +56,12 @@ const		chc_alloc pg_chc_alloc = {
 	.alloc = pg_chc_palloc,
 	.realloc = pg_chc_repalloc,
 	.free = pg_chc_pfree,
+};
+
+/* power-of-10 lookup; CH bounds DateTime64 / Decimal scale to [0, 9] */
+const		int64_t pow10i[10] = {
+	1, 10, 100, 1000, 10000, 100000, 1000000,
+	10000000, 100000000, 1000000000
 };
 
 /*
