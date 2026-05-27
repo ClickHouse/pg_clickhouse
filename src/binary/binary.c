@@ -2,9 +2,9 @@
  * binary.c
  *
  * Core glue for the binary driver. Owns the chc_alloc thunks (palloc on
- * CurrentMemoryContext, MCXT_ALLOC_HUGE so block buffers escape the 1GB
- * cap), error mapping into ereport, and a couple of small type helpers
- * shared across the subdir.
+ * CurrentMemoryContext, MCXT_ALLOC_HUGE so block buffers can escape the 1GB
+ * cap), error mapping into ereport, and a couple of small type helpers shared
+ * across the subdir.
  *
  * This also holds the CHC_IMPLEMENTATION define for the clickhouse-c
  * header-only library; the other .c files in src/binary include the
@@ -52,7 +52,7 @@ pg_chc_pfree(void *ud pg_attribute_unused(), void *p, size_t bytes pg_attribute_
 		pfree(p);
 }
 
-const chc_alloc pg_chc_alloc = {
+const		chc_alloc pg_chc_alloc = {
 	.ud = NULL,
 	.alloc = pg_chc_palloc,
 	.realloc = pg_chc_repalloc,

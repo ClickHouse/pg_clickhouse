@@ -391,21 +391,23 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 
 		/*
 		 * On servers that support it (24.10+), tell the server to serialize
-		 * any JSON columns it emits as STRING wire format. INSERT path
-		 * doesn't need this, server reads per-column version prefix builder
-		 * writes, but set it on same packet for symmetry with SELECT path and
-		 * so any RETURNING-style projection on top still decodes.
+		 * any JSON columns it emits as the STRING wire format. INSERT path
+		 * doesn't need this — the server reads the per-column version
+		 * prefix the builder writes — but we set it on the same packet for
+		 * symmetry with the SELECT path and so any RETURNING-style projection
+		 * on top still decodes.
 		 */
-		chc_query_setting json_setting = {
-			.name = "output_format_native_write_json_as_string",
-			.value = "1",
-			.important = true,
-		};
-		chc_query_opts insert_opts = {0};
 		const		chc_query_opts *opts_ptr = NULL;
 
 		if (server_supports_json_as_string(s->client))
 		{
+			chc_query_setting json_setting = {
+				.name = "output_format_native_write_json_as_string",
+				.value = "1",
+				.important = true,
+			};
+			chc_query_opts insert_opts = {0};
+
 			insert_opts.settings = &json_setting;
 			insert_opts.n_settings = 1;
 			opts_ptr = &insert_opts;
@@ -423,7 +425,7 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 		recv_initial_block(s, h);
 
 		/*
-		 * Server is now awaiting our Data; failures past this point need an
+		 * Server is now waiting our Data; failures past this point need an
 		 * empty-Data + drain so the connection stays usable.
 		 */
 		need_drain = true;
@@ -445,9 +447,12 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 			c->info.name = pnstrdup(nm ? nm : "", nlen);
 			c->info.is_nullable = c->is_nullable;
 
-			/* inner_t already Nullable-stripped; unwrap LowCardinality
-			 * and perhaps its inner Nullable to expose innermost type. */
-			const chc_type *vt = c->inner_t;
+			/*
+			 * inner_t already Nullable-stripped; unwrap LowCardinality and
+			 * perhaps its inner Nullable to expose innermost type.
+			 */
+			const		chc_type *vt = c->inner_t;
+
 			if (chc_type_kind(vt) == CHC_LOW_CARDINALITY)
 			{
 				vt = chc_type_child(vt, 0);
@@ -714,7 +719,7 @@ ch_binary_append_bytes(ch_binary_insert_handle * h, size_t col, const void *p,
 
 	if (c->layout == IC_LC_STRING)
 	{
-		/* Accumulate via body+body_offs; dict materialised at flush. */
+		/* Accumulate via body+body_offs; dict materialized at flush. */
 		if (isnull)
 			append_string_row(c, NULL, 0);
 		else
@@ -876,7 +881,7 @@ ch_binary_append_uuid(ch_binary_insert_handle * h, size_t col,
  */
 void
 ch_binary_append_inet(ch_binary_insert_handle * h, size_t col,
-					  const uint8_t *addr_be, size_t addrlen, bool isnull)
+					  const uint8_t * addr_be, size_t addrlen, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
 	ic_col	   *c = resolve_col(h, col, isnull);
@@ -1089,16 +1094,16 @@ ch_binary_column_datetime64_precision(const ch_binary_insert_handle * h, size_t 
 /* Dedup map for LowCardinality dict */
 typedef struct lcd_key
 {
-	const uint8_t *bytes;
+	const		uint8_t *bytes;
 	size_t		len;
-} lcd_key;
+}			lcd_key;
 
 typedef struct lcd_entry
 {
 	uint32		status;
 	lcd_key		key;
 	uint32		idx;
-} lcd_entry;
+}			lcd_entry;
 
 #define SH_PREFIX				lcd
 #define SH_ELEMENT_TYPE			lcd_entry
@@ -1147,7 +1152,7 @@ build_lc_dict(ic_col * c, bool nullable,
 		uint64_t	start = i == 0 ? 0 : c->body_offs.data[i - 1];
 		uint64_t	end = c->body_offs.data[i];
 		size_t		len = (size_t) (end - start);
-		const uint8_t *bytes = c->body.data + start;
+		const		uint8_t *bytes = c->body.data + start;
 		lcd_key		k = {bytes, len};
 		lcd_entry  *entry;
 		bool		found;

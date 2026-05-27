@@ -15,9 +15,10 @@ All notable changes to this project will be documented in this file. It uses the
     [ClickHouse/clickhouse-c], pulled in as a git submodule and included in
     the release package under `vendor/clickhouse-c`. This change eliminates
     conflicts between C++ memory & exception handling and Postgres memory and
-    exception handling. It also greatly reduces build time and the size of the
-    library by over 75%. Thanks to Philip Dubé for the the new library and the
-    PR ([#254]).
+    exception handling and streams query results by the ClickHouse block for
+    reduced memory consumption. It also greatly reduces build time and the
+    size of the library by over 75%. Thanks to Philip Dubé for the the new
+    library and the PR ([#254]).
 *   Added multidimensional array support across SELECT and INSERT to both the
     binary and http drivers. Rectangular ClickHouse `Array(Array(...))` values
     now map to PostgreSQL multidimensional arrays, jagged arrays not supported,

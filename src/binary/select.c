@@ -6,11 +6,11 @@
  * ch_binary_response_fetch_next_block when it exhausts the current one, so
  * peak memory is bounded by one block plus what postgres holds for the
  * current row. Settings come from the foreign-table KV list; we also add
- * output_format_native_write_json_as_string=1 against servers that
- * understand it. Cancel polling drives chc_io's per-read callback;
- * server-side exceptions flag the connection broken so the cache drops it.
- * Premature close (eg LIMIT, error in decode, transaction abort) sends
- * Cancel + drains in ch_binary_response_free so the connection is reusable.
+ * output_format_native_write_json_as_string=1 against servers that understand
+ * it. Cancel polling drives chc_io's per-read callback; server-side
+ * exceptions flag the connection as broken so the cache drops it. Premature
+ * close (eg LIMIT, error in decode, transaction abort) sends Cancel
+ * + drains in ch_binary_response_free so the connection is reusable.
  */
 
 #include "postgres.h"
@@ -24,19 +24,20 @@
 #include "binary_internal.h"
 #include "kv_list.h"
 
-struct ch_binary_response_t {
-	MemoryContext	cxt;
+struct ch_binary_response_t
+{
+	MemoryContext cxt;
 	struct ch_binary_state *state;	/* parent connection state */
-	chc_client     *client;	/* recv_packet target */
+	chc_client *client;			/* recv_packet target */
 	bool		(*check_cancel) (void);
 
-	char	       *error;	/* NULL on success */
+	char	   *error;			/* NULL on success */
 	bool		success;
-	bool		eos;	/* END_OF_STREAM or exception seen */
+	bool		eos;			/* END_OF_STREAM or exception seen */
 
 	size_t		columns_count;
-	chc_block      *staged;	/* next block to hand out; owned */
-	chc_block      *prev;	/* last block handed out; freed at next fetch */
+	chc_block  *staged;			/* next block to hand out; owned */
+	chc_block  *prev;			/* last block handed out; freed at next fetch */
 };
 
 static void
@@ -52,9 +53,10 @@ resp_set_exception(ch_binary_response_t * resp, const chc_exception * ex)
 {
 	if (resp->error)
 		return;
-	const char     *msg = NULL;
+	const char *msg = NULL;
 
-	if (ex) {
+	if (ex)
+	{
 		if (ex->display_text && ex->display_text[0])
 			msg = ex->display_text;
 		else if (ex->name && ex->name[0])
@@ -73,12 +75,13 @@ resp_set_exception(ch_binary_response_t * resp, const chc_exception * ex)
 static void
 pump_one(ch_binary_response_t * resp)
 {
-	MemoryContext	old = MemoryContextSwitchTo(resp->cxt);
+	MemoryContext old = MemoryContextSwitchTo(resp->cxt);
 	chc_packet	pkt = {0};
 	chc_err		err = {0};
-	int		rc = chc_client_recv_packet(resp->client, &pkt, &err);
+	int			rc = chc_client_recv_packet(resp->client, &pkt, &err);
 
-	if (rc != CHC_OK) {
+	if (rc != CHC_OK)
+	{
 		resp_set_error(resp, err.msg);
 		resp->state->broken = true;
 		resp->eos = true;
@@ -89,42 +92,45 @@ pump_one(ch_binary_response_t * resp)
 	if (resp->check_cancel && resp->check_cancel())
 		resp_set_error(resp, "query was canceled");
 
-	switch (pkt.kind) {
-	case CHC_PKT_DATA:
-		if (pkt.block && chc_block_n_columns(pkt.block) > 0) {
-			if (resp->columns_count == 0)
-				resp->columns_count = chc_block_n_columns(pkt.block);
-			if (chc_block_n_rows(pkt.block) > 0 && resp->staged == NULL) {
-				resp->staged = pkt.block;
-				pkt.block = NULL;
+	switch (pkt.kind)
+	{
+		case CHC_PKT_DATA:
+			if (pkt.block && chc_block_n_columns(pkt.block) > 0)
+			{
+				if (resp->columns_count == 0)
+					resp->columns_count = chc_block_n_columns(pkt.block);
+				if (chc_block_n_rows(pkt.block) > 0 && resp->staged == NULL)
+				{
+					resp->staged = pkt.block;
+					pkt.block = NULL;
+				}
 			}
-		}
-		chc_packet_clear(resp->client, &pkt);
-		break;
+			chc_packet_clear(resp->client, &pkt);
+			break;
 
-	case CHC_PKT_EXCEPTION:
-		resp_set_exception(resp, pkt.exception);
-		chc_packet_clear(resp->client, &pkt);
+		case CHC_PKT_EXCEPTION:
+			resp_set_exception(resp, pkt.exception);
+			chc_packet_clear(resp->client, &pkt);
 
-		/*
-		 * Older servers (and some protocol states) close the socket
-		 * after raising an exception, so reusing this connection for
-		 * a follow-up query risks EPIPE. Match the legacy C++ driver
-		 * (which always called Client::ResetConnection) and treat
-		 * the connection as broken.
-		 */
-		resp->state->broken = true;
-		resp->eos = true;
-		break;
+			/*
+			 * Older servers (and some protocol states) close the socket after
+			 * raising an exception, so reusing this connection for a
+			 * follow-up query risks EPIPE. Match the legacy C++ driver (which
+			 * always called Client::ResetConnection) and treat the connection
+			 * as broken.
+			 */
+			resp->state->broken = true;
+			resp->eos = true;
+			break;
 
-	case CHC_PKT_END_OF_STREAM:
-		chc_packet_clear(resp->client, &pkt);
-		resp->eos = true;
-		break;
+		case CHC_PKT_END_OF_STREAM:
+			chc_packet_clear(resp->client, &pkt);
+			resp->eos = true;
+			break;
 
-	default:
-		chc_packet_clear(resp->client, &pkt);
-		break;
+		default:
+			chc_packet_clear(resp->client, &pkt);
+			break;
 	}
 
 	MemoryContextSwitchTo(old);
@@ -142,21 +148,26 @@ drain_until_eos(ch_binary_response_t * resp)
 	if (resp->eos)
 		return;
 
-	MemoryContext	old = MemoryContextSwitchTo(resp->cxt);
+	MemoryContext old = MemoryContextSwitchTo(resp->cxt);
 	chc_err		ce = {0};
 
-	(void)chc_client_send_cancel(resp->client, &ce);
+	(void) chc_client_send_cancel(resp->client, &ce);
 	resp->state->check_cancel_fn = NULL;
 	resp->check_cancel = NULL;
 
-	for (;;) {
+	for (;;)
+	{
 		chc_packet	pkt = {0};
-		int		rc;
+		int			rc;
 
-		ce = (chc_err){0};
+		ce = (chc_err)
+		{
+			0
+		};
 		rc = chc_client_recv_packet(resp->client, &pkt, &ce);
 
-		if (rc != CHC_OK) {
+		if (rc != CHC_OK)
+		{
 			resp->state->broken = true;
 			resp->eos = true;
 			break;
@@ -165,7 +176,8 @@ drain_until_eos(ch_binary_response_t * resp)
 			pkt.kind == CHC_PKT_EXCEPTION;
 
 		chc_packet_clear(resp->client, &pkt);
-		if (stop) {
+		if (stop)
+		{
 			resp->eos = true;
 			break;
 		}
@@ -175,13 +187,13 @@ drain_until_eos(ch_binary_response_t * resp)
 
 ch_binary_response_t *
 ch_binary_simple_query(ch_binary_connection_t * conn, const ch_query * query,
-		       bool (*check_cancel) (void))
+					   bool (*check_cancel) (void))
 {
 	struct ch_binary_state *s = conn_state(conn);
-	MemoryContext	cxt = AllocSetContextCreate(CurrentMemoryContext,
-					    "pg_clickhouse binary response",
-						    ALLOCSET_DEFAULT_SIZES);
-	MemoryContext	old = MemoryContextSwitchTo(cxt);
+	MemoryContext cxt = AllocSetContextCreate(CurrentMemoryContext,
+											  "pg_clickhouse binary response",
+											  ALLOCSET_DEFAULT_SIZES);
+	MemoryContext old = MemoryContextSwitchTo(cxt);
 	ch_binary_response_t *resp = palloc0(sizeof(*resp));
 
 	resp->cxt = cxt;
@@ -204,24 +216,29 @@ ch_binary_simple_query(ch_binary_connection_t * conn, const ch_query * query,
 	}
 	size_t		n_settings = n_user_settings + (want_json_as_string ? 1 : 0);
 
-	if (n_settings) {
+	if (n_settings)
+	{
 		settings = palloc0(n_settings * sizeof(*settings));
 		size_t		i = 0;
 
-		for (kv_iter it = new_kv_iter(query->settings); !kv_iter_done(&it); kv_iter_next(&it), i++) {
+		for (kv_iter it = new_kv_iter(query->settings); !kv_iter_done(&it); kv_iter_next(&it), i++)
+		{
 			settings[i].name = it.name;
 			settings[i].value = it.value;
 			settings[i].important = true;
 		}
-		if (want_json_as_string) {
+		if (want_json_as_string)
+		{
 			settings[i].name = "output_format_native_write_json_as_string";
 			settings[i].value = "1";
 			settings[i].important = true;
 		}
 	}
-	if (n_params) {
+	if (n_params)
+	{
 		params = palloc0(n_params * sizeof(*params));
-		for (size_t i = 0; i < n_params; i++) {
+		for (size_t i = 0; i < n_params; i++)
+		{
 			char		nm[32];
 
 			snprintf(nm, sizeof(nm), "p%zu", i + 1);
@@ -229,80 +246,84 @@ ch_binary_simple_query(ch_binary_connection_t * conn, const ch_query * query,
 
 			/*
 			 * Quote & escape the value the way clickhouse-cpp's
-			 * WriteQuotedString did: wrap in single quotes,
-			 * replace inner specials with backslash-escapes the
-			 * server's Field::restoreFromDump understands.
-			 * Without escaping inner quotes the server stops
-			 * parsing at the first `'` inside the value, which
-			 * breaks Array(String) parameters whose CH literal
+			 * WriteQuotedString did: wrap in single quotes, replace inner
+			 * specials with backslash-escapes the server's
+			 * Field::restoreFromDump understands. Without escaping inner
+			 * quotes the server stops parsing at the first `'` inside the
+			 * value, which breaks Array(String) parameters whose CH literal
 			 * already contains quoted elements.
 			 */
-			const char     *raw = query->param_values[i];
+			const char *raw = query->param_values[i];
 
-			if (raw) {
+			if (raw)
+			{
 				size_t		rlen = strlen(raw);
 				size_t		cap = rlen * 4 + 3;
-				char	       *dst = palloc(cap);
+				char	   *dst = palloc(cap);
 				size_t		o = 0;
 
 				dst[o++] = '\'';
-				for (size_t j = 0; j < rlen; j++) {
-					unsigned char	ch = (unsigned char)raw[j];
+				for (size_t j = 0; j < rlen; j++)
+				{
+					unsigned char ch = (unsigned char) raw[j];
 
-					switch (ch) {
-					case '\0':
-						dst[o++] = '\\';
-						dst[o++] = 'x';
-						dst[o++] = '0';
-						dst[o++] = '0';
-						break;
-					case '\b':
-						dst[o++] = '\\';
-						dst[o++] = 'x';
-						dst[o++] = '0';
-						dst[o++] = '8';
-						break;
-					case '\t':
-						dst[o++] = '\\';
-						dst[o++] = 't';
-						break;
-					case '\n':
-						dst[o++] = '\\';
-						dst[o++] = 'n';
-						break;
-					case '\'':
-						dst[o++] = '\\';
-						dst[o++] = 'x';
-						dst[o++] = '2';
-						dst[o++] = '7';
-						break;
-					case '\\':
-						dst[o++] = '\\';
-						dst[o++] = '\\';
-						break;
-					default:
-						dst[o++] = (char)ch;
+					switch (ch)
+					{
+						case '\0':
+							dst[o++] = '\\';
+							dst[o++] = 'x';
+							dst[o++] = '0';
+							dst[o++] = '0';
+							break;
+						case '\b':
+							dst[o++] = '\\';
+							dst[o++] = 'x';
+							dst[o++] = '0';
+							dst[o++] = '8';
+							break;
+						case '\t':
+							dst[o++] = '\\';
+							dst[o++] = 't';
+							break;
+						case '\n':
+							dst[o++] = '\\';
+							dst[o++] = 'n';
+							break;
+						case '\'':
+							dst[o++] = '\\';
+							dst[o++] = 'x';
+							dst[o++] = '2';
+							dst[o++] = '7';
+							break;
+						case '\\':
+							dst[o++] = '\\';
+							dst[o++] = '\\';
+							break;
+						default:
+							dst[o++] = (char) ch;
 					}
 				}
 				dst[o++] = '\'';
 				dst[o] = '\0';
 				params[i].value = dst;
-			} else
+			}
+			else
 				params[i].value = "'\\N'";
 		}
 	}
 
-	chc_query_opts	opts = {
+	chc_query_opts opts = {
 		.settings = settings,
 		.n_settings = n_settings,
 		.params = params,
 		.n_params = n_params,
 	};
 	chc_err		err = {0};
-	int		rc = chc_client_send_query_ex(s->client, query->sql,
-					   strlen(query->sql), &opts, &err);
+	int			rc = chc_client_send_query_ex(s->client, query->sql,
+											  strlen(query->sql), &opts, &err);
 
-	if (rc != CHC_OK) {
+	if (rc != CHC_OK)
+	{
 		resp_set_error(resp, err.msg);
 		s->broken = true;
 		resp->eos = true;
@@ -311,8 +332,8 @@ ch_binary_simple_query(ch_binary_connection_t * conn, const ch_query * query,
 
 	/*
 	 * Pump until schema is known so callers can call
-	 * ch_binary_response_columns immediately. Empty result sets exit on
-	 * eos with columns_count still set from the header Data block.
+	 * ch_binary_response_columns immediately. Empty result sets exit on eos
+	 * with columns_count still set from the header Data block.
 	 */
 	while (resp->columns_count == 0 && !resp->eos && !resp->error)
 		pump_one(resp);
@@ -345,7 +366,7 @@ ch_binary_response_free(ch_binary_response_t * resp)
 	MemoryContextDelete(resp->cxt);
 }
 
-const char     *
+const char *
 ch_binary_response_error(const ch_binary_response_t * resp)
 {
 	return resp ? resp->error : NULL;
@@ -358,7 +379,8 @@ ch_binary_response_success(const ch_binary_response_t * resp)
 }
 
 size_t
-ch_binary_response_columns(const ch_binary_response_t * resp){
+ch_binary_response_columns(const ch_binary_response_t * resp)
+{
 	return resp ? resp->columns_count : 0;
 }
 
@@ -368,7 +390,8 @@ ch_binary_response_fetch_next_block(ch_binary_response_t * resp)
 	if (!resp)
 		return NULL;
 
-	if (resp->prev) {
+	if (resp->prev)
+	{
 		chc_block_destroy(resp->prev, &pg_chc_alloc);
 		resp->prev = NULL;
 	}

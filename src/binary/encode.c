@@ -164,8 +164,8 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 				int64_t		v = 0;
 
 				if (!(kind == CHC_BOOL
-					|| (kind >= CHC_INT8 && kind <= CHC_INT64)
-					|| (kind >= CHC_UINT8 && kind <= CHC_UINT64)))
+					  || (kind >= CHC_INT8 && kind <= CHC_INT64)
+					  || (kind >= CHC_UINT8 && kind <= CHC_UINT64)))
 					goto type_mismatch;
 				if (!isnull)
 				{
@@ -262,7 +262,10 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 						int64		secs = t / USECS_PER_SEC;
 						int64		us_rem = t % USECS_PER_SEC;
 
-						/* floor-divide; C trunc-to-zero leaves negative remainder */
+						/*
+						 * floor-divide; C trunc-to-zero leaves negative
+						 * remainder
+						 */
 						if (us_rem < 0)
 						{
 							secs -= 1;
@@ -318,7 +321,7 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 			}
 		case INETOID:
 			{
-				const uint8_t *addr = NULL;
+				const		uint8_t *addr = NULL;
 				size_t		addrlen = 0;
 
 				if (kind != CHC_IPV4 && kind != CHC_IPV6)
