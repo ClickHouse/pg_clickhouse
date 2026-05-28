@@ -30,6 +30,13 @@ All notable changes to this project will be documented in this file. It uses the
     `re2regexpquotemeta`, and `re2splitbyregexp`. Thanks to Philip Dubé for
     the PR ([#232]).
 
+### 🐞 Bug Fixes
+
+*   Fixed incorrect casting of ClickHouse `UInt16` values to `int16` in the
+    Binary driver. They now correctly convert to `int32` (Postgres `INT4`).
+    Part of the omnibus binary c driver conversion contributed by Philip Dubé
+    ([#233]).
+
   [v0.3.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.3.0...v0.3.1
   [#232]: https://github.com/ClickHouse/pg_clickhouse/pull/232
     "ClickHouse/pg_clickhouse#232 pushdown for new functions in pg_re2 0.3"
