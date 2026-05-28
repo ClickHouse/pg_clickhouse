@@ -671,6 +671,12 @@ ch_binary_append_uint(ch_binary_insert_handle * h, size_t col, uint64_t val, boo
 }
 
 void
+ch_binary_append_bool(ch_binary_insert_handle * h, size_t col, bool val, bool isnull)
+{
+	ch_binary_append_int(h, col, val, isnull);
+}
+
+void
 ch_binary_append_double(ch_binary_insert_handle * h, size_t col, double val, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);

@@ -42,6 +42,12 @@ rd_u8(const uint8_t * p, uint64_t row)
 	return p[row];
 }
 
+static inline bool
+rd_bool(const bool *p, uint64_t row)
+{
+	return (bool) p[row];
+}
+
 static inline int16_t
 rd_i16(const uint8_t * p, uint64_t row)
 {
@@ -141,8 +147,9 @@ ch_kind_to_pg_oid(const chc_type * type)
 		case CHC_INT8:
 		case CHC_INT16:
 		case CHC_UINT8:
-		case CHC_BOOL:
 			return INT2OID;
+		case CHC_BOOL:
+			return BOOLOID;
 		case CHC_INT32:
 		case CHC_UINT16:
 			return INT4OID;
@@ -619,9 +626,11 @@ read_value(const chc_column * col, const chc_type * type, uint64_t row,
 			*is_null = true;
 			return (Datum) 0;
 		case CHC_UINT8:
-		case CHC_BOOL:
 			*valtype = INT2OID;
 			return (Datum) rd_u8((const uint8_t *) chc_column_fixed_data(col, NULL), row);
+		case CHC_BOOL:
+			*valtype = BOOLOID;
+			return (Datum) rd_bool((const bool *) chc_column_fixed_data(col, NULL), row);
 		case CHC_INT8:
 			*valtype = INT2OID;
 			return (Datum) rd_i8((const uint8_t *) chc_column_fixed_data(col, NULL), row);
