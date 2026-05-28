@@ -151,7 +151,13 @@ drain_until_eos(ch_binary_response_t * resp)
 	MemoryContext old = MemoryContextSwitchTo(resp->cxt);
 	chc_err		ce = {0};
 
-	(void) chc_client_send_cancel(resp->client, &ce);
+	if (chc_client_send_cancel(resp->client, &ce) != CHC_OK)
+	{
+		resp->state->broken = true;
+		resp->eos = true;
+		MemoryContextSwitchTo(old);
+		return;
+	}
 	resp->state->check_cancel_fn = NULL;
 	resp->check_cancel = NULL;
 

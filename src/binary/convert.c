@@ -664,11 +664,10 @@ build_nested_binary_array(int level, int ndim, int *dims, Oid item_type,
 }
 
 /*
- * For each value to be output, convert it, if necessary, from the Postgres
- * Datum type defined for the foreign table to a Datum that the binary
- * INSERT path in encode.c knows how to convert to a ClickHouse
- * type. No conversion for binary-compatible types; other types require a
- * CAST.
+ * For each output value, convert it, if necessary, from the Postgres Datum
+ * type defined for the foreign table to a Datum that the binary INSERT
+ * path in encode.c knows how to convert to a ClickHouse type. No conversion
+ * for binary-compatible types; other types require a CAST.
  * ch_binary_make_tuple_map() makes this determination for each type, stored
  * in insert_state->conversion_states)
  */

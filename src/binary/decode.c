@@ -114,15 +114,6 @@ rd_f64(const uint8_t * p, uint64_t row)
 	return v;
 }
 
-static inline const uint8_t *
-fixed_data(const chc_column * col)
-{
-	size_t		es;
-
-	return (const uint8_t *) chc_column_fixed_data(col, &es);
-}
-
-/* Locate a variable-length row in a chc_column String layout. */
 static inline void
 slice_str(const chc_column * col, uint64_t row,
 		  const char **out_ptr, size_t * out_len)
@@ -319,10 +310,10 @@ read_string_as_text(const chc_column * col, uint64_t row)
 }
 
 static Datum
-read_fixedstring_as_text(const chc_column * col, const chc_type * type, uint64_t row)
+read_fixedstring_as_text(const chc_column * col, uint64_t row)
 {
-	size_t		width = (size_t) chc_type_fixed_size(type);
-	const		uint8_t *base = fixed_data(col);
+	size_t		width;
+	const		uint8_t *base = chc_column_fixed_data(col, &width);
 
 	return PointerGetDatum(cstring_to_text_with_len((const char *) base + row * width,
 													width));
@@ -332,7 +323,7 @@ static Datum
 read_uuid(const chc_column * col, uint64_t row)
 {
 	pg_uuid_t  *u = (pg_uuid_t *) palloc(sizeof(pg_uuid_t));
-	const		uint8_t *p = fixed_data(col) + row * 16;
+	const		uint8_t *p = (uint8_t *) chc_column_fixed_data(col, NULL) + row * 16;
 	uint64_t	a,
 				b;
 
@@ -355,7 +346,7 @@ read_ipv4(const chc_column * col, uint64_t row)
 	inet	   *res = (inet *) palloc0(sizeof(inet));
 	uint32_t	addr;
 
-	memcpy(&addr, fixed_data(col) + row * 4, 4);
+	memcpy(&addr, (const uint8_t *) chc_column_fixed_data(col, NULL) + row * 4, 4);
 	addr = pg_hton32(addr);
 	ip_family(res) = PGSQL_AF_INET;
 	ip_bits(res) = 32;
@@ -372,7 +363,7 @@ read_ipv6(const chc_column * col, uint64_t row)
 
 	ip_family(res) = PGSQL_AF_INET6;
 	ip_bits(res) = 128;
-	memcpy(ip_addr(res), fixed_data(col) + row * 16, 16);
+	memcpy(ip_addr(res), (const uint8_t *) chc_column_fixed_data(col, NULL) + row * 16, 16);
 	SET_INET_VARSIZE(res);
 	return InetPGetDatum(res);
 }
@@ -630,28 +621,28 @@ read_value(const chc_column * col, const chc_type * type, uint64_t row,
 		case CHC_UINT8:
 		case CHC_BOOL:
 			*valtype = INT2OID;
-			return (Datum) rd_u8(fixed_data(col), row);
+			return (Datum) rd_u8((const uint8_t *) chc_column_fixed_data(col, NULL), row);
 		case CHC_INT8:
 			*valtype = INT2OID;
-			return (Datum) rd_i8(fixed_data(col), row);
+			return (Datum) rd_i8((const uint8_t *) chc_column_fixed_data(col, NULL), row);
 		case CHC_INT16:
 			*valtype = INT2OID;
-			return (Datum) rd_i16(fixed_data(col), row);
+			return (Datum) rd_i16((const uint8_t *) chc_column_fixed_data(col, NULL), row);
 		case CHC_UINT16:
 			*valtype = INT4OID;
-			return (Datum) rd_u16(fixed_data(col), row);
+			return (Datum) rd_u16((const uint8_t *) chc_column_fixed_data(col, NULL), row);
 		case CHC_INT32:
 			*valtype = INT4OID;
-			return (Datum) rd_i32(fixed_data(col), row);
+			return (Datum) rd_i32((const uint8_t *) chc_column_fixed_data(col, NULL), row);
 		case CHC_UINT32:
 			*valtype = INT8OID;
-			return Int64GetDatum((int64) rd_u32(fixed_data(col), row));
+			return Int64GetDatum((int64) rd_u32((const uint8_t *) chc_column_fixed_data(col, NULL), row));
 		case CHC_INT64:
 			*valtype = INT8OID;
-			return Int64GetDatum(rd_i64(fixed_data(col), row));
+			return Int64GetDatum(rd_i64((const uint8_t *) chc_column_fixed_data(col, NULL), row));
 		case CHC_UINT64:
 			{
-				uint64_t	v = rd_u64(fixed_data(col), row);
+				uint64_t	v = rd_u64((const uint8_t *) chc_column_fixed_data(col, NULL), row);
 
 				if (v > (uint64_t) PG_INT64_MAX)
 					ereport(ERROR,
@@ -663,10 +654,10 @@ read_value(const chc_column * col, const chc_type * type, uint64_t row,
 			}
 		case CHC_FLOAT32:
 			*valtype = FLOAT4OID;
-			return Float4GetDatum(rd_f32(fixed_data(col), row));
+			return Float4GetDatum(rd_f32((const uint8_t *) chc_column_fixed_data(col, NULL), row));
 		case CHC_FLOAT64:
 			*valtype = FLOAT8OID;
-			return Float8GetDatum(rd_f64(fixed_data(col), row));
+			return Float8GetDatum(rd_f64((const uint8_t *) chc_column_fixed_data(col, NULL), row));
 		case CHC_DECIMAL32:
 		case CHC_DECIMAL64:
 		case CHC_DECIMAL128:
@@ -695,25 +686,25 @@ read_value(const chc_column * col, const chc_type * type, uint64_t row,
 			}
 		case CHC_FIXED_STRING:
 			*valtype = TEXTOID;
-			return read_fixedstring_as_text(col, type, row);
+			return read_fixedstring_as_text(col, row);
 		case CHC_DATE:
 			*valtype = DATEOID;
-			return DateADTGetDatum((DateADT) rd_u16(fixed_data(col), row)
+			return DateADTGetDatum((DateADT) rd_u16((const uint8_t *) chc_column_fixed_data(col, NULL), row)
 								   - CH_TO_PG_DATE_OFFSET);
 		case CHC_DATE32:
 			*valtype = DATEOID;
-			return DateADTGetDatum((DateADT) rd_i32(fixed_data(col), row)
+			return DateADTGetDatum((DateADT) rd_i32((const uint8_t *) chc_column_fixed_data(col, NULL), row)
 								   - CH_TO_PG_DATE_OFFSET);
 		case CHC_DATETIME:
 			{
-				uint32_t	secs = rd_u32(fixed_data(col), row);
+				uint32_t	secs = rd_u32((const uint8_t *) chc_column_fixed_data(col, NULL), row);
 
 				*valtype = TIMESTAMPTZOID;
 				return TimestampTzGetDatum(time_t_to_timestamptz((pg_time_t) secs));
 			}
 		case CHC_DATETIME64:
 			{
-				int64		raw = rd_i64(fixed_data(col), row);
+				int64		raw = rd_i64((const uint8_t *) chc_column_fixed_data(col, NULL), row);
 				uint32_t	scale = chc_type_datetime64_scale(type);
 				int64		power = pow10i[scale];
 
