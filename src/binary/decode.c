@@ -204,9 +204,9 @@ static Datum read_value(const chc_column * col, const chc_type * type,
 						uint64_t row, Oid * valtype, bool *is_null);
 
 /*
- * Format a Decimal value (LE bytes of width 4/8/16/32 with `scale`
- * fractional digits) into `out`. Returns bytes written, -1 on overflow.
- * 128/256-bit decimals use base-10 division on the LE word array.
+ * Format a ClickHouse Decimal (two's-complement signed integer in LE bytes of
+ * width 4/8/16/32 for Decimal32/64/128/256, with `scale` fractional digits
+ * carried on the column type) into `out`. Returns bytes written, -1 on overflow.
  */
 static int
 format_decimal_text(const uint8_t * bytes, size_t width, uint32_t scale,
@@ -219,6 +219,7 @@ format_decimal_text(const uint8_t * bytes, size_t width, uint32_t scale,
 	if (width == 0 || width > 32 || width % 4 != 0)
 		return -1;
 	memcpy(mag, bytes, width);
+	/* top bit of MSW is sign; negate two's-complement to get magnitude */
 	if (mag[nwords - 1] & 0x80000000u)
 	{
 		neg = true;
@@ -237,13 +238,14 @@ format_decimal_text(const uint8_t * bytes, size_t width, uint32_t scale,
 
 	char		buf[80];
 	int			n = 0;
-	int			nonzero;
+	bool		nonzero;
 
+	/* base-10 division of mag yields digits LSB-first */
 	do
 	{
 		uint64_t	rem = 0;
 
-		nonzero = 0;
+		nonzero = false;
 		for (ssize_t i = (ssize_t) nwords - 1; i >= 0; i--)
 		{
 			uint64_t	v = (rem << 32) | mag[i];
@@ -251,11 +253,12 @@ format_decimal_text(const uint8_t * bytes, size_t width, uint32_t scale,
 			mag[i] = (uint32_t) (v / 10);
 			rem = v % 10;
 			if (mag[i])
-				nonzero = 1;
+				nonzero = true;
 		}
 		buf[n++] = (char) ('0' + (uint32_t) rem);
 	} while (nonzero && n < (int) sizeof(buf));
 
+	/* pad leading zeros so digit count covers fractional portion */
 	while (n <= (int) scale)
 		buf[n++] = '0';
 
@@ -268,6 +271,7 @@ format_decimal_text(const uint8_t * bytes, size_t width, uint32_t scale,
 	if (neg)
 		*p++ = '-';
 
+	/* emit MSD-first, inserting '.' before `scale` trailing digits */
 	for (int i = n - 1; i >= 0; i--)
 	{
 		if (i + 1 == scale)

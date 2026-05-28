@@ -170,9 +170,7 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 			{
 				int64_t		v = 0;
 
-				/*
-				 * Support mixing integer types.
-				 */
+				/* Support mixing integer types. */
 				if (!(kind == CHC_BOOL
 					  || (kind >= CHC_INT8 && kind <= CHC_INT64)
 					  || (kind >= CHC_UINT8 && kind <= CHC_UINT64)))

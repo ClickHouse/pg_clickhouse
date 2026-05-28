@@ -223,9 +223,7 @@ classify_column(ic_col * ic, const chc_type * t)
 		}
 		bool		elem_nullable = chc_type_kind(base) == CHC_NULLABLE;
 
-		/*
-		 * Array(Nullable(T)) not supported yet.
-		 */
+		/* Array(Nullable(T)) not supported yet. */
 		if (elem_nullable)
 		{
 			ereport(ERROR,
@@ -540,13 +538,14 @@ append_string_row(ic_col * c, const void *p, size_t n)
 }
 
 /*
- * Convert decimal text "[-]digits[.frac]" to little-endian bytes of width
- * `width` honoring `scale`.
+ * Convert decimal text "[-]digits[.frac]" into a ClickHouse Decimal wire value:
+ * two's-complement signed integer in `width` LE bytes (4/8/16/32 for
+ * Decimal32/64/128/256), with `scale` fractional digits folded into the value.
  */
 static void
 decimal_text_to_bytes(const char *s, uint32_t scale, size_t width, uint8_t * out)
 {
-	int			neg = 0;
+	bool		neg = false;
 
 	if (!s)
 		ereport(ERROR,
@@ -554,45 +553,29 @@ decimal_text_to_bytes(const char *s, uint32_t scale, size_t width, uint8_t * out
 				 errmsg("pg_clickhouse: decimal parse failure")));
 	if (*s == '-')
 	{
-		neg = 1;
+		neg = true;
 		s++;
 	}
 	else if (*s == '+')
 		s++;
 
-	/* Strip dot if present. */
+	/* find offsets, going to iterate digits, skipping non-digits */
 	const char *dot = strchr(s, '.');
 	size_t		ilen = dot ? (size_t) (dot - s) : strlen(s);
 	const char *frac = dot ? dot + 1 : "";
 	size_t		flen = strlen(frac);
+	size_t		ndig = ilen + scale;
 
-	/* Pad/truncate fractional to exact scale. */
-	char		flat[160];
-
-	if (ilen + scale + 1 > sizeof(flat))
-		ereport(ERROR,
-				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-				 errmsg("pg_clickhouse: decimal parse failure")));
-	memcpy(flat, s, ilen);
-	size_t		j = ilen;
-
-	for (uint32_t k = 0; k < scale; k++)
-		flat[j++] = (k < flen) ? frac[k] : '0';
-	flat[j] = '\0';
-
-	const char *digits = flat;
-
-	while (*digits == '0' && digits[1])
-		digits++;
-	size_t		ndig = strlen(digits);
-
-	/* width is 4/8/16/32 for Decimal32/64/128/256; nwords is host words. */
 	uint32_t	mag[8] = {0};
 	size_t		nwords = width / 4;
 
+	/* accumulate digits (padded/truncated to scale) into mag */
 	for (size_t i = 0; i < ndig; i++)
 	{
-		uint64_t	carry = (uint64_t) (digits[i] - '0');
+		char		c = i < ilen ? s[i]
+			: i - ilen < flen ? frac[i - ilen]
+			: '0';
+		uint64_t	carry = (uint64_t) (c - '0');
 
 		for (size_t b = 0; b < nwords; b++)
 		{
@@ -602,6 +585,7 @@ decimal_text_to_bytes(const char *s, uint32_t scale, size_t width, uint8_t * out
 			carry = v >> 32;
 		}
 	}
+	/* two's-complement negation */
 	if (neg)
 	{
 		for (size_t b = 0; b < nwords; b++)
@@ -1122,9 +1106,7 @@ typedef struct lcd_entry
 #define SH_DEFINE
 #include "lib/simplehash.h"
 
-/*
- * Build LC dict (collect unique strings in insertion order)
- */
+/* Build LC dict (collect unique strings in insertion order) */
 static void
 build_lc_dict(ic_col * c, bool nullable,
 			  uint64_t * *out_dict_offs, uint8_t * *out_dict_data,

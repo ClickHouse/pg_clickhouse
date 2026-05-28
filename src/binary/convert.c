@@ -1,6 +1,4 @@
-/*
- * Conversion functions for the binary driver.
-*/
+/* Conversion functions for the binary driver. */
 
 #include "postgres.h"
 
