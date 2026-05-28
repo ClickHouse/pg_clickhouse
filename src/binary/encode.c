@@ -39,8 +39,9 @@ ch_kind_to_pg_oid_for_insert(const chc_type * type, const char *colname)
 		case CHC_INT8:
 		case CHC_INT16:
 		case CHC_UINT8:
-		case CHC_BOOL:
 			return INT2OID;
+		case CHC_BOOL:
+			return BOOLOID;
 		case CHC_INT32:
 		case CHC_UINT16:
 			return INT4OID;
@@ -187,6 +188,11 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 				ch_binary_append_int(h, colidx, v, isnull);
 				return;
 			}
+		case BOOLOID:
+			if (kind != CHC_BOOL && kind != CHC_UINT8)
+				goto type_mismatch;
+			ch_binary_append_bool(h, colidx, (bool) val, isnull);
+			return;
 		case FLOAT4OID:
 			if (kind != CHC_FLOAT32)
 				goto type_mismatch;

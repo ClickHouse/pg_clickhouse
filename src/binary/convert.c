@@ -317,12 +317,6 @@ convert_bool(ch_convert_state * state, Datum val)
 	return BoolGetDatum(dat);
 }
 
-inline static Datum
-convert_bool_to_int16(ch_convert_output_state * state, Datum val)
-{
-	return Int16GetDatum(DatumGetBool(val) ? 1 : 0);
-}
-
 Datum
 ch_binary_convert_datum(void *state, Datum val)
 {
@@ -512,14 +506,6 @@ init_output_convert_state(ch_convert_output_state * state)
 	/* column_append() copies all bytes, no cast needed. */
 	if (state->intype == BYTEAOID && state->outtype == TEXTOID)
 		return;
-
-	/* Postgres has no cast from bool to INT16, so provide our own. */
-	if (state->outtype == INT2OID && state->intype == BOOLOID)
-	{
-		state->func = convert_bool_to_int16;
-		state->ctype = COERCION_PATH_FUNC;
-		return;
-	}
 
 	state->func = convert_out_generic;
 
