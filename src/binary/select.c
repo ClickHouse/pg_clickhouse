@@ -17,12 +17,17 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "utils/memutils.h"
 #include "utils/palloc.h"
 
 #include "binary_internal.h"
 #include "kv_list.h"
+
+/* Wall-clock cap on drain_until_eos. A well-behaved server acknowledges
+ * Cancel by flushing the in-flight block + EndOfStream within a second. */
+#define DRAIN_DEADLINE_US (5 * 1000 * 1000)
 
 struct ch_binary_response_t
 {
@@ -155,11 +160,31 @@ pump_one(ch_binary_response_t * resp)
 	MemoryContextSwitchTo(old);
 }
 
+static int64_t
+drain_now_us(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (int64_t) ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
+static void
+drain_set_deadline(struct ch_binary_state *s, int64_t deadline_us)
+{
+	if (s->tls)
+		chc_openssl_io_set_deadline(&s->openssl_state, deadline_us);
+	else
+		chc_posix_io_set_deadline(&s->posix_state, deadline_us);
+}
+
 /*
  * Best-effort drain of any unconsumed stream so the connection is left clean
  * for the next query. Disables cancel polling while draining so
- * QueryCancelPending doesn't short-circuit every refill. Sets state->broken on
- * transport failure so the cache drops the connection.
+ * QueryCancelPending doesn't short-circuit every refill, and caps total wait
+ * with an IO deadline so a peer that ignores Cancel doesn't cause hang. Sets
+ * state->broken on transport failure / timeout / send_cancel failure so the
+ * cache drops the connection.
  */
 static void
 drain_until_eos(ch_binary_response_t * resp)
@@ -179,6 +204,8 @@ drain_until_eos(ch_binary_response_t * resp)
 	}
 	resp->state->check_cancel_fn = NULL;
 	resp->check_cancel = NULL;
+
+	drain_set_deadline(resp->state, drain_now_us() + DRAIN_DEADLINE_US);
 
 	for (;;)
 	{
@@ -207,6 +234,8 @@ drain_until_eos(ch_binary_response_t * resp)
 			break;
 		}
 	}
+
+	drain_set_deadline(resp->state, 0);
 	MemoryContextSwitchTo(old);
 }
 
