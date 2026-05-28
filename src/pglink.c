@@ -879,6 +879,29 @@ binary_simple_query(void *conn, const ch_query * query)
 	ch_binary_read_state_init(cursor->read_state, resp);
 	cursor->conversion_states = palloc0(sizeof(uintptr_t) * cursor->columns_count);
 
+	/*
+	 * CH JSON columns default to JSONBOID in state->coltypes. When foreign
+	 * table column is declared `json` (JSONOID), override so
+	 * binary_make_datum returns json Datum from CH's STRING bytes, skipping
+	 * jsonb_in / jsonb_out round-trip that would reformat CH's emit and break
+	 * expected outputs that pin CH's exact formatting.
+	 */
+	if (query->tupdesc && state->coltypes)
+	{
+		ListCell   *lc;
+		size_t		j = 0;
+
+		foreach(lc, query->attr_nums)
+		{
+			int			i = lfirst_int(lc);
+
+			if (state->coltypes[j] == JSONBOID &&
+				TupleDescAttr(query->tupdesc, i - 1)->atttypid == JSONOID)
+				state->coltypes[j] = JSONOID;
+			j++;
+		}
+	}
+
 	cursor->memcxt = tempcxt;
 	cursor->callback.func = binary_cursor_free;
 	cursor->callback.arg = cursor;
@@ -933,28 +956,6 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 	errcallback.arg = (void *) cursor->query;
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
-
-	/*
-	 * CH JSON columns default to JSONBOID in state->coltypes. When the
-	 * foreign-table column is declared `json` (JSONOID), override so
-	 * binary_make_datum returns json Datum from CH's STRING bytes, skipping a
-	 * jsonb_in / jsonb_out round-trip that would reformat CH's emit and break
-	 * expected outputs that pin CH's exact formatting.
-	 */
-	if (tupdesc && state->coltypes)
-	{
-		size_t		j = 0;
-
-		foreach(lc, attrs)
-		{
-			int			i = lfirst_int(lc);
-
-			if (state->coltypes[j] == JSONBOID &&
-				TupleDescAttr(tupdesc, i - 1)->atttypid == JSONOID)
-				state->coltypes[j] = JSONOID;
-			j++;
-		}
-	}
 
 	bool		have_data = ch_binary_read_row(state);
 	size_t		attcount = list_length(attrs);
