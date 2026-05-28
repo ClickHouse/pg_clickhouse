@@ -101,8 +101,27 @@ pump_one(ch_binary_response_t * resp)
 					resp->columns_count = chc_block_n_columns(pkt.block);
 				if (chc_block_n_rows(pkt.block) > 0 && resp->staged == NULL)
 				{
-					resp->staged = pkt.block;
-					pkt.block = NULL;
+					size_t		ncols = chc_block_n_columns(pkt.block);
+					chc_err		verr = {};
+					int			vrc = CHC_OK;
+
+					for (size_t i = 0; i < ncols; i++)
+					{
+						vrc = chc_column_validate(chc_block_column(pkt.block, i), &verr);
+						if (vrc != CHC_OK)
+							break;
+					}
+					if (vrc != CHC_OK)
+					{
+						resp_set_error(resp, verr.msg);
+						resp->state->broken = true;
+						resp->eos = true;
+					}
+					else
+					{
+						resp->staged = pkt.block;
+						pkt.block = NULL;
+					}
 				}
 			}
 			chc_packet_clear(resp->client, &pkt);
