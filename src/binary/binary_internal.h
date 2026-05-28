@@ -1,8 +1,8 @@
 /*
  * binary_internal.h
  *
- * Cross-file shared state for the binary driver subdir.Not exposed
- * via src/include, anything outside src/binary should use binary.h.
+ * Cross-file shared state for the binary driver subdir. Not exposed via
+ * src/include, anything outside src/binary should use binary.h.
  */
 
 #ifndef PG_CLICKHOUSE_BINARY_INTERNAL_H
