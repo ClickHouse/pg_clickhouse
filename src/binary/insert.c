@@ -541,7 +541,7 @@ append_string_row(ic_col * c, const void *p, size_t n)
 
 /*
  * Convert decimal text "[-]digits[.frac]" to little-endian bytes of width
- * `width` honouring `scale`.
+ * `width` honoring `scale`.
  */
 static void
 decimal_text_to_bytes(const char *s, uint32_t scale, size_t width, uint8_t * out)

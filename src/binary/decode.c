@@ -682,7 +682,7 @@ read_value(const chc_column * col, const chc_type * type, uint64_t row,
 				/*
 				 * *valtype arrives set to JSONBOID by default (from
 				 * ch_kind_to_pg_oid) but the caller's foreign-table
-				 * declaration may have requested JSONOID; honour it.
+				 * declaration may have requested JSONOID; honor it.
 				 */
 				Oid			target = (*valtype == JSONOID) ? JSONOID : JSONBOID;
 
@@ -831,7 +831,7 @@ again:
 		{
 			/*
 			 * Currently, read_value overwrites *valtype for most types
-			 * canonical PG type for that CH kind. For CHC_JSON we honour the
+			 * canonical PG type for that CH kind. For CHC_JSON we honor the
 			 * incoming value so callers (binary_fetch_row) can pin the Datum
 			 * type to JSONOID for `data json` foreign columns and avoid the
 			 * jsonb_in -> jsonb_out round-trip that would strip CH's verbatim
