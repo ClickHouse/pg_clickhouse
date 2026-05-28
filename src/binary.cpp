@@ -300,6 +300,8 @@ extern "C"
 			case Type::Code::Int16:
 			case Type::Code::UInt8:
 				return INT2OID;
+			case Type::Code::Bool:
+				return BOOLOID;
 			case Type::Code::Int32:
 			case Type::Code::UInt16:
 				return INT4OID;
@@ -558,6 +560,21 @@ extern "C"
 						break;
 					default:
 						THROW_UNEXPECTED_COLUMN("INT2", col);
+				}
+				break;
+			}
+			case BOOLOID:
+			{
+				switch (col->Type()->GetCode())
+				{
+					case Type::Code::UInt8:
+						col->AsStrict<ColumnUInt8>()->Append((uint8_t)val);
+						break;
+					case Type::Code::Bool:
+						col->AsStrict<ColumnBool>()->Append((bool)val);
+						break;
+					default:
+						THROW_UNEXPECTED_COLUMN("BOOL", col);
 				}
 				break;
 			}
@@ -965,6 +982,13 @@ extern "C"
 				int16 val = col->AsStrict<ColumnUInt8>()->At(row);
 				ret = (Datum)val;
 				*valtype = INT2OID;
+			}
+			break;
+			case Type::Code::Bool:
+			{
+				bool val = col->AsStrict<ColumnBool>()->At(row);
+				ret = (Datum)val;
+				*valtype = BOOLOID;
 			}
 			break;
 			case Type::Code::UInt16:

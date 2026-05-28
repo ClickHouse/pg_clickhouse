@@ -21,6 +21,8 @@ All notable changes to this project will be documented in this file. It uses the
     `re2extractallgroupshorizontal`, `re2extractallgroupsvertical`,
     `re2regexpquotemeta`, and `re2splitbyregexp`. Thanks to Philip Dubé for
     the PR ([#232]).
+*   Updated binary driver to properly support handling `Bool`s as boolean
+    values rather than `int16` values, avoiding the need for casting.
 
   [v0.3.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.3.0...v0.3.1
   [#232]: https://github.com/ClickHouse/pg_clickhouse/pull/232

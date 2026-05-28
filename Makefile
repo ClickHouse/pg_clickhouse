@@ -35,7 +35,7 @@ CH_CPP_BUILD_DIR = vendor/_build/$(OS)-$(ARCH)-$(CH_BUILD)-$(shell git submodule
 
 # List the clickhouse-cpp libraries we require.
 CH_CPP_LIB = $(CH_CPP_BUILD_DIR)/clickhouse/libclickhouse-cpp-lib$(DLSUFFIX)
-CH_CPP_FLAGS = -D CMAKE_BUILD_TYPE=Release -D WITH_OPENSSL=ON
+CH_CPP_FLAGS = -D CMAKE_BUILD_TYPE=Release -D WITH_OPENSSL=ON -DCH_MAP_BOOL_TO_UINT8=OFF
 
 # Are we statically compiling clickhouse-cpp into the extension or no?
 ifeq ($(CH_BUILD), static)
