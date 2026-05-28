@@ -230,8 +230,8 @@ convert_array(ch_convert_state * state, Datum val)
 	}
 	else
 	{
-		int			dims[MAXDIM];
-		int			lbs[MAXDIM];
+		int			dims[MAXDIM] = {};
+		int			lbs[MAXDIM] = {};
 		size_t		total = 1;
 		size_t		idx = 0;
 		Datum	   *flat;

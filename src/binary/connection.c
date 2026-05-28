@@ -74,7 +74,7 @@ binary_state_reset_cb(void *arg)
 static int
 tcp_connect(const char *host, int port)
 {
-	struct addrinfo hints = {0};
+	struct addrinfo hints = {};
 	struct addrinfo *res = NULL;
 	char		port_s[16];
 
@@ -219,7 +219,7 @@ ch_binary_connect(ch_connection_details * details)
 			.user = details->username ? details->username : "default",
 			.password = details->password ? details->password : "",
 		};
-		chc_err		err = {0};
+		chc_err		err = {};
 		int			rc = chc_client_init(&s->client, &opts, &pg_chc_alloc, &s->io, &err);
 
 		if (rc != CHC_OK)

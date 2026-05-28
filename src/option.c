@@ -303,7 +303,14 @@ chfdw_extract_options(List * defelems, char **driver, char **host, int *port,
 			if (host && strcmp(def->defname, "host") == 0)
 				*host = defGetString(def);
 			else if (port && strcmp(def->defname, "port") == 0)
-				*port = atoi(defGetString(def));
+			{
+				char	   *endptr = NULL;
+				long		val = strtol(defGetString(def), &endptr, 10);
+
+				/* Just ignore invalid values. */
+				if (val <= INT_MAX && val > 0 && (!*endptr || *endptr == 0))
+					*port = val;
+			}
 			else if (username && strcmp(def->defname, "user") == 0)
 				*username = defGetString(def);
 			else if (password && strcmp(def->defname, "password") == 0)

@@ -529,7 +529,7 @@ read_array(const chc_column * col, const chc_type * type, uint64_t row,
 
 	if (len > 0)
 	{
-		Oid			scratch;
+		Oid			scratch = slot->item_type;
 
 		slot->datums = (Datum *) palloc0(sizeof(Datum) * len);
 		slot->nulls = (bool *) palloc0(sizeof(bool) * len);
@@ -590,7 +590,7 @@ static Datum
 read_value(const chc_column * col, const chc_type * type, uint64_t row,
 		   Oid * valtype, bool *is_null)
 {
-	/* Strip an outer Nullable; check the null bit for the row. */
+	/* Unwrap outer Nullable, handling nulls here. */
 	if (chc_type_kind(type) == CHC_NULLABLE)
 	{
 		const		chc_type *inner_t = chc_type_child(type, 0);

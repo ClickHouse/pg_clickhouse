@@ -76,8 +76,8 @@ static void
 pump_one(ch_binary_response_t * resp)
 {
 	MemoryContext old = MemoryContextSwitchTo(resp->cxt);
-	chc_packet	pkt = {0};
-	chc_err		err = {0};
+	chc_packet	pkt = {};
+	chc_err		err = {};
 	int			rc = chc_client_recv_packet(resp->client, &pkt, &err);
 
 	if (rc != CHC_OK)
@@ -149,7 +149,7 @@ drain_until_eos(ch_binary_response_t * resp)
 		return;
 
 	MemoryContext old = MemoryContextSwitchTo(resp->cxt);
-	chc_err		ce = {0};
+	chc_err		ce = {};
 
 	if (chc_client_send_cancel(resp->client, &ce) != CHC_OK)
 	{
@@ -163,7 +163,7 @@ drain_until_eos(ch_binary_response_t * resp)
 
 	for (;;)
 	{
-		chc_packet	pkt = {0};
+		chc_packet	pkt = {};
 		int			rc;
 
 		ce = (chc_err)
@@ -324,7 +324,7 @@ ch_binary_simple_query(ch_binary_connection_t * conn, const ch_query * query,
 		.params = params,
 		.n_params = n_params,
 	};
-	chc_err		err = {0};
+	chc_err		err = {};
 	int			rc = chc_client_send_query_ex(s->client, query->sql,
 											  strlen(query->sql), &opts, &err);
 

@@ -290,8 +290,8 @@ recv_initial_block(struct ch_binary_state *s, ch_binary_insert_handle * h)
 {
 	for (;;)
 	{
-		chc_packet	pkt = {0};
-		chc_err		err = {0};
+		chc_packet	pkt = {};
+		chc_err		err = {};
 		int			rc = chc_client_recv_packet(s->client, &pkt, &err);
 
 		if (rc != CHC_OK)
@@ -334,12 +334,12 @@ recv_initial_block(struct ch_binary_state *s, ch_binary_insert_handle * h)
 static void
 drain_aborted_insert(struct ch_binary_state *s)
 {
-	chc_err		ce = {0};
+	chc_err		ce = {};
 
 	(void) chc_client_send_data(s->client, NULL, &ce);
 	for (;;)
 	{
-		chc_packet	drain = {0};
+		chc_packet	drain = {};
 
 		ce = (chc_err)
 		{
@@ -403,7 +403,7 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 			.value = "1",
 			.important = true,
 		};
-		chc_query_opts insert_opts = {0};
+		chc_query_opts insert_opts = {};
 		const		chc_query_opts *opts_ptr = NULL;
 
 		if (server_supports_json_as_string(s->client))
@@ -413,7 +413,7 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 			opts_ptr = &insert_opts;
 		}
 
-		chc_err		err = {0};
+		chc_err		err = {};
 		int			rc = chc_client_send_query_ex(s->client, sql, sql_len + 7, opts_ptr, &err);
 
 		if (rc != CHC_OK)
@@ -566,7 +566,7 @@ decimal_text_to_bytes(const char *s, uint32_t scale, size_t width, uint8_t * out
 	size_t		flen = strlen(frac);
 	size_t		ndig = ilen + scale;
 
-	uint32_t	mag[8] = {0};
+	uint32_t	mag[8] = {};
 	size_t		nwords = width / 4;
 
 	/* accumulate digits (padded/truncated to scale) into mag */
@@ -827,7 +827,7 @@ ch_binary_append_decimal(ch_binary_insert_handle * h, size_t col,
 					(errcode(ERRCODE_DATATYPE_MISMATCH),
 					 errmsg("pg_clickhouse: decimal into non-decimal column")));
 	}
-	uint8_t		raw[32] = {0};
+	uint8_t		raw[32] = {};
 
 	if (!isnull && digits)
 	{
@@ -845,7 +845,7 @@ ch_binary_append_uuid(ch_binary_insert_handle * h, size_t col,
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
 	ic_col	   *c = resolve_col(h, col, isnull);
-	uint8_t		wire[16] = {0};
+	uint8_t		wire[16] = {};
 
 	if (!isnull)
 	{
@@ -894,7 +894,7 @@ ch_binary_append_inet(ch_binary_insert_handle * h, size_t col,
 	}
 	if (k == CHC_IPV6 && addrlen == 16)
 	{
-		uint8_t		raw[16] = {0};
+		uint8_t		raw[16] = {};
 
 		if (!isnull && addr_be)
 			memcpy(raw, addr_be, 16);
@@ -1201,7 +1201,7 @@ void
 ch_binary_flush_block(ch_binary_insert_handle * h)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
-	chc_err		err = {0};
+	chc_err		err = {};
 	chc_block_builder *bb = NULL;
 	int			rc = chc_block_builder_init(&bb, &pg_chc_alloc, &err);
 
@@ -1384,7 +1384,7 @@ ch_binary_finalize_insert(ch_binary_insert_handle * h)
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
 	char	   *exc_msg = NULL;
 	bool		broke = false;
-	chc_err		err = {0};
+	chc_err		err = {};
 	int			rc = chc_client_send_data(h->client, NULL, &err);
 
 	if (rc != CHC_OK)
@@ -1397,7 +1397,7 @@ ch_binary_finalize_insert(ch_binary_insert_handle * h)
 		/* Drain until EOS or exception. */
 		for (;;)
 		{
-			chc_packet	pkt = {0};
+			chc_packet	pkt = {};
 
 			err = (chc_err)
 			{

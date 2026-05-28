@@ -36,8 +36,8 @@ repos:
       - id: clang-tidy
         name: clang-tidy static analysis
         language: system
-        entry: sh -c 'test -f compile_commands.json && clang-tidy -p . "$@" || true' --
-        files: '\.(c|cpp)$'
+        entry: sh -c 'test -f compile_commands.json && clang-tidy -p . "$@"' --
+        files: '\.c$'
         exclude: "^vendor/"
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v3.1.0
