@@ -185,10 +185,13 @@ write_callback(void *contents, size_t size, size_t nmemb, void *userp)
 	size_t		needed;
 
 	/*
-	 * If we already have enough bytes, pause WITHOUT consuming this chunk.
-	 * CURL will re-deliver the same data when resumed.
+	 * If we already have at least one row-aligned batch ready (>= fetch_size
+	 * bytes AND a newline present), pause WITHOUT consuming this chunk. CURL
+	 * will re-deliver the same data when resumed. Pausing on byte-count alone
+	 * can starve the parser of the newline it needs when fetch_size is tiny.
 	 */
-	if (self->write_pos >= (size_t) self->fetch_size)
+	if (self->write_pos >= (size_t) self->fetch_size
+		&& memchr(self->buf, '\n', self->write_pos) != NULL)
 	{
 		self->paused = true;
 		return CURL_WRITEFUNC_PAUSE;
