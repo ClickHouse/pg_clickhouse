@@ -2,16 +2,18 @@
 	A PostgreSQL extension for connecting to ClickHouse servers.
 */
 
+#include <sys/time.h>
+
 /* PostgreSQL includes. */
 #include "postgres.h"
 #include "catalog/pg_class_d.h"
 #include "commands/defrem.h"
-#include "commands/explain.h"
 #include "foreign/fdwapi.h"
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "nodes/parsenodes.h"
 #include "optimizer/clauses.h"
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
@@ -32,12 +34,12 @@
 #if PG_VERSION_NUM >= 180000
 #include "commands/explain_format.h"
 #include "commands/explain_state.h"
+#else
+#include "commands/explain.h"
 #endif
 
 /* extension includes. */
 #include "utils/builtins.h"
-#include "binary.hh"
-#include "internal.h"
 #include "fdw.h"
 #include "version.h"
 
@@ -299,7 +301,7 @@ Datum
 clickhouse_raw_query(PG_FUNCTION_ARGS)
 {
 	char	   *connstring = text_to_cstring(PG_GETARG_TEXT_P(1));
-	ch_query	query = new_query(text_to_cstring(PG_GETARG_TEXT_P(0)), 0, NULL);
+	ch_query	query = new_query(text_to_cstring(PG_GETARG_TEXT_P(0)), 0, NULL, NULL, NULL);
 
 	ch_connection_details *details = connstring_parse(connstring);
 	ch_connection conn = chfdw_http_connect(details);
@@ -1103,8 +1105,6 @@ clickhouseIterateForeignScan(ForeignScanState * node)
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
 	struct timeval time1,
 				time2;
-	TupleDesc	tupdesc;
-	ch_query	query = new_query(fsstate->query, fsstate->numParams, fsstate->param_values);
 
 	/* Allow query cancel (e.g. Ctrl+C) between tuple fetches. */
 	CHECK_FOR_INTERRUPTS();
@@ -1113,6 +1113,8 @@ clickhouseIterateForeignScan(ForeignScanState * node)
 	if (fsstate->ch_cursor == NULL)
 	{
 		MemoryContext old = MemoryContextSwitchTo(fsstate->batch_cxt);
+		ch_query	query = new_query(fsstate->query, fsstate->numParams, fsstate->param_values,
+									  fsstate->tupdesc, fsstate->retrieved_attrs);
 
 		/*
 		 * Construct array of query parameter values in text format.  We do
@@ -1149,16 +1151,8 @@ clickhouseIterateForeignScan(ForeignScanState * node)
 		MemoryContextSwitchTo(old);
 	}
 
-	if (fsstate->rel)
-		tupdesc = RelationGetDescr(fsstate->rel);
-	else
-	{
-		Assert(fsstate);
-		tupdesc = node->ss.ss_ScanTupleSlot->tts_tupleDescriptor;
-	}
-
 	gettimeofday(&time1, NULL);
-	tup = fetch_tuple(fsstate, tupdesc);
+	tup = fetch_tuple(fsstate, fsstate->tupdesc);
 	gettimeofday(&time2, NULL);
 	time_used += time_diff(&time1, &time2);
 
@@ -1257,7 +1251,6 @@ clickhousePlanForeignModify(PlannerInfo * root,
 	}
 
 	table_close_compat(rel, NoLock);
-
 
 	/*
 	 * Build the fdw_private list that will be available to the executor.
@@ -1429,6 +1422,15 @@ clickhouseEndForeignInsert(EState * estate,
 		/* flush */
 		oldcontext = MemoryContextSwitchTo(fmstate->temp_cxt);
 		fmstate->conn.methods->insert_tuple(fmstate->state, NULL);
+
+		/*
+		 * Finalize on the happy path so the binary driver can ereport on a
+		 * server-side INSERT exception without raising from inside the
+		 * MemoryContext reset callback that fires during abort.
+		 */
+		if (fmstate->conn.methods->finalize_insert)
+			fmstate->conn.methods->finalize_insert(fmstate->state);
+
 		MemoryContextSwitchTo(oldcontext);
 		MemoryContextReset(fmstate->temp_cxt);
 
@@ -1545,7 +1547,7 @@ create_foreign_modify(EState * estate,
 	UserMapping *user;
 	MemoryContext old_mcxt;
 	Relation	rel = rri->ri_RelationDesc;
-	ch_query	q = new_query(query, 0, NULL);
+	ch_query	q = new_query(query, 0, NULL, RelationGetDescr(rel), target_attrs);
 
 	/* Begin constructing CHFdwModifyState. */
 	fmstate = (CHFdwModifyState *) palloc0(sizeof(CHFdwModifyState));
@@ -3179,7 +3181,7 @@ add_foreign_final_paths(PlannerInfo * root, RelOptInfo * input_rel,
 }
 
 /*
- * Find an equivalence class member expression, all of whose Vars, come from
+ * Find an equivalence class member expression, all of whose Vars come from
  * the indicated relation.
  */
 Expr	   *

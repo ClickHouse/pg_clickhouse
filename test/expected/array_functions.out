@@ -238,6 +238,45 @@ NOTICE:  array_sort(x, true) PUSHED DOWN: t
 NOTICE:  (1,"{10,20,30}","{a,b,c}",aa-bb-cc)
 NOTICE:  array_sort(x, true, true) NOT PUSHED DOWN: t
 NOTICE:  (1,"{10,20,30}","{a,b,c}",aa-bb-cc)
+-- array_shuffle / array_sample added in PG16; output is non-deterministic
+-- so put them in WHERE with cardinality predicates that always hold.
+SELECT current_setting('server_version_num')::int >= 160000 AS pg16 \gset
+\if :pg16
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE cardinality(array_shuffle(vals)) = cardinality(vals) ORDER BY id;
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.t1 WHERE ((length(arrayShuffle(vals)) = length(vals))) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM t1 WHERE cardinality(array_shuffle(vals)) = cardinality(vals) ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE cardinality(array_sample(vals, 1)) = 1 ORDER BY id;
+                                                      QUERY PLAN                                                      
+----------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.t1 WHERE ((length(arrayRandomSample(vals, 1)) = 1)) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM t1 WHERE cardinality(array_sample(vals, 1)) = 1 ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+\endif
 -- Operators: @> → hasAll
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t1 WHERE vals @> ARRAY[10];

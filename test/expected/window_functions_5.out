@@ -102,6 +102,53 @@ DETAIL:  Remote Query: SELECT entity_id, ts_event, lead(ts_event) OVER (PARTITIO
 ERROR:  pg_clickhouse: Code: 63. DB::Exception: Unknown aggregate function lead. (UNKNOWN_AGGREGATE_FUNCTION)
 DETAIL:  Remote Query: SELECT entity_id, ts_event, lead(ts_event) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created'))
 CONTEXT:  HTTP status code: 404
+-- LAG pushdown (binary)
+           QUERY PLAN            
+---------------------------------
+ Foreign Scan
+   Relations: Window on (events)
+(2 rows)
+
+ERROR:  pg_clickhouse: DB::Exception: Unknown aggregate function lag
+DETAIL:  Remote Query: SELECT entity_id, ts_event, lag(amount) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created'))
+-- rank pushdown (binary)
+           QUERY PLAN            
+---------------------------------
+ Foreign Scan
+   Relations: Window on (events)
+(2 rows)
+
+ entity_id | amount | rk 
+-----------+--------+----
+ lead_100  |    100 |  1
+ lead_100  |    200 |  2
+ lead_100  |    210 |  3
+ lead_200  |    150 |  1
+ lead_200  |    300 |  2
+ lead_200  |    310 |  3
+ lead_300  |    250 |  1
+ lead_300  |    260 |  2
+(8 rows)
+
+-- dense_rank pushdown (binary)
+           QUERY PLAN            
+---------------------------------
+ Foreign Scan
+   Relations: Window on (events)
+(2 rows)
+
+ entity_id | amount | dr 
+-----------+--------+----
+ lead_100  |    100 |  1
+ lead_100  |    200 |  2
+ lead_100  |    210 |  3
+ lead_200  |    150 |  1
+ lead_200  |    300 |  2
+ lead_200  |    310 |  3
+ lead_300  |    250 |  1
+ lead_300  |    260 |  2
+(8 rows)
+
 -- ntile pushdown (binary)
            QUERY PLAN            
 ---------------------------------
@@ -232,6 +279,33 @@ DETAIL:  Remote Query: SELECT entity_id, amount, percent_rank() OVER (ORDER BY a
    Output: entity_id, ts_event, (lead(ts_event))
    Relations: Window on (events)
    Remote SQL: SELECT entity_id, ts_event, lead(ts_event) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created'))
+(4 rows)
+
+-- VERBOSE LAG pushdown (binary)
+                                                                             QUERY PLAN                                                                              
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, ts_event, (lag(amount))
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, ts_event, lag(amount) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created'))
+(4 rows)
+
+-- VERBOSE rank pushdown (binary)
+                                                                                  QUERY PLAN                                                                                   
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, amount, (rank())
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, amount, rank() OVER (PARTITION BY entity_id ORDER BY amount ASC) FROM wf_test.events ORDER BY entity_id ASC NULLS LAST, amount ASC NULLS LAST
+(4 rows)
+
+-- VERBOSE dense_rank pushdown (binary)
+                                                                                     QUERY PLAN                                                                                      
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, amount, (dense_rank())
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, amount, dense_rank() OVER (PARTITION BY entity_id ORDER BY amount ASC) FROM wf_test.events ORDER BY entity_id ASC NULLS LAST, amount ASC NULLS LAST
 (4 rows)
 
 -- VERBOSE ntile pushdown (binary)

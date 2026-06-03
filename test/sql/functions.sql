@@ -477,7 +477,7 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t4 WHERE soundex(val) = 'V400';
 SELECT * FROM t4 WHERE soundex(val) = 'V400';
 
--- 2-arg levenshtein pushes down as editDistance.
+-- 2-arg levenshtein pushes down as editDistanceUTF8.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t4 WHERE levenshtein(val, 'val1') <= 1;
 SELECT * FROM t4 WHERE levenshtein(val, 'val1') <= 1;
@@ -487,6 +487,217 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t4 WHERE levenshtein(val, 'val1', 1, 1, 2) <= 1;
 
 DROP EXTENSION fuzzystrmatch;
+
+-- to_char: pushdown of formats whose every keyword has a faithful
+-- formatDateTime equivalent.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT to_char(ts, 'YYYY-MM-DD HH24:MI:SS') FROM t5 ORDER BY 1;
+SELECT to_char(ts, 'YYYY-MM-DD HH24:MI:SS') FROM t5 ORDER BY 1;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT to_char(ts, 'YY/MM/DD HH12:MI AM Q DDD Mon Dy') FROM t5 ORDER BY 1;
+SELECT to_char(ts, 'YY/MM/DD HH12:MI AM Q DDD Mon Dy') FROM t5 ORDER BY 1;
+
+-- Quoted literal text and a literal % round-trip via formatDateTime escaping.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT to_char(ts, '"Year=" YYYY "%"') FROM t5 ORDER BY 1;
+SELECT to_char(ts, '"Year=" YYYY "%"') FROM t5 ORDER BY 1;
+
+-- to_char: refusal cases evaluate locally rather than pushing wrong output.
+-- Padded month name (Month) -- CH formatDateTime cannot blank-pad.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT ts FROM t5 WHERE to_char(ts, 'Month') = 'October   ';
+-- Single-digit year token (Y) -- CH has no equivalent.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT ts FROM t5 WHERE to_char(ts, 'Y') = '5';
+-- Ordinal suffix (TH) -- CH has no ordinal output.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT ts FROM t5 WHERE to_char(ts, 'DDTH') = '15TH';
+-- FM modifier suppresses padding -- CH always pads.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT ts FROM t5 WHERE to_char(ts, 'FMMM') = '10';
+-- Lowercase am/pm -- CH %p is always uppercase.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT ts FROM t5 WHERE to_char(ts, 'HH12 am') = '08 pm';
+
+-- Dynamic format -- not a Const, so cannot be validated.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT to_char(ts, t4.val) FROM t5, t4 LIMIT 1;
+
+-- reverse pushes down as reverseUTF8 to preserve code-point order on
+-- multi-byte input
+SELECT clickhouse_raw_query($$
+    INSERT INTO functions_test.t4 VALUES ('Ωαβ'), ('hello')
+$$);
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE reverse(val) = 'βαΩ';
+SELECT val FROM t4 WHERE reverse(val) = 'βαΩ';
+
+-- bit_count(bytea) pushes down as bitCount (PG14+).
+SELECT current_setting('server_version_num')::int >= 140000 AS pg14 \gset
+\if :pg14
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE bit_count(val::bytea) = 21 ORDER BY val;
+SELECT val FROM t4 WHERE bit_count(val::bytea) = 21 ORDER BY val;
+\endif
+
+-- mod(int, int) pushes down as modulo.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE mod(a, 3) = 0 ORDER BY a;
+SELECT a FROM t3 WHERE mod(a, 3) = 0 ORDER BY a;
+
+-- pow(float8, float8) and power(float8, float8) both push down as pow.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE pow(f64, 2::float8) < 1 ORDER BY i64;
+SELECT i64 FROM t6 WHERE pow(f64, 2::float8) < 1 ORDER BY i64;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE power(f64, 2::float8) < 1 ORDER BY i64;
+SELECT i64 FROM t6 WHERE power(f64, 2::float8) < 1 ORDER BY i64;
+
+-- mod / pow / power on numeric push down too.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
+SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
+SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
+SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
+
+-- abs() pushes down for int / float / numeric.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE abs(a - 5) = 2 ORDER BY a;
+SELECT a FROM t3 WHERE abs(a - 5) = 2 ORDER BY a;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE abs(f64) = 0;
+SELECT i64 FROM t6 WHERE abs(f64) = 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE abs(a::numeric) = 5;
+SELECT a FROM t3 WHERE abs(a::numeric) = 5;
+
+-- factorial(int8) pushes down.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE factorial(a) = 120;
+SELECT a FROM t3 WHERE factorial(a) = 120;
+
+-- round() pushes down for float8 and numeric.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE round(f64) = 0;
+SELECT i64 FROM t6 WHERE round(f64) = 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE round(a::numeric) = 5;
+SELECT a FROM t3 WHERE round(a::numeric) = 5;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
+SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
+
+-- Trig functions push down at f64 = 0 where PG and CH agree exactly.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND sin(f64) = 0;
+SELECT i64 FROM t6 WHERE i64 = 0 AND sin(f64) = 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND cos(f64) = 1;
+SELECT i64 FROM t6 WHERE i64 = 0 AND cos(f64) = 1;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND tan(f64) = 0;
+SELECT i64 FROM t6 WHERE i64 = 0 AND tan(f64) = 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND atan(f64) = 0;
+SELECT i64 FROM t6 WHERE i64 = 0 AND atan(f64) = 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND atan2(f64, 1::float8) = 0;
+SELECT i64 FROM t6 WHERE i64 = 0 AND atan2(f64, 1::float8) = 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND sinh(f64) = 0;
+SELECT i64 FROM t6 WHERE i64 = 0 AND sinh(f64) = 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND cosh(f64) = 1;
+SELECT i64 FROM t6 WHERE i64 = 0 AND cosh(f64) = 1;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND tanh(f64) = 0;
+SELECT i64 FROM t6 WHERE i64 = 0 AND tanh(f64) = 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND asinh(f64) = 0;
+SELECT i64 FROM t6 WHERE i64 = 0 AND asinh(f64) = 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND degrees(f64) = 0;
+SELECT i64 FROM t6 WHERE i64 = 0 AND degrees(f64) = 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND radians(f64) = 0;
+SELECT i64 FROM t6 WHERE i64 = 0 AND radians(f64) = 0;
+
+-- pi() is immutable so PG constant-folds before deparse; the function name
+-- itself is never sent to CH but the remote literal proves the call worked.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE f64 < pi();
+
+-- lower(text) / upper(text) push down as lowerUTF8 / upperUTF8.
+SELECT clickhouse_raw_query($$
+    INSERT INTO functions_test.t4 VALUES ('VAL3'), ('Mixed')
+$$);
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE lower(val) = 'val3';
+SELECT val FROM t4 WHERE lower(val) = 'val3';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE upper(val) = 'VAL1';
+SELECT val FROM t4 WHERE upper(val) = 'VAL1';
+
+-- substring/substr (text) push down as substringUTF8 (counts code points).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val, 1, 3) = 'val' ORDER BY val;
+SELECT val FROM t4 WHERE substring(val, 1, 3) = 'val' ORDER BY val;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substr(val, 2) = 'αβ';
+SELECT val FROM t4 WHERE substr(val, 2) = 'αβ';
+
+-- substring/substr (bytea) push down as substring (byte-based).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val::bytea, 1, 2) = 'va'::bytea ORDER BY val;
+SELECT val FROM t4 WHERE substring(val::bytea, 1, 2) = 'va'::bytea ORDER BY val;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val::bytea, 1, 2) = '\xcea9'::bytea;
+SELECT val FROM t4 WHERE substring(val::bytea, 1, 2) = '\xcea9'::bytea;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substr(val::bytea, 2) = 'al1'::bytea;
+SELECT val FROM t4 WHERE substr(val::bytea, 2) = 'al1'::bytea;
+
+-- length(text) pushes down as lengthUTF8 (counts code points).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE length(val) = 3;
+SELECT val FROM t4 WHERE length(val) = 3;
+
+-- length(bytea) pushes down as length (counts bytes).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE length(val::bytea) = 6;
+SELECT val FROM t4 WHERE length(val::bytea) = 6;
+
+-- octet_length(text) / octet_length(bytea) push down as length.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE octet_length(val) = 6;
+SELECT val FROM t4 WHERE octet_length(val) = 6;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE octet_length(val::bytea) = 6;
+SELECT val FROM t4 WHERE octet_length(val::bytea) = 6;
+
+-- reverse(bytea) added in PG18, pushes down as CH reverse (byte-wise).
+SELECT current_setting('server_version_num')::int >= 180000 AS pg18 \gset
+\if :pg18
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE reverse(val::bytea) = 'olleh'::bytea;
+SELECT val FROM t4 WHERE reverse(val::bytea) = 'olleh'::bytea;
+\endif
+
+-- date(timestamp) and date(timestamptz) push down as CH date (alias for toDate).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a, b FROM t1 WHERE date(c) = '2019-01-01'::date;
+SELECT a, b FROM t1 WHERE date(c) = '2019-01-01'::date;
+-- Pin TZ for the timestamptz variant so PG and CH interpret c identically.
+SET timezone = 'UTC';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a, b FROM t2 WHERE date(c) = '2019-01-01'::date;
+SELECT a, b FROM t2 WHERE date(c) = '2019-01-01'::date;
+RESET timezone;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE functions_test');

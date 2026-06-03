@@ -1,0 +1,10 @@
+{
+  "compilation": {
+    "compilers_to_recognize": [
+      {
+        "executable": "/usr/bin/gcc",
+        "flags_to_remove": ["-Werror"]
+      }
+    ]
+  }
+}

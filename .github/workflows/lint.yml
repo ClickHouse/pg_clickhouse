@@ -1,7 +1,11 @@
 name: 🔎 Lint
 on:
   push:
+    branches: [main, wip/**]
   pull_request:
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: 🔎 Lint Code
@@ -10,17 +14,14 @@ jobs:
     env: { pg: 18 }
     steps:
       - name: Install Postgres
-        run: NO_CLUSTER=1 pg-start ${{ env.pg }} libcurl4-openssl-dev uuid-dev clang-tidy
+        run: NO_CLUSTER=1 pg-start ${{ env.pg }} libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev clang-tidy bear
       - name: Checkout the Repository
         uses: actions/checkout@v6
+        with: { submodules: true }
       - name: Install pre-commit
         run: make debian-install-lint
-      - name: Install Tools
-        run: apt-get update && apt-get install -y bear clang-tidy
       - name: Add Postgres to Path
         run: echo /usr/lib/postgresql/${{ env.pg }}/bin >> "$GITHUB_PATH"
-      - name: Initialize Submodules
-        run: git submodule update --init
       - name: Generate compile_commands.json
         run: make compile_commands.json
       - name: Lint the Code

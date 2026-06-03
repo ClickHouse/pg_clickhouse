@@ -19,7 +19,7 @@
 #include "fdw.h"
 #include "http.h"
 #include "http_streaming.h"
-#include "binary.hh"
+#include "binary.h"
 
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -58,10 +58,12 @@ static libclickhouse_methods http_methods =
 static void binary_disconnect(void *conn);
 static ch_cursor * binary_simple_query(void *conn, const ch_query * query);
 static void binary_cursor_free(void *cursor);
+static bool binary_is_broken(const void *conn);
 
 /* static void binary_simple_insert(void *conn, const char *query); */
 static Datum * binary_fetch_row(ChFdwScanRowContext * ctx);
 static void binary_insert_tuple(void *, TupleTableSlot * slot);
+static void binary_finalize_insert(void *istate);
 static void *binary_prepare_insert(void *, ResultRelInfo *, List *,
 								   const ch_query * query, char *table_name);
 static char *ch_escape_string(const char *s, size_t len);
@@ -76,8 +78,10 @@ static libclickhouse_methods binary_methods =
 		.fetch_row = binary_fetch_row,
 		.prepare_insert = binary_prepare_insert,
 		.insert_tuple = binary_insert_tuple,
+		.finalize_insert = binary_finalize_insert,
 		.streaming_query = NULL,
 		.streaming_fetch_row = NULL,
+		.is_broken = binary_is_broken,
 };
 
 static int
@@ -187,7 +191,7 @@ kill_query(void *conn, const char *query_id)
 	ch_http_response_t *resp;
 	ch_query	query = new_query(psprintf(
 										   "kill query where query_id=%s",
-										   ch_quote_literal(query_id)), 0, NULL);
+										   ch_quote_literal(query_id)), 0, NULL, NULL, NULL);
 
 	ch_http_set_progress_func(NULL);
 	resp = ch_http_simple_query(conn, &query);
@@ -806,7 +810,7 @@ http_insert_tuple(void *istate, TupleTableSlot * slot)
 	if ((slot == NULL && state->sql.len > 0)
 		|| state->sql.len > (MaxAllocSize / 2 /* 512MB */ ))
 	{
-		ch_query	query = new_query(state->sql.data, 0, NULL);
+		ch_query	query = new_query(state->sql.data, 0, NULL, NULL, NULL);
 
 		http_simple_insert(state->conn, &query);
 		resetStringInfo(&state->sql);
@@ -818,31 +822,9 @@ http_insert_tuple(void *istate, TupleTableSlot * slot)
 ch_connection
 chfdw_binary_connect(ch_connection_details * details)
 {
-	char	   *ch_error = NULL;
 	ch_connection res;
-	ch_binary_connection_t *conn = ch_binary_connect(details, &ch_error);
 
-	if (conn == NULL)
-	{
-		if (ch_error == NULL)
-		{
-			ereport(ERROR,
-					(errcode(ERRCODE_FDW_OUT_OF_MEMORY),
-					 errmsg("out of memory")));
-		}
-		else
-		{
-			char	   *error = pstrdup(ch_error);
-
-			free(ch_error);
-
-			ereport(ERROR,
-					(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-					 errmsg("pg_clickhouse: connection error: %s", error)));
-		}
-	}
-
-	res.conn = conn;
+	res.conn = ch_binary_connect(details);
 	res.methods = &binary_methods;
 	res.is_binary = true;
 	return res;
@@ -855,6 +837,12 @@ binary_disconnect(void *conn)
 		ch_binary_close((ch_binary_connection_t *) conn);
 }
 
+static bool
+binary_is_broken(const void *conn)
+{
+	return ch_binary_is_broken((const ch_binary_connection_t *) conn);
+}
+
 static ch_cursor *
 binary_simple_query(void *conn, const ch_query * query)
 {
@@ -865,9 +853,9 @@ binary_simple_query(void *conn, const ch_query * query)
 
 	ch_binary_response_t *resp = ch_binary_simple_query(conn, query, &is_canceled);
 
-	if (!resp->success)
+	if (!ch_binary_response_success(resp))
 	{
-		char	   *error = pstrdup(resp->error);
+		char	   *error = pstrdup(ch_binary_response_error(resp));
 
 		ch_binary_response_free(resp);
 		ereport(ERROR, (
@@ -887,9 +875,32 @@ binary_simple_query(void *conn, const ch_query * query)
 	state = (ch_binary_read_state_t *) palloc0(sizeof(ch_binary_read_state_t));
 	cursor->query = pstrdup(query->sql);
 	cursor->read_state = state;
-	cursor->columns_count = resp->columns_count;
+	cursor->columns_count = ch_binary_response_columns(resp);
 	ch_binary_read_state_init(cursor->read_state, resp);
 	cursor->conversion_states = palloc0(sizeof(uintptr_t) * cursor->columns_count);
+
+	/*
+	 * CH JSON columns default to JSONBOID in state->coltypes. When foreign
+	 * table column is declared `json` (JSONOID), override so
+	 * binary_make_datum returns json Datum from CH's STRING bytes, skipping
+	 * jsonb_in / jsonb_out round-trip that would reformat CH's emit and break
+	 * expected outputs that pin CH's exact formatting.
+	 */
+	if (query->tupdesc && state->coltypes)
+	{
+		ListCell   *lc;
+		size_t		j = 0;
+
+		foreach(lc, query->attr_nums)
+		{
+			int			i = lfirst_int(lc);
+
+			if (state->coltypes[j] == JSONBOID &&
+				TupleDescAttr(query->tupdesc, i - 1)->atttypid == JSONOID)
+				state->coltypes[j] = JSONOID;
+			j++;
+		}
+	}
 
 	cursor->memcxt = tempcxt;
 	cursor->callback.func = binary_cursor_free;
@@ -898,12 +909,10 @@ binary_simple_query(void *conn, const ch_query * query)
 	MemoryContextSwitchTo(oldcxt);
 
 	if (state->error)
-	{
 		ereport(ERROR,
-				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-				 errmsg("pg_clickhouse: could not initialize read state: %s",
-						state->error)));
-	}
+				(errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+				 errmsg("pg_clickhouse: %s", state->error),
+				 errdetail_internal("Remote Query: %.64000s", query->sql)));
 
 	return cursor;
 }
@@ -923,6 +932,14 @@ binary_simple_query(void *conn, const ch_query * query)
  * text `Datum`s. This is the use case for `chfdw_construct_create_tables()`,
  * which only cares about text.
  */
+static void
+binary_fetch_row_errcb(void *arg)
+{
+	const char *sql = (const char *) arg;
+
+	errdetail_internal("Remote Query: %.64000s", sql);
+}
+
 static Datum *
 binary_fetch_row(ChFdwScanRowContext * ctx)
 {
@@ -933,6 +950,13 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 	Datum	   *values = ctx->values;
 	bool	   *nulls = ctx->nulls;
 	ch_binary_read_state_t *state = cursor->read_state;
+	ErrorContextCallback errcallback;
+
+	errcallback.callback = binary_fetch_row_errcb;
+	errcallback.arg = (void *) cursor->query;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
 	bool		have_data = ch_binary_read_row(state);
 	size_t		attcount = list_length(attrs);
 
@@ -943,11 +967,14 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 						state->error)));
 
 	if (!have_data)
+	{
+		error_context_stack = errcallback.previous;
 		return NULL;
+	}
 
 	if (attcount == 0)
 	{
-		if (state->resp->columns_count == 1 && state->nulls[0])
+		if (ch_binary_response_columns(state->resp) == 1 && state->nulls[0])
 		{
 			nulls[0] = true;
 			goto ok;
@@ -958,14 +985,12 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 					 errmsg("pg_clickhouse: unexpected state: attributes "
 							"count == 0 and haven't got NULL in the response")));
 	}
-	else if (attcount != state->resp->columns_count)
+	else if (attcount != ch_binary_response_columns(state->resp))
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
-				 errmsg_internal("pg_clickhouse: columns mismatch"),
-				 errdetail("Number of returned columns (%lu) does not match "
-						   "expected column count (%lu).",
-						   state->resp->columns_count, attcount)));
+				 errmsg_internal("pg_clickhouse: returned %lu columns, expected %lu",
+								 ch_binary_response_columns(state->resp), attcount)));
 	}
 
 	if (tupdesc)
@@ -979,7 +1004,6 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 			int			i = lfirst_int(lc);
 			bool		isnull = state->nulls[j];
 			intptr_t	convstate;
-
 
 			if (isnull)
 				values[i - 1] = (Datum) 0;
@@ -1002,6 +1026,17 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 							 * it.
 							 */
 							old_mcxt = MemoryContextSwitchTo(cursor->memcxt);
+
+							/*
+							 * Convert the Postgres Datum, stored by
+							 * ch_binary_read_row() as the type defined by by
+							 * state->coltypes[j], to the type defined by the
+							 * foreign table. No conversion if they're binary
+							 * compatible, but required to allow a static
+							 * ClickHouse type (which maps to a well-known
+							 * Postgres type) to be converted to a compatible
+							 * Postgres value via a CAST.
+							 */
 							s = ch_binary_init_convert_state(state->values[j],
 															 state->coltypes[j], outtype);
 							MemoryContextSwitchTo(old_mcxt);
@@ -1029,6 +1064,7 @@ binary_fetch_row(ChFdwScanRowContext * ctx)
 	}
 
 ok:
+	error_context_stack = errcallback.previous;
 	return state->values;
 }
 
@@ -1097,8 +1133,16 @@ binary_insert_tuple(void *istate, TupleTableSlot * slot)
 			MemoryContext old_mcxt;
 
 			old_mcxt = MemoryContextSwitchTo(state->memcxt);
-			state->conversion_states = ch_binary_make_tuple_map(
-																slot->tts_tupleDescriptor, state->outdesc, state->relid);
+
+			/*
+			 * Set up conversion states so that Postgres Datums of types
+			 * defined by the foreign table can be converted to a well-known
+			 * Postgres type that the binary INSERT path knows how to convert
+			 * to the appropriate ClickHouse type. Binary compatible types
+			 * don't convert; others require a CAST. Fails if there is no
+			 * cast.
+			 */
+			state->conversion_states = ch_binary_make_tuple_map(slot->tts_tupleDescriptor, state->outdesc, state->relid);
 			MemoryContextSwitchTo(old_mcxt);
 		}
 
@@ -1111,6 +1155,15 @@ binary_insert_tuple(void *istate, TupleTableSlot * slot)
 	{
 		ch_binary_insert_columns(state);
 	}
+}
+
+static void
+binary_finalize_insert(void *istate)
+{
+	ch_binary_insert_state *state = istate;
+
+	if (state && state->insert_block)
+		ch_binary_finalize_insert(state->insert_block);
 }
 
 /*
@@ -1139,7 +1192,7 @@ binary_insert_tuple(void *istate, TupleTableSlot * slot)
 		('UUID',     'uuid',             ''),
 		('IPv4',     'inet',             ''),
 		('IPv6',     'inet',             ''),
-		('JSON',     'jsonb',            'HTTP engine only')
+		('JSON',     'jsonb, json',      '')
 	) AS v(\"ClickHouse\", \"PostgreSQL\", \"Notes\")
 	ORDER BY \"ClickHouse\";
 	" | perl -ne 'my $m = $.%2; print $buf[$m] if defined $buf[$m]; $buf[$m] = s/\+/|/gr if $.>1' | pbcopy
@@ -1277,7 +1330,7 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt * stmt, ForeignServer * se
 	UserMapping *user = GetUserMapping(userid, server->serverid);
 	ch_connection conn = chfdw_get_connection(user);
 	ch_cursor  *cursor;
-	ch_query	query = new_query(NULL, 0, NULL);
+	ch_query	query = new_query(NULL, 0, NULL, NULL, NULL);
 	List	   *result = NIL;
 	Datum	   *row_values;
 
@@ -1307,16 +1360,36 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt * stmt, ForeignServer * se
 		NULL
 	};
 
+	/*
+	 * Drain the outer query into private strings before opening the per-table
+	 * column queries: both use the same connection, and binary streaming only
+	 * permits one in-flight response at a time.
+	 */
+	List	   *tables = NIL;
+
 	while ((row_values = conn.methods->fetch_row(&tables_ctx)) != NULL)
 	{
+		List	   *triple = list_make3(pstrdup(TextDatumGetCString(row_values[0])),
+										pstrdup(TextDatumGetCString(row_values[1])),
+										pstrdup(TextDatumGetCString(row_values[2])));
+
+		CHECK_FOR_INTERRUPTS();
+		tables = lappend(tables, triple);
+	}
+	MemoryContextDelete(cursor->memcxt);
+
+	ListCell   *tlc;
+
+	foreach(tlc, tables)
+	{
+		List	   *triple = (List *) lfirst(tlc);
+		char	   *table_name = (char *) linitial(triple);
+		char	   *engine = (char *) lsecond(triple);
+		char	   *engine_full = (char *) lthird(triple);
 		StringInfoData buf;
-		char	   *table_name = TextDatumGetCString(row_values[0]);
-		char	   *engine = TextDatumGetCString(row_values[1]);
-		char	   *engine_full = TextDatumGetCString(row_values[2]);
 		Datum	   *dvalues;
 		bool		first = true;
 
-		CHECK_FOR_INTERRUPTS();
 		if (table_name == NULL)
 			continue;
 
@@ -1436,7 +1509,6 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt * stmt, ForeignServer * se
 		MemoryContextDelete(cols_ctx.cursor->memcxt);
 	}
 
-	MemoryContextDelete(cursor->memcxt);
 	return result;
 }
 

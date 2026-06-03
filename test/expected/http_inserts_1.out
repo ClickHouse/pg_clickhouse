@@ -67,6 +67,15 @@ SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.arrays (
  
 (1 row)
 
+SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.nested_arrays (
+    c1 Int32, c2 Array(Array(Int32)), c3 Array(Array(String))
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
 SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.addr (
     c1 UUID, c2 IPv4, c3 IPv6
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
@@ -254,6 +263,20 @@ SELECT * FROM arrays ORDER BY c1;
   5 | {0}     | {"\\\x08\x0C\r                  +
     |         |         a'"}
 (6 rows)
+
+/* check nested arrays: postgres multi-dim arrays must be hyper-rectangular,
+ * which maps cleanly to ClickHouse Array(Array(...)). */
+INSERT INTO nested_arrays VALUES
+	(1, ARRAY[[1,2],[3,4]], ARRAY[['a','b'],['c','d']]),
+	(2, ARRAY[[5,6],[7,8],[9,10]], ARRAY[['e','f'],['g','h'],['i','j']]),
+	(3, '{}'::int[], '{}'::text[]);
+SELECT * FROM nested_arrays ORDER BY c1;
+ c1 |          c2          |         c3          
+----+----------------------+---------------------
+  1 | {{1,2},{3,4}}        | {{a,b},{c,d}}
+  2 | {{5,6},{7,8},{9,10}} | {{e,f},{g,h},{i,j}}
+  3 | {}                   | {}
+(3 rows)
 
 /* Check UUIDs and IPs */
 \d addr
@@ -457,13 +480,14 @@ SELECT clickhouse_raw_query('DROP DATABASE http_inserts_test');
 (1 row)
 
 DROP SERVER http_inserts_loopback CASCADE;
-NOTICE:  drop cascades to 11 other objects
+NOTICE:  drop cascades to 12 other objects
 DETAIL:  drop cascades to foreign table addr
 drop cascades to foreign table arrays
 drop cascades to foreign table bytes
 drop cascades to foreign table complex
 drop cascades to foreign table floats
 drop cascades to foreign table ints
+drop cascades to foreign table nested_arrays
 drop cascades to foreign table null_ints
 drop cascades to foreign table uints
 drop cascades to foreign table bbytes

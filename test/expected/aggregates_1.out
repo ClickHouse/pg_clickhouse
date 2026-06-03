@@ -1275,11 +1275,13 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (3 rows)
 
 -- bool_and pushdown (binary)
-            QUERY PLAN            
-----------------------------------
+                             QUERY PLAN                              
+---------------------------------------------------------------------
  Foreign Scan
+   Output: (bool_and((duration > 0)))
    Relations: Aggregate on (hits)
-(2 rows)
+   Remote SQL: SELECT groupBitAnd((duration > 0)) FROM agg_test.hits
+(4 rows)
 
  bool_and 
 ----------
@@ -1287,11 +1289,13 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- bool_or pushdown (binary)
-            QUERY PLAN            
-----------------------------------
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
  Foreign Scan
+   Output: (bool_or((duration > 5000)))
    Relations: Aggregate on (hits)
-(2 rows)
+   Remote SQL: SELECT groupBitOr((duration > 5000)) FROM agg_test.hits
+(4 rows)
 
  bool_or 
 ---------
@@ -1299,11 +1303,13 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- every pushdown (binary)
-            QUERY PLAN            
-----------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Foreign Scan
+   Output: (every((cost > '0'::numeric)))
    Relations: Aggregate on (hits)
-(2 rows)
+   Remote SQL: SELECT groupBitAnd((cost > 0)) FROM agg_test.hits
+(4 rows)
 
  every 
 -------
@@ -1311,11 +1317,13 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- bool_and pushdown (http)
-            QUERY PLAN            
-----------------------------------
+                             QUERY PLAN                              
+---------------------------------------------------------------------
  Foreign Scan
+   Output: (bool_and((duration > 0)))
    Relations: Aggregate on (hits)
-(2 rows)
+   Remote SQL: SELECT groupBitAnd((duration > 0)) FROM agg_test.hits
+(4 rows)
 
  bool_and 
 ----------
@@ -1323,23 +1331,70 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- bool_or pushdown (http)
-            QUERY PLAN            
-----------------------------------
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
  Foreign Scan
+   Output: (bool_or((duration > 5000)))
    Relations: Aggregate on (hits)
-(2 rows)
+   Remote SQL: SELECT groupBitOr((duration > 5000)) FROM agg_test.hits
+(4 rows)
 
  bool_or 
 ---------
  t
 (1 row)
 
+-- bit_and pushdown (binary)
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (bit_and((duration)::integer))
+   Relations: Aggregate on (hits)
+   Remote SQL: SELECT groupBitAnd(cast(duration, 'Nullable(Int32)')) FROM agg_test.hits WHERE ((id = 3498231651))
+(4 rows)
+
+ bit_and 
+---------
+     304
+(1 row)
+
+-- bit_or pushdown (binary)
+                                                   QUERY PLAN                                                    
+-----------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (bit_or((duration)::integer))
+   Relations: Aggregate on (hits)
+   Remote SQL: SELECT groupBitOr(cast(duration, 'Nullable(Int32)')) FROM agg_test.hits WHERE ((id = 3498231651))
+(4 rows)
+
+ bit_or 
+--------
+    304
+(1 row)
+
+-- bit_xor pushdown (binary)
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (bit_xor((duration)::integer))
+   Relations: Aggregate on (hits)
+   Remote SQL: SELECT groupBitXor(cast(duration, 'Nullable(Int32)')) FROM agg_test.hits WHERE ((id = 3498231651))
+(4 rows)
+
+ bit_xor 
+---------
+     304
+(1 row)
+
 -- regr_slope local fallback
-         QUERY PLAN         
-----------------------------
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
  Aggregate
-   ->  Foreign Scan on hits
-(2 rows)
+   Output: regr_slope((cost)::double precision, (duration)::double precision)
+   ->  Foreign Scan on agg_bin.hits
+         Output: id, uuid, "timestamp", datestamp, path, duration, cost
+         Remote SQL: SELECT duration, cost FROM agg_test.hits
+(5 rows)
 
 NOTICE:  drop cascades to foreign table agg_bin.hits
 NOTICE:  drop cascades to foreign table agg_http.hits

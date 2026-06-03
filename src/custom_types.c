@@ -62,6 +62,142 @@
 #define F_ARRAY_FILL_ANYELEMENT__INT4 F_ARRAY_FILL
 #define F_ARRAY_FILL_ANYELEMENT__INT4__INT4 F_ARRAY_FILL_WITH_LOWER_BOUNDS
 #define F_CARDINALITY F_ARRAY_CARDINALITY
+#define F_TO_CHAR_TIMESTAMP_TEXT 2049
+#define F_TO_CHAR_TIMESTAMPTZ_TEXT 1770
+/* bit_count(bytea) and bit_xor aggregates were added in Postgres 14 */
+#define F_BIT_COUNT_BYTEA 6163
+#define F_BIT_XOR_INT2 6164
+#define F_BIT_XOR_INT4 6165
+#define F_BIT_XOR_INT8 6166
+/* Window function fmgroids changed names between PG 13 and 14. */
+#define F_ROW_NUMBER F_WINDOW_ROW_NUMBER
+#define F_RANK_ F_WINDOW_RANK
+#define F_DENSE_RANK_ F_WINDOW_DENSE_RANK
+#define F_PERCENT_RANK_ F_WINDOW_PERCENT_RANK
+#define F_CUME_DIST_ F_WINDOW_CUME_DIST
+#define F_NTILE F_WINDOW_NTILE
+/* PG 14 made lag/lead default-value variants polymorphic */
+#define F_LAG_ANYCOMPATIBLE_INT4_ANYCOMPATIBLE 3108
+#define F_LEAD_ANYCOMPATIBLE_INT4_ANYCOMPATIBLE 3111
+/*
+ * PG 14 generates fmgroids from proname[_proargtypes] form. PG 13
+ * generated them from prosrc, so overloaded aggregates sharing
+ * prosrc='aggregate_dummy' produced no usable macros, and many builtins
+ * had prosrc-based names (eg F_DSIN, F_TEXT_REVERSE) that differ from
+ * the proname form used since PG 14. Define the proname-based macros by
+ * literal OID so the case labels resolve on PG 13.
+ */
+#define F_AVG_INT8 2100
+#define F_AVG_INT4 2101
+#define F_AVG_INT2 2102
+#define F_AVG_NUMERIC 2103
+#define F_AVG_FLOAT4 2104
+#define F_AVG_FLOAT8 2105
+#define F_AVG_INTERVAL 2106
+#define F_SUM_INT8 2107
+#define F_SUM_INT4 2108
+#define F_SUM_INT2 2109
+#define F_SUM_FLOAT4 2110
+#define F_SUM_FLOAT8 2111
+#define F_SUM_INTERVAL 2113
+#define F_SUM_NUMERIC 2114
+#define F_MAX_INT8 2115
+#define F_MAX_INT4 2116
+#define F_MAX_INT2 2117
+#define F_MAX_FLOAT4 2119
+#define F_MAX_FLOAT8 2120
+#define F_MAX_DATE 2122
+#define F_MAX_TIMESTAMP 2126
+#define F_MAX_TIMESTAMPTZ 2127
+#define F_MAX_INTERVAL 2128
+#define F_MAX_TEXT 2129
+#define F_MAX_NUMERIC 2130
+#define F_MIN_INT8 2131
+#define F_MIN_INT4 2132
+#define F_MIN_INT2 2133
+#define F_MIN_FLOAT4 2135
+#define F_MIN_FLOAT8 2136
+#define F_MIN_DATE 2138
+#define F_MIN_TIMESTAMP 2142
+#define F_MIN_TIMESTAMPTZ 2143
+#define F_MIN_INTERVAL 2144
+#define F_MIN_TEXT 2145
+#define F_MIN_NUMERIC 2146
+#define F_COUNT_ANY 2147
+#define F_MAX_BPCHAR 2244
+#define F_MIN_BPCHAR 2245
+#define F_BOOL_AND 2517
+#define F_BOOL_OR 2518
+#define F_EVERY 2519
+#define F_COUNT_ 2803
+#define F_STRING_AGG_TEXT_TEXT 3538
+#define F_ARRAY_AGG_ANYARRAY 4053
+#define F_SIN 1604
+#define F_COS 1605
+#define F_TAN 1606
+#define F_ATAN 1602
+#define F_ATAN2 1603
+#define F_SINH 2462
+#define F_COSH 2463
+#define F_TANH 2464
+#define F_ASINH 2465
+#define F_PI 1610
+#define F_REVERSE 3062
+#define F_MOD_INT2_INT2 940
+#define F_MOD_INT4_INT4 941
+#define F_MOD_INT8_INT8 947
+#define F_MOD_NUMERIC_NUMERIC 1728
+#define F_POW_FLOAT8_FLOAT8 1346
+#define F_POWER_FLOAT8_FLOAT8 1368
+#define F_POW_NUMERIC_NUMERIC 1738
+#define F_POWER_NUMERIC_NUMERIC 2169
+#define F_ABS_INT2 1398
+#define F_ABS_INT4 1397
+#define F_ABS_INT8 1396
+#define F_ABS_FLOAT4 1394
+#define F_ABS_FLOAT8 1395
+#define F_ABS_NUMERIC 1705
+#define F_ROUND_FLOAT8 1342
+#define F_ROUND_NUMERIC 1708
+#define F_ROUND_NUMERIC_INT4 1707
+#define F_FACTORIAL 1376
+#define F_LTRIM_TEXT 881
+#define F_RTRIM_TEXT 882
+#define F_CONCAT_WS 3059
+#define F_LENGTH_TEXT 1317
+#define F_LENGTH_BYTEA 2010
+#define F_LOWER_TEXT 870
+#define F_UPPER_TEXT 871
+#define F_SUBSTR_TEXT_INT4_INT4 877
+#define F_SUBSTR_TEXT_INT4 883
+#define F_SUBSTRING_TEXT_INT4_INT4 936
+#define F_SUBSTRING_TEXT_INT4 937
+#define F_SUBSTRING_BYTEA_INT4_INT4 2012
+#define F_SUBSTRING_BYTEA_INT4 2013
+#define F_SUBSTR_BYTEA_INT4_INT4 2085
+#define F_SUBSTR_BYTEA_INT4 2086
+#define F_LEAD_ANYELEMENT 3109
+#define F_LEAD_ANYELEMENT_INT4 3110
+#define F_LAG_ANYELEMENT 3106
+#define F_LAG_ANYELEMENT_INT4 3107
+#define F_OCTET_LENGTH_BYTEA 720
+#define F_OCTET_LENGTH_TEXT 1374
+#define F_OCTET_LENGTH_BPCHAR 1375
+#define F_BIT_AND_INT2 2236
+#define F_BIT_OR_INT2 2237
+#define F_BIT_AND_INT4 2238
+#define F_BIT_OR_INT4 2239
+#define F_BIT_AND_INT8 2240
+#define F_BIT_OR_INT8 2241
+/*
+ * PG 13 prosrc-based names mean these macros resolve to the opposite
+ * direction: date->timestamp[tz] casts (oids 2024, 1174). Redefine to the
+ * PG 14+ proname-based oids which are the timestamp[tz]->date casts.
+ */
+#undef F_DATE_TIMESTAMP
+#undef F_DATE_TIMESTAMPTZ
+#define F_DATE_TIMESTAMP 2029
+#define F_DATE_TIMESTAMPTZ 1178
 #endif
 /* regexp_like was added in Postgres 15 */
 #if PG_VERSION_NUM < 150000
@@ -73,12 +209,15 @@
 #define F_ARRAY_SHUFFLE 6215
 #define F_ARRAY_SAMPLE 6216
 #endif
-/* array_reverse, array_sort added in Postgres 18 */
+/* array_reverse, array_sort, reverse(bytea) added in Postgres 18 */
 #if PG_VERSION_NUM < 180000
 #define F_ARRAY_REVERSE 6381
 #define F_ARRAY_SORT_ANYARRAY 6388
 #define F_ARRAY_SORT_ANYARRAY_BOOL 6389
 #define F_ARRAY_SORT_ANYARRAY_BOOL_BOOL 6390
+/* before PG 18 reverse(text) was unique so macro was F_REVERSE; reverse(bytea) didn't exist */
+#define F_REVERSE_TEXT F_REVERSE
+#define F_REVERSE_BYTEA 6382
 #endif
 
 #define STR_STARTS_WITH(str, sub) strncmp(str, sub, strlen(sub)) == 0
@@ -171,13 +310,17 @@ static char *re2_func_map[][2] = {
 	{"countmatches", "countMatches"},
 	{"countmatchescaseinsensitive", "countMatchesCaseInsensitive"},
 	{"extractall", "extractAll"},
+	{"extractallgroupshorizontal", "extractAllGroupsHorizontal"},
+	{"extractallgroupsvertical", "extractAllGroupsVertical"},
 	{"extractgroups", "extractGroups"},
 	{"multimatchallindices", "multiMatchAllIndices"},
 	{"multimatchany", "multiMatchAny"},
 	{"multimatchanyindex", "multiMatchAnyIndex"},
 	{"regexpextract", "regexpExtract"},
+	{"regexpquotemeta", "regexpQuoteMeta"},
 	{"replaceregexpall", "replaceRegexpAll"},
 	{"replaceregexpone", "replaceRegexpOne"},
+	{"splitbyregexp", "splitByRegexp"},
 	{NULL, NULL},
 };
 
@@ -255,6 +398,16 @@ chfdw_check_for_custom_function(Oid funcid)
 			case F_EXTRACT_TEXT_DATE:
 			case F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE:
 			case F_STRPOS:
+			case F_LOWER_TEXT:
+			case F_UPPER_TEXT:
+			case F_SUBSTR_TEXT_INT4_INT4:
+			case F_SUBSTR_TEXT_INT4:
+			case F_SUBSTRING_TEXT_INT4_INT4:
+			case F_SUBSTRING_TEXT_INT4:
+			case F_SUBSTR_BYTEA_INT4_INT4:
+			case F_SUBSTR_BYTEA_INT4:
+			case F_SUBSTRING_BYTEA_INT4_INT4:
+			case F_SUBSTRING_BYTEA_INT4:
 			case F_BTRIM_TEXT_TEXT:
 			case F_BTRIM_TEXT:
 			case F_REGEXP_LIKE_TEXT_TEXT:
@@ -265,18 +418,152 @@ chfdw_check_for_custom_function(Oid funcid)
 			case F_REGEXP_REPLACE_TEXT_TEXT_TEXT_TEXT:
 			case F_PERCENTILE_CONT_FLOAT8_FLOAT8:
 			case F_PERCENTILE_CONT_FLOAT8_INTERVAL:
+				/* aggregates with matching name and 1:1 semantics */
 			case F_ARRAY_AGG_ANYNONARRAY:
+			case F_ARRAY_AGG_ANYARRAY:
+			case F_AVG_INT8:
+			case F_AVG_INT4:
+			case F_AVG_INT2:
+			case F_AVG_NUMERIC:
+			case F_AVG_FLOAT4:
+			case F_AVG_FLOAT8:
+			case F_AVG_INTERVAL:
+			case F_SUM_INT8:
+			case F_SUM_INT4:
+			case F_SUM_INT2:
+			case F_SUM_FLOAT4:
+			case F_SUM_FLOAT8:
+			case F_SUM_INTERVAL:
+			case F_SUM_NUMERIC:
+			case F_COUNT_ANY:
+			case F_COUNT_:
+			case F_MIN_INT8:
+			case F_MIN_INT4:
+			case F_MIN_INT2:
+			case F_MIN_FLOAT4:
+			case F_MIN_FLOAT8:
+			case F_MIN_DATE:
+			case F_MIN_TIMESTAMP:
+			case F_MIN_TIMESTAMPTZ:
+			case F_MIN_INTERVAL:
+			case F_MIN_TEXT:
+			case F_MIN_NUMERIC:
+			case F_MIN_BPCHAR:
+			case F_MAX_INT8:
+			case F_MAX_INT4:
+			case F_MAX_INT2:
+			case F_MAX_FLOAT4:
+			case F_MAX_FLOAT8:
+			case F_MAX_DATE:
+			case F_MAX_TIMESTAMP:
+			case F_MAX_TIMESTAMPTZ:
+			case F_MAX_INTERVAL:
+			case F_MAX_TEXT:
+			case F_MAX_NUMERIC:
+			case F_MAX_BPCHAR:
+			case F_BOOL_AND:
+			case F_BOOL_OR:
+			case F_EVERY:
+			case F_STRING_AGG_TEXT_TEXT:
+				/* window functions sharing PG and CH names */
+			case F_ROW_NUMBER:
+			case F_RANK_:
+			case F_DENSE_RANK_:
+			case F_PERCENT_RANK_:
+			case F_CUME_DIST_:
+			case F_NTILE:
+
+				/*
+				 * trig: PG and CH agree on all finite inputs. Skipping
+				 * asin/acos/atanh/acosh because PG errors on out-of-range
+				 * input where CH returns NaN; sin/cos/tan share the same
+				 * error-vs-NaN divergence only at infinity.
+				 */
+			case F_SIN:
+			case F_COS:
+			case F_TAN:
+			case F_ATAN:
+			case F_ATAN2:
+			case F_SINH:
+			case F_COSH:
+			case F_TANH:
+			case F_ASINH:
+			case F_DEGREES:
+			case F_RADIANS:
+			case F_PI:
+				/* scalar 1:1 mappings */
+			case F_REVERSE_TEXT:
+			case F_REVERSE_BYTEA:
+			case F_BIT_COUNT_BYTEA:
+			case F_MOD_INT2_INT2:
+			case F_MOD_INT4_INT4:
+			case F_MOD_INT8_INT8:
+			case F_MOD_NUMERIC_NUMERIC:
+			case F_POW_FLOAT8_FLOAT8:
+			case F_POWER_FLOAT8_FLOAT8:
+			case F_POW_NUMERIC_NUMERIC:
+			case F_POWER_NUMERIC_NUMERIC:
 			case F_MD5_BYTEA:
 			case F_MD5_TEXT:
 			case F_TO_TIMESTAMP_FLOAT8:
+			case F_TO_CHAR_TIMESTAMP_TEXT:
+			case F_TO_CHAR_TIMESTAMPTZ_TEXT:
 			case F_JSONB_EXTRACT_PATH:
 			case F_JSONB_EXTRACT_PATH_TEXT:
+			case F_JSON_EXTRACT_PATH:
+			case F_JSON_EXTRACT_PATH_TEXT:
 			case F_NOW:
 			case F_STATEMENT_TIMESTAMP:
 			case F_TRANSACTION_TIMESTAMP:
 			case F_CLOCK_TIMESTAMP:
 			case F_CURRENT_SCHEMA:
 			case F_CURRENT_DATABASE:
+				/* numeric scalar functions, names match ClickHouse */
+			case F_ABS_INT2:
+			case F_ABS_INT4:
+			case F_ABS_INT8:
+			case F_ABS_FLOAT4:
+			case F_ABS_FLOAT8:
+			case F_ABS_NUMERIC:
+			case F_ROUND_FLOAT8:
+			case F_ROUND_NUMERIC:
+			case F_ROUND_NUMERIC_INT4:
+			case F_FACTORIAL:
+				/* string functions: CH ltrim/rtrim/concat_ws are aliases */
+			case F_LTRIM_TEXT:
+			case F_RTRIM_TEXT:
+			case F_CONCAT_WS:
+
+				/*
+				 * length(text) deparses to lengthUTF8 (code points);
+				 * length(bytea) keeps byte count
+				 */
+			case F_LENGTH_TEXT:
+			case F_LENGTH_BYTEA:
+				/* octet_length deparses to CH length (bytes) */
+			case F_OCTET_LENGTH_TEXT:
+			case F_OCTET_LENGTH_BPCHAR:
+			case F_OCTET_LENGTH_BYTEA:
+				/* bit_and/or/xor aggregates map to CH groupBitAnd/Or/Xor */
+			case F_BIT_AND_INT2:
+			case F_BIT_AND_INT4:
+			case F_BIT_AND_INT8:
+			case F_BIT_OR_INT2:
+			case F_BIT_OR_INT4:
+			case F_BIT_OR_INT8:
+			case F_BIT_XOR_INT2:
+			case F_BIT_XOR_INT4:
+			case F_BIT_XOR_INT8:
+				/* date(ts), date(tstz) deparse as CH date() (alias toDate) */
+			case F_DATE_TIMESTAMP:
+			case F_DATE_TIMESTAMPTZ:
+				/* window functions: lead/lag share PG and CH names */
+			case F_LEAD_ANYELEMENT:
+			case F_LEAD_ANYELEMENT_INT4:
+			case F_LEAD_ANYCOMPATIBLE_INT4_ANYCOMPATIBLE:
+			case F_LAG_ANYELEMENT:
+			case F_LAG_ANYELEMENT_INT4:
+			case F_LAG_ANYCOMPATIBLE_INT4_ANYCOMPATIBLE:
 				/* array functions: simple mappings */
 			case F_ARRAY_CAT:
 			case F_ARRAY_APPEND:
@@ -295,17 +582,6 @@ chfdw_check_for_custom_function(Oid funcid)
 			case F_TRIM_ARRAY:
 			case F_ARRAY_FILL_ANYELEMENT__INT4:
 			case F_ARRAY_SORT_ANYARRAY_BOOL:
-				/* array functions: unshippable */
-			case F_ARRAY_DIMS:
-			case F_ARRAY_NDIMS:
-			case F_ARRAY_LOWER:
-			case F_ARRAY_UPPER:
-			case F_ARRAY_REPLACE:
-			case F_ARRAY_POSITIONS:
-			case F_ARRAY_TO_STRING_ANYARRAY_TEXT_TEXT:
-			case F_STRING_TO_ARRAY_TEXT_TEXT_TEXT:
-			case F_ARRAY_FILL_ANYELEMENT__INT4__INT4:
-			case F_ARRAY_SORT_ANYARRAY_BOOL_BOOL:
 				special_builtin = true;
 				break;
 			default:
@@ -365,9 +641,32 @@ chfdw_check_for_custom_function(Oid funcid)
 				}
 			case F_STRPOS:
 				{
-					strcpy(entry->custom_name, "position");
+					/* PG strpos counts code points, CH position counts bytes */
+					strcpy(entry->custom_name, "positionUTF8");
 					break;
 				}
+			case F_LOWER_TEXT:
+				/* PG lower(text) is locale-aware on code points */
+				strcpy(entry->custom_name, "lowerUTF8");
+				break;
+			case F_UPPER_TEXT:
+				/* PG upper(text) is locale-aware on code points */
+				strcpy(entry->custom_name, "upperUTF8");
+				break;
+			case F_SUBSTR_TEXT_INT4_INT4:
+			case F_SUBSTR_TEXT_INT4:
+			case F_SUBSTRING_TEXT_INT4_INT4:
+			case F_SUBSTRING_TEXT_INT4:
+				/* PG substring(text, ...) counts code points */
+				strcpy(entry->custom_name, "substringUTF8");
+				break;
+			case F_SUBSTR_BYTEA_INT4_INT4:
+			case F_SUBSTR_BYTEA_INT4:
+			case F_SUBSTRING_BYTEA_INT4_INT4:
+			case F_SUBSTRING_BYTEA_INT4:
+				/* bytea variant is byte-based; CH substring matches */
+				strcpy(entry->custom_name, "substring");
+				break;
 			case F_REGEXP_LIKE_TEXT_TEXT:
 			case F_REGEXP_LIKE_TEXT_TEXT_TEXT:
 				{
@@ -408,6 +707,54 @@ chfdw_check_for_custom_function(Oid funcid)
 					entry->paren_count = 3;
 					break;
 				}
+			case F_REVERSE_TEXT:
+				/* reverse code points, not bytes */
+				strcpy(entry->custom_name, "reverseUTF8");
+				break;
+			case F_LENGTH_TEXT:
+
+				/*
+				 * PG length(text) counts code points, CH length() counts
+				 * bytes
+				 */
+				strcpy(entry->custom_name, "lengthUTF8");
+				break;
+			case F_OCTET_LENGTH_TEXT:
+			case F_OCTET_LENGTH_BPCHAR:
+			case F_OCTET_LENGTH_BYTEA:
+				strcpy(entry->custom_name, "length");
+				break;
+			case F_BIT_AND_INT2:
+			case F_BIT_AND_INT4:
+			case F_BIT_AND_INT8:
+				strcpy(entry->custom_name, "groupBitAnd");
+				break;
+			case F_BIT_OR_INT2:
+			case F_BIT_OR_INT4:
+			case F_BIT_OR_INT8:
+				strcpy(entry->custom_name, "groupBitOr");
+				break;
+			case F_BIT_XOR_INT2:
+			case F_BIT_XOR_INT4:
+			case F_BIT_XOR_INT8:
+				strcpy(entry->custom_name, "groupBitXor");
+				break;
+			case F_BIT_COUNT_BYTEA:
+				strcpy(entry->custom_name, "bitCount");
+				break;
+			case F_MOD_INT2_INT2:
+			case F_MOD_INT4_INT4:
+			case F_MOD_INT8_INT8:
+			case F_MOD_NUMERIC_NUMERIC:
+				strcpy(entry->custom_name, "modulo");
+				break;
+			case F_POW_FLOAT8_FLOAT8:
+			case F_POWER_FLOAT8_FLOAT8:
+			case F_POW_NUMERIC_NUMERIC:
+			case F_POWER_NUMERIC_NUMERIC:
+				/* CH lacks "power", maps to pow */
+				strcpy(entry->custom_name, "pow");
+				break;
 			case F_TO_TIMESTAMP_FLOAT8:
 				{
 					/*
@@ -418,15 +765,24 @@ chfdw_check_for_custom_function(Oid funcid)
 					entry->paren_count = 2;
 					break;
 				}
-			case F_JSONB_EXTRACT_PATH_TEXT:
+			case F_TO_CHAR_TIMESTAMP_TEXT:
+			case F_TO_CHAR_TIMESTAMPTZ_TEXT:
 				{
-					entry->cf_type = CF_JSONB_EXTRACT_PATH_TEXT;
+					entry->cf_type = CF_TO_CHAR;
+					strcpy(entry->custom_name, "formatDateTime");
+					break;
+				}
+			case F_JSONB_EXTRACT_PATH_TEXT:
+			case F_JSON_EXTRACT_PATH_TEXT:
+				{
+					entry->cf_type = CF_JSON_EXTRACT_PATH_TEXT;
 					entry->custom_name[0] = '\1';
 					break;
 				}
 			case F_JSONB_EXTRACT_PATH:
+			case F_JSON_EXTRACT_PATH:
 				{
-					entry->cf_type = CF_JSONB_EXTRACT_PATH;
+					entry->cf_type = CF_JSON_EXTRACT_PATH;
 					entry->custom_name[0] = '\1';
 					break;
 				}
@@ -459,19 +815,6 @@ chfdw_check_for_custom_function(Oid funcid)
 					entry->custom_name[0] = '\1';
 					break;
 				}
-				/* array functions: unshippable */
-			case F_ARRAY_DIMS:
-			case F_ARRAY_NDIMS:
-			case F_ARRAY_LOWER:
-			case F_ARRAY_UPPER:
-			case F_ARRAY_REPLACE:
-			case F_ARRAY_POSITIONS:
-			case F_ARRAY_TO_STRING_ANYARRAY_TEXT_TEXT:
-			case F_STRING_TO_ARRAY_TEXT_TEXT_TEXT:
-			case F_ARRAY_FILL_ANYELEMENT__INT4__INT4:
-			case F_ARRAY_SORT_ANYARRAY_BOOL_BOOL:
-				entry->cf_type = CF_UNSHIPPABLE;
-				break;
 				/* array functions: simple mappings */
 			case F_ARRAY_CAT:
 				strcpy(entry->custom_name, "arrayConcat");
@@ -564,9 +907,14 @@ chfdw_check_for_custom_function(Oid funcid)
 			{
 				if (STR_EQUAL(proname, "levenshtein") &&
 					procform->pronargs == 2)
-					strcpy(entry->custom_name, "editDistance");
+					strcpy(entry->custom_name, "editDistanceUTF8");
 				else if (!(STR_EQUAL(proname, "soundex")))
-					entry->cf_type = CF_UNSHIPPABLE;
+				{
+					ReleaseSysCache(proctup);
+					pfree(extname);
+					hash_search(custom_objects_cache, (void *) &funcid, HASH_REMOVE, NULL);
+					return NULL;
+				}
 			}
 			else if (STR_EQUAL(extname, "pg_clickhouse"))
 			{
@@ -608,6 +956,8 @@ chfdw_check_for_custom_type(Oid typeoid)
 #define OID_TEXT_IREGEX_NE_OP		1229
 #define OID_JSONB_FETCHVAL_OP		3211
 #define OID_JSONB_FETCHVAL_TEXT_OP	3477
+#define OID_JSON_FETCHVAL_OP		3962
+#define OID_JSON_FETCHVAL_TEXT_OP	3963
 
 /*
  * Map a builtin operator OID to its custom_object_type. Returns CF_USUAL
@@ -627,9 +977,11 @@ classify_builtin_operator(Oid opoid)
 		case OID_TEXT_IREGEX_NE_OP:
 			return CF_REGEX_ICASE_NO_MATCH;
 		case OID_JSONB_FETCHVAL_OP:
-			return CF_JSONB_FETCHVAL;
+		case OID_JSON_FETCHVAL_OP:
+			return CF_JSON_FETCHVAL;
 		case OID_JSONB_FETCHVAL_TEXT_OP:
-			return CF_JSONB_FETCHVAL_TEXT;
+		case OID_JSON_FETCHVAL_TEXT_OP:
+			return CF_JSON_FETCHVAL_TEXT;
 		case OID_ARRAY_CONTAINS_OP:
 			return CF_ARRAY_CONTAINS;
 		case OID_ARRAY_CONTAINED_OP:

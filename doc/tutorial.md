@@ -612,8 +612,8 @@ table.
     Time: 2.012 ms
     ```
 
-2.  This query returns rows for the the 1000 trips with the highest tip
-    amount, then performs an inner join of each row with the dictionary:
+2.  This query returns rows for the 1000 trips with the highest tip amount,
+    then performs an inner join of each row with the dictionary:
 
     ```sql
     taxi=# SELECT *
@@ -629,7 +629,7 @@ table.
 > Generally, we avoid using `SELECT *` in PostgreSQL and ClickHouse. You
 > should only retrieve the columns you actually need.
 
-  [tutorial]: https://clickhouse.com/docs/tutorial "ClickHouse Advanced Tutorial"
+  [ClickHouse tutorial]: https://clickhouse.com/docs/tutorial "ClickHouse Advanced Tutorial"
   [psql]: https://www.postgresql.org/docs/current/app-psql.html
     "PostgreSQL Client Applications: psql"
   [EXPLAIN]: https://www.postgresql.org/docs/current/sql-explain.html

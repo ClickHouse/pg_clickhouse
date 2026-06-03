@@ -85,6 +85,26 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t1 WHERE re2multimatchallindices(val, VARIADIC ARRAY['POSIX','PCRE']) = ARRAY[1];
 SELECT * FROM t1 WHERE re2multimatchallindices(val, VARIADIC ARRAY['POSIX','PCRE']) = ARRAY[1];
 
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE re2regexpquotemeta(val || '.') = val || '\.';
+SELECT id FROM t1 WHERE re2regexpquotemeta(val || '.') = val || '\.';
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE re2splitbyregexp(' ', val) = ARRAY['re2','uses','finite','automata'];
+SELECT id FROM t1 WHERE re2splitbyregexp(' ', val) = ARRAY['re2','uses','finite','automata'];
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE re2splitbyregexp(' ', val, 2) = ARRAY['re2','uses'];
+SELECT id FROM t1 WHERE re2splitbyregexp(' ', val, 2) = ARRAY['re2','uses'];
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE array_length(re2extractallgroupsvertical(val, '(\w+) (\w+)'), 1) > 0;
+SELECT id FROM t1 WHERE array_length(re2extractallgroupsvertical(val, '(\w+) (\w+)'), 1) > 0;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE array_length(re2extractallgroupshorizontal(val, '(\w+) (\w+)'), 1) = 2;
+SELECT id FROM t1 WHERE array_length(re2extractallgroupshorizontal(val, '(\w+) (\w+)'), 1) = 2;
+
 DROP EXTENSION re2;
 DROP USER MAPPING FOR CURRENT_USER SERVER re2_svr;
 SELECT clickhouse_raw_query('DROP DATABASE re2_test');

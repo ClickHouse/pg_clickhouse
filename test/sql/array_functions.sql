@@ -192,6 +192,18 @@ END;
 $$;
 \set ECHO all
 
+-- array_shuffle / array_sample added in PG16; output is non-deterministic
+-- so put them in WHERE with cardinality predicates that always hold.
+SELECT current_setting('server_version_num')::int >= 160000 AS pg16 \gset
+\if :pg16
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE cardinality(array_shuffle(vals)) = cardinality(vals) ORDER BY id;
+SELECT id FROM t1 WHERE cardinality(array_shuffle(vals)) = cardinality(vals) ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE cardinality(array_sample(vals, 1)) = 1 ORDER BY id;
+SELECT id FROM t1 WHERE cardinality(array_sample(vals, 1)) = 1 ORDER BY id;
+\endif
+
 -- Operators: @> → hasAll
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t1 WHERE vals @> ARRAY[10];

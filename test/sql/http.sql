@@ -356,6 +356,38 @@ CREATE FOREIGN TABLE ft_nullmark (id text, s text)
 SELECT id, s, length(s), s IS NULL AS is_null
 FROM ft_nullmark ORDER BY id;
 
+/* nested arrays via http (TabSeparated): rectangular maps to multi-dim,
+ * jagged shapes route through array_in and surface its malformed-literal
+ * error -- matching the binary path. */
+SELECT clickhouse_raw_query('CREATE TABLE http_test.nested_arrays (
+    c1 Int8, c2 Array(Array(Int32)), c3 Array(Array(String))
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+SELECT clickhouse_raw_query('INSERT INTO http_test.nested_arrays VALUES
+    (1, [[1,2],[3,4]], [[''a'',''b''],[''c'',''d'']]),
+    (2, [[5,6],[7,8]], [[''e'',''f''],[''g'',''h'']]);
+');
+
+SELECT clickhouse_raw_query('CREATE TABLE http_test.ragged_arrays (
+    c1 Int8, c2 Array(Array(Int32))
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+SELECT clickhouse_raw_query('INSERT INTO http_test.ragged_arrays VALUES (1, [[1,2,3],[4]]);');
+
+CREATE FOREIGN TABLE ft_nested_arrays (
+    c1 int2,
+    c2 int[],
+    c3 text[]
+) SERVER http_loopback OPTIONS (table_name 'nested_arrays');
+
+CREATE FOREIGN TABLE ft_ragged_arrays (
+    c1 int2,
+    c2 int[]
+) SERVER http_loopback OPTIONS (table_name 'ragged_arrays');
+
+SELECT * FROM ft_nested_arrays ORDER BY c1;
+SELECT * FROM ft_ragged_arrays ORDER BY c1;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER http_no_stream;
 DROP SERVER http_no_stream CASCADE;
 

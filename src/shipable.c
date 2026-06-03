@@ -218,7 +218,7 @@ chfdw_is_shippable(Node * node, Oid objectId, Oid classId, CHFdwRelationInfo * f
 					/* Don't pushdown regular expressions if the GUC is false. */
 					return chfdw_pushdown_regex_ok();
 				default:
-					return (cdef->cf_type != CF_UNSHIPPABLE);
+					return true;
 			}
 		}
 	}
@@ -252,6 +252,27 @@ chfdw_is_shippable(Node * node, Oid objectId, Oid classId, CHFdwRelationInfo * f
 
 						if (!IsA(desc_arg, Const))
 							/* No support for a dynamic value here. */
+							return false;
+					}
+					break;
+				case CF_TO_CHAR:
+					{
+						/* format must be a constant with exact CH translation */
+						Expr	   *fmt = (Expr *) list_nth(((FuncExpr *) node)->args, 1);
+						Const	   *fmt_const;
+						char	   *pgfmt;
+						bool		ok;
+
+						if (!IsA(fmt, Const))
+							return false;
+						fmt_const = (Const *) fmt;
+						if (fmt_const->constisnull)
+							return false;
+
+						pgfmt = TextDatumGetCString(fmt_const->constvalue);
+						ok = chfdw_translate_to_char_format(pgfmt, NULL);
+						pfree(pgfmt);
+						if (!ok)
 							return false;
 					}
 					break;
@@ -304,13 +325,32 @@ chfdw_is_shippable(Node * node, Oid objectId, Oid classId, CHFdwRelationInfo * f
 				default:
 					break;
 			}
-			return (cdef->cf_type != CF_UNSHIPPABLE);
+			return true;
 		}
 	}
 
-	/* Built-in objects are presumed shippable. */
+	/*
+	 * Builtin operators and types ship by default. Builtin functions only
+	 * ship when explicitly registered via chfdw_check_for_custom_function, so
+	 * unrecognised builtins fail planner shippability checks rather than
+	 * deparse to a name that may behave differently on ClickHouse. Cast
+	 * coercions are an exception: deparse handles them as cast() or by
+	 * dropping the implicit wrapper, regardless of the underlying funcid.
+	 */
 	if (chfdw_is_builtin(objectId))
-		return true;
+	{
+		if (classId != ProcedureRelationId)
+			return true;
+		if (node && IsA(node, FuncExpr))
+		{
+			FuncExpr   *fe = (FuncExpr *) node;
+
+			if (fe->funcformat == COERCE_IMPLICIT_CAST ||
+				fe->funcformat == COERCE_EXPLICIT_CAST)
+				return true;
+		}
+		return false;
+	}
 
 	if (classId == ProcedureRelationId)
 	{
@@ -319,7 +359,7 @@ chfdw_is_shippable(Node * node, Oid objectId, Oid classId, CHFdwRelationInfo * f
 		if (outcdef != NULL)
 			*outcdef = cdef;
 
-		return (cdef && cdef->cf_type != CF_UNSHIPPABLE);
+		return cdef != NULL;
 	}
 	else if (classId == TypeRelationId && chfdw_check_for_custom_type(objectId) != NULL)
 		return true;

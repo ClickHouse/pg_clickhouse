@@ -34,6 +34,11 @@ SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.arrays (
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
 
+SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.nested_arrays (
+    c1 Int32, c2 Array(Array(Int32)), c3 Array(Array(String))
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+
 SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.addr (
     c1 UUID, c2 IPv4, c3 IPv6
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
@@ -107,6 +112,17 @@ INSERT INTO arrays VALUES
 	(5, ARRAY[0], ARRAY[E'\\\b\f\r\n\t\a\'']);
 SELECT * FROM arrays ORDER BY c1;
 
+/* check nested arrays: postgres multi-dim arrays must be hyper-rectangular,
+ * which maps cleanly to ClickHouse Array(Array(...)). */
+INSERT INTO nested_arrays VALUES
+	(1, ARRAY[[1,2],[3,4]], ARRAY[['a','b'],['c','d']]),
+	(2, ARRAY[[5,6],[7,8],[9,10]], ARRAY[['e','f'],['g','h'],['i','j']]),
+	(3, '{}'::int[], '{}'::text[]);
+SELECT * FROM nested_arrays ORDER BY c1;
+
+/* shape mismatch with column type must error rather than silently corrupt */
+INSERT INTO nested_arrays VALUES (4, ARRAY[1,2,3], ARRAY['x']);
+
 /* Check UUIDs and IPs */
 \d addr
 INSERT INTO addr VALUES
@@ -169,7 +185,7 @@ SELECT clickhouse_raw_query($$
 		-- TEXTOID
 		c16 Nullable(String), c17 Nullable(FixedString(1)),
 		c18 Nullable(Enum('x'=1)), c19 Nullable(Enum16('x'=1)),
-		-- c20 LowCardinality(Nullable(String)),
+		c20 LowCardinality(Nullable(String)),
 		-- DATEOID
 		c21 Nullable(Date), c22 Nullable(Date32),
 		-- TIMESTAMPOID, TIMESTAMPTZOID
@@ -188,7 +204,7 @@ FROM SERVER binary_inserts_loopback INTO binary_inserts_test;
 
 INSERT INTO null_vals VALUES(
 	1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-	   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, -- NULL,
+	   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 	   NULL, NULL, NULL, NULL, -- ARRAY[NULL]::int[],
 	   NULL, NULL, NULL
 );
@@ -242,8 +258,9 @@ INSERT INTO default_vals VALUES(
 
 SELECT * FROM default_vals;
 
--- Test unsupported Nullables.
-INSERT INTO not_nullable VALUES (1, 'x', 'x', NULL);
+-- LowCardinality(Nullable(String)) round-trips NULL and non-NULL.
+INSERT INTO not_nullable VALUES (1, 'x', 'x', NULL), (2, 'x', 'x', 'lc');
+SELECT * FROM not_nullable ORDER BY c1;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE binary_inserts_test');

@@ -425,14 +425,14 @@ foreign_expr_walker(Node * node,
 					return false;
 
 				/*
-				 * jsonb_extract_path_text / jsonb_extract_path are always
+				 * jsonb?_extract_path_text / jsonb?_extract_path are always
 				 * presented by the planner in variadic form: two args where
 				 * the second is a text[] constant.  Allow them through the
 				 * variadic gate; only recurse on the column argument.
 				 */
 				if (cdef &&
-					(cdef->cf_type == CF_JSONB_EXTRACT_PATH_TEXT ||
-					 cdef->cf_type == CF_JSONB_EXTRACT_PATH))
+					(cdef->cf_type == CF_JSON_EXTRACT_PATH_TEXT ||
+					 cdef->cf_type == CF_JSON_EXTRACT_PATH))
 				{
 					if (list_length(fe->args) != 2 ||
 						!IsA(lsecond(fe->args), Const) ||
@@ -2064,6 +2064,90 @@ ch_timestamp_out(PG_FUNCTION_ARGS)
 }
 
 static void
+emitArrayElement(StringInfo buf, Datum elt, bool isnull, Oid element_type,
+				 Oid typiofunc)
+{
+	char	   *extval;
+
+	if (isnull)
+	{
+		appendStringInfoString(buf, "NULL");
+		return;
+	}
+
+	extval = OidOutputFunctionCall(typiofunc, elt);
+
+	switch (element_type)
+	{
+		case INT2OID:
+		case INT4OID:
+		case INT8OID:
+		case OIDOID:
+		case FLOAT4OID:
+		case FLOAT8OID:
+		case NUMERICOID:
+			{
+				/*
+				 * No need to quote unless it's a special value such as 'NaN'.
+				 * See comments in get_const_expr().
+				 */
+				if (strspn(extval, "0123456789+-eE.") == strlen(extval))
+				{
+					if (extval[0] == '+' || extval[0] == '-')
+						appendStringInfo(buf, "(%s)", extval);
+					else
+						appendStringInfoString(buf, extval);
+				}
+				else
+					appendStringInfo(buf, "'%s'", extval);
+			}
+			break;
+		case BOOLOID:
+			if (strcmp(extval, "t") == 0)
+				appendStringInfoString(buf, "true");
+			else
+				appendStringInfoString(buf, "false");
+			break;
+		default:
+			deparseStringLiteral(buf, extval);
+			break;
+	}
+	pfree(extval);
+}
+
+/*
+ * Walk a multi-dim postgres array level by level, emitting nested
+ * `[...]` literals so ClickHouse sees the same shape. iter is consumed
+ * in row-major order, matching postgres' flat element layout.
+ */
+static void
+emitArrayLevel(StringInfo buf, int level, int ndims, int *dims, array_iter * iter,
+			   Oid element_type, int16 typlen, bool typbyval, char typalign,
+			   Oid typiofunc, int *nleaf)
+{
+	appendStringInfoChar(buf, '[');
+	for (int i = 0; i < dims[level]; i++)
+	{
+		if (i > 0)
+			appendStringInfoChar(buf, ',');
+
+		if (level + 1 < ndims)
+			emitArrayLevel(buf, level + 1, ndims, dims, iter, element_type,
+						   typlen, typbyval, typalign, typiofunc, nleaf);
+		else
+		{
+			Datum		elt;
+			bool		isnull;
+			int			n = (*nleaf)++;
+
+			elt = array_iter_next(iter, &isnull, n, typlen, typbyval, typalign);
+			emitArrayElement(buf, elt, isnull, element_type, typiofunc);
+		}
+	}
+	appendStringInfoChar(buf, ']');
+}
+
+static void
 deparseArray(Datum arr, deparse_expr_cxt * context)
 {
 	StringInfo	buf = context->buf;
@@ -2078,93 +2162,47 @@ deparseArray(Datum arr, deparse_expr_cxt * context)
 	char		typdelim;
 	Oid			typioparam;
 	Oid			typiofunc;
-	int			nitems;
 	array_iter	iter;
-	int			i;
-	bool		first;
 
-	if (ndims > 1)
+	if (context->array_as_tuple && ndims > 1)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("only one dimension of arrays supported by pg_clickhouse")));
+				 errmsg("pg_clickhouse: tuple-formatted arrays must be one-dimensional")));
 
 	get_type_io_data(element_type, IOFunc_output,
 					 &typlen, &typbyval,
 					 &typalign, &typdelim,
 					 &typioparam, &typiofunc);
 
-	/* Loop over source data */
-	nitems = ArrayGetNItems(ndims, dims);
 	array_iter_setup(&iter, array);
-	first = true;
 
-	if (context->array_as_tuple)
-		appendStringInfoChar(buf, '(');
-	else
-		appendStringInfoChar(buf, '[');
-
-	for (i = 0; i < nitems; i++)
+	if (ndims > 1)
 	{
-		Datum		elt;
-		bool		isnull;
+		int			nleaf = 0;
 
-		if (!first)
-			appendStringInfoChar(buf, ',');
-		first = false;
-
-		/* Get element, checking for NULL */
-		elt = array_iter_next(&iter, &isnull, i, typlen, typbyval, typalign);
-
-		if (isnull)
-		{
-			appendStringInfoString(buf, "NULL");
-		}
-		else
-		{
-			char	   *extval = OidOutputFunctionCall(typiofunc, elt);
-
-			switch (element_type)
-			{
-				case INT2OID:
-				case INT4OID:
-				case INT8OID:
-				case OIDOID:
-				case FLOAT4OID:
-				case FLOAT8OID:
-				case NUMERICOID:
-					{
-						/*
-						 * No need to quote unless it's a special value such
-						 * as 'NaN'. See comments in get_const_expr().
-						 */
-						if (strspn(extval, "0123456789+-eE.") == strlen(extval))
-						{
-							if (extval[0] == '+' || extval[0] == '-')
-								appendStringInfo(buf, "(%s)", extval);
-							else
-								appendStringInfoString(buf, extval);
-						}
-						else
-							appendStringInfo(buf, "'%s'", extval);
-					}
-					break;
-				case BOOLOID:
-					if (strcmp(extval, "t") == 0)
-						appendStringInfoString(buf, "true");
-					else
-						appendStringInfoString(buf, "false");
-					break;
-				default:
-					deparseStringLiteral(buf, extval);
-					break;
-			}
-			pfree(extval);
-		}
+		emitArrayLevel(buf, 0, ndims, dims, &iter, element_type,
+					   typlen, typbyval, typalign, typiofunc, &nleaf);
 	}
-	if (context->array_as_tuple)
-		appendStringInfoChar(buf, ')');
 	else
-		appendStringInfoChar(buf, ']');
+	{
+		int			nitems = ArrayGetNItems(ndims, dims);
+		char		open = context->array_as_tuple ? '(' : '[';
+		char		close = context->array_as_tuple ? ')' : ']';
+
+		appendStringInfoChar(buf, open);
+		for (int i = 0; i < nitems; i++)
+		{
+			Datum		elt;
+			bool		isnull;
+
+			if (i > 0)
+				appendStringInfoChar(buf, ',');
+
+			elt = array_iter_next(&iter, &isnull, i, typlen, typbyval, typalign);
+			emitArrayElement(buf, elt, isnull, element_type, typiofunc);
+		}
+		appendStringInfoChar(buf, close);
+	}
 }
 
 /*
@@ -2244,6 +2282,35 @@ deparseConst(Const * node, deparse_expr_cxt * context, int showtype)
 	else if (typoutput == F_ARRAY_OUT)
 	{
 		deparseArray(node->constvalue, context);
+		goto cleanup;
+	}
+	else if (node->consttype == BYTEAOID)
+	{
+		/*
+		 * Emit printable ASCII as-is and \xHH for everything else. PG's
+		 * bytea_out hex format (\xHHHH...) doesn't round-trip through CH's
+		 * string lexer past a single byte: \x consumes exactly two hex digits
+		 * and any remaining hex chars become ASCII literals.
+		 */
+		bytea	   *bp = DatumGetByteaPP(node->constvalue);
+		const char *bytes = VARDATA_ANY(bp);
+		int			len = VARSIZE_ANY_EXHDR(bp);
+
+		appendStringInfoChar(buf, '\'');
+		for (int i = 0; i < len; i++)
+		{
+			unsigned char c = (unsigned char) bytes[i];
+
+			if (c == '\'')
+				appendStringInfoString(buf, "\\'");
+			else if (c == '\\')
+				appendStringInfoString(buf, "\\\\");
+			else if (c >= 0x20 && c <= 0x7E)
+				appendStringInfoChar(buf, (char) c);
+			else
+				appendStringInfo(buf, "\\x%02x", c);
+		}
+		appendStringInfoChar(buf, '\'');
 		goto cleanup;
 	}
 	else
@@ -2547,6 +2614,172 @@ appendRegex(List * args, deparse_expr_cxt * context)
 }
 
 /*
+ * Map a Postgres `to_char()` template into a ClickHouse `formatDateTime()`
+ * template.  Only translates keywords whose CH equivalent matches PG output
+ * byte-for-byte across supported CH versions.  Any keyword PG recognizes but
+ * which cannot translate exactly (case-following names, blank-padded names,
+ * ordinal postfix, fill-mode prefixes, fractional seconds, ISO week, etc.)
+ * causes refusal.  Outside `"..."` quoted text, an uppercase or lowercase
+ * letter PG would bind to one of its date keywords also refuses,
+ * so a stray `Y` cannot silently survive as a literal.
+ *
+ * See PG `DCH_keywords` in `src/backend/utils/adt/formatting.c` for the
+ * full PG token grammar.
+ */
+typedef struct
+{
+	const char *pg;
+	const char *ch;				/* NULL → recognized keyword we refuse */
+}			ToCharTok;
+
+static const ToCharTok to_char_toks[] = {
+	{"Y,YYY", NULL}, {"y,yyy", NULL},
+	{"SSSSS", NULL}, {"sssss", NULL},
+	{"MONTH", NULL}, {"Month", NULL}, {"month", NULL},
+	{"YYYY", "%Y"}, {"yyyy", "%Y"},
+	{"HH24", "%H"}, {"hh24", "%H"},
+	{"HH12", "%I"}, {"hh12", "%I"},
+	{"IYYY", NULL}, {"iyyy", NULL},
+	{"IDDD", NULL}, {"iddd", NULL},
+	{"SSSS", NULL}, {"ssss", NULL},
+	{"A.D.", NULL}, {"a.d.", NULL},
+	{"B.C.", NULL}, {"b.c.", NULL},
+	{"P.M.", NULL}, {"p.m.", NULL},
+	{"A.M.", NULL}, {"a.m.", NULL},
+	{"YYY", NULL}, {"yyy", NULL},
+	{"DDD", "%j"}, {"ddd", "%j"},
+	{"DAY", NULL}, {"day", NULL}, {"Day", NULL},
+	{"Mon", "%b"},
+	{"MON", NULL}, {"mon", NULL},
+	{"IYY", NULL}, {"iyy", NULL},
+	{"FF1", NULL}, {"FF2", NULL}, {"FF3", NULL},
+	{"FF4", NULL}, {"FF5", NULL}, {"FF6", NULL},
+	{"ff1", NULL}, {"ff2", NULL}, {"ff3", NULL},
+	{"ff4", NULL}, {"ff5", NULL}, {"ff6", NULL},
+	{"TZH", NULL}, {"tzh", NULL},
+	{"TZM", NULL}, {"tzm", NULL},
+	{"AD", NULL}, {"ad", NULL},
+	{"AM", "%p"}, {"PM", "%p"},
+	{"am", NULL}, {"pm", NULL},
+	{"BC", NULL}, {"bc", NULL},
+	{"CC", NULL}, {"cc", NULL},
+	{"DD", "%d"}, {"dd", "%d"},
+	{"Dy", "%a"},
+	{"DY", NULL}, {"dy", NULL},
+	{"FM", NULL}, {"fm", NULL},
+	{"FX", NULL}, {"fx", NULL},
+	{"HH", "%I"}, {"hh", "%I"},
+	{"ID", NULL}, {"id", NULL},
+	{"IW", NULL}, {"iw", NULL},
+	{"IY", NULL}, {"iy", NULL},
+	{"MI", "%i"}, {"mi", "%i"},
+	{"MM", "%m"}, {"mm", "%m"},
+	{"MS", NULL}, {"ms", NULL},
+	{"OF", NULL}, {"of", NULL},
+	{"RM", NULL}, {"rm", NULL},
+	{"SS", "%S"}, {"ss", "%S"},
+	{"TM", NULL}, {"tm", NULL},
+	{"TZ", NULL}, {"tz", NULL},
+	{"US", NULL}, {"us", NULL},
+	{"WW", NULL}, {"ww", NULL},
+	{"YY", "%y"}, {"yy", "%y"},
+	{"D", NULL}, {"d", NULL},
+	{"I", NULL}, {"i", NULL},
+	{"J", NULL}, {"j", NULL},
+	{"Q", "%Q"}, {"q", "%Q"},
+	{"W", NULL}, {"w", NULL},
+	{"Y", NULL}, {"y", NULL},
+	{NULL, NULL}
+};
+
+bool
+chfdw_translate_to_char_format(const char *pgfmt, StringInfo out)
+{
+	const char *p = pgfmt;
+	bool		just_keyword = false;
+
+	while (*p)
+	{
+		const		ToCharTok *t;
+		bool		matched = false;
+
+		/*
+		 * Ordinal postfix (TH/th) attaches to a preceding numeric keyword; CH
+		 * has no ordinal output, so refuse rather than diverge.
+		 */
+		if (just_keyword
+			&& (p[0] == 'T' || p[0] == 't')
+			&& (p[1] == 'H' || p[1] == 'h'))
+			return false;
+		just_keyword = false;
+
+		/* Quoted literal: pass inner chars through, doubling % for CH. */
+		if (*p == '"')
+		{
+			p++;
+			while (*p)
+			{
+				if (*p == '\\' && p[1])
+					p++;
+				else if (*p == '"')
+				{
+					p++;
+					break;
+				}
+				if (out)
+				{
+					if (*p == '%')
+						appendStringInfoString(out, "%%");
+					else
+						appendStringInfoChar(out, *p);
+				}
+				p++;
+			}
+			continue;
+		}
+
+		/* Outside quotes, backslash escapes only a literal " */
+		if (p[0] == '\\' && p[1] == '"')
+		{
+			if (out)
+				appendStringInfoChar(out, '"');
+			p += 2;
+			continue;
+		}
+
+		for (t = to_char_toks; t->pg; t++)
+		{
+			size_t		l = strlen(t->pg);
+
+			if (strncmp(p, t->pg, l) == 0)
+			{
+				if (!t->ch)
+					return false;
+				if (out)
+					appendStringInfoString(out, t->ch);
+				p += l;
+				just_keyword = true;
+				matched = true;
+				break;
+			}
+		}
+		if (matched)
+			continue;
+
+		if (out)
+		{
+			if (*p == '%')
+				appendStringInfoString(out, "%%");
+			else
+				appendStringInfoChar(out, *p);
+		}
+		p++;
+	}
+
+	return true;
+}
+
+/*
  * Deparse a function call.
  */
 static void
@@ -2598,11 +2831,11 @@ deparseFuncExpr(FuncExpr * node, deparse_expr_cxt * context)
 		/* Special casses. */
 		switch (cdef->cf_type)
 		{
-			case CF_JSONB_EXTRACT_PATH_TEXT:
-			case CF_JSONB_EXTRACT_PATH:
+			case CF_JSON_EXTRACT_PATH_TEXT:
+			case CF_JSON_EXTRACT_PATH:
 				{
 					deparseJsonbExtractPath(node, context,
-											cdef->cf_type == CF_JSONB_EXTRACT_PATH);
+											cdef->cf_type == CF_JSON_EXTRACT_PATH);
 					return;
 				}
 			case CF_CURRENT_DATABASE:
@@ -2861,6 +3094,33 @@ deparseFuncExpr(FuncExpr * node, deparse_expr_cxt * context)
 				deparseExpr((Expr *) linitial(node->args), context);
 				appendStringInfoChar(buf, ')');
 				return;
+			case CF_TO_CHAR:
+				{
+					/*
+					 * formatDateTime(ts, '<translated fmt>'). Shippability
+					 * already validated the format string is a non-NULL Const
+					 * whose tokens all translate; redoing the translation
+					 * here is just to materialize the result for SQL-literal
+					 * quoting.
+					 */
+					Const	   *fmt_const = (Const *) list_nth(node->args, 1);
+					char	   *pgfmt = TextDatumGetCString(fmt_const->constvalue);
+					StringInfoData chfmt;
+
+					initStringInfo(&chfmt);
+					if (!chfdw_translate_to_char_format(pgfmt, &chfmt))
+						elog(ERROR, "to_char format unexpectedly rejected during deparse: %s", pgfmt);
+
+					appendStringInfoChar(buf, '(');
+					deparseExpr((Expr *) linitial(node->args), context);
+					appendStringInfoString(buf, ", ");
+					deparseStringLiteral(buf, chfmt.data);
+					appendStringInfoChar(buf, ')');
+
+					pfree(chfmt.data);
+					pfree(pgfmt);
+					return;
+				}
 			default:
 				break;
 		}
@@ -3209,8 +3469,8 @@ deparseOpExpr(OpExpr * node, deparse_expr_cxt * context)
 					goto cleanup;
 				}
 				break;
-			case CF_JSONB_FETCHVAL:
-			case CF_JSONB_FETCHVAL_TEXT:
+			case CF_JSON_FETCHVAL:
+			case CF_JSON_FETCHVAL_TEXT:
 				{
 					Expr	   *arg1 = linitial(node->args);
 					Expr	   *arg2 = lsecond(node->args);
@@ -3230,7 +3490,7 @@ deparseOpExpr(OpExpr * node, deparse_expr_cxt * context)
 						{
 							char	   *keyval = TextDatumGetCString(key->constvalue);
 
-							if (cdef->cf_type == CF_JSONB_FETCHVAL)
+							if (cdef->cf_type == CF_JSON_FETCHVAL)
 								appendStringInfoString(buf, "toJSONString(");
 
 							deparseExpr(arg1, context);
@@ -3238,7 +3498,7 @@ deparseOpExpr(OpExpr * node, deparse_expr_cxt * context)
 							appendStringInfoString(buf,
 												   quote_identifier(keyval));
 
-							if (cdef->cf_type == CF_JSONB_FETCHVAL)
+							if (cdef->cf_type == CF_JSON_FETCHVAL)
 								appendStringInfoChar(buf, ')');
 
 							pfree(keyval);

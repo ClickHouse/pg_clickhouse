@@ -27,7 +27,7 @@
       "abstract": "Interfaces to query ClickHouse databases from Postgres",
       "docfile": "doc/pg_clickhouse.md",
       "file": "pg_clickhouse.control",
-      "version": "0.3.0"
+      "version": "0.3.1"
     }
   },
   "resources": {
@@ -49,5 +49,5 @@
     "pushdown",
     "aggregate"
   ],
-  "version": "0.3.0"
+  "version": "0.3.1"
 }

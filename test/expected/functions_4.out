@@ -782,12 +782,12 @@ SELECT ltrim(val) AS a, btrim(val) AS b, rtrim(val) AS c FROM t4 GROUP BY a,b,c 
 (2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT strpos(val, 'val') AS a FROM t4 GROUP BY a ORDER BY a;
-                                                                  QUERY PLAN                                                                   
------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                        QUERY PLAN                                                                         
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (strpos(val, 'val'::text))
    Relations: Aggregate on (t4)
-   Remote SQL: SELECT position(val, 'val') FROM functions_test.t4 GROUP BY (position(val, 'val')) ORDER BY position(val, 'val') ASC NULLS LAST
+   Remote SQL: SELECT positionUTF8(val, 'val') FROM functions_test.t4 GROUP BY (positionUTF8(val, 'val')) ORDER BY positionUTF8(val, 'val') ASC NULLS LAST
 (4 rows)
 
 SELECT strpos(val, 'val') AS a FROM t4 GROUP BY a ORDER BY a;
@@ -1476,7 +1476,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < statement_timestamp();
 (3 rows)
 
 SELECT * FROM t1 WHERE c < statement_timestamp() ORDER BY a LIMIT 2;
-ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exists. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
+ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exist. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
 DETAIL:  Remote Query: SELECT a, b, c FROM functions_test.t1 WHERE ((c < nowInBlock64(6, 'America/Los_Angeles'))) ORDER BY a ASC NULLS LAST LIMIT 2
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < transaction_timestamp();
                                                 QUERY PLAN                                                
@@ -1487,7 +1487,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < transaction_timestamp();
 (3 rows)
 
 SELECT * FROM t1 WHERE c < transaction_timestamp() ORDER BY a LIMIT 2;
-ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exists. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
+ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exist. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
 DETAIL:  Remote Query: SELECT a, b, c FROM functions_test.t1 WHERE ((c < nowInBlock64(6, 'America/Los_Angeles'))) ORDER BY a ASC NULLS LAST LIMIT 2
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < clock_timestamp();
                                                 QUERY PLAN                                                
@@ -1498,7 +1498,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < clock_timestamp();
 (3 rows)
 
 SELECT * FROM t1 WHERE c < clock_timestamp() ORDER BY a LIMIT 2;
-ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exists. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
+ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exist. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
 DETAIL:  Remote Query: SELECT a, b, c FROM functions_test.t1 WHERE ((c < nowInBlock64(6, 'America/Los_Angeles'))) ORDER BY a ASC NULLS LAST LIMIT 2
 -- Check SQL Value functions.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < CURRENT_DATE;
@@ -1728,14 +1728,14 @@ SELECT * FROM t4 WHERE soundex(val) = 'V400';
  val2
 (2 rows)
 
--- 2-arg levenshtein pushes down as editDistance.
+-- 2-arg levenshtein pushes down as editDistanceUTF8.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t4 WHERE levenshtein(val, 'val1') <= 1;
-                                        QUERY PLAN                                        
-------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan on public.t4
    Output: val
-   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((editDistance(val, 'val1') <= 1))
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((editDistanceUTF8(val, 'val1') <= 1))
 (3 rows)
 
 SELECT * FROM t4 WHERE levenshtein(val, 'val1') <= 1;
@@ -1757,6 +1757,796 @@ SELECT * FROM t4 WHERE levenshtein(val, 'val1', 1, 1, 2) <= 1;
 (4 rows)
 
 DROP EXTENSION fuzzystrmatch;
+-- to_char: pushdown of formats whose every keyword has a faithful
+-- formatDateTime equivalent.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT to_char(ts, 'YYYY-MM-DD HH24:MI:SS') FROM t5 ORDER BY 1;
+                                                   QUERY PLAN                                                   
+----------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: to_char(ts, 'YYYY-MM-DD HH24:MI:SS'::text)
+   Remote SQL: SELECT ts FROM functions_test.t5 ORDER BY formatDateTime(ts, '%Y-%m-%d %H:%i:%S') ASC NULLS LAST
+(3 rows)
+
+SELECT to_char(ts, 'YYYY-MM-DD HH24:MI:SS') FROM t5 ORDER BY 1;
+       to_char       
+---------------------
+ 2025-10-15 13:12:25
+ 2026-11-17 00:13:26
+ 2027-12-17 14:14:27
+ 2028-01-18 15:15:28
+ 2029-02-18 17:16:29
+ 2030-03-19 19:16:30
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT to_char(ts, 'YY/MM/DD HH12:MI AM Q DDD Mon Dy') FROM t5 ORDER BY 1;
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: to_char(ts, 'YY/MM/DD HH12:MI AM Q DDD Mon Dy'::text)
+   Remote SQL: SELECT ts FROM functions_test.t5 ORDER BY formatDateTime(ts, '%y/%m/%d %I:%i %p %Q %j %b %a') ASC NULLS LAST
+(3 rows)
+
+SELECT to_char(ts, 'YY/MM/DD HH12:MI AM Q DDD Mon Dy') FROM t5 ORDER BY 1;
+             to_char             
+---------------------------------
+ 25/10/15 01:12 PM 4 288 Oct Wed
+ 26/11/17 12:13 AM 4 321 Nov Tue
+ 27/12/17 02:14 PM 4 351 Dec Fri
+ 28/01/18 03:15 PM 1 018 Jan Tue
+ 29/02/18 05:16 PM 1 049 Feb Sun
+ 30/03/19 07:16 PM 1 078 Mar Tue
+(6 rows)
+
+-- Quoted literal text and a literal % round-trip via formatDateTime escaping.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT to_char(ts, '"Year=" YYYY "%"') FROM t5 ORDER BY 1;
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: to_char(ts, '"Year=" YYYY "%"'::text)
+   Remote SQL: SELECT ts FROM functions_test.t5 ORDER BY formatDateTime(ts, 'Year= %Y %%') ASC NULLS LAST
+(3 rows)
+
+SELECT to_char(ts, '"Year=" YYYY "%"') FROM t5 ORDER BY 1;
+   to_char    
+--------------
+ Year= 2025 %
+ Year= 2026 %
+ Year= 2027 %
+ Year= 2028 %
+ Year= 2029 %
+ Year= 2030 %
+(6 rows)
+
+-- to_char: refusal cases evaluate locally rather than pushing wrong output.
+-- Padded month name (Month) -- CH formatDateTime cannot blank-pad.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT ts FROM t5 WHERE to_char(ts, 'Month') = 'October   ';
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Filter: (to_char(t5.ts, 'Month'::text) = 'October   '::text)
+   Remote SQL: SELECT ts FROM functions_test.t5
+(4 rows)
+
+-- Single-digit year token (Y) -- CH has no equivalent.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT ts FROM t5 WHERE to_char(ts, 'Y') = '5';
+                    QUERY PLAN                     
+---------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Filter: (to_char(t5.ts, 'Y'::text) = '5'::text)
+   Remote SQL: SELECT ts FROM functions_test.t5
+(4 rows)
+
+-- Ordinal suffix (TH) -- CH has no ordinal output.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT ts FROM t5 WHERE to_char(ts, 'DDTH') = '15TH';
+                       QUERY PLAN                        
+---------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Filter: (to_char(t5.ts, 'DDTH'::text) = '15TH'::text)
+   Remote SQL: SELECT ts FROM functions_test.t5
+(4 rows)
+
+-- FM modifier suppresses padding -- CH always pads.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT ts FROM t5 WHERE to_char(ts, 'FMMM') = '10';
+                      QUERY PLAN                       
+-------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Filter: (to_char(t5.ts, 'FMMM'::text) = '10'::text)
+   Remote SQL: SELECT ts FROM functions_test.t5
+(4 rows)
+
+-- Lowercase am/pm -- CH %p is always uppercase.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT ts FROM t5 WHERE to_char(ts, 'HH12 am') = '08 pm';
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Foreign Scan on public.t5
+   Output: ts
+   Filter: (to_char(t5.ts, 'HH12 am'::text) = '08 pm'::text)
+   Remote SQL: SELECT ts FROM functions_test.t5
+(4 rows)
+
+-- Dynamic format -- not a Const, so cannot be validated.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT to_char(ts, t4.val) FROM t5, t4 LIMIT 1;
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: to_char(t5.ts, t4.val)
+   Relations: (t5) INNER JOIN (t4)
+   Remote SQL: SELECT r1.ts, r2.val FROM  functions_test.t5 r1 ALL INNER JOIN functions_test.t4 r2 ON (TRUE) LIMIT 1
+(4 rows)
+
+-- reverse pushes down as reverseUTF8 to preserve code-point order on
+-- multi-byte input
+SELECT clickhouse_raw_query($$
+    INSERT INTO functions_test.t4 VALUES ('Ωαβ'), ('hello')
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE reverse(val) = 'βαΩ';
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((reverseUTF8(val) = 'βαΩ'))
+(3 rows)
+
+SELECT val FROM t4 WHERE reverse(val) = 'βαΩ';
+ val 
+-----
+ Ωαβ
+(1 row)
+
+-- bit_count(bytea) pushes down as bitCount (PG14+).
+SELECT current_setting('server_version_num')::int >= 140000 AS pg14 \gset
+\if :pg14
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE bit_count(val::bytea) = 21 ORDER BY val;
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((bitCount(CAST(val AS bytea(0))) = 21)) ORDER BY val ASC NULLS LAST
+(3 rows)
+
+SELECT val FROM t4 WHERE bit_count(val::bytea) = 21 ORDER BY val;
+  val  
+-------
+ hello
+(1 row)
+
+\endif
+-- mod(int, int) pushes down as modulo.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE mod(a, 3) = 0 ORDER BY a;
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((modulo(a, 3) = 0)) ORDER BY a ASC NULLS LAST
+(3 rows)
+
+SELECT a FROM t3 WHERE mod(a, 3) = 0 ORDER BY a;
+ a 
+---
+ 3
+ 6
+ 9
+(3 rows)
+
+-- pow(float8, float8) and power(float8, float8) both push down as pow.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE pow(f64, 2::float8) < 1 ORDER BY i64;
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((pow(f64, 2) < 1)) ORDER BY i64 ASC NULLS LAST
+(3 rows)
+
+SELECT i64 FROM t6 WHERE pow(f64, 2::float8) < 1 ORDER BY i64;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE power(f64, 2::float8) < 1 ORDER BY i64;
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((pow(f64, 2) < 1)) ORDER BY i64 ASC NULLS LAST
+(3 rows)
+
+SELECT i64 FROM t6 WHERE power(f64, 2::float8) < 1 ORDER BY i64;
+ i64 
+-----
+   0
+(1 row)
+
+-- mod / pow / power on numeric push down too.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
+                                                          QUERY PLAN                                                           
+-------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((modulo(cast(a, 'Nullable(Decimal)'), 3) = 0)) ORDER BY a ASC NULLS LAST
+(3 rows)
+
+SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
+ a 
+---
+ 3
+ 6
+ 9
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((pow(cast(a, 'Nullable(Decimal)'), 2) = 25))
+(3 rows)
+
+SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
+ a 
+---
+ 5
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((pow(cast(a, 'Nullable(Decimal)'), 2) = 25))
+(3 rows)
+
+SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
+ a 
+---
+ 5
+(1 row)
+
+-- abs() pushes down for int / float / numeric.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE abs(a - 5) = 2 ORDER BY a;
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((abs((a - 5)) = 2)) ORDER BY a ASC NULLS LAST
+(3 rows)
+
+SELECT a FROM t3 WHERE abs(a - 5) = 2 ORDER BY a;
+ a 
+---
+ 3
+ 7
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE abs(f64) = 0;
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((abs(f64) = 0))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE abs(f64) = 0;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE abs(a::numeric) = 5;
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((abs(cast(a, 'Nullable(Decimal)')) = 5))
+(3 rows)
+
+SELECT a FROM t3 WHERE abs(a::numeric) = 5;
+ a 
+---
+ 5
+(1 row)
+
+-- factorial(int8) pushes down.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE factorial(a) = 120;
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((factorial(a) = 120))
+(3 rows)
+
+SELECT a FROM t3 WHERE factorial(a) = 120;
+ a 
+---
+ 5
+(1 row)
+
+-- round() pushes down for float8 and numeric.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE round(f64) = 0;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((round(f64) = 0))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE round(f64) = 0;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE round(a::numeric) = 5;
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round(cast(a, 'Nullable(Decimal)'), 0) = 5))
+(3 rows)
+
+SELECT a FROM t3 WHERE round(a::numeric) = 5;
+ a 
+---
+ 5
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
+                                                 QUERY PLAN                                                  
+-------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round((cast(a, 'Nullable(Decimal)') / 3), 2) = 1.67))
+(3 rows)
+
+SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
+ a 
+---
+(0 rows)
+
+-- Trig functions push down at f64 = 0 where PG and CH agree exactly.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND sin(f64) = 0;
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((i64 = 0)) AND ((sin(f64) = 0))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE i64 = 0 AND sin(f64) = 0;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND cos(f64) = 1;
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((i64 = 0)) AND ((cos(f64) = 1))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE i64 = 0 AND cos(f64) = 1;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND tan(f64) = 0;
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((i64 = 0)) AND ((tan(f64) = 0))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE i64 = 0 AND tan(f64) = 0;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND atan(f64) = 0;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((i64 = 0)) AND ((atan(f64) = 0))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE i64 = 0 AND atan(f64) = 0;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND atan2(f64, 1::float8) = 0;
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((i64 = 0)) AND ((atan2(f64, 1) = 0))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE i64 = 0 AND atan2(f64, 1::float8) = 0;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND sinh(f64) = 0;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((i64 = 0)) AND ((sinh(f64) = 0))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE i64 = 0 AND sinh(f64) = 0;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND cosh(f64) = 1;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((i64 = 0)) AND ((cosh(f64) = 1))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE i64 = 0 AND cosh(f64) = 1;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND tanh(f64) = 0;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((i64 = 0)) AND ((tanh(f64) = 0))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE i64 = 0 AND tanh(f64) = 0;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND asinh(f64) = 0;
+                                        QUERY PLAN                                        
+------------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((i64 = 0)) AND ((asinh(f64) = 0))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE i64 = 0 AND asinh(f64) = 0;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND degrees(f64) = 0;
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((i64 = 0)) AND ((degrees(f64) = 0))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE i64 = 0 AND degrees(f64) = 0;
+ i64 
+-----
+   0
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND radians(f64) = 0;
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((i64 = 0)) AND ((radians(f64) = 0))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE i64 = 0 AND radians(f64) = 0;
+ i64 
+-----
+   0
+(1 row)
+
+-- pi() is immutable so PG constant-folds before deparse; the function name
+-- itself is never sent to CH but the remote literal proves the call worked.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE f64 < pi();
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((f64 < 3.141592653589793))
+(3 rows)
+
+-- lower(text) / upper(text) push down as lowerUTF8 / upperUTF8.
+SELECT clickhouse_raw_query($$
+    INSERT INTO functions_test.t4 VALUES ('VAL3'), ('Mixed')
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE lower(val) = 'val3';
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((lowerUTF8(val) = 'val3'))
+(3 rows)
+
+SELECT val FROM t4 WHERE lower(val) = 'val3';
+ val  
+------
+ VAL3
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE upper(val) = 'VAL1';
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((upperUTF8(val) = 'VAL1'))
+(3 rows)
+
+SELECT val FROM t4 WHERE upper(val) = 'VAL1';
+ val  
+------
+ val1
+(1 row)
+
+-- substring/substr (text) push down as substringUTF8 (counts code points).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val, 1, 3) = 'val' ORDER BY val;
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((substringUTF8(val, 1, 3) = 'val')) ORDER BY val ASC NULLS LAST
+(3 rows)
+
+SELECT val FROM t4 WHERE substring(val, 1, 3) = 'val' ORDER BY val;
+ val  
+------
+ val1
+ val2
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substr(val, 2) = 'αβ';
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((substringUTF8(val, 2) = 'αβ'))
+(3 rows)
+
+SELECT val FROM t4 WHERE substr(val, 2) = 'αβ';
+ val 
+-----
+ Ωαβ
+(1 row)
+
+-- substring/substr (bytea) push down as substring (byte-based).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val::bytea, 1, 2) = 'va'::bytea ORDER BY val;
+                                                             QUERY PLAN                                                              
+-------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((substring(CAST(val AS bytea(0)), 1, 2) = 'va')) ORDER BY val ASC NULLS LAST
+(3 rows)
+
+SELECT val FROM t4 WHERE substring(val::bytea, 1, 2) = 'va'::bytea ORDER BY val;
+ val  
+------
+ val1
+ val2
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val::bytea, 1, 2) = '\xcea9'::bytea;
+                                                  QUERY PLAN                                                   
+---------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((substring(CAST(val AS bytea(0)), 1, 2) = '\xce\xa9'))
+(3 rows)
+
+SELECT val FROM t4 WHERE substring(val::bytea, 1, 2) = '\xcea9'::bytea;
+ val 
+-----
+ Ωαβ
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substr(val::bytea, 2) = 'al1'::bytea;
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((substring(CAST(val AS bytea(0)), 2) = 'al1'))
+(3 rows)
+
+SELECT val FROM t4 WHERE substr(val::bytea, 2) = 'al1'::bytea;
+ val  
+------
+ val1
+(1 row)
+
+-- length(text) pushes down as lengthUTF8 (counts code points).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE length(val) = 3;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((lengthUTF8(val) = 3))
+(3 rows)
+
+SELECT val FROM t4 WHERE length(val) = 3;
+ val 
+-----
+ Ωαβ
+(1 row)
+
+-- length(bytea) pushes down as length (counts bytes).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE length(val::bytea) = 6;
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((length(CAST(val AS bytea(0))) = 6))
+(3 rows)
+
+SELECT val FROM t4 WHERE length(val::bytea) = 6;
+ val 
+-----
+ Ωαβ
+(1 row)
+
+-- octet_length(text) / octet_length(bytea) push down as length.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE octet_length(val) = 6;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((length(val) = 6))
+(3 rows)
+
+SELECT val FROM t4 WHERE octet_length(val) = 6;
+ val 
+-----
+ Ωαβ
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE octet_length(val::bytea) = 6;
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((length(CAST(val AS bytea(0))) = 6))
+(3 rows)
+
+SELECT val FROM t4 WHERE octet_length(val::bytea) = 6;
+ val 
+-----
+ Ωαβ
+(1 row)
+
+-- reverse(bytea) added in PG18, pushes down as CH reverse (byte-wise).
+SELECT current_setting('server_version_num')::int >= 180000 AS pg18 \gset
+\if :pg18
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE reverse(val::bytea) = 'olleh'::bytea;
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((reverse(CAST(val AS bytea(0))) = 'olleh'))
+(3 rows)
+
+SELECT val FROM t4 WHERE reverse(val::bytea) = 'olleh'::bytea;
+  val  
+-------
+ hello
+(1 row)
+
+\endif
+-- date(timestamp) and date(timestamptz) push down as CH date (alias for toDate).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a, b FROM t1 WHERE date(c) = '2019-01-01'::date;
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Foreign Scan on public.t1
+   Output: a, b
+   Remote SQL: SELECT a, b FROM functions_test.t1 WHERE ((date(c) = '2019-01-01'))
+(3 rows)
+
+SELECT a, b FROM t1 WHERE date(c) = '2019-01-01'::date;
+ a | b 
+---+---
+ 1 | 1
+(1 row)
+
+-- Pin TZ for the timestamptz variant so PG and CH interpret c identically.
+SET timezone = 'UTC';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a, b FROM t2 WHERE date(c) = '2019-01-01'::date;
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Foreign Scan on public.t2
+   Output: a, b
+   Remote SQL: SELECT a, b FROM functions_test.t1 WHERE ((date(c) = '2019-01-01'))
+(3 rows)
+
+SELECT a, b FROM t2 WHERE date(c) = '2019-01-01'::date;
+ a | b 
+---+---
+ 1 | 1
+(1 row)
+
+RESET timezone;
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE functions_test');
  clickhouse_raw_query 

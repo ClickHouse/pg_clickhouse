@@ -21,6 +21,12 @@ SELECT clickhouse_raw_query('CREATE DATABASE import_test');
  
 (1 row)
 
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS import_test_2');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
 SELECT clickhouse_raw_query('CREATE DATABASE import_test_2');
  clickhouse_raw_query 
 ----------------------
@@ -703,6 +709,7 @@ SELECT * FROM clickhouse_bin.ints
 WHERE c1 IN (127, -128)
 ORDER BY c1;
 ERROR:  pg_clickhouse: error while reading row: value 18446744073709551615 is out of range of bigint
+DETAIL:  Remote Query: SELECT c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 FROM import_test.ints WHERE ((c1 IN (127,(-128)))) ORDER BY c1 ASC NULLS LAST
 SELECT * FROM clickhouse.ints
 WHERE c1 IN (127, -128)
 ORDER BY c1;
@@ -714,10 +721,10 @@ SELECT c1, c2, c3, c4, c5, c6, c7, NULL, c9, c10
 FROM clickhouse_bin.ints
 WHERE c1 = 127
 ORDER BY c1;
-  c1  |   c2   |     c3      |          c4          | c5  | c6 |     c7     | c8 |      c9       |           c10           
-------+--------+-------------+----------------------+-----+----+------------+----+---------------+-------------------------
- -128 | -32768 | -2147483648 | -9223372036854775808 |   0 |  0 |          0 |  0 | 1.1754942e-38 | 2.2250738585072014e-308
-  127 |  32767 |  2147483647 |  9223372036854775807 | 255 | -1 | 4294967295 |    | 3.4028233e+38 | 1.7976931348623157e+308
+  c1  |   c2   |     c3      |          c4          | c5  |  c6   |     c7     | c8 |      c9       |           c10           
+------+--------+-------------+----------------------+-----+-------+------------+----+---------------+-------------------------
+ -128 | -32768 | -2147483648 | -9223372036854775808 |   0 |     0 |          0 |  0 | 1.1754942e-38 | 2.2250738585072014e-308
+  127 |  32767 |  2147483647 |  9223372036854775807 | 255 | 65535 | 4294967295 |    | 3.4028233e+38 | 1.7976931348623157e+308
 (2 rows)
 
 SELECT * FROM clickhouse.ints WHERE c1 = -128

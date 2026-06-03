@@ -1,4 +1,4 @@
-pg_clickhouse 0.3.0
+pg_clickhouse 0.3.1
 ===================
 
 ## Synopsis
@@ -188,7 +188,7 @@ CREATE USER MAPPING FOR CURRENT_USER SERVER taxi_srv
        OPTIONS (user 'demo');
 ```
 
-The The supported options are:
+The supported options are:
 
 *   `user`: The name of the ClickHouse user. Defaults to "default".
 *   `password`: The password of the ClickHouse user.
@@ -683,15 +683,15 @@ LOAD
 ```
 
 It's not normally necessary to use [LOAD], as Postgres will automatically load
-pg_clickhouse the first time any of of its features (functions, foreign
-tables, etc.) are used.
+pg_clickhouse the first time any of its features (functions, foreign tables,
+etc.) are used.
 
 The one time it may be useful to [LOAD] pg_clickhouse is to [SET](#set)
 pg_clickhouse parameters before executing queries that depend on them.
 
 ### SET
 
-Use [SET] to set the the pg_clickhouse custom configuration parameters.
+Use [SET] to set the pg_clickhouse custom configuration parameters.
 
 #### `pg_clickhouse.session_settings`
 
@@ -828,7 +828,7 @@ cluster to be restart when the library is updated.
 ## Data Types
 
 pg_clickhouse maps the following ClickHouse data types to PostgreSQL data
-types. [IMPORT FOREIGN SCHEMA](#import-foreign-schema) use the first type in
+types. [IMPORT FOREIGN SCHEMA](#import-foreign-schema) uses the first type in
 the PostgreSQL column when importing columns; additional types may be used in
 [CREATE FOREIGN TABLE](#create-foreign-table) statements:
 
@@ -847,7 +847,7 @@ the PostgreSQL column when importing columns; additional types may be used in
 | Int32      | integer          |                               |
 | Int64      | bigint           |                               |
 | Int8       | smallint         |                               |
-| JSON       | jsonb            | HTTP engine only              |
+| JSON       | jsonb, json      |                               |
 | String     | text, bytea      |                               |
 | UInt16     | integer          |                               |
 | UInt32     | bigint           |                               |
@@ -1033,12 +1033,19 @@ SELECT clickhouse_raw_query(
 
 ### Pushdown Functions
 
-All PostgreSQL builtin functions used in conditionals (`HAVING` and `WHERE`
-clauses) to query ClickHouse foreign tables automatically push down to
-ClickHouse with the same names and signatures. However, some have different
-names or signatures and must be mapped to their equivalents. `pg_clickhouse`
-maps the following functions:
+`pg_clickhouse` pushes down a subset of the PostgreSQL builtin functions used
+in conditionals (`HAVING` and `WHERE` clauses). That subset maps to ClickHouse
+equivalents as follows:
 
+*   `abs`: [abs](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#abs)
+*   `factorial`: [factorial](https://clickhouse.com/docs/sql-reference/functions/math-functions#factorial)
+*   `mod` (int2/int4/int8/numeric): [modulo](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#modulo)
+*   `pow` & `power` (float8/numeric): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
+*   `round`: [round](https://clickhouse.com/docs/sql-reference/functions/rounding-functions#round)
+*   `sin`, `cos`, `tan`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`,
+    `degrees`, `radians`, `pi`: [ClickHouse math functions](https://clickhouse.com/docs/sql-reference/functions/math-functions)
+    of the same name. `asin`, `acos`, `atanh`, `acosh` are not pushed
+    down: PG raises on out-of-range input where CH returns `NaN`.
 *   `date_part`:
     *   `date_part('day')`: [toDayOfMonth](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfMonth)
     *   `date_part('doy')`: [toDayOfYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfYear)
@@ -1061,6 +1068,9 @@ maps the following functions:
     *   `date_trunc('month')`: [toStartOfMonth](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfMonth)
     *   `date_trunc('quarter')`: [toStartOfQuarter](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfQuarter)
     *   `date_trunc('year')`: [toStartOfYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfYear)
+*   `extract(field FROM source)`: same mappings as `date_part`
+*   `date(timestamp)` & `date(timestamptz)`: [toDate](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#toDate)
+    (deparsed as CH alias `date`)
 *   `array_position`: [indexOf](https://clickhouse.com/docs/sql-reference/functions/array-functions#indexOf)
 *   `array_cat`: [arrayConcat](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayConcat)
 *   `array_append`: [arrayPushBack](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayPushBack)
@@ -1077,12 +1087,33 @@ maps the following functions:
 *   `array_sample`: [arrayRandomSample](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayRandomSample)
 *   `array_sort`: [arraySort](https://clickhouse.com/docs/sql-reference/functions/array-functions#arraySort) / [arrayReverseSort](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayReverseSort)
 *   `btrim`: [trimBoth](https://clickhouse.com/docs/sql-reference/functions/string-functions#trimboth)
-*   `strpos`: [position](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#position)
+*   `ltrim`: [ltrim](https://clickhouse.com/docs/sql-reference/functions/string-functions#ltrim)
+*   `rtrim`: [rtrim](https://clickhouse.com/docs/sql-reference/functions/string-functions#rtrim)
+*   `concat_ws`: [concatWithSeparator](https://clickhouse.com/docs/sql-reference/functions/string-functions#concatwithseparator)
+*   `lower(text)`: [lowerUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#lowerutf8)
+*   `upper(text)`: [upperUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#upperutf8)
+*   `substring(text, ...)` & `substr(text, ...)`: [substringUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#substringutf8)
+*   `substring(bytea, ...)` & `substr(bytea, ...)`: [substring](https://clickhouse.com/docs/sql-reference/functions/string-functions#substring)
+*   `length(text)`: [lengthUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#lengthutf8)
+*   `length(bytea)` & `octet_length`: [length](https://clickhouse.com/docs/sql-reference/functions/array-functions#length)
+*   `reverse(text)`: [reverseUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#reverseutf8)
+*   `reverse(bytea)`: [reverse](https://clickhouse.com/docs/sql-reference/functions/string-functions#reverse)
+*   `strpos`: [positionUTF8](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#positionutf8)
 *   `regexp_like`: [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
 *   `regexp_replace`: [replaceRegexpOne](https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpOne) or [replaceRegexpOne](https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpAll) when the `g` flag is present
 *   `regexp_split_to_array`: [splitByRegexp](https://clickhouse.com/docs/sql-reference/functions/splitting-merging-functions#splitByRegexp)
 *   `md5`: [MD5](https://clickhouse.com/docs/sql-reference/functions/hash-functions#MD5)
+*   `json_extract_path_text`: [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
+*   `json_extract_path`: [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
+*   `jsonb_extract_path_text`: [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
+*   `jsonb_extract_path`: [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
+*   `bit_count(bytea)`: [bitCount](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitcount)
 *   `to_timestamp(float8)`: [fromUnixTimestamp](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#fromUnixTimestamp)
+*   `to_char(timestamp[tz], fmt)`: [formatDateTime](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#formatDateTime)
+    when `fmt` is a string constant whose every keyword has a faithful
+    ClickHouse equivalent. See [to_char()](#to_char) under Compatibility
+    Notes for the supported keywords. Otherwise the function evaluates
+    locally in PostgreSQL.
 *   `statement_timestamp`, `transaction_timestamp`, & `clock_timestamp`:
     [nowInBlock64](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#nowInBlock64)
     (`nowInBlock64(9, $session_timezone)`)
@@ -1114,8 +1145,8 @@ maps the following functions:
 *   `!~` (regexp not match): [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
 *   `~*` (case insensitive regexp no match): [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
 *   `!~*` (case insensitive regexp not match): [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
-*   `->` (JSON extract element): [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
-*   `->>` (JSON extract element as text): [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
+*   `->>` (JSON/JSONB extract element as text): [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
+*   `->` (JSON/JSONB extract): [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
 
 ### Custom Functions
 
@@ -1158,7 +1189,7 @@ One [intarray] function pushes down to ClickHouse:
 Two [fuzzystrmatch] functions push down to ClickHouse:
 
 *   `soundex`: [soundex](https://clickhouse.com/docs/sql-reference/functions/string-functions#soundex)
-*   `levenshtein` (2-arg): [editDistance](https://clickhouse.com/docs/sql-reference/functions/string-functions#editDistance)
+*   `levenshtein` (2-arg): [editDistanceUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#editDistanceUTF8)
 
 ### Pushdown Casts
 
@@ -1182,12 +1213,16 @@ These PostgreSQL aggregate functions pushdown to ClickHouse.
 
 *   [array_agg](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/grouparray)
 *   [avg](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/avg)
+*   [bit_and](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitand)
+*   [bit_or](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitor)
+*   [bit_xor](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitxor)
 *   [bool_and / every](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitand)
 *   [bool_or](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitor)
 *   [count](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/count)
 *   [min](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/min)
 *   [max](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/max)
 *   [string_agg](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupconcat)
+*   [sum](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/sum)
 
 ### Custom Aggregates
 
@@ -1253,15 +1288,12 @@ Ranking functions (`row_number`, `rank`, `dense_rank`, `ntile`, `cume_dist`,
 `percent_rank`) omit their frame clause during pushdown because ClickHouse
 rejects frame specifications on these functions.
 
-  [window functions]: https://www.postgresql.org/docs/current/functions-window.html
-    "PostgreSQL Docs: Window Functions"
-
 ## Compatibility Notes
 
 ### Regular Expressions
 
 While pg_clickhouse pushes down regular expressions to ClickHouse equivalents
-when [pg_clickhouse.pushdown_regex](pg_clickhousepushdown_regex) is true (the
+when [pg_clickhouse.pushdown_regex](#pg_clickhousepushdown_regex) is true (the
 default), and makes an effort to ensure a basic level of compatibility, be
 aware of the differences between the two and how pg_clickhouse handles them.
 
@@ -1293,13 +1325,13 @@ aware of the differences between the two and how pg_clickhouse handles them.
 *   The only flags both support, and therefore can be used when evaluated by
     ClickHouse, are:
 
-    RE2 supports only these flags; don't use any other [Postgres flags]
-
     *   `i`: case-insensitive
     *   `m`: multi-line mode:
     *   `s`: let `.` match `\n`
     *   `p`: partial newline-sensitive matching (treated the same as `s`)
     *   `t`: tight syntax (the default, removed by pg_clickhouse)
+
+    RE2 supports only these flags; don't use any other [Postgres flags]
 
 *   Any other flags passed to regular expression functions will cause the
     function not to be pushed down.
@@ -1314,10 +1346,49 @@ aware of the differences between the two and how pg_clickhouse handles them.
     ClickHouse.
 
 To avoid all ambiguity, consider setting
-[pg_clickhouse.pushdown_regex](pg_clickhousepushdown_regex) to prevent
+[pg_clickhouse.pushdown_regex](#pg_clickhousepushdown_regex) to prevent
 Postgres regular expression from pushing down to ClickHouse, and using the
-[re2 extension], for which pg_clickhouse supports [direct pushdown](#re2)
-of ClickHouse-compatible [RE2] regular expressions.
+[re2 extension], for which pg_clickhouse supports [direct pushdown](#re2) of
+ClickHouse-compatible [RE2] regular expressions.
+
+### `to_char()`
+
+PostgreSQL [`to_char()`] for `timestamp` and `timestamp with time zone`
+pushes down to ClickHouse [formatDateTime] only when the format argument
+is a non-NULL string constant whose every PostgreSQL keyword has a
+byte-for-byte identical ClickHouse equivalent. If the format is dynamic
+(not a `Const`), or contains any unsupported keyword or modifier, the
+call falls back to local evaluation in PostgreSQL — pushdown is never
+attempted with a partial translation, so output stays PG-compatible.
+
+Two-argument `to_char()` forms over `numeric`, `interval`, and other
+non-timestamp types never push down; ClickHouse [formatDateTime] only
+formats date-time values.
+
+#### Translated keywords
+
+| PostgreSQL                 | ClickHouse | Meaning                               |
+| -------------------------- | ---------- | ------------------------------------- |
+| `YYYY`, `yyyy`             | `%Y`       | 4-digit year                          |
+| `YY`, `yy`                 | `%y`       | 2-digit year                          |
+| `MM`, `mm`                 | `%m`       | zero-padded month (01–12)             |
+| `DD`, `dd`                 | `%d`       | zero-padded day of month (01–31)      |
+| `DDD`, `ddd`               | `%j`       | zero-padded day of year (001–366)     |
+| `HH24`, `hh24`             | `%H`       | zero-padded 24-hour (00–23)           |
+| `HH`, `hh`, `HH12`, `hh12` | `%I`       | zero-padded 12-hour (01–12)           |
+| `MI`, `mi`                 | `%i`       | zero-padded minute (00–59)            |
+| `SS`, `ss`                 | `%S`       | zero-padded second (00–59)            |
+| `Q`, `q`                   | `%Q`       | quarter (1–4)                         |
+| `Mon`                      | `%b`       | abbreviated month name, e.g., `Oct`   |
+| `Dy`                       | `%a`       | abbreviated weekday name, e.g., `Mon` |
+| `AM`, `PM`                 | `%p`       | meridiem indicator, always uppercase  |
+
+#### Quoted text and literals
+
+Text wrapped in `"..."` passes through verbatim, with any literal `%`
+doubled to `%%` to escape ClickHouse's specifier prefix. A `\"` outside
+quotes also passes through as a literal `"`. Inside `"..."`, backslash
+only escapes `"`; other backslash sequences are treated as literal text.
 
 ## Authors
 
@@ -1418,6 +1489,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "ClickHouse Docs: String"
   [TEXT]: https://www.postgresql.org/docs/current/datatype-character.html
     "PostgreSQL Docs: Character Types"
+  [window functions]: https://www.postgresql.org/docs/current/functions-window.html
+    "PostgreSQL Docs: Window Functions"
   [POSIX Regular Expressions]: https://www.postgresql.org/docs/18/functions-matching.html#FUNCTIONS-POSIX-REGEXP
     "PostgreSQL Docs: POSIX Regular Expressions"
   [Postgres flags]: https://www.postgresql.org/docs/18/functions-matching.html#POSIX-EMBEDDED-OPTIONS-TABLE
@@ -1429,3 +1502,7 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: intarray"
   [fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html
     "PostgreSQL Docs: fuzzystrmatch"
+  [`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html
+    "PostgreSQL Docs: Data Type Formatting Functions"
+  [formatDateTime]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#formatDateTime
+    "ClickHouse Docs: formatDateTime"

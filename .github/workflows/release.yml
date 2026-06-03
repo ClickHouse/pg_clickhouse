@@ -1,5 +1,9 @@
 name: 🚀 Bundle & Release
-on: [push, pull_request]
+on:
+  push:
+    branches: [main, wip/**]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  pull_request:
 permissions:
   contents: write
 jobs:
@@ -11,7 +15,7 @@ jobs:
       - name: Check out the repo
         uses: actions/checkout@v6
       - name: Start Postgres
-        run: pg-start 18 libcurl4-openssl-dev uuid-dev
+        run: pg-start 18 libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev
       - name: Start ClickHouse
         env: { CH_RELEASE: "${{ matrix.ch }}" }
         run: .github/ubuntu/clickhouse.sh

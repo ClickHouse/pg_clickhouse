@@ -80,6 +80,41 @@ SELECT clickhouse_raw_query('INSERT INTO binary_test.arrays SELECT
  
 (1 row)
 
+-- nested arrays
+SELECT clickhouse_raw_query('CREATE TABLE binary_test.nested_arrays (
+    c1 Int8, c2 Array(Array(Int32)), c3 Array(Array(String))
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('INSERT INTO binary_test.nested_arrays VALUES
+    (1, [[1,2],[3,4]], [[''a'',''b''],[''c'',''d'']]),
+    (2, [[5,6],[7,8]], [[''e'',''f''],[''g'',''h'']]);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+-- ragged nested arrays must error: postgres requires hyper-rectangles
+SELECT clickhouse_raw_query('CREATE TABLE binary_test.ragged_arrays (
+    c1 Int8, c2 Array(Array(Int32))
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('INSERT INTO binary_test.ragged_arrays VALUES (1, [[1,2,3],[4]]);');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
 SELECT clickhouse_raw_query('CREATE TABLE binary_test.tuples (
     c1 Int8,
     c2 Tuple(Int, String, Float32),
@@ -152,6 +187,15 @@ CREATE FOREIGN TABLE farrays2 (
 	c1 int8[],
     c2 text[]
 ) SERVER binary_loopback OPTIONS (table_name 'arrays');
+CREATE FOREIGN TABLE fnested_arrays (
+    c1 int2,
+    c2 int[],
+    c3 text[]
+) SERVER binary_loopback OPTIONS (table_name 'nested_arrays');
+CREATE FOREIGN TABLE fragged_arrays (
+    c1 int2,
+    c2 int[]
+) SERVER binary_loopback OPTIONS (table_name 'ragged_arrays');
 CREATE TYPE tupformat AS (a int, b text, c float4);
 CREATE FOREIGN TABLE ftuples (
     c1 int,
@@ -265,6 +309,18 @@ SELECT * FROM farrays ORDER BY c1;
 
 SELECT * FROM farrays2 ORDER BY c1;
 ERROR:  pg_clickhouse: could not cast value from integer[] to bigint[]
+DETAIL:  Remote Query: SELECT c1, c2 FROM binary_test.arrays ORDER BY c1 ASC NULLS LAST
+-- nested arrays
+SELECT * FROM fnested_arrays ORDER BY c1;
+ c1 |      c2       |      c3       
+----+---------------+---------------
+  1 | {{1,2},{3,4}} | {{a,b},{c,d}}
+  2 | {{5,6},{7,8}} | {{e,f},{g,h}}
+(2 rows)
+
+SELECT * FROM fragged_arrays ORDER BY c1;
+ERROR:  malformed array literal: "{{"1","2","3"},{"4"}}"
+DETAIL:  Remote Query: SELECT c1, c2 FROM binary_test.ragged_arrays ORDER BY c1 ASC NULLS LAST
 -- tuples
 SELECT * FROM ftuples ORDER BY c1;
  c1 |    c2    | c3 
@@ -305,10 +361,12 @@ SELECT clickhouse_raw_query('DROP DATABASE binary_test');
 (1 row)
 
 DROP SERVER binary_loopback CASCADE;
-NOTICE:  drop cascades to 6 other objects
+NOTICE:  drop cascades to 8 other objects
 DETAIL:  drop cascades to foreign table fints
 drop cascades to foreign table ftypes
 drop cascades to foreign table farrays
 drop cascades to foreign table farrays2
+drop cascades to foreign table fnested_arrays
+drop cascades to foreign table fragged_arrays
 drop cascades to foreign table ftuples
 drop cascades to foreign table fbytes

@@ -1,0 +1,492 @@
+CREATE SERVER arr_svr FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'arr_test');
+CREATE USER MAPPING FOR CURRENT_USER SERVER arr_svr;
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS arr_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE DATABASE arr_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    CREATE TABLE arr_test.t1 (
+        id   Int32,
+        vals Array(Int32),
+        tags Array(String),
+        list String
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    INSERT INTO arr_test.t1 VALUES
+        (1, [10,20,30], ['a','b','c'], 'aa-bb-cc'),
+        (2, [40,50],    ['d','e'], 'x//z'),
+        (3, [60],       ['f'], 'Edit -> Insert -> Line Break')
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+CREATE SCHEMA arr_test;
+IMPORT FOREIGN SCHEMA arr_test FROM SERVER arr_svr INTO arr_test;
+SET search_path = arr_test, public;
+-- array_cat → arrayConcat
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE array_cat(vals, ARRAY[99]) = ARRAY[10,20,30,99];
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((arrayConcat(vals, [99]) = [10,20,30,99]))
+(3 rows)
+
+SELECT * FROM t1 WHERE array_cat(vals, ARRAY[99]) = ARRAY[10,20,30,99];
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+-- array_append → arrayPushBack
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE array_append(vals, 99) = ARRAY[10,20,30,99];
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((arrayPushBack(vals, 99) = [10,20,30,99]))
+(3 rows)
+
+SELECT * FROM t1 WHERE array_append(vals, 99) = ARRAY[10,20,30,99];
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+-- array_remove → arrayRemove (CH 26+, EXPLAIN only)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE array_remove(vals, 20) = ARRAY[10,30];
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((arrayRemove(vals, 20) = [10,30]))
+(3 rows)
+
+\unset ECHO
+NOTICE:  (1,"{10,20,30}","{a,b,c}",aa-bb-cc)
+-- array_to_string → arrayStringConcat
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE array_to_string(tags, ',') = 'a,b,c';
+                                                 QUERY PLAN                                                  
+-------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((arrayStringConcat(tags, ',') = 'a,b,c'))
+(3 rows)
+
+SELECT * FROM t1 WHERE array_to_string(tags, ',') = 'a,b,c';
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+-- cardinality → length
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE cardinality(vals) = 3;
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((length(vals) = 3))
+(3 rows)
+
+SELECT * FROM t1 WHERE cardinality(vals) = 3;
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+-- array_position → indexOf
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE array_position(vals, 20) = 2;
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((indexOf(vals, 20) = 2))
+(3 rows)
+
+SELECT * FROM t1 WHERE array_position(vals, 20) = 2;
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+-- array_length → length (drops dimension arg)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE array_length(vals, 1) = 2;
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((length(vals) = 2))
+(3 rows)
+
+SELECT * FROM t1 WHERE array_length(vals, 1) = 2;
+ id |  vals   | tags  | list 
+----+---------+-------+------
+  2 | {40,50} | {d,e} | x//z
+(1 row)
+
+-- array_prepend → arrayPushFront (args reversed)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE array_prepend(99, vals) = ARRAY[99,10,20,30];
+                                                  QUERY PLAN                                                   
+---------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((arrayPushFront(vals, 99) = [99,10,20,30]))
+(3 rows)
+
+SELECT * FROM t1 WHERE array_prepend(99, vals) = ARRAY[99,10,20,30];
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+-- string_to_array → splitByString
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE string_to_array(list, '-') = ARRAY['aa','bb','cc'];
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((splitByString('-', list) = ['aa','bb','cc']))
+(3 rows)
+
+SELECT * FROM t1 WHERE string_to_array(list, '-') = ARRAY['aa','bb','cc'];
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE string_to_array(list, ' -> ') = ARRAY['aa','bb','cc'];
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((splitByString(' -> ', list) = ['aa','bb','cc']))
+(3 rows)
+
+SELECT * FROM t1 WHERE string_to_array(list, ' -> ') = ARRAY['Edit','Insert', 'Line Break'];
+ id | vals | tags |             list             
+----+------+------+------------------------------
+  3 | {60} | {f}  | Edit -> Insert -> Line Break
+(1 row)
+
+-- split_part → splitByString
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE split_part(list, '-', 2) = 'bb';
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((splitByString('-', list)[2] = 'bb'))
+(3 rows)
+
+SELECT * FROM t1 WHERE split_part(list, '-', 2) = 'bb';
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE split_part(list, '-', -1) = 'cc';
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((splitByString('-', list)[(-1)] = 'cc'))
+(3 rows)
+
+SELECT * FROM t1 WHERE split_part(list, '-', -1) = 'cc';
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+\unset ECHO
+NOTICE:  trim_array PUSHED DOWN: t
+NOTICE:  (1,"{10,20,30}","{a,b,c}",aa-bb-cc)
+NOTICE:  array_reverse PUSHED DOWN: t
+NOTICE:  (1,"{10,20,30}","{a,b,c}",aa-bb-cc)
+NOTICE:  array_sort PUSHED DOWN: f
+NOTICE:  (3,{60},{f},"Edit -> Insert -> Line Break")
+NOTICE:  array_sort(x, dynamic) NOT PUSHED DOWN: t
+NOTICE:  (1,"{10,20,30}","{a,b,c}",aa-bb-cc)
+NOTICE:  array_sort(x, true) PUSHED DOWN: t
+NOTICE:  (1,"{10,20,30}","{a,b,c}",aa-bb-cc)
+NOTICE:  array_sort(x, true, true) NOT PUSHED DOWN: t
+NOTICE:  (1,"{10,20,30}","{a,b,c}",aa-bb-cc)
+-- array_shuffle / array_sample added in PG16; output is non-deterministic
+-- so put them in WHERE with cardinality predicates that always hold.
+SELECT current_setting('server_version_num')::int >= 160000 AS pg16 \gset
+\if :pg16
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE cardinality(array_shuffle(vals)) = cardinality(vals) ORDER BY id;
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.t1 WHERE ((length(arrayShuffle(vals)) = length(vals))) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM t1 WHERE cardinality(array_shuffle(vals)) = cardinality(vals) ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE cardinality(array_sample(vals, 1)) = 1 ORDER BY id;
+                                                      QUERY PLAN                                                      
+----------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.t1 WHERE ((length(arrayRandomSample(vals, 1)) = 1)) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM t1 WHERE cardinality(array_sample(vals, 1)) = 1 ORDER BY id;
+ERROR:  pg_clickhouse: Code: 46. DB::Exception: Unknown function arrayRandomSample: While processing SELECT id FROM arr_test.t1 WHERE length(arrayRandomSample(vals, 1)) = 1 ORDER BY id ASC NULLS LAST. (UNKNOWN_FUNCTION)
+DETAIL:  Remote Query: SELECT id FROM arr_test.t1 WHERE ((length(arrayRandomSample(vals, 1)) = 1)) ORDER BY id ASC NULLS LAST
+CONTEXT:  HTTP status code: 404
+\endif
+-- Operators: @> → hasAll
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE vals @> ARRAY[10];
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE (hasAll(vals, [10]))
+(3 rows)
+
+SELECT * FROM t1 WHERE vals @> ARRAY[10] ORDER BY id;
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+-- Operators: <@ → hasAll (reversed)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE vals <@ ARRAY[10,20,30];
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE (hasAll([10,20,30], vals))
+(3 rows)
+
+SELECT * FROM t1 WHERE vals <@ ARRAY[10,20,30] ORDER BY id;
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+-- Operators: && → hasAny
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE vals && ARRAY[20,40];
+                                        QUERY PLAN                                        
+------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE (hasAny(vals, [20,40]))
+(3 rows)
+
+SELECT * FROM t1 WHERE vals && ARRAY[20,40] ORDER BY id;
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+  2 | {40,50}    | {d,e}   | x//z
+(2 rows)
+
+-- Subscript pushdown
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE vals[1] = 10;
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE (((vals[1]) = 10))
+(3 rows)
+
+SELECT * FROM t1 WHERE vals[1] = 10;
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+-- Slicing pushdown
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE vals[1:2] = ARRAY[10,20];
+                                                    QUERY PLAN                                                     
+-------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((arraySlice(vals, 1, (2) - (1) + 1) = [10,20]))
+(3 rows)
+
+SELECT * FROM t1 WHERE vals[1:2] = ARRAY[10,20];
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE vals[:2] = ARRAY[10,20];
+                                                    QUERY PLAN                                                     
+-------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((arraySlice(vals, 1, (2) - (1) + 1) = [10,20]))
+(3 rows)
+
+SELECT * FROM t1 WHERE vals[:2] = ARRAY[10,20];
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE vals[2:] = ARRAY[20,30];
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((arraySlice(vals, 2) = [20,30]))
+(3 rows)
+
+SELECT * FROM t1 WHERE vals[2:] = ARRAY[20,30];
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE vals[:] = ARRAY[10,20,30];
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((arraySlice(vals, 1) = [10,20,30]))
+(3 rows)
+
+SELECT * FROM t1 WHERE vals[:] = ARRAY[10,20,30];
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+-- Unshippable (function NOT in Remote SQL)
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_dims(vals) = '[1:3]';
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Filter: (array_dims(t1.vals) = '[1:3]'::text)
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_ndims(vals) = 1;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Filter: (array_ndims(t1.vals) = 1)
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_lower(vals, 1) = 1;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Filter: (array_lower(t1.vals, 1) = 1)
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_upper(vals, 1) = 3;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Filter: (array_upper(t1.vals, 1) = 3)
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_replace(vals, 20, 99) = ARRAY[10,99,30];
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Filter: (array_replace(t1.vals, 20, 99) = '{10,99,30}'::integer[])
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_positions(vals, 20) = ARRAY[2];
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Filter: (array_positions(t1.vals, 20) = '{2}'::integer[])
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_to_string(vals, ',', '*') = '10,20,30';
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Filter: (array_to_string(t1.vals, ','::text, '*'::text) = '10,20,30'::text)
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_fill(7, ARRAY[2], vals) = '[60:61]={7,7}'::int[];
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Filter: (array_fill(7, '{2}'::integer[], t1.vals) = '[60:61]={7,7}'::integer[])
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE string_to_array(list, '/', 'nil') = ARRAY['x','','z'];
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Filter: (string_to_array(t1.list, '/'::text, 'nil'::text) = '{x,"",z}'::text[])
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1
+(4 rows)
+
+DROP USER MAPPING FOR CURRENT_USER SERVER arr_svr;
+SELECT clickhouse_raw_query('DROP DATABASE arr_test');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP SERVER arr_svr CASCADE;
+NOTICE:  drop cascades to foreign table t1

@@ -45,6 +45,23 @@ SELECT clickhouse_raw_query('INSERT INTO binary_test.arrays SELECT
     [format(''num{0}'', toString(number)), format(''num{0}'', toString(number + 1))]
     FROM numbers(10);');
 
+-- nested arrays
+SELECT clickhouse_raw_query('CREATE TABLE binary_test.nested_arrays (
+    c1 Int8, c2 Array(Array(Int32)), c3 Array(Array(String))
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+SELECT clickhouse_raw_query('INSERT INTO binary_test.nested_arrays VALUES
+    (1, [[1,2],[3,4]], [[''a'',''b''],[''c'',''d'']]),
+    (2, [[5,6],[7,8]], [[''e'',''f''],[''g'',''h'']]);
+');
+
+-- ragged nested arrays must error: postgres requires hyper-rectangles
+SELECT clickhouse_raw_query('CREATE TABLE binary_test.ragged_arrays (
+    c1 Int8, c2 Array(Array(Int32))
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+SELECT clickhouse_raw_query('INSERT INTO binary_test.ragged_arrays VALUES (1, [[1,2,3],[4]]);');
+
 SELECT clickhouse_raw_query('CREATE TABLE binary_test.tuples (
     c1 Int8,
     c2 Tuple(Int, String, Float32),
@@ -103,6 +120,17 @@ CREATE FOREIGN TABLE farrays2 (
     c2 text[]
 ) SERVER binary_loopback OPTIONS (table_name 'arrays');
 
+CREATE FOREIGN TABLE fnested_arrays (
+    c1 int2,
+    c2 int[],
+    c3 text[]
+) SERVER binary_loopback OPTIONS (table_name 'nested_arrays');
+
+CREATE FOREIGN TABLE fragged_arrays (
+    c1 int2,
+    c2 int[]
+) SERVER binary_loopback OPTIONS (table_name 'ragged_arrays');
+
 CREATE TYPE tupformat AS (a int, b text, c float4);
 CREATE FOREIGN TABLE ftuples (
     c1 int,
@@ -133,6 +161,10 @@ SELECT c2, c1, c4, c3, c5, c7, c6 FROM ftypes ORDER BY c1;
 -- arrays
 SELECT * FROM farrays ORDER BY c1;
 SELECT * FROM farrays2 ORDER BY c1;
+
+-- nested arrays
+SELECT * FROM fnested_arrays ORDER BY c1;
+SELECT * FROM fragged_arrays ORDER BY c1;
 
 -- tuples
 SELECT * FROM ftuples ORDER BY c1;

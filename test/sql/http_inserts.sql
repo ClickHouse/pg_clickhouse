@@ -34,6 +34,11 @@ SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.arrays (
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
 
+SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.nested_arrays (
+    c1 Int32, c2 Array(Array(Int32)), c3 Array(Array(String))
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+
 SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.addr (
     c1 UUID, c2 IPv4, c3 IPv6
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
@@ -102,6 +107,14 @@ INSERT INTO arrays VALUES
 	(5, ARRAY[0], ARRAY['[]']),
 	(5, ARRAY[0], ARRAY[E'\\\b\f\r\n\t\a\'']);
 SELECT * FROM arrays ORDER BY c1;
+
+/* check nested arrays: postgres multi-dim arrays must be hyper-rectangular,
+ * which maps cleanly to ClickHouse Array(Array(...)). */
+INSERT INTO nested_arrays VALUES
+	(1, ARRAY[[1,2],[3,4]], ARRAY[['a','b'],['c','d']]),
+	(2, ARRAY[[5,6],[7,8],[9,10]], ARRAY[['e','f'],['g','h'],['i','j']]),
+	(3, '{}'::int[], '{}'::text[]);
+SELECT * FROM nested_arrays ORDER BY c1;
 
 /* Check UUIDs and IPs */
 \d addr

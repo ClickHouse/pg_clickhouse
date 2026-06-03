@@ -75,9 +75,11 @@ typedef Datum * (*cursor_fetch_row_method) (ChFdwScanRowContext * ctx);
 typedef void *(*prepare_insert_method) (void *conn, ResultRelInfo *, List *,
 										const ch_query *, char *);
 typedef void (*insert_tuple_method) (void *state, TupleTableSlot * slot);
+typedef void (*finalize_insert_method) (void *state);
 typedef ch_cursor * (*streaming_query_method) (void *conn,
 											   const ch_query * query,
 											   int32 fetch_size);
+typedef bool (*is_broken_method) (const void *conn);
 
 typedef struct
 {
@@ -86,8 +88,11 @@ typedef struct
 	cursor_fetch_row_method fetch_row;
 	prepare_insert_method prepare_insert;
 	insert_tuple_method insert_tuple;
+	finalize_insert_method finalize_insert; /* NULL if no explicit finalize
+											 * step needed */
 	streaming_query_method streaming_query; /* NULL if not supported */
 	cursor_fetch_row_method streaming_fetch_row;	/* NULL if not supported */
+	is_broken_method is_broken; /* NULL means connection is never broken */
 }			libclickhouse_methods;
 
 typedef struct
@@ -291,7 +296,6 @@ typedef struct ConnCacheEntry
 typedef enum
 {
 	CF_USUAL = 0,
-	CF_UNSHIPPABLE,				/* do not ship */
 	CF_SIGN_SUM,				/* SUM aggregation */
 	CF_SIGN_AVG,				/* AVG aggregation */
 	CF_SIGN_COUNT,				/* COUNT aggregation */
@@ -310,10 +314,11 @@ typedef enum
 	CF_REGEX_NO_MATCH,			/* !~ POSIX regex operator */
 	CF_REGEX_ICASE_MATCH,		/* ~* case-insensitive regex operator */
 	CF_REGEX_ICASE_NO_MATCH,	/* !~* case-insensitive regex operator */
-	CF_JSONB_FETCHVAL,			/* -> operator on jsonb */
-	CF_JSONB_FETCHVAL_TEXT,		/* ->> operator on jsonb */
-	CF_JSONB_EXTRACT_PATH_TEXT, /* jsonb_extract_path_text() → col."k1"."k2" */
-	CF_JSONB_EXTRACT_PATH,		/* jsonb_extract_path() →
+	CF_JSON_FETCHVAL,			/* -> operator on json & jsonb */
+	CF_JSON_FETCHVAL_TEXT,		/* ->> operator on json & jsonb */
+	CF_JSON_EXTRACT_PATH_TEXT,	/* jsonb?_extract_path_text() →
+								 * col."k1"."k2" */
+	CF_JSON_EXTRACT_PATH,		/* json?_extract_path() →
 								 * toJSONString(col."k1"."k2") */
 	CF_STRING_AGG,				/* string_agg → groupConcat(delim)(expr) */
 	CF_CURRENT_DATABASE,		/* CURRENT_DATABASE → string literal */
@@ -333,6 +338,9 @@ typedef enum
 	CF_ARRAY_CONTAINS,			/* @> → hasAll(left, right) */
 	CF_ARRAY_CONTAINED_BY,		/* <@ → hasAll(right, left) */
 	CF_ARRAY_OVERLAP,			/* && → hasAny(left, right) */
+	CF_TO_CHAR,					/* to_char(timestamp[tz], fmt) →
+								 * formatDateTime, with strict format
+								 * translation */
 }			custom_object_type;
 
 typedef enum
@@ -378,6 +386,15 @@ extern Datum ch_time_out(PG_FUNCTION_ARGS);
 extern bool chfdw_is_shippable(Node * node, Oid objectId, Oid classId, CHFdwRelationInfo * fpinfo,
 							   CustomObjectDef * *outcdef);
 extern double time_diff(struct timeval *prior, struct timeval *latter);
+
+/*
+ * Translate a Postgres `to_char()` template into a ClickHouse
+ * `formatDateTime()` template.  Returns true on success, with the
+ * translation appended to `out` (caller-owned, may be NULL to validate
+ * only).  Returns false on any unsupported PG keyword or modifier;
+ * when used to gate pushdown, false means caller must evaluate locally.
+ */
+extern bool chfdw_translate_to_char_format(const char *pgfmt, StringInfo out);
 
 /* compat */
 #if PG_VERSION_NUM < 120000

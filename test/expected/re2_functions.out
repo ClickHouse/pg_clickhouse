@@ -275,6 +275,87 @@ SELECT * FROM t1 WHERE re2multimatchallindices(val, VARIADIC ARRAY['POSIX','PCRE
   1 | POSIX uses BRE and ERE
 (1 row)
 
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE re2regexpquotemeta(val || '.') = val || '\.';
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
+ Foreign Scan on re2_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM re2_test.t1 WHERE ((regexpQuoteMeta((val || '.')) = (val || '\\.')))
+(3 rows)
+
+SELECT id FROM t1 WHERE re2regexpquotemeta(val || '.') = val || '\.';
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE re2splitbyregexp(' ', val) = ARRAY['re2','uses','finite','automata'];
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on re2_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM re2_test.t1 WHERE ((splitByRegexp(' ', val, 0) = ['re2','uses','finite','automata']))
+(3 rows)
+
+SELECT id FROM t1 WHERE re2splitbyregexp(' ', val) = ARRAY['re2','uses','finite','automata'];
+ id 
+----
+  2
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE re2splitbyregexp(' ', val, 2) = ARRAY['re2','uses'];
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
+ Foreign Scan on re2_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM re2_test.t1 WHERE ((splitByRegexp(' ', val, 2) = ['re2','uses']))
+(3 rows)
+
+SELECT id FROM t1 WHERE re2splitbyregexp(' ', val, 2) = ARRAY['re2','uses'];
+ id 
+----
+  2
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE array_length(re2extractallgroupsvertical(val, '(\w+) (\w+)'), 1) > 0;
+                                                  QUERY PLAN                                                   
+---------------------------------------------------------------------------------------------------------------
+ Foreign Scan on re2_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM re2_test.t1 WHERE ((length(extractAllGroupsVertical(val, '(\\w+) (\\w+)')) > 0))
+(3 rows)
+
+SELECT id FROM t1 WHERE array_length(re2extractallgroupsvertical(val, '(\w+) (\w+)'), 1) > 0;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE array_length(re2extractallgroupshorizontal(val, '(\w+) (\w+)'), 1) = 2;
+                                                   QUERY PLAN                                                    
+-----------------------------------------------------------------------------------------------------------------
+ Foreign Scan on re2_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM re2_test.t1 WHERE ((length(extractAllGroupsHorizontal(val, '(\\w+) (\\w+)')) = 2))
+(3 rows)
+
+SELECT id FROM t1 WHERE array_length(re2extractallgroupshorizontal(val, '(\w+) (\w+)'), 1) = 2;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
 DROP EXTENSION re2;
 DROP USER MAPPING FOR CURRENT_USER SERVER re2_svr;
 SELECT clickhouse_raw_query('DROP DATABASE re2_test');

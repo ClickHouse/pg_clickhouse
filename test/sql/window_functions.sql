@@ -130,6 +130,48 @@ FROM wf_http.events
 WHERE event_name = 'lead_created';
 
 -- ============================================================
+-- LAG() OVER
+-- ============================================================
+\echo -- LAG pushdown (binary)
+EXPLAIN (COSTS OFF)
+SELECT entity_id, ts_event,
+       lag(amount) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) AS prev_amount
+FROM wf_bin.events
+WHERE event_name = 'lead_created';
+
+SELECT entity_id, ts_event,
+       lag(amount) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) AS prev_amount
+FROM wf_bin.events
+WHERE event_name = 'lead_created';
+
+-- ============================================================
+-- RANK() and DENSE_RANK()
+-- ============================================================
+\echo -- rank pushdown (binary)
+EXPLAIN (COSTS OFF)
+SELECT entity_id, amount,
+       rank() OVER (PARTITION BY entity_id ORDER BY amount) AS rk
+FROM wf_bin.events
+ORDER BY entity_id, amount;
+
+SELECT entity_id, amount,
+       rank() OVER (PARTITION BY entity_id ORDER BY amount) AS rk
+FROM wf_bin.events
+ORDER BY entity_id, amount;
+
+\echo -- dense_rank pushdown (binary)
+EXPLAIN (COSTS OFF)
+SELECT entity_id, amount,
+       dense_rank() OVER (PARTITION BY entity_id ORDER BY amount) AS dr
+FROM wf_bin.events
+ORDER BY entity_id, amount;
+
+SELECT entity_id, amount,
+       dense_rank() OVER (PARTITION BY entity_id ORDER BY amount) AS dr
+FROM wf_bin.events
+ORDER BY entity_id, amount;
+
+-- ============================================================
 -- Ranking window functions (ntile, cume_dist, percent_rank)
 -- ============================================================
 \echo -- ntile pushdown (binary)
@@ -270,6 +312,33 @@ SELECT entity_id, ts_event,
        lead(ts_event) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) AS next_event
 FROM wf_bin.events
 WHERE event_name = 'lead_created';
+
+-- ============================================================
+-- LAG() OVER
+-- ============================================================
+\echo -- VERBOSE LAG pushdown (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, ts_event,
+       lag(amount) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) AS prev_amount
+FROM wf_bin.events
+WHERE event_name = 'lead_created';
+
+-- ============================================================
+-- RANK() and DENSE_RANK()
+-- ============================================================
+\echo -- VERBOSE rank pushdown (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, amount,
+       rank() OVER (PARTITION BY entity_id ORDER BY amount) AS rk
+FROM wf_bin.events
+ORDER BY entity_id, amount;
+
+\echo -- VERBOSE dense_rank pushdown (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, amount,
+       dense_rank() OVER (PARTITION BY entity_id ORDER BY amount) AS dr
+FROM wf_bin.events
+ORDER BY entity_id, amount;
 
 \echo -- VERBOSE ntile pushdown (binary)
 EXPLAIN (VERBOSE, COSTS OFF)

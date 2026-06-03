@@ -394,38 +394,61 @@ SELECT datestamp, string_agg(path, ', ') FROM agg_bin.hits
 
 -- bool_and / bool_or / every pushdown
 \echo -- bool_and pushdown (binary)
-EXPLAIN (COSTS OFF)
+EXPLAIN (VERBOSE, COSTS OFF)
 SELECT bool_and(duration > 0) FROM agg_bin.hits;
 
 SELECT bool_and(duration > 0) FROM agg_bin.hits;
 
 \echo -- bool_or pushdown (binary)
-EXPLAIN (COSTS OFF)
+EXPLAIN (VERBOSE, COSTS OFF)
 SELECT bool_or(duration > 5000) FROM agg_bin.hits;
 
 SELECT bool_or(duration > 5000) FROM agg_bin.hits;
 
 \echo -- every pushdown (binary)
-EXPLAIN (COSTS OFF)
+EXPLAIN (VERBOSE, COSTS OFF)
 SELECT every(cost > 0) FROM agg_bin.hits;
 
 SELECT every(cost > 0) FROM agg_bin.hits;
 
 \echo -- bool_and pushdown (http)
-EXPLAIN (COSTS OFF)
+EXPLAIN (VERBOSE, COSTS OFF)
 SELECT bool_and(duration > 0) FROM agg_http.hits;
 
 SELECT bool_and(duration > 0) FROM agg_http.hits;
 
 \echo -- bool_or pushdown (http)
-EXPLAIN (COSTS OFF)
+EXPLAIN (VERBOSE, COSTS OFF)
 SELECT bool_or(duration > 5000) FROM agg_http.hits;
 
 SELECT bool_or(duration > 5000) FROM agg_http.hits;
+
+-- bit_and / bit_or pushdown (groupBitAnd / groupBitOr)
+\echo -- bit_and pushdown (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT bit_and(duration::int4) FROM agg_bin.hits WHERE id = 3498231651;
+
+SELECT bit_and(duration::int4) FROM agg_bin.hits WHERE id = 3498231651;
+
+\echo -- bit_or pushdown (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT bit_or(duration::int4) FROM agg_bin.hits WHERE id = 3498231651;
+
+SELECT bit_or(duration::int4) FROM agg_bin.hits WHERE id = 3498231651;
+
+-- bit_xor added in PG14, pushes down as groupBitXor.
+SELECT current_setting('server_version_num')::int >= 140000 AS pg14 \gset
+\if :pg14
+\echo -- bit_xor pushdown (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT bit_xor(duration::int4) FROM agg_bin.hits WHERE id = 3498231651;
+
+SELECT bit_xor(duration::int4) FROM agg_bin.hits WHERE id = 3498231651;
+\endif
 
 -- regr_* local fallback (not pushed)
 \echo -- regr_slope local fallback
-EXPLAIN (COSTS OFF)
+EXPLAIN (VERBOSE, COSTS OFF)
 SELECT regr_slope(cost::float8, duration::float8) FROM agg_bin.hits;
 
 -- Clean up.

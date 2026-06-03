@@ -12,6 +12,7 @@ CREATE USER MAPPING FOR CURRENT_USER SERVER import_loopback_bin;
 
 SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS import_test');
 SELECT clickhouse_raw_query('CREATE DATABASE import_test');
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS import_test_2');
 SELECT clickhouse_raw_query('CREATE DATABASE import_test_2');
 
 -- integer types

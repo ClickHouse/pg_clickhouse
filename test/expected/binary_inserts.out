@@ -67,6 +67,15 @@ SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.arrays (
  
 (1 row)
 
+SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.nested_arrays (
+    c1 Int32, c2 Array(Array(Int32)), c3 Array(Array(String))
+) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
+');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
 SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.addr (
     c1 UUID, c2 IPv4, c3 IPv6
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
@@ -273,6 +282,23 @@ SELECT * FROM arrays ORDER BY c1;
     |         |         a'"}
 (6 rows)
 
+/* check nested arrays: postgres multi-dim arrays must be hyper-rectangular,
+ * which maps cleanly to ClickHouse Array(Array(...)). */
+INSERT INTO nested_arrays VALUES
+	(1, ARRAY[[1,2],[3,4]], ARRAY[['a','b'],['c','d']]),
+	(2, ARRAY[[5,6],[7,8],[9,10]], ARRAY[['e','f'],['g','h'],['i','j']]),
+	(3, '{}'::int[], '{}'::text[]);
+SELECT * FROM nested_arrays ORDER BY c1;
+ c1 |          c2          |         c3          
+----+----------------------+---------------------
+  1 | {{1,2},{3,4}}        | {{a,b},{c,d}}
+  2 | {{5,6},{7,8},{9,10}} | {{e,f},{g,h},{i,j}}
+  3 | {}                   | {}
+(3 rows)
+
+/* shape mismatch with column type must error rather than silently corrupt */
+INSERT INTO nested_arrays VALUES (4, ARRAY[1,2,3], ARRAY['x']);
+ERROR:  pg_clickhouse: unexpected PG/CH type pair for column 0
 /* Check UUIDs and IPs */
 \d addr
            Foreign table "binary_inserts_test.addr"
@@ -385,7 +411,7 @@ SELECT clickhouse_raw_query($$
 		-- TEXTOID
 		c16 Nullable(String), c17 Nullable(FixedString(1)),
 		c18 Nullable(Enum('x'=1)), c19 Nullable(Enum16('x'=1)),
-		-- c20 LowCardinality(Nullable(String)),
+		c20 LowCardinality(Nullable(String)),
 		-- DATEOID
 		c21 Nullable(Date), c22 Nullable(Date32),
 		-- TIMESTAMPOID, TIMESTAMPTZOID
@@ -407,14 +433,14 @@ IMPORT FOREIGN SCHEMA binary_inserts_test LIMIT TO (null_vals)
 FROM SERVER binary_inserts_loopback INTO binary_inserts_test;
 INSERT INTO null_vals VALUES(
 	1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-	   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, -- NULL,
+	   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 	   NULL, NULL, NULL, NULL, -- ARRAY[NULL]::int[],
 	   NULL, NULL, NULL
 );
 SELECT * FROM null_vals;
- c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 | c9 | c10 | c11 | c12 | c13 | c14 | c15 | c16 | c17 | c18 | c19 | c21 | c22 | c23 | c24 | c26 | c27 | c28 
-----+----+----+----+----+----+----+----+----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----
-  1 |    |    |    |    |    |    |    |    |     |     |     |     |     |     |     |     |     |     |     |     |     |     |     |     | 
+ c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 | c9 | c10 | c11 | c12 | c13 | c14 | c15 | c16 | c17 | c18 | c19 | c20 | c21 | c22 | c23 | c24 | c26 | c27 | c28 
+----+----+----+----+----+----+----+----+----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----
+  1 |    |    |    |    |    |    |    |    |     |     |     |     |     |     |     |     |     |     |     |     |     |     |     |     |     | 
 (1 row)
 
 -- Test default values.
@@ -464,15 +490,21 @@ INSERT INTO default_vals VALUES(
 	   NULL, NULL, NULL, NULL, ARRAY[NULL]::int[],
 	   NULL, NULL, NULL
 );
-ERROR:  pg_clickhouse: could not append data to column - cannot append NULL to NOT NULL UInt8 column
+ERROR:  pg_clickhouse: cannot append NULL to NOT NULL UInt8 column
 SELECT * FROM default_vals;
  c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 | c9 | c10 | c11 | c12 | c13 | c14 | c15 | c16 | c17 | c18 | c19 | c20 | c21 | c22 | c23 | c24 | c25 | c26 | c27 | c28 
 ----+----+----+----+----+----+----+----+----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----
 (0 rows)
 
--- Test unsupported Nullables.
-INSERT INTO not_nullable VALUES (1, 'x', 'x', NULL);
-ERROR:  pg_clickhouse: could not append data to column - cannot append NULL to NOT NULL LowCardinality(Nullable(String)) column
+-- LowCardinality(Nullable(String)) round-trips NULL and non-NULL.
+INSERT INTO not_nullable VALUES (1, 'x', 'x', NULL), (2, 'x', 'x', 'lc');
+SELECT * FROM not_nullable ORDER BY c1;
+ c1 | c2 | c3 | c4 
+----+----+----+----
+  1 | x  | x  | 
+  2 | x  | x  | lc
+(2 rows)
+
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 SELECT clickhouse_raw_query('DROP DATABASE binary_inserts_test');
  clickhouse_raw_query 
@@ -481,13 +513,14 @@ SELECT clickhouse_raw_query('DROP DATABASE binary_inserts_test');
 (1 row)
 
 DROP SERVER binary_inserts_loopback CASCADE;
-NOTICE:  drop cascades to 12 other objects
+NOTICE:  drop cascades to 13 other objects
 DETAIL:  drop cascades to foreign table addr
 drop cascades to foreign table arrays
 drop cascades to foreign table bytes
 drop cascades to foreign table complex
 drop cascades to foreign table floats
 drop cascades to foreign table ints
+drop cascades to foreign table nested_arrays
 drop cascades to foreign table not_nullable
 drop cascades to foreign table null_ints
 drop cascades to foreign table uints

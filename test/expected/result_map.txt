@@ -13,14 +13,28 @@ aggregates.sql
  Postgres | File
 ----------|-----------------
  16-18    | aggregates.out
- 13-15    | aggregates_1.out
+ 14-15    | aggregates_1.out
+ 13       | aggregates_2.out
 
  ClickHouse | File
 ------------|-----------------
  24.8+      | aggregates.out
- 24.3       | aggregates_2.out
- 23.8       | aggregates_3.out
- 23.3       | aggregates_4.out
+ 24.3       | aggregates_3.out
+ 23.8       | aggregates_4.out
+ 23.3       | aggregates_5.out
+
+array_functions.sql
+-------------------
+
+ Postgres | File
+----------|----------------------
+ 16-18    | array_functions.out
+ 13-15    | array_functions_1.out
+
+ ClickHouse | File
+------------|----------------------
+ 24.3+      | array_functions.out
+ 23         | array_functions_2.out
 
 binary_inserts.sql
 ------------------
@@ -32,7 +46,7 @@ binary_inserts.sql
 
  ClickHouse | File
 ------------|--------------------
- 22-26      | binary_inserts.out
+ 23+        | binary_inserts.out
 
 binary_queries.sql
 ------------------
@@ -47,10 +61,8 @@ binary_queries.sql
  ClickHouse | File
 ------------|----------------------
  26         | binary_queries.out
- 25         | binary_queries_4.out
- 23-24      | binary_queries_5.out
- 23         | binary_queries_6.out
- 22         | binary_queries_7.out
+ 23.8-25    | binary_queries_4.out
+ 23.3       | binary_queries_5.out
 
 deparse_checks.sql
 ------------------
@@ -62,7 +74,7 @@ deparse_checks.sql
 
  ClickHouse | File
 ------------|--------------------
- 22+        | deparse_checks.out
+ 23+        | deparse_checks.out
 
 engines.sql
 -----------
@@ -74,24 +86,25 @@ engines.sql
 
  ClickHouse | File
 ------------|-------------
- 22+        | engines.out
+ 23+        | engines.out
 
 functions.sql
 -------------
 
  Postgres | File
 ----------|---------------
- 14-18    | functions.out
- 13       | functions_1.out
+ 18       | functions.out
+ 14-17    | functions_1.out
+ 13       | functions_2.out
 
  ClickHouse | File
 ------------|-----------------
  25.8+      | functions.out
- 25.3       | functions_2.out
- 24.8       | functions_3.out
- 24.3       | functions_4.out
- 23.8       | functions_5.out
- 23.3       | functions_6.out
+ 25.3       | functions_3.out
+ 24.8       | functions_4.out
+ 24.3       | functions_5.out
+ 23.8       | functions_6.out
+ 23.3       | functions_7.out
 
 http.sql
 --------
@@ -143,7 +156,6 @@ import_schema.sql
  ClickHouse | File
 ------------|---------------------
  23+        | import_schema.out
- 22         | import_schema_2.out
 
 json.sql
 --------
@@ -156,8 +168,11 @@ json.sql
  ClickHouse | File
 ------------|------------
  25.8+      | json.out
- 24.8-25.3  | json_2.out
- 23-24.3    | json_3.out
+ 24.10-25.3 | json_2.out
+ 24.8-24.9  | json_3.out
+ 24.3       | json_4.out
+ 23.8       | json_5.out
+ 23.3       | json_6.out
 
 param.sql
 ---------
@@ -205,7 +220,7 @@ subquery_pushdown.sql
 
  ClickHouse | File
 ------------|-----------------------
- 22+        | subquery_pushdown.out
+ 23+        | subquery_pushdown.out
 
 timezone.sql
 ------------
@@ -229,14 +244,14 @@ where_sub.sql
 
  ClickHouse | File
 ------------|-----------------
- 22+        | where_sub.out
+ 23+        | where_sub.out
 
 window_functions.sql
 --------------------
 
  Postgres | File
 ----------|------------------------
- 18       | window_functions.out
+ 13-18    | window_functions.out
 
  ClickHouse | File
 ------------|----------------------------

@@ -649,12 +649,12 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c8 = 'foo';  -- can't be
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT (CASE WHEN c1 < 10 THEN 1 WHEN c1 < 50 THEN 2 ELSE 3 END) a,
 	sum(length(c2)) FROM ft2 GROUP BY a ORDER BY a;
-                                                                                                                                                                                QUERY PLAN                                                                                                                                                                                 
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                                  QUERY PLAN                                                                                                                                                                                   
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (CASE WHEN (c1 < 10) THEN 1 WHEN (c1 < 50) THEN 2 ELSE 3 END), (sum(length(c2)))
    Relations: Aggregate on (ft2)
-   Remote SQL: SELECT CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END, sum(length(c2)) FROM binary_queries_test.t2 GROUP BY (CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END) ORDER BY CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END ASC NULLS LAST
+   Remote SQL: SELECT CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END, sum(lengthUTF8(c2)) FROM binary_queries_test.t2 GROUP BY (CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END) ORDER BY CASE WHEN (c1 < 10) THEN toInt32(1) WHEN (c1 < 50) THEN toInt32(2) ELSE toInt32(3) END ASC NULLS LAST
 (4 rows)
 
 SELECT (CASE WHEN c1 < 10 THEN 1 WHEN c1 < 50 THEN 2 ELSE 3 END) a,
