@@ -3534,6 +3534,13 @@ SELECT * FROM try_http_ft;
  3499
 (3500 rows)
 
+ALTER SERVER try_http OPTIONS (SET fetch_size '3');
+SELECT count(*), min(c1), max(c1), sum(c1::bigint) FROM try_http_ft;
+ count | min | max  |   sum   
+-------+-----+------+---------
+  3500 |   0 | 3499 | 6123250
+(1 row)
+
 DROP USER MAPPING FOR CURRENT_USER SERVER try_http;
 DROP SERVER try_http CASCADE;
 NOTICE:  drop cascades to foreign table try_http_ft

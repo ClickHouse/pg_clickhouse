@@ -14,6 +14,10 @@ CREATE FOREIGN TABLE try_http_ft (c1 int)
 
 SELECT * FROM try_http_ft;
 
+ALTER SERVER try_http OPTIONS (SET fetch_size '3');
+
+SELECT count(*), min(c1), max(c1), sum(c1::bigint) FROM try_http_ft;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER try_http;
 DROP SERVER try_http CASCADE;
 SELECT clickhouse_raw_query('DROP DATABASE try_test');
