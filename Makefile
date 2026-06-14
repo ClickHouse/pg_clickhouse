@@ -40,7 +40,7 @@ endif
 PG_CFLAGS = -Wno-declaration-after-statement -Wall -Werror $(shell $(CURL_CONFIG) --cflags)
 
 # Clean up generated files.
-EXTRA_CLEAN = sql/$(EXTENSION)--$(EXTVERSION).sql src/include/version.h compile_commands.json test/schedule $(EXTENSION)-$(DISTVERSION).zip
+EXTRA_CLEAN = sql/$(EXTENSION)--$(EXTVERSION).sql src/include/version.h compile_commands.json test/schedule dev/typedefs.list $(EXTENSION)-$(DISTVERSION).zip
 
 # Import PGXS.
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -121,9 +121,12 @@ bake-vars:
 	@echo "revision=$(REVISION)"
 	@echo "pg_versions=$(PG_VERSIONS)"
 
+dev/typedefs.list: $(OBJS) dev/find_typedef
+	@dev/find_typedef $(sort $(dir $(OBJS))) 2>/dev/null > $@
+
 # Format the .c and .h files according to the PostgreSQL indentation
 # standard. Requires `pg_bsd_indent` to be in the path.
-indent: dev/indent.sh
+indent: dev/indent.sh dev/typedefs.list
 	@$<
 
 # Linting.

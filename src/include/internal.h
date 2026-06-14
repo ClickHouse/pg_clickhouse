@@ -9,14 +9,14 @@ typedef struct ch_http_connection_t
 	char	   *dbname;
 	char	   *base_url;
 	long		ssl_version;	/* CURLOPT_SSLVERSION min; DEFAULT means unset */
-}			ch_http_connection_t;
+} ch_http_connection_t;
 
 typedef struct ch_binary_connection_t
 {
 	void	   *client;
 	void	   *options;
 	char	   *error;
-}			ch_binary_connection_t;
+} ch_binary_connection_t;
 
 /*
  * Check whether the given string matches a ClickHouse Cloud host name.

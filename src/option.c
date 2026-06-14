@@ -43,13 +43,13 @@ typedef struct ChFdwOption
 	Oid			optcontext;		/* OID of catalog in which option may appear */
 	bool		is_ch_opt;		/* true if it's used in clickhouseclient */
 	char		dispchar[10];
-}			ChFdwOption;
+} ChFdwOption;
 
 /*
  * Valid options for clickhouse_fdw.
  * Allocated and filled in InitChFdwOptions.
  */
-static ChFdwOption * clickhouse_fdw_options;
+static ChFdwOption *clickhouse_fdw_options;
 
 /*
  * Valid options for clickhouse client.
@@ -72,7 +72,7 @@ static const ChFdwOption ch_options[] =
  * GUC parameters
  */
 static char *ch_session_settings = NULL;
-static kv_list * ch_session_settings_list = NULL;
+static kv_list *ch_session_settings_list = NULL;
 static bool ch_pushdown_regex = true;
 
 /*
@@ -81,8 +81,8 @@ static bool ch_pushdown_regex = true;
 static void InitChFdwOptions(void);
 static bool is_valid_option(const char *keyword, Oid context);
 static bool is_ch_option(const char *keyword);
-static void validate_fetch_size_option(DefElem * def);
-static bool parse_min_tls_version(const char *val, tls_version * out);
+static void validate_fetch_size_option(DefElem *def);
+static bool parse_min_tls_version(const char *val, tls_version *out);
 
 /*
  * Validate the generic options given to a FOREIGN DATA WRAPPER, SERVER,
@@ -177,7 +177,7 @@ static void
 InitChFdwOptions(void)
 {
 	int			num_ch_opts;
-	const		ChFdwOption *lopt;
+	const ChFdwOption *lopt;
 	ChFdwOption *popt;
 
 	/* non-clickhouseclient FDW-specific FDW options */
@@ -253,7 +253,7 @@ InitChFdwOptions(void)
 }
 
 static void
-validate_fetch_size_option(DefElem * def)
+validate_fetch_size_option(DefElem *def)
 {
 	int			fetch_size = pg_strtoint32(defGetString(def));
 
@@ -273,7 +273,7 @@ validate_fetch_size_option(DefElem * def)
  * if the value is unrecognized.
  */
 static bool
-parse_min_tls_version(const char *val, tls_version * out)
+parse_min_tls_version(const char *val, tls_version *out)
 {
 	if (pg_strcasecmp(val, "TLSv1") == 0)
 		*out = CH_TLS_V1_0;
@@ -337,10 +337,10 @@ is_ch_option(const char *keyword)
  * allocated large-enough arrays. Returns number of options found.
  */
 void
-chfdw_extract_options(List * defelems, char **driver, char **host, int *port,
+chfdw_extract_options(List *defelems, char **driver, char **host, int *port,
 					  char **dbname, char **username, char **password,
-					  char **compression, tls_mode * tls,
-					  tls_version * min_tls_version)
+					  char **compression, tls_mode *tls,
+					  tls_version *min_tls_version)
 {
 	ListCell   *lc;
 

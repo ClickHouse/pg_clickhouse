@@ -27,10 +27,10 @@ typedef struct dynbuf
 	uint8_t    *data;
 	size_t		len;
 	size_t		cap;
-}			dynbuf;
+} dynbuf;
 
 static void
-dynbuf_reserve(dynbuf * b, size_t need)
+dynbuf_reserve(dynbuf *b, size_t need)
 {
 	if (need <= b->cap)
 		return;
@@ -45,7 +45,7 @@ dynbuf_reserve(dynbuf * b, size_t need)
 }
 
 static void
-dynbuf_append(dynbuf * b, const void *src, size_t n)
+dynbuf_append(dynbuf *b, const void *src, size_t n)
 {
 	dynbuf_reserve(b, b->len + n);
 	if (src && n)
@@ -54,7 +54,7 @@ dynbuf_append(dynbuf * b, const void *src, size_t n)
 }
 
 static void
-dynbuf_append_zero(dynbuf * b, size_t n)
+dynbuf_append_zero(dynbuf *b, size_t n)
 {
 	dynbuf_reserve(b, b->len + n);
 	memset(b->data + b->len, 0, n);
@@ -62,7 +62,7 @@ dynbuf_append_zero(dynbuf * b, size_t n)
 }
 
 static void
-dynbuf_reset(dynbuf * b)
+dynbuf_reset(dynbuf *b)
 {
 	b->len = 0;
 }
@@ -73,10 +73,10 @@ typedef struct u64buf
 	uint64_t   *data;
 	size_t		len;
 	size_t		cap;
-}			u64buf;
+} u64buf;
 
 static void
-u64buf_push(u64buf * b, uint64_t v)
+u64buf_push(u64buf *b, uint64_t v)
 {
 	if (b->len + 1 > b->cap)
 	{
@@ -92,7 +92,7 @@ u64buf_push(u64buf * b, uint64_t v)
 }
 
 static void
-u64buf_reset(u64buf * b)
+u64buf_reset(u64buf *b)
 {
 	b->len = 0;
 }
@@ -115,7 +115,7 @@ typedef enum
 	IC_ARRAY_NESTED_FIXED,
 	IC_ARRAY_NESTED_STRING,
 	IC_JSON_STRING,
-}			ic_layout;
+} ic_layout;
 
 static inline bool
 ic_layout_array_fixed(ic_layout l)
@@ -131,10 +131,9 @@ ic_layout_array_string(ic_layout l)
 
 typedef struct ic_col
 {
-	const		chc_type *t;	/* full column type (incl. Nullable wrapper) */
-	const		chc_type *inner_t;	/* possibly unwrapped Nullable */
-	const		chc_type *elem_t;	/* Array element type, with Nullable
-									 * unwrapped */
+	const chc_type *t;			/* full column type (incl. Nullable wrapper) */
+	const chc_type *inner_t;	/* possibly unwrapped Nullable */
+	const chc_type *elem_t;		/* Array element type, with Nullable unwrapped */
 	ic_layout	layout;
 	bool		is_nullable;
 	int			array_depth;	/* current open begin/end nesting */
@@ -160,7 +159,7 @@ typedef struct ic_col
 	 * initial_block's chc_type tree, unwrapping Nullable + outer LC.
 	 */
 	ch_binary_column_info info;
-}			ic_col;
+} ic_col;
 
 struct ch_binary_insert_handle
 {
@@ -178,7 +177,7 @@ struct ch_binary_insert_handle
 };
 
 static void
-classify_column(ic_col * ic, const chc_type * t)
+classify_column(ic_col *ic, const chc_type *t)
 {
 	ic->t = t;
 	if (chc_type_kind(t) == CHC_NULLABLE)
@@ -192,9 +191,9 @@ classify_column(ic_col * ic, const chc_type * t)
 
 	if (k == CHC_LOW_CARDINALITY)
 	{
-		const		chc_type *inner = chc_type_child(t, 0);
+		const chc_type *inner = chc_type_child(t, 0);
 		bool		inner_nullable = chc_type_kind(inner) == CHC_NULLABLE;
-		const		chc_type *base = inner_nullable ? chc_type_child(inner, 0) : inner;
+		const chc_type *base = inner_nullable ? chc_type_child(inner, 0) : inner;
 
 		if (chc_type_kind(base) != CHC_STRING)
 		{
@@ -220,7 +219,7 @@ classify_column(ic_col * ic, const chc_type * t)
 		 * Walk through nested Array layers to the leaf element type so
 		 * Array(Array(...)) maps to a single ic_col with ndim levels.
 		 */
-		const		chc_type *base = t;
+		const chc_type *base = t;
 		int			ndim = 0;
 
 		while (chc_type_kind(base) == CHC_ARRAY)
@@ -293,7 +292,7 @@ classify_column(ic_col * ic, const chc_type * t)
 }
 
 static void
-recv_initial_block(struct ch_binary_state *s, ch_binary_insert_handle * h)
+recv_initial_block(struct ch_binary_state *s, ch_binary_insert_handle *h)
 {
 	for (;;)
 	{
@@ -364,8 +363,8 @@ drain_aborted_insert(struct ch_binary_state *s)
 }
 
 ch_binary_insert_handle *
-ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
-					   ch_binary_column_info * *out_cols, size_t * out_n)
+ch_binary_begin_insert(ch_binary_connection_t *conn, const ch_query *query,
+					   ch_binary_column_info **out_cols, size_t *out_n)
 {
 	struct ch_binary_state *s = conn_state(conn);
 
@@ -411,7 +410,7 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 			.important = true,
 		};
 		chc_query_opts insert_opts = {};
-		const		chc_query_opts *opts_ptr = NULL;
+		const chc_query_opts *opts_ptr = NULL;
 
 		if (server_supports_json_as_string(s->client))
 		{
@@ -445,7 +444,7 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 		for (size_t i = 0; i < nc; i++)
 		{
 			ic_col	   *c = &h->cols[i];
-			const		chc_type *ct = chc_block_column_type(h->initial_block, i);
+			const chc_type *ct = chc_block_column_type(h->initial_block, i);
 			size_t		nlen;
 			const char *nm;
 
@@ -458,7 +457,7 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
 			 * inner_t already unwrapped Nullable; unwrap LowCardinality and
 			 * perhaps its inner Nullable to expose innermost type.
 			 */
-			const		chc_type *vt = c->inner_t;
+			const chc_type *vt = c->inner_t;
 
 			if (chc_type_kind(vt) == CHC_LOW_CARDINALITY)
 			{
@@ -501,7 +500,7 @@ ch_binary_begin_insert(ch_binary_connection_t * conn, const ch_query * query,
  * NULL-into-NOT-NULL.
  */
 static ic_col *
-resolve_col(ch_binary_insert_handle * h, size_t col_idx, bool isnull)
+resolve_col(ch_binary_insert_handle *h, size_t col_idx, bool isnull)
 {
 	ic_col	   *c = h->array_active ? &h->cols[h->array_col_idx] : &h->cols[col_idx];
 
@@ -525,19 +524,19 @@ resolve_col(ch_binary_insert_handle * h, size_t col_idx, bool isnull)
 }
 
 static void
-append_fixed_bytes(ic_col * c, const void *p, size_t n)
+append_fixed_bytes(ic_col *c, const void *p, size_t n)
 {
 	dynbuf_append(&c->body, p, n);
 }
 
 static void
-append_fixed_zero(ic_col * c, size_t n)
+append_fixed_zero(ic_col *c, size_t n)
 {
 	dynbuf_append_zero(&c->body, n);
 }
 
 static void
-append_string_row(ic_col * c, const void *p, size_t n)
+append_string_row(ic_col *c, const void *p, size_t n)
 {
 	if (n)
 		dynbuf_append(&c->body, p, n);
@@ -550,7 +549,7 @@ append_string_row(ic_col * c, const void *p, size_t n)
  * Decimal32/64/128/256), with `scale` fractional digits folded into the value.
  */
 static void
-decimal_text_to_bytes(const char *s, uint32_t scale, size_t width, uint8_t * out)
+decimal_text_to_bytes(const char *s, uint32_t scale, size_t width, uint8_t *out)
 {
 	const char *input = s;
 	bool		neg = false;
@@ -620,7 +619,7 @@ decimal_text_to_bytes(const char *s, uint32_t scale, size_t width, uint8_t * out
 }
 
 static void
-append_int_kind(ic_col * c, int64_t val)
+append_int_kind(ic_col *c, int64_t val)
 {
 	chc_kind	k = ic_layout_array_fixed(c->layout)
 		? chc_type_kind(c->elem_t)
@@ -667,7 +666,7 @@ append_int_kind(ic_col * c, int64_t val)
 }
 
 void
-ch_binary_append_int(ch_binary_insert_handle * h, size_t col, int64_t val, bool isnull)
+ch_binary_append_int(ch_binary_insert_handle *h, size_t col, int64_t val, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
 	ic_col	   *c = resolve_col(h, col, isnull);
@@ -680,19 +679,19 @@ ch_binary_append_int(ch_binary_insert_handle * h, size_t col, int64_t val, bool 
 }
 
 void
-ch_binary_append_uint(ch_binary_insert_handle * h, size_t col, uint64_t val, bool isnull)
+ch_binary_append_uint(ch_binary_insert_handle *h, size_t col, uint64_t val, bool isnull)
 {
 	ch_binary_append_int(h, col, (int64_t) val, isnull);
 }
 
 void
-ch_binary_append_bool(ch_binary_insert_handle * h, size_t col, bool val, bool isnull)
+ch_binary_append_bool(ch_binary_insert_handle *h, size_t col, bool val, bool isnull)
 {
 	ch_binary_append_int(h, col, val, isnull);
 }
 
 void
-ch_binary_append_double(ch_binary_insert_handle * h, size_t col, double val, bool isnull)
+ch_binary_append_double(ch_binary_insert_handle *h, size_t col, double val, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
 	ic_col	   *c = resolve_col(h, col, isnull);
@@ -705,7 +704,7 @@ ch_binary_append_double(ch_binary_insert_handle * h, size_t col, double val, boo
 }
 
 void
-ch_binary_append_float(ch_binary_insert_handle * h, size_t col, float val, bool isnull)
+ch_binary_append_float(ch_binary_insert_handle *h, size_t col, float val, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
 	ic_col	   *c = resolve_col(h, col, isnull);
@@ -718,7 +717,7 @@ ch_binary_append_float(ch_binary_insert_handle * h, size_t col, float val, bool 
 }
 
 void
-ch_binary_append_bytes(ch_binary_insert_handle * h, size_t col, const void *p,
+ch_binary_append_bytes(ch_binary_insert_handle *h, size_t col, const void *p,
 					   size_t n, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
@@ -766,7 +765,7 @@ ch_binary_append_bytes(ch_binary_insert_handle * h, size_t col, const void *p,
 			MemoryContextSwitchTo(old);
 			return;
 		}
-		const		chc_type *et = ic_layout_array_string(c->layout) ? c->elem_t : c->inner_t;
+		const chc_type *et = ic_layout_array_string(c->layout) ? c->elem_t : c->inner_t;
 		size_t		nenum = chc_type_enum_count(et);
 		int64_t		val = 0;
 		bool		found = false;
@@ -820,12 +819,12 @@ ch_binary_append_bytes(ch_binary_insert_handle * h, size_t col, const void *p,
 }
 
 void
-ch_binary_append_decimal(ch_binary_insert_handle * h, size_t col,
+ch_binary_append_decimal(ch_binary_insert_handle *h, size_t col,
 						 const char *digits, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
 	ic_col	   *c = resolve_col(h, col, isnull);
-	const		chc_type *t = ic_layout_array_fixed(c->layout) ? c->elem_t : c->inner_t;
+	const chc_type *t = ic_layout_array_fixed(c->layout) ? c->elem_t : c->inner_t;
 	chc_kind	k = chc_type_kind(t);
 	size_t		w;
 
@@ -861,7 +860,7 @@ ch_binary_append_decimal(ch_binary_insert_handle * h, size_t col,
 }
 
 void
-ch_binary_append_uuid(ch_binary_insert_handle * h, size_t col,
+ch_binary_append_uuid(ch_binary_insert_handle *h, size_t col,
 					  const uint8_t bytes[16], bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
@@ -890,12 +889,12 @@ ch_binary_append_uuid(ch_binary_insert_handle * h, size_t col,
  * For IPv6 CH wire matches PG byte order.
  */
 void
-ch_binary_append_inet(ch_binary_insert_handle * h, size_t col,
-					  const uint8_t * addr_be, size_t addrlen, bool isnull)
+ch_binary_append_inet(ch_binary_insert_handle *h, size_t col,
+					  const uint8_t *addr_be, size_t addrlen, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
 	ic_col	   *c = resolve_col(h, col, isnull);
-	const		chc_type *t = ic_layout_array_fixed(c->layout) ? c->elem_t : c->inner_t;
+	const chc_type *t = ic_layout_array_fixed(c->layout) ? c->elem_t : c->inner_t;
 	chc_kind	k = chc_type_kind(t);
 
 	if (k == CHC_IPV4 && addrlen == 4)
@@ -929,12 +928,12 @@ ch_binary_append_inet(ch_binary_insert_handle * h, size_t col,
 }
 
 void
-ch_binary_append_date_seconds(ch_binary_insert_handle * h, size_t col,
+ch_binary_append_date_seconds(ch_binary_insert_handle *h, size_t col,
 							  int64_t seconds, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
 	ic_col	   *c = resolve_col(h, col, isnull);
-	const		chc_type *t = ic_layout_array_fixed(c->layout) ? c->elem_t : c->inner_t;
+	const chc_type *t = ic_layout_array_fixed(c->layout) ? c->elem_t : c->inner_t;
 	chc_kind	k = chc_type_kind(t);
 
 	if (k == CHC_DATE)
@@ -957,7 +956,7 @@ ch_binary_append_date_seconds(ch_binary_insert_handle * h, size_t col,
 }
 
 void
-ch_binary_append_datetime_seconds(ch_binary_insert_handle * h, size_t col,
+ch_binary_append_datetime_seconds(ch_binary_insert_handle *h, size_t col,
 								  int64_t seconds, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
@@ -969,7 +968,7 @@ ch_binary_append_datetime_seconds(ch_binary_insert_handle * h, size_t col,
 }
 
 void
-ch_binary_append_datetime64_raw(ch_binary_insert_handle * h, size_t col,
+ch_binary_append_datetime64_raw(ch_binary_insert_handle *h, size_t col,
 								int64_t raw, bool isnull)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
@@ -981,7 +980,7 @@ ch_binary_append_datetime64_raw(ch_binary_insert_handle * h, size_t col,
 }
 
 void
-ch_binary_array_begin(ch_binary_insert_handle * h, size_t col)
+ch_binary_array_begin(ch_binary_insert_handle *h, size_t col)
 {
 	/*
 	 * Nested arrays recurse via append_one with col=0, so once an array is
@@ -1021,7 +1020,7 @@ ch_binary_array_begin(ch_binary_insert_handle * h, size_t col)
 }
 
 void
-ch_binary_array_end(ch_binary_insert_handle * h)
+ch_binary_array_end(ch_binary_insert_handle *h)
 {
 	if (!h->array_active)
 		return;
@@ -1061,17 +1060,17 @@ ch_binary_array_end(ch_binary_insert_handle * h)
 }
 
 bool
-ch_binary_array_active(const ch_binary_insert_handle * h)
+ch_binary_array_active(const ch_binary_insert_handle *h)
 {
 	return h && h->array_active;
 }
 
 chc_kind
-ch_binary_column_kind(const ch_binary_insert_handle * h, size_t col)
+ch_binary_column_kind(const ch_binary_insert_handle *h, size_t col)
 {
 	if (col >= h->ncols)
 		return CHC_VOID;
-	const		ic_col *c = &h->cols[col];
+	const ic_col *c = &h->cols[col];
 
 	if (h->array_active)
 	{
@@ -1094,7 +1093,7 @@ ch_binary_column_kind(const ch_binary_insert_handle * h, size_t col)
 }
 
 uint32_t
-ch_binary_column_datetime64_precision(const ch_binary_insert_handle * h, size_t col)
+ch_binary_column_datetime64_precision(const ch_binary_insert_handle *h, size_t col)
 {
 	if (col >= h->ncols)
 		return 0;
@@ -1104,16 +1103,16 @@ ch_binary_column_datetime64_precision(const ch_binary_insert_handle * h, size_t 
 /* Dedup map for LowCardinality dict */
 typedef struct lcd_key
 {
-	const		uint8_t *bytes;
+	const uint8_t *bytes;
 	size_t		len;
-}			lcd_key;
+} lcd_key;
 
 typedef struct lcd_entry
 {
 	uint32		status;
 	lcd_key		key;
 	uint32		idx;
-}			lcd_entry;
+} lcd_entry;
 
 #define SH_PREFIX				lcd
 #define SH_ELEMENT_TYPE			lcd_entry
@@ -1129,10 +1128,10 @@ typedef struct lcd_entry
 
 /* Build LC dict (collect unique strings in insertion order) */
 static void
-build_lc_dict(ic_col * c, bool nullable,
-			  uint64_t * *out_dict_offs, uint8_t * *out_dict_data,
-			  size_t * out_dict_n, void **out_keys, int *out_key_size,
-			  size_t * out_n_rows)
+build_lc_dict(ic_col *c, bool nullable,
+			  uint64_t **out_dict_offs, uint8_t **out_dict_data,
+			  size_t *out_dict_n, void **out_keys, int *out_key_size,
+			  size_t *out_n_rows)
 {
 	size_t		n_rows = c->body_offs.len;
 	uint64_t   *dict_offs = NULL;
@@ -1160,7 +1159,7 @@ build_lc_dict(ic_col * c, bool nullable,
 		uint64_t	start = i == 0 ? 0 : c->body_offs.data[i - 1];
 		uint64_t	end = c->body_offs.data[i];
 		size_t		len = (size_t) (end - start);
-		const		uint8_t *bytes = c->body.data + start;
+		const uint8_t *bytes = c->body.data + start;
 		lcd_key		k = {bytes, len};
 		lcd_entry  *entry;
 		bool		found;
@@ -1219,7 +1218,7 @@ build_lc_dict(ic_col * c, bool nullable,
 }
 
 void
-ch_binary_flush_block(ch_binary_insert_handle * h)
+ch_binary_flush_block(ch_binary_insert_handle *h)
 {
 	MemoryContext old = MemoryContextSwitchTo(h->cxt);
 	chc_err		err = {};
@@ -1325,7 +1324,7 @@ ch_binary_flush_block(ch_binary_insert_handle * h)
 			case IC_ARRAY_NESTED_STRING:
 				{
 					size_t		n_rows = c->arr_offs.len;
-					const		uint64_t **lvl_offsets = palloc((size_t) c->ndim * sizeof(*lvl_offsets));
+					const uint64_t **lvl_offsets = palloc((size_t) c->ndim * sizeof(*lvl_offsets));
 					size_t	   *lvl_lens = palloc((size_t) c->ndim * sizeof(*lvl_lens));
 
 					lvl_offsets[0] = c->arr_offs.data;
@@ -1388,7 +1387,7 @@ ch_binary_flush_block(ch_binary_insert_handle * h)
  * ch_binary_release_insert deletes it.
  */
 void
-ch_binary_finalize_insert(ch_binary_insert_handle * h)
+ch_binary_finalize_insert(ch_binary_insert_handle *h)
 {
 	if (!h || h->finalized)
 		return;
@@ -1478,7 +1477,7 @@ ch_binary_finalize_insert(ch_binary_insert_handle * h)
  * next use.
  */
 void
-ch_binary_release_insert(ch_binary_insert_handle * h)
+ch_binary_release_insert(ch_binary_insert_handle *h)
 {
 	if (!h)
 		return;

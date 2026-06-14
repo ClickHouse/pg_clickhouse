@@ -52,7 +52,7 @@ pg_chc_pfree(void *ud pg_attribute_unused(), void *p, size_t bytes pg_attribute_
 		pfree(p);
 }
 
-const		chc_alloc pg_chc_alloc = {
+const chc_alloc pg_chc_alloc = {
 	.ud = NULL,
 	.alloc = pg_chc_palloc,
 	.realloc = pg_chc_repalloc,
@@ -60,7 +60,7 @@ const		chc_alloc pg_chc_alloc = {
 };
 
 /* power-of-10 lookup; CH bounds DateTime64 / Decimal scale to [0, 9] */
-const		int64_t pow10i[10] = {
+const int64_t pow10i[10] = {
 	1, 10, 100, 1000, 10000, 100000, 1000000,
 	10000000, 100000000, 1000000000
 };
@@ -71,9 +71,9 @@ const		int64_t pow10i[10] = {
  * fail the query, so gate.
  */
 bool
-server_supports_json_as_string(const chc_client * c)
+server_supports_json_as_string(const chc_client *c)
 {
-	const		chc_server_info *info = chc_client_server_info(c);
+	const chc_server_info *info = chc_client_server_info(c);
 
 	if (!info)
 		return false;
@@ -85,7 +85,7 @@ server_supports_json_as_string(const chc_client * c)
 }
 
 void
-raise_chc(const chc_err * err, int sqlstate, const char *prefix)
+raise_chc(const chc_err *err, int sqlstate, const char *prefix)
 {
 	const char *m = (err && err->msg[0]) ? err->msg : "unknown error";
 

@@ -12,22 +12,22 @@ typedef struct ch_http_connection_t ch_http_connection_t;
 typedef struct HttpStream HttpStream;
 
  /* lifecycle */
-HttpStream *ch_http_stream_begin(ch_http_connection_t * conn,
-								 const ch_query * query,
+HttpStream *ch_http_stream_begin(ch_http_connection_t *conn,
+								 const ch_query *query,
 								 int32 fetch_size);
-int			ch_http_stream_pump(HttpStream * stream);
-void		ch_http_stream_end(HttpStream * stream);
+int			ch_http_stream_pump(HttpStream *stream);
+void		ch_http_stream_end(HttpStream *stream);
 
  /* accessors — let pglink.c read stream state without seeing the struct */
-char	   *ch_http_stream_buffer(HttpStream * stream);
-size_t		ch_http_stream_available(HttpStream * stream);
-void		ch_http_stream_advance(HttpStream * stream, size_t n);
-bool		ch_http_stream_transfer_done(HttpStream * stream);
-long		ch_http_stream_status(HttpStream * stream);
-const char *ch_http_stream_query_id(HttpStream * stream);
-const char *ch_http_stream_error(HttpStream * stream);
-double		ch_http_stream_request_time(HttpStream * stream);
-double		ch_http_stream_total_time(HttpStream * stream);
+char	   *ch_http_stream_buffer(HttpStream *stream);
+size_t		ch_http_stream_available(HttpStream *stream);
+void		ch_http_stream_advance(HttpStream *stream, size_t n);
+bool		ch_http_stream_transfer_done(HttpStream *stream);
+long		ch_http_stream_status(HttpStream *stream);
+const char *ch_http_stream_query_id(HttpStream *stream);
+const char *ch_http_stream_error(HttpStream *stream);
+double		ch_http_stream_request_time(HttpStream *stream);
+double		ch_http_stream_total_time(HttpStream *stream);
 
 /*
  * Transfer ownership of the response body to the caller. On return, *out_data
@@ -36,7 +36,7 @@ double		ch_http_stream_total_time(HttpStream * stream);
  * itself is unchanged otherwise and should still be released with
  * ch_http_stream_end().
  */
-void		ch_http_stream_take_body(HttpStream * stream,
-									 char **out_data, size_t * out_size);
+void		ch_http_stream_take_body(HttpStream *stream,
+									 char **out_data, size_t *out_size);
 
 #endif							/* CLICKHOUSE_HTTP_STREAMING_H */

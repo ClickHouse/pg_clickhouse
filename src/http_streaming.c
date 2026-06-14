@@ -69,10 +69,10 @@ struct HttpStream
 };
 
 /* Forward declarations of static helpers */
-static void setup_curl(HttpStream * stream, const ch_query * query);
-static void capture_transfer_info(HttpStream * stream);
-static void compact_buffer(HttpStream * stream);
-static size_t find_batch_end(const HttpStream * stream);
+static void setup_curl(HttpStream *stream, const ch_query *query);
+static void capture_transfer_info(HttpStream *stream);
+static void compact_buffer(HttpStream *stream);
+static size_t find_batch_end(const HttpStream *stream);
 static size_t write_callback(void *contents, size_t size, size_t nmemb,
 							 void *userp);
 
@@ -82,7 +82,7 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb,
  * ----------------------------------------------------------------
  */
 static void
-setup_curl(HttpStream * stream, const ch_query * query)
+setup_curl(HttpStream *stream, const ch_query *query)
 {
 	CURLU	   *cu = curl_url();
 	char		temp_buf[512];
@@ -231,7 +231,7 @@ write_callback(void *contents, size_t size, size_t nmemb, void *userp)
  * ----------------------------------------------------------------
  */
 static void
-capture_transfer_info(HttpStream * stream)
+capture_transfer_info(HttpStream *stream)
 {
 	curl_easy_getinfo(stream->curl, CURLINFO_RESPONSE_CODE,
 					  &stream->http_status);
@@ -250,7 +250,7 @@ capture_transfer_info(HttpStream * stream)
  * ----------------------------------------------------------------
  */
 static size_t
-find_batch_end(const HttpStream * stream)
+find_batch_end(const HttpStream *stream)
 {
 	const char *base = stream->buf;
 	const char *found;
@@ -284,7 +284,7 @@ find_batch_end(const HttpStream * stream)
  * ----------------------------------------------------------------
  */
 static void
-compact_buffer(HttpStream * stream)
+compact_buffer(HttpStream *stream)
 {
 	if (stream->parse_pos > 0)
 	{
@@ -304,7 +304,7 @@ compact_buffer(HttpStream * stream)
  * ----------------------------------------------------------------
  */
 int
-ch_http_stream_pump(HttpStream * stream)
+ch_http_stream_pump(HttpStream *stream)
 {
 	int			running_handles;
 	CURLMcode	mc;
@@ -392,7 +392,7 @@ ch_http_stream_pump(HttpStream * stream)
  * Returns NULL on failure.
  */
 HttpStream *
-ch_http_stream_begin(ch_http_connection_t * conn, const ch_query * query,
+ch_http_stream_begin(ch_http_connection_t *conn, const ch_query *query,
 					 int32 fetch_size)
 {
 	HttpStream *stream;
@@ -447,7 +447,7 @@ fail:
  * ch_http_stream_end — clean up all owned resources.
  */
 void
-ch_http_stream_end(HttpStream * stream)
+ch_http_stream_end(HttpStream *stream)
 {
 	if (!stream)
 		return;
@@ -481,13 +481,13 @@ ch_http_stream_end(HttpStream * stream)
  * ----------------------------------------------------------------
  */
 char	   *
-ch_http_stream_buffer(HttpStream * stream)
+ch_http_stream_buffer(HttpStream *stream)
 {
 	return stream->buf + stream->parse_pos;
 }
 
 size_t
-ch_http_stream_available(HttpStream * stream)
+ch_http_stream_available(HttpStream *stream)
 {
 	return stream->batch_end > stream->parse_pos
 		? stream->batch_end - stream->parse_pos
@@ -495,7 +495,7 @@ ch_http_stream_available(HttpStream * stream)
 }
 
 void
-ch_http_stream_advance(HttpStream * stream, size_t n)
+ch_http_stream_advance(HttpStream *stream, size_t n)
 {
 	stream->parse_pos += n;
 	if (stream->parse_pos > stream->batch_end)
@@ -503,38 +503,38 @@ ch_http_stream_advance(HttpStream * stream, size_t n)
 }
 
 bool
-ch_http_stream_transfer_done(HttpStream * stream)
+ch_http_stream_transfer_done(HttpStream *stream)
 {
 	return stream->transfer_done
 		&& (stream->write_pos <= stream->parse_pos);
 }
 
 long
-ch_http_stream_status(HttpStream * stream)
+ch_http_stream_status(HttpStream *stream)
 {
 	return stream->http_status;
 }
 
 const char *
-ch_http_stream_query_id(HttpStream * stream)
+ch_http_stream_query_id(HttpStream *stream)
 {
 	return stream->query_id;
 }
 
 const char *
-ch_http_stream_error(HttpStream * stream)
+ch_http_stream_error(HttpStream *stream)
 {
 	return stream->error_msg;
 }
 
 double
-ch_http_stream_request_time(HttpStream * stream)
+ch_http_stream_request_time(HttpStream *stream)
 {
 	return stream->pretransfer_time * 1000;
 }
 
 double
-ch_http_stream_total_time(HttpStream * stream)
+ch_http_stream_total_time(HttpStream *stream)
 {
 	return stream->total_time * 1000;
 }
@@ -551,7 +551,7 @@ ch_http_stream_total_time(HttpStream * stream)
  * itself should still be released with ch_http_stream_end().
  */
 void
-ch_http_stream_take_body(HttpStream * stream, char **out_data, size_t * out_size)
+ch_http_stream_take_body(HttpStream *stream, char **out_data, size_t *out_size)
 {
 	size_t		avail;
 

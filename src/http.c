@@ -74,7 +74,7 @@ curl_min_tls_version(tls_version v)
 }
 
 ch_http_connection_t *
-ch_http_connection(ch_connection_details * details)
+ch_http_connection(ch_connection_details *details)
 {
 	int			n;
 	char	   *connstring = NULL;
@@ -193,7 +193,7 @@ cleanup:
  * to the caller as a ch_http_response_t.
  */
 ch_http_response_t *
-ch_http_simple_query(ch_http_connection_t * conn, const ch_query * query)
+ch_http_simple_query(ch_http_connection_t *conn, const ch_query *query)
 {
 	HttpStream *stream;
 	ch_http_response_t *resp;
@@ -223,7 +223,7 @@ ch_http_simple_query(ch_http_connection_t * conn, const ch_query * query)
 }
 
 void
-ch_http_close(ch_http_connection_t * conn)
+ch_http_close(ch_http_connection_t *conn)
 {
 	free(conn->base_url);
 	if (conn->dbname)
@@ -241,7 +241,7 @@ ch_http_last_error(void)
 }
 
 void
-ch_http_response_free(ch_http_response_t * resp)
+ch_http_response_free(ch_http_response_t *resp)
 {
 	if (resp->data)
 		free(resp->data);

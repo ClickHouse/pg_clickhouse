@@ -35,7 +35,7 @@
  * constructing the TupleDesc for INSERT...VALUES.
  */
 static Oid
-ch_kind_to_pg_oid_for_insert(const chc_type * type, const char *colname)
+ch_kind_to_pg_oid_for_insert(const chc_type *type, const char *colname)
 {
 	switch (chc_type_kind(type))
 	{
@@ -86,7 +86,7 @@ ch_kind_to_pg_oid_for_insert(const chc_type * type, const char *colname)
 				 * postgres uses one array type per element type regardless of
 				 * nesting, so unwrap nested Array layers before looking up.
 				 */
-				const		chc_type *leaf = type;
+				const chc_type *leaf = type;
 				Oid			item_type;
 				Oid			array_type;
 
@@ -118,8 +118,8 @@ ch_kind_to_pg_oid_for_insert(const chc_type * type, const char *colname)
 }
 
 void
-ch_binary_prepare_insert(void *conn, const ch_query * query,
-						 ch_binary_insert_state * state)
+ch_binary_prepare_insert(void *conn, const ch_query *query,
+						 ch_binary_insert_state *state)
 {
 	ch_binary_column_info *cols = NULL;
 	size_t		n = 0;
@@ -163,7 +163,7 @@ ch_binary_prepare_insert(void *conn, const ch_query * query,
  * current column, dispatching on (PG Oid, CH kind). ereports on mismatch.
  */
 static void
-append_one(ch_binary_insert_handle * h, size_t colidx,
+append_one(ch_binary_insert_handle *h, size_t colidx,
 		   chc_kind kind, Datum val, Oid valtype, bool isnull)
 {
 	switch (valtype)
@@ -341,7 +341,7 @@ append_one(ch_binary_insert_handle * h, size_t colidx,
 			}
 		case INETOID:
 			{
-				const		uint8_t *addr = NULL;
+				const uint8_t *addr = NULL;
 				size_t		addrlen = 0;
 
 				if (kind != CHC_IPV4 && kind != CHC_IPV6)
@@ -397,7 +397,7 @@ type_mismatch:
 }
 
 void
-ch_binary_column_append_data(ch_binary_insert_state * state, size_t colidx)
+ch_binary_column_append_data(ch_binary_insert_state *state, size_t colidx)
 {
 	Datum		val = state->values[colidx];
 	Oid			valtype = TupleDescAttr(state->outdesc, colidx)->atttypid;
@@ -408,7 +408,7 @@ ch_binary_column_append_data(ch_binary_insert_state * state, size_t colidx)
 }
 
 void
-ch_binary_insert_columns(ch_binary_insert_state * state)
+ch_binary_insert_columns(ch_binary_insert_state *state)
 {
 	ch_binary_flush_block(state->insert_block);
 }

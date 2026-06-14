@@ -25,7 +25,7 @@ typedef struct ch_http_response_t
 	char		query_id[CH_HTTP_QUERY_ID_LEN];
 	double		pretransfer_time;
 	double		total_time;
-}			ch_http_response_t;
+} ch_http_response_t;
 
 typedef enum
 {
@@ -43,7 +43,7 @@ typedef struct
 	bool		done;
 	bool		is_null;		/* set when the parser saw the wire NULL
 								 * marker `\N` for the field just read */
-}			ch_http_read_state;
+} ch_http_read_state;
 
 typedef struct
 {
@@ -52,20 +52,20 @@ typedef struct
 	List	   *target_attrs;	/* list of target attribute numbers */
 	int			p_nums;			/* number of parameters to transmit */
 	ch_http_connection_t *conn;
-}			ch_http_insert_state;
+} ch_http_insert_state;
 
 void		ch_http_init(int verbose, uint32_t query_id_prefix);
 void		ch_http_set_progress_func(void *progressfunc);
 void	   *ch_http_get_progress_func(void);
 long		ch_http_get_verbose(void);
-ch_http_connection_t *ch_http_connection(ch_connection_details * details);
-void		ch_http_close(ch_http_connection_t * conn);
-ch_http_response_t *ch_http_simple_query(ch_http_connection_t * conn, const ch_query * query);
+ch_http_connection_t *ch_http_connection(ch_connection_details *details);
+void		ch_http_close(ch_http_connection_t *conn);
+ch_http_response_t *ch_http_simple_query(ch_http_connection_t *conn, const ch_query *query);
 char	   *ch_http_last_error(void);
 
 /* read */
-void		ch_http_read_state_init(ch_http_read_state * state, char *data, size_t datalen);
-int			ch_http_read_next(ch_http_read_state * state, bool is_array);
-void		ch_http_response_free(ch_http_response_t * resp);
+void		ch_http_read_state_init(ch_http_read_state *state, char *data, size_t datalen);
+int			ch_http_read_next(ch_http_read_state *state, bool is_array);
+void		ch_http_response_free(ch_http_response_t *resp);
 
 #endif							/* CLICKHOUSE_HTTP_H */

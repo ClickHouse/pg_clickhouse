@@ -8,9 +8,9 @@
 #include <http.h>
 #include <internal.h>
 
-static void ch_http_read_array_string_literal(ch_http_read_state * state);
-static void ch_http_read_array(ch_http_read_state * state);
-static int	ch_http_read_eof(ch_http_read_state * state);
+static void ch_http_read_array_string_literal(ch_http_read_state *state);
+static void ch_http_read_array(ch_http_read_state *state);
+static int	ch_http_read_eof(ch_http_read_state *state);
 static void ch_http_parse_error(const char *msg);
 
 /*
@@ -19,7 +19,7 @@ static void ch_http_parse_error(const char *msg);
  * '\0' checks.
  */
 inline static int
-ch_http_read_eof(ch_http_read_state * state)
+ch_http_read_eof(ch_http_read_state *state)
 {
 	state->done = true;
 	return CH_EOF;
@@ -34,7 +34,7 @@ ch_http_parse_error(const char *msg)
 }
 
 void
-ch_http_read_state_init(ch_http_read_state * state, char *data, size_t datalen)
+ch_http_read_state_init(ch_http_read_state *state, char *data, size_t datalen)
 {
 	state->data = datalen > 0 ? data : NULL;
 	state->datalen = datalen;
@@ -60,7 +60,7 @@ ch_http_read_state_init(ch_http_read_state * state, char *data, size_t datalen)
  * makes the call.
  */
 int
-ch_http_read_next(ch_http_read_state * state, bool is_array)
+ch_http_read_next(ch_http_read_state *state, bool is_array)
 {
 	char	   *data = state->data;
 
@@ -181,7 +181,7 @@ ch_http_read_next(ch_http_read_state * state, bool is_array)
  * https://www.postgresql.org/docs/current/arrays.html#ARRAYS-IO
  */
 void
-ch_http_read_array_string_literal(ch_http_read_state * state)
+ch_http_read_array_string_literal(ch_http_read_state *state)
 {
 	/* Postgres array string is double-quoted. */
 	appendStringInfoChar(&state->val, '"');
@@ -271,7 +271,7 @@ ch_http_read_array_string_literal(ch_http_read_state * state)
  * https://www.postgresql.org/docs/current/arrays.html#ARRAYS-IO
  */
 void
-ch_http_read_array(ch_http_read_state * state)
+ch_http_read_array(ch_http_read_state *state)
 {
 	size_t		balance = 1;
 

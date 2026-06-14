@@ -136,7 +136,7 @@ typedef struct ChFdwScanState
 
 	int32		fetch_size;		/* approximate batch size in bytes */
 	bool		is_streaming;	/* true when using HTTP streaming */
-}			ChFdwScanState;
+} ChFdwScanState;
 
 /*
  * Execution state of a foreign insert.
@@ -155,7 +155,7 @@ typedef struct CHFdwModifyState
 
 	/* working memory context */
 	MemoryContext temp_cxt;		/* context for per-tuple temporary data */
-}			CHFdwModifyState;
+} CHFdwModifyState;
 
 /*
  * This enum describes what's kept in the fdw_private list for a ForeignPath.
@@ -181,7 +181,7 @@ typedef struct
 	double		limit_tuples;
 	int64		count_est;
 	int64		offset_est;
-}			ChFdwPathExtraData;
+} ChFdwPathExtraData;
 
 
 /*
@@ -198,104 +198,104 @@ static double time_used = 0;
 /*
  * FDW callback routines
  */
-static void clickhouseGetForeignRelSize(PlannerInfo * root,
-										RelOptInfo * baserel,
+static void clickhouseGetForeignRelSize(PlannerInfo *root,
+										RelOptInfo *baserel,
 										Oid foreigntableid);
-static ForeignScan * clickhouseGetForeignPlan(PlannerInfo * root,
-											  RelOptInfo * foreignrel,
-											  Oid foreigntableid,
-											  ForeignPath * best_path,
-											  List * tlist,
-											  List * scan_clauses,
-											  Plan * outer_plan);
+static ForeignScan *clickhouseGetForeignPlan(PlannerInfo *root,
+											 RelOptInfo *foreignrel,
+											 Oid foreigntableid,
+											 ForeignPath *best_path,
+											 List *tlist,
+											 List *scan_clauses,
+											 Plan *outer_plan);
 static int
 			clickhouseAcquireSampleRowsFunc(Relation relation, int elevel,
-											HeapTuple * rows, int targrows,
+											HeapTuple *rows, int targrows,
 											double *totalrows,
 											double *totaldeadrows);
-static void clickhouseBeginForeignScan(ForeignScanState * node, int eflags);
-static TupleTableSlot * clickhouseIterateForeignScan(ForeignScanState * node);
-static void clickhouseEndForeignScan(ForeignScanState * node);
-static List * clickhousePlanForeignModify(PlannerInfo * root,
-										  ModifyTable * plan,
-										  Index resultRelation,
-										  int subplan_index);
-static void clickhouseBeginForeignModify(ModifyTableState * mtstate,
-										 ResultRelInfo * resultRelInfo,
-										 List * fdw_private,
+static void clickhouseBeginForeignScan(ForeignScanState *node, int eflags);
+static TupleTableSlot *clickhouseIterateForeignScan(ForeignScanState *node);
+static void clickhouseEndForeignScan(ForeignScanState *node);
+static List *clickhousePlanForeignModify(PlannerInfo *root,
+										 ModifyTable *plan,
+										 Index resultRelation,
+										 int subplan_index);
+static void clickhouseBeginForeignModify(ModifyTableState *mtstate,
+										 ResultRelInfo *resultRelInfo,
+										 List *fdw_private,
 										 int subplan_index,
 										 int eflags);
-static TupleTableSlot * clickhouseExecForeignInsert(EState * estate,
-													ResultRelInfo * resultRelInfo,
-													TupleTableSlot * slot,
-													TupleTableSlot * planSlot);
-static void clickhouseBeginForeignInsert(ModifyTableState * mtstate,
-										 ResultRelInfo * resultRelInfo);
-static void clickhouseEndForeignInsert(EState * estate,
-									   ResultRelInfo * resultRelInfo);
-static void clickhouseExplainForeignScan(ForeignScanState * node,
-										 ExplainState * es);
-static void clickhouseGetForeignUpperPaths(PlannerInfo * root,
+static TupleTableSlot *clickhouseExecForeignInsert(EState *estate,
+												   ResultRelInfo *resultRelInfo,
+												   TupleTableSlot *slot,
+												   TupleTableSlot *planSlot);
+static void clickhouseBeginForeignInsert(ModifyTableState *mtstate,
+										 ResultRelInfo *resultRelInfo);
+static void clickhouseEndForeignInsert(EState *estate,
+									   ResultRelInfo *resultRelInfo);
+static void clickhouseExplainForeignScan(ForeignScanState *node,
+										 ExplainState *es);
+static void clickhouseGetForeignUpperPaths(PlannerInfo *root,
 										   UpperRelationKind stage,
-										   RelOptInfo * input_rel, RelOptInfo * output_rel,
+										   RelOptInfo *input_rel, RelOptInfo *output_rel,
 										   void *extra);
 static bool clickhouseAnalyzeForeignTable(Relation relation,
-										  AcquireSampleRowsFunc * func,
-										  BlockNumber * totalpages);
-static bool clickhouseRecheckForeignScan(ForeignScanState * node,
-										 TupleTableSlot * slot);
+										  AcquireSampleRowsFunc *func,
+										  BlockNumber *totalpages);
+static bool clickhouseRecheckForeignScan(ForeignScanState *node,
+										 TupleTableSlot *slot);
 
 /*
  * Helper functions
  */
 static void estimate_path_cost_size(double *p_rows, int *p_width,
-									Cost * p_startup_cost, Cost * p_total_cost,
+									Cost *p_startup_cost, Cost *p_total_cost,
 									double coef);
-static CHFdwModifyState * create_foreign_modify(EState * estate,
-												RangeTblEntry * rte,
-												ResultRelInfo * resultRelInfo,
-												CmdType operation,
-												Plan * subplan,
-												char *query,
-												List * target_attrs,
-												char *table_name);
-static void finish_foreign_modify(CHFdwModifyState * fmstate);
-static void prepare_query_params(PlanState * node,
-								 List * fdw_exprs,
+static CHFdwModifyState *create_foreign_modify(EState *estate,
+											   RangeTblEntry *rte,
+											   ResultRelInfo *resultRelInfo,
+											   CmdType operation,
+											   Plan *subplan,
+											   char *query,
+											   List *target_attrs,
+											   char *table_name);
+static void finish_foreign_modify(CHFdwModifyState *fmstate);
+static void prepare_query_params(PlanState *node,
+								 List *fdw_exprs,
 								 int numParams,
-								 Oid * *param_oids,
-								 List * *param_exprs,
+								 Oid **param_oids,
+								 List **param_exprs,
 								 const char ***param_values);
-static void process_query_params(ExprContext * econtext,
-								 Oid * param_oids,
-								 List * param_exprs,
+static void process_query_params(ExprContext *econtext,
+								 Oid *param_oids,
+								 List *param_exprs,
 								 const char **param_values);
-static bool foreign_join_ok(PlannerInfo * root, RelOptInfo * joinrel,
-							JoinType jointype, RelOptInfo * outerrel, RelOptInfo * innerrel,
-							JoinPathExtraData * extra);
-static bool foreign_grouping_ok(PlannerInfo * root, RelOptInfo * grouped_rel,
-								Node * havingQual);
-static List * get_useful_pathkeys_for_relation(PlannerInfo * root,
-											   RelOptInfo * rel);
-static void add_paths_with_pathkeys_for_rel(PlannerInfo * root, RelOptInfo * rel,
-											Path * epq_path);
-static void add_foreign_grouping_paths(PlannerInfo * root,
-									   RelOptInfo * input_rel,
-									   RelOptInfo * grouped_rel,
-									   GroupPathExtraData * extra);
-static void add_foreign_window_paths(PlannerInfo * root, RelOptInfo * input_rel,
-									 RelOptInfo * window_rel);
-static bool foreign_window_ok(PlannerInfo * root, RelOptInfo * window_rel);
-static void add_foreign_ordered_paths(PlannerInfo * root, RelOptInfo * input_rel,
-									  RelOptInfo * ordered_rel);
-static void add_foreign_final_paths(PlannerInfo * root, RelOptInfo * input_rel,
-									RelOptInfo * final_rel,
+static bool foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel,
+							JoinType jointype, RelOptInfo *outerrel, RelOptInfo *innerrel,
+							JoinPathExtraData *extra);
+static bool foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel,
+								Node *havingQual);
+static List *get_useful_pathkeys_for_relation(PlannerInfo *root,
+											  RelOptInfo *rel);
+static void add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
+											Path *epq_path);
+static void add_foreign_grouping_paths(PlannerInfo *root,
+									   RelOptInfo *input_rel,
+									   RelOptInfo *grouped_rel,
+									   GroupPathExtraData *extra);
+static void add_foreign_window_paths(PlannerInfo *root, RelOptInfo *input_rel,
+									 RelOptInfo *window_rel);
+static bool foreign_window_ok(PlannerInfo *root, RelOptInfo *window_rel);
+static void add_foreign_ordered_paths(PlannerInfo *root, RelOptInfo *input_rel,
+									  RelOptInfo *ordered_rel);
+static void add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
+									RelOptInfo *final_rel,
 									void *fextra);
-static void merge_fdw_options(CHFdwRelationInfo * fpinfo,
-							  const CHFdwRelationInfo * fpinfo_o,
-							  const CHFdwRelationInfo * fpinfo_i);
-static int	get_fetch_size_option(DefElem * def);
-static DefElem * ch_get_table_or_server_option(CHFdwRelationInfo * fpinfo, char *name);
+static void merge_fdw_options(CHFdwRelationInfo *fpinfo,
+							  const CHFdwRelationInfo *fpinfo_o,
+							  const CHFdwRelationInfo *fpinfo_i);
+static int	get_fetch_size_option(DefElem *def);
+static DefElem *ch_get_table_or_server_option(CHFdwRelationInfo *fpinfo, char *name);
 
 /* Make one query and close the connection */
 Datum
@@ -330,7 +330,7 @@ time_diff(struct timeval *prior, struct timeval *latter)
 }
 
 static int
-get_fetch_size_option(DefElem * def)
+get_fetch_size_option(DefElem *def)
 {
 	int			fetch_size = pg_strtoint32(defGetString(def));
 
@@ -353,7 +353,7 @@ get_fetch_size_option(DefElem * def)
  * when none found.
 */
 static DefElem *
-ch_get_table_or_server_option(CHFdwRelationInfo * fpinfo, char *name)
+ch_get_table_or_server_option(CHFdwRelationInfo *fpinfo, char *name)
 {
 	ListCell   *lc;
 
@@ -384,8 +384,8 @@ ch_get_table_or_server_option(CHFdwRelationInfo * fpinfo, char *name)
  * not any join clauses.
  */
 static void
-clickhouseGetForeignRelSize(PlannerInfo * root,
-							RelOptInfo * baserel,
+clickhouseGetForeignRelSize(PlannerInfo *root,
+							RelOptInfo *baserel,
 							Oid foreigntableid)
 {
 	CHFdwRelationInfo *fpinfo;
@@ -516,7 +516,7 @@ clickhouseGetForeignRelSize(PlannerInfo * root,
  * to figure out which pathkeys to consider.
  */
 static List *
-get_useful_pathkeys_for_relation(PlannerInfo * root, RelOptInfo * rel)
+get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel)
 {
 	List	   *useful_pathkeys_list = NIL;
 	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) rel->fdw_private;
@@ -571,8 +571,8 @@ get_useful_pathkeys_for_relation(PlannerInfo * root, RelOptInfo * rel)
  *		Create possible scan paths for a scan on the foreign table
  */
 static void
-clickhouseGetForeignPaths(PlannerInfo * root,
-						  RelOptInfo * baserel,
+clickhouseGetForeignPaths(PlannerInfo *root,
+						  RelOptInfo *baserel,
 						  Oid foreigntableid)
 {
 	ForeignPath *path;
@@ -624,18 +624,18 @@ typedef struct WindowFuncSubstState
 	List	   *originals;		/* WindowFunc nodes seen so far */
 	List	   *placeholders;	/* matching placeholder nodes (same index) */
 	int			counter;
-}			WindowFuncSubstState;
+} WindowFuncSubstState;
 
-static Node * replace_windowfuncs_mutator(Node * node, WindowFuncSubstState * state);
+static Node *replace_windowfuncs_mutator(Node *node, WindowFuncSubstState *state);
 
 static Node *
-replace_windowfuncs_mutator_callback(Node * node, void *state)
+replace_windowfuncs_mutator_callback(Node *node, void *state)
 {
 	return replace_windowfuncs_mutator(node, state);
 }
 
 static Node *
-replace_windowfuncs_mutator(Node * node, WindowFuncSubstState * state)
+replace_windowfuncs_mutator(Node *node, WindowFuncSubstState *state)
 {
 	if (node == NULL)
 		return NULL;
@@ -675,13 +675,13 @@ replace_windowfuncs_mutator(Node * node, WindowFuncSubstState * state)
  *		Create ForeignScan plan node which implements selected best path
  */
 static ForeignScan *
-clickhouseGetForeignPlan(PlannerInfo * root,
-						 RelOptInfo * foreignrel,
+clickhouseGetForeignPlan(PlannerInfo *root,
+						 RelOptInfo *foreignrel,
 						 Oid foreigntableid,
-						 ForeignPath * best_path,
-						 List * tlist,
-						 List * scan_clauses,
-						 Plan * outer_plan)
+						 ForeignPath *best_path,
+						 List *tlist,
+						 List *scan_clauses,
+						 Plan *outer_plan)
 {
 	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) foreignrel->fdw_private;
 	Index		scan_relid;
@@ -906,7 +906,7 @@ clickhouseGetForeignPlan(PlannerInfo * root,
  *		Initiate an executor scan of a foreign PostgreSQL table.
  */
 static void
-clickhouseBeginForeignScan(ForeignScanState * node, int eflags)
+clickhouseBeginForeignScan(ForeignScanState *node, int eflags)
 {
 	ForeignScan *fsplan = (ForeignScan *) node->ss.ps.plan;
 	EState	   *estate = node->ss.ps.state;
@@ -1013,7 +1013,7 @@ clickhouseBeginForeignScan(ForeignScanState * node, int eflags)
  * temp_context is a working context that can be reset after each tuple.
  */
 static HeapTuple
-fetch_tuple(ChFdwScanState * fsstate, TupleDesc tupdesc)
+fetch_tuple(ChFdwScanState *fsstate, TupleDesc tupdesc)
 {
 	Datum	   *values;
 	HeapTuple	tuple = NULL;
@@ -1096,7 +1096,7 @@ fetch_tuple(ChFdwScanState * fsstate, TupleDesc tupdesc)
  *		EOF.
  */
 static TupleTableSlot *
-clickhouseIterateForeignScan(ForeignScanState * node)
+clickhouseIterateForeignScan(ForeignScanState *node)
 {
 	HeapTuple	tup;
 	ChFdwScanState *fsstate = (ChFdwScanState *) node->fdw_state;
@@ -1172,7 +1172,7 @@ clickhouseIterateForeignScan(ForeignScanState * node)
  *		Finish scanning foreign table and dispose objects used for this scan
  */
 static void
-clickhouseEndForeignScan(ForeignScanState * node)
+clickhouseEndForeignScan(ForeignScanState *node)
 {
 	ChFdwScanState *fsstate = (ChFdwScanState *) node->fdw_state;
 
@@ -1189,8 +1189,8 @@ clickhouseEndForeignScan(ForeignScanState * node)
  *		Plan an insert operation on a foreign table
  */
 static List *
-clickhousePlanForeignModify(PlannerInfo * root,
-							ModifyTable * plan,
+clickhousePlanForeignModify(PlannerInfo *root,
+							ModifyTable *plan,
 							Index resultRelation,
 							int subplan_index)
 {
@@ -1265,9 +1265,9 @@ clickhousePlanForeignModify(PlannerInfo * root,
  *		Begin an insertoperation on a foreign table
  */
 static void
-clickhouseBeginForeignModify(ModifyTableState * mtstate,
-							 ResultRelInfo * resultRelInfo,
-							 List * fdw_private,
+clickhouseBeginForeignModify(ModifyTableState *mtstate,
+							 ResultRelInfo *resultRelInfo,
+							 List *fdw_private,
 							 int subplan_index,
 							 int eflags)
 {
@@ -1326,8 +1326,8 @@ chfdw_get_foreign_server(Relation rel)
  *		Begin an insert operation on a foreign table
  */
 static void
-clickhouseBeginForeignInsert(ModifyTableState * mtstate,
-							 ResultRelInfo * resultRelInfo)
+clickhouseBeginForeignInsert(ModifyTableState *mtstate,
+							 ResultRelInfo *resultRelInfo)
 {
 	CHFdwModifyState *fmstate;
 	EState	   *estate = mtstate->ps.state;
@@ -1387,10 +1387,10 @@ clickhouseBeginForeignInsert(ModifyTableState * mtstate,
  *		Put one row to buffer, if buffer is big enough push it to ClickHouse
  */
 static TupleTableSlot *
-clickhouseExecForeignInsert(EState * estate,
-							ResultRelInfo * resultRelInfo,
-							TupleTableSlot * slot,
-							TupleTableSlot * planSlot)
+clickhouseExecForeignInsert(EState *estate,
+							ResultRelInfo *resultRelInfo,
+							TupleTableSlot *slot,
+							TupleTableSlot *planSlot)
 {
 	MemoryContext oldcontext;
 
@@ -1411,8 +1411,8 @@ clickhouseExecForeignInsert(EState * estate,
  *		Finish an insert operation on a foreign table
  */
 static void
-clickhouseEndForeignInsert(EState * estate,
-						   ResultRelInfo * resultRelInfo)
+clickhouseEndForeignInsert(EState *estate,
+						   ResultRelInfo *resultRelInfo)
 {
 	MemoryContext oldcontext;
 
@@ -1445,7 +1445,7 @@ clickhouseEndForeignInsert(EState * estate,
  *		Execute a local join execution plan for a foreign join
  */
 static bool
-clickhouseRecheckForeignScan(ForeignScanState * node, TupleTableSlot * slot)
+clickhouseRecheckForeignScan(ForeignScanState *node, TupleTableSlot *slot)
 {
 	Index		scanrelid = ((Scan *) node->ss.ps.plan)->scanrelid;
 	PlanState  *outerPlan = outerPlanState(node);
@@ -1473,7 +1473,7 @@ clickhouseRecheckForeignScan(ForeignScanState * node, TupleTableSlot * slot)
  *		Produce extra output for EXPLAIN of a ForeignScan on a foreign table
  */
 static void
-clickhouseExplainForeignScan(ForeignScanState * node, ExplainState * es)
+clickhouseExplainForeignScan(ForeignScanState *node, ExplainState *es)
 {
 	List	   *fdw_private;
 	char	   *sql;
@@ -1518,7 +1518,7 @@ clickhouseExplainForeignScan(ForeignScanState * node, ExplainState * es)
  */
 static void
 estimate_path_cost_size(double *p_rows, int *p_width,
-						Cost * p_startup_cost, Cost * p_total_cost, double coef)
+						Cost *p_startup_cost, Cost *p_total_cost, double coef)
 {
 	/* Make pushdown paths attractive to the planner */
 	*p_rows = 1000;
@@ -1533,13 +1533,13 @@ estimate_path_cost_size(double *p_rows, int *p_width,
  *		operation
  */
 static CHFdwModifyState *
-create_foreign_modify(EState * estate,
-					  RangeTblEntry * rte,
-					  ResultRelInfo * rri,
+create_foreign_modify(EState *estate,
+					  RangeTblEntry *rte,
+					  ResultRelInfo *rri,
 					  CmdType operation,
-					  Plan * subplan,
+					  Plan *subplan,
 					  char *query,
-					  List * target_attrs,
+					  List *target_attrs,
 					  char *table_name)
 {
 	CHFdwModifyState *fmstate;
@@ -1591,7 +1591,7 @@ create_foreign_modify(EState * estate,
  *		Release resources for a foreign insert/delete operation
  */
 static void
-finish_foreign_modify(CHFdwModifyState * fmstate)
+finish_foreign_modify(CHFdwModifyState *fmstate)
 {
 	Assert(fmstate != NULL);
 	memset(&fmstate->conn, 0, sizeof(fmstate->conn));
@@ -1601,11 +1601,11 @@ finish_foreign_modify(CHFdwModifyState * fmstate)
  * Prepare for processing of parameters used in remote query.
  */
 static void
-prepare_query_params(PlanState * node,
-					 List * fdw_exprs,
+prepare_query_params(PlanState *node,
+					 List *fdw_exprs,
 					 int numParams,
-					 Oid * *param_oids,
-					 List * *param_exprs,
+					 Oid **param_oids,
+					 List **param_exprs,
 					 const char ***param_values)
 {
 	int			i;
@@ -1643,9 +1643,9 @@ prepare_query_params(PlanState * node,
  * Construct array of query parameter values in text format.
  */
 static void
-process_query_params(ExprContext * econtext,
-					 Oid * param_oids,
-					 List * param_exprs,
+process_query_params(ExprContext *econtext,
+					 Oid *param_oids,
+					 List *param_exprs,
 					 const char **param_values)
 {
 	int			i;
@@ -1680,8 +1680,8 @@ process_query_params(ExprContext * econtext,
  */
 static bool
 clickhouseAnalyzeForeignTable(Relation relation,
-							  AcquireSampleRowsFunc * func,
-							  BlockNumber * totalpages)
+							  AcquireSampleRowsFunc *func,
+							  BlockNumber *totalpages)
 {
 	*func = clickhouseAcquireSampleRowsFunc;
 	return true;
@@ -1693,7 +1693,7 @@ clickhouseAnalyzeForeignTable(Relation relation,
  */
 static int
 clickhouseAcquireSampleRowsFunc(Relation relation, int elevel,
-								HeapTuple * rows, int targrows,
+								HeapTuple *rows, int targrows,
 								double *totalrows,
 								double *totaldeadrows)
 {
@@ -1705,7 +1705,7 @@ clickhouseAcquireSampleRowsFunc(Relation relation, int elevel,
 }
 
 static bool
-is_simple_join_clause(Expr * expr)
+is_simple_join_clause(Expr *expr)
 {
 	if (IsA(expr, RestrictInfo))
 	{
@@ -1726,7 +1726,7 @@ is_simple_join_clause(Expr * expr)
 }
 
 static List *
-extract_join_equals(List * conds, List * *to)
+extract_join_equals(List *conds, List **to)
 {
 	ListCell   *lc;
 	List	   *res = NIL;
@@ -1749,8 +1749,8 @@ extract_join_equals(List * conds, List * *to)
  * relation.
  */
 static bool
-semijoin_target_ok(PlannerInfo * root, RelOptInfo * joinrel,
-				   RelOptInfo * outerrel, RelOptInfo * innerrel)
+semijoin_target_ok(PlannerInfo *root, RelOptInfo *joinrel,
+				   RelOptInfo *outerrel, RelOptInfo *innerrel)
 {
 	List	   *vars;
 	ListCell   *lc;
@@ -1786,9 +1786,9 @@ semijoin_target_ok(PlannerInfo * root, RelOptInfo * joinrel,
  * function to CHFdwRelationInfo passed in.
  */
 static bool
-foreign_join_ok(PlannerInfo * root, RelOptInfo * joinrel, JoinType jointype,
-				RelOptInfo * outerrel, RelOptInfo * innerrel,
-				JoinPathExtraData * extra)
+foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel, JoinType jointype,
+				RelOptInfo *outerrel, RelOptInfo *innerrel,
+				JoinPathExtraData *extra)
 {
 	CHFdwRelationInfo *fpinfo;
 	CHFdwRelationInfo *fpinfo_o;
@@ -2081,8 +2081,8 @@ foreign_join_ok(PlannerInfo * root, RelOptInfo * joinrel, JoinType jointype,
 }
 
 static void
-add_paths_with_pathkeys_for_rel(PlannerInfo * root, RelOptInfo * rel,
-								Path * epq_path)
+add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
+								Path *epq_path)
 {
 	List	   *useful_pathkeys_list = NIL; /* List of all pathkeys */
 	ListCell   *lc;
@@ -2163,9 +2163,9 @@ add_paths_with_pathkeys_for_rel(PlannerInfo * root, RelOptInfo * rel,
  * expected to NULL.
  */
 static void
-merge_fdw_options(CHFdwRelationInfo * fpinfo,
-				  const CHFdwRelationInfo * fpinfo_o,
-				  const CHFdwRelationInfo * fpinfo_i)
+merge_fdw_options(CHFdwRelationInfo *fpinfo,
+				  const CHFdwRelationInfo *fpinfo_o,
+				  const CHFdwRelationInfo *fpinfo_i)
 {
 	/* We must always have fpinfo_o. */
 	Assert(fpinfo_o);
@@ -2212,12 +2212,12 @@ merge_fdw_options(CHFdwRelationInfo * fpinfo,
  *		Add possible ForeignPath to joinrel, if join is safe to push down.
  */
 static void
-clickhouseGetForeignJoinPaths(PlannerInfo * root,
-							  RelOptInfo * joinrel,
-							  RelOptInfo * outerrel,
-							  RelOptInfo * innerrel,
+clickhouseGetForeignJoinPaths(PlannerInfo *root,
+							  RelOptInfo *joinrel,
+							  RelOptInfo *outerrel,
+							  RelOptInfo *innerrel,
 							  JoinType jointype,
-							  JoinPathExtraData * extra)
+							  JoinPathExtraData *extra)
 {
 	CHFdwRelationInfo *fpinfo;
 	ForeignPath *joinpath;
@@ -2333,8 +2333,8 @@ clickhouseGetForeignJoinPaths(PlannerInfo * root,
  * this function to CHFdwRelationInfo of the input relation.
  */
 static bool
-foreign_grouping_ok(PlannerInfo * root, RelOptInfo * grouped_rel,
-					Node * havingQual)
+foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel,
+					Node *havingQual)
 {
 	Query	   *query = root->parse;
 	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) grouped_rel->fdw_private;
@@ -2571,8 +2571,8 @@ foreign_grouping_ok(PlannerInfo * root, RelOptInfo * grouped_rel,
  * Right now, we only support aggregate, grouping and having clause pushdown.
  */
 static void
-clickhouseGetForeignUpperPaths(PlannerInfo * root, UpperRelationKind stage,
-							   RelOptInfo * input_rel, RelOptInfo * output_rel,
+clickhouseGetForeignUpperPaths(PlannerInfo *root, UpperRelationKind stage,
+							   RelOptInfo *input_rel, RelOptInfo *output_rel,
 							   void *extra)
 {
 	CHFdwRelationInfo *fpinfo;
@@ -2634,9 +2634,9 @@ clickhouseGetForeignUpperPaths(PlannerInfo * root, UpperRelationKind stage,
  * given grouped_rel.
  */
 static void
-add_foreign_grouping_paths(PlannerInfo * root, RelOptInfo * input_rel,
-						   RelOptInfo * grouped_rel,
-						   GroupPathExtraData * extra)
+add_foreign_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
+						   RelOptInfo *grouped_rel,
+						   GroupPathExtraData *extra)
 {
 	Query	   *parse = root->parse;
 	CHFdwRelationInfo *ifpinfo = input_rel->fdw_private;
@@ -2727,7 +2727,7 @@ add_foreign_grouping_paths(PlannerInfo * root, RelOptInfo * input_rel,
  * shippable, and builds a target list suitable for the remote query.
  */
 static bool
-foreign_window_ok(PlannerInfo * root, RelOptInfo * window_rel)
+foreign_window_ok(PlannerInfo *root, RelOptInfo *window_rel)
 {
 	CHFdwRelationInfo *fpinfo = (CHFdwRelationInfo *) window_rel->fdw_private;
 	CHFdwRelationInfo *ofpinfo;
@@ -2808,8 +2808,8 @@ foreign_window_ok(PlannerInfo * root, RelOptInfo * window_rel)
  * The paths are added to the given window_rel.
  */
 static void
-add_foreign_window_paths(PlannerInfo * root, RelOptInfo * input_rel,
-						 RelOptInfo * window_rel)
+add_foreign_window_paths(PlannerInfo *root, RelOptInfo *input_rel,
+						 RelOptInfo *window_rel)
 {
 	CHFdwRelationInfo *ifpinfo = input_rel->fdw_private;
 	CHFdwRelationInfo *fpinfo = window_rel->fdw_private;
@@ -2886,8 +2886,8 @@ add_foreign_window_paths(PlannerInfo * root, RelOptInfo * input_rel,
  * given ordered_rel.
  */
 static void
-add_foreign_ordered_paths(PlannerInfo * root, RelOptInfo * input_rel,
-						  RelOptInfo * ordered_rel)
+add_foreign_ordered_paths(PlannerInfo *root, RelOptInfo *input_rel,
+						  RelOptInfo *ordered_rel)
 {
 	Query	   *parse = root->parse;
 	CHFdwRelationInfo *ifpinfo = input_rel->fdw_private;
@@ -3038,8 +3038,8 @@ add_foreign_ordered_paths(PlannerInfo * root, RelOptInfo * input_rel,
  * given final_rel.
  */
 static void
-add_foreign_final_paths(PlannerInfo * root, RelOptInfo * input_rel,
-						RelOptInfo * final_rel,
+add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
+						RelOptInfo *final_rel,
 						void *fextra)
 {
 #if (PG_VERSION_NUM < 120000)
@@ -3186,7 +3186,7 @@ add_foreign_final_paths(PlannerInfo * root, RelOptInfo * input_rel,
  * the indicated relation.
  */
 Expr	   *
-chfdw_find_em_expr_for_rel(EquivalenceClass * ec, RelOptInfo * rel)
+chfdw_find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel)
 {
 	ListCell   *lc_em;
 
@@ -3215,9 +3215,9 @@ chfdw_find_em_expr_for_rel(EquivalenceClass * ec, RelOptInfo * rel)
  * in the given target.
  */
 Expr	   *
-chfdw_find_em_expr_for_input_target(PlannerInfo * root,
-									EquivalenceClass * ec,
-									PathTarget * target)
+chfdw_find_em_expr_for_input_target(PlannerInfo *root,
+									EquivalenceClass *ec,
+									PathTarget *target)
 {
 	ListCell   *lc1;
 	int			i;
@@ -3272,7 +3272,7 @@ chfdw_find_em_expr_for_input_target(PlannerInfo * root,
 }
 
 static List *
-clickhouseImportForeignSchema(ImportForeignSchemaStmt * stmt, Oid serverOid)
+clickhouseImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 {
 	ForeignServer *server;
 

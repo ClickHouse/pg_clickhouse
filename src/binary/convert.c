@@ -23,8 +23,8 @@
 
 typedef struct ch_convert_state ch_convert_state;
 typedef struct ch_convert_output_state ch_convert_output_state;
-typedef Datum(*convert_func) (ch_convert_state *, Datum);
-typedef Datum(*out_convert_func) (ch_convert_output_state *, Datum);
+typedef Datum (*convert_func) (ch_convert_state *, Datum);
+typedef Datum (*out_convert_func) (ch_convert_output_state *, Datum);
 
 typedef struct ch_convert_state
 {
@@ -52,7 +52,7 @@ typedef struct ch_convert_state
 	/* generic */
 	CoercionPathType ctype;
 	Oid			castfunc;
-}			ch_convert_state;
+} ch_convert_state;
 
 typedef struct ch_convert_output_state
 {
@@ -70,10 +70,10 @@ typedef struct ch_convert_output_state
 	/* generic */
 	CoercionPathType ctype;
 	Oid			castfunc;
-}			ch_convert_output_state;
+} ch_convert_output_state;
 
 static Datum
-convert_record(ch_convert_state * state, Datum val)
+convert_record(ch_convert_state *state, Datum val)
 {
 	HeapTuple	temptup;
 	HeapTuple	htup;
@@ -118,7 +118,7 @@ convert_record(ch_convert_state * state, Datum val)
 }
 
 inline static Datum
-convert_generic(ch_convert_state * state, Datum val)
+convert_generic(ch_convert_state *state, Datum val)
 {
 	if (state->ctype == COERCION_PATH_FUNC)
 	{
@@ -130,7 +130,7 @@ convert_generic(ch_convert_state * state, Datum val)
 }
 
 inline static Datum
-convert_out_generic(ch_convert_output_state * state, Datum val)
+convert_out_generic(ch_convert_output_state *state, Datum val)
 {
 	if (state->ctype == COERCION_PATH_FUNC)
 	{
@@ -147,8 +147,8 @@ convert_out_generic(ch_convert_output_state * state, Datum val)
  * shape is jagged so the caller can fall back to a slower path.
  */
 static bool
-flatten_nested_array(ch_binary_array_t * slot, int *dims, int level,
-					 Datum * values, bool *nulls, size_t * idx)
+flatten_nested_array(ch_binary_array_t *slot, int *dims, int level,
+					 Datum *values, bool *nulls, size_t *idx)
 {
 	if ((int) slot->len != dims[level])
 		return false;
@@ -181,7 +181,7 @@ flatten_nested_array(ch_binary_array_t * slot, int *dims, int level,
  * surfaces the same array_in malformed-literal error as the http path.
  */
 static void
-emit_nested_array_text(ch_binary_array_t * slot, FmgrInfo * outfn, StringInfo buf)
+emit_nested_array_text(ch_binary_array_t *slot, FmgrInfo *outfn, StringInfo buf)
 {
 	appendStringInfoChar(buf, '{');
 	for (size_t i = 0; i < slot->len; i++)
@@ -216,7 +216,7 @@ emit_nested_array_text(ch_binary_array_t * slot, FmgrInfo * outfn, StringInfo bu
 }
 
 static Datum
-convert_array(ch_convert_state * state, Datum val)
+convert_array(ch_convert_state *state, Datum val)
 {
 	ch_binary_array_t *slot = (ch_binary_array_t *) DatumGetPointer(val);
 
@@ -277,12 +277,12 @@ convert_array(ch_convert_state * state, Datum val)
 				Oid			out_func;
 				Oid			in_func;
 				Oid			ioparam;
-				bool		varlena;
+				bool		isVarlena;
 
 				pfree(flat);
 				pfree(flatnulls);
 
-				getTypeOutputInfo(slot->item_type, &out_func, &varlena);
+				getTypeOutputInfo(slot->item_type, &out_func, &isVarlena);
 				fmgr_info(out_func, &outfn);
 
 				initStringInfo(&buf);
@@ -300,7 +300,7 @@ convert_array(ch_convert_state * state, Datum val)
 }
 
 static Datum
-convert_remote_text(ch_convert_state * state, Datum val)
+convert_remote_text(ch_convert_state *state, Datum val)
 {
 	return OidInputFunctionCall(state->typinput, TextDatumGetCString(val),
 								state->typioparam, state->typmod);
@@ -311,7 +311,7 @@ convert_remote_text(ch_convert_state * state, Datum val)
  * SMALLINT and this function covers this case
  */
 static Datum
-convert_bool(ch_convert_state * state, Datum val)
+convert_bool(ch_convert_state *state, Datum val)
 {
 	int16		dat = DatumGetInt16(val);
 
@@ -502,7 +502,7 @@ ch_binary_free_convert_state(void *s)
 /* output */
 
 static void
-init_output_convert_state(ch_convert_output_state * state)
+init_output_convert_state(ch_convert_output_state *state)
 {
 	if (state->outtype == state->intype)
 		return;
@@ -619,7 +619,7 @@ ch_binary_make_tuple_map(TupleDesc indesc, TupleDesc outdesc, Oid relid)
  */
 static ch_binary_array_t *
 build_nested_binary_array(int level, int ndim, int *dims, Oid item_type,
-						  Datum * flat, bool *flatnulls, size_t * idx)
+						  Datum *flat, bool *flatnulls, size_t *idx)
 {
 	ch_binary_array_t *arr = palloc(sizeof(ch_binary_array_t));
 
@@ -662,8 +662,8 @@ build_nested_binary_array(int level, int ndim, int *dims, Oid item_type,
  * in insert_state->conversion_states)
  */
 void
-ch_binary_do_output_conversion(ch_binary_insert_state * insert_state,
-							   TupleTableSlot * slot)
+ch_binary_do_output_conversion(ch_binary_insert_state *insert_state,
+							   TupleTableSlot *slot)
 {
 	Datum	   *out_values = insert_state->values;
 	bool	   *out_nulls = insert_state->nulls;

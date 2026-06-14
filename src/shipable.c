@@ -29,7 +29,7 @@
 
 
 /* Hash table for caching the results of shippability lookups */
-static HTAB * ShippableCacheHash = NULL;
+static HTAB *ShippableCacheHash = NULL;
 
 /*
  * Hash key for shippability lookups. We include the FDW server OID because
@@ -42,13 +42,13 @@ typedef struct
 	Oid			objid;			/* function/operator/type OID */
 	Oid			classid;		/* OID of its catalog (pg_proc, etc) */
 	Oid			serverid;		/* FDW server we are concerned with */
-}			ShippableCacheKey;
+} ShippableCacheKey;
 
 typedef struct
 {
 	ShippableCacheKey key;		/* hash key - must be first */
 	bool		shippable;
-}			ShippableCacheEntry;
+} ShippableCacheEntry;
 
 
 /*
@@ -114,7 +114,7 @@ InitializeShippableCache(void)
  * additionally have a whitelist of functions/operators declared one at a time.
  */
 static bool
-lookup_shippable(Oid objectId, Oid classId, CHFdwRelationInfo * fpinfo)
+lookup_shippable(Oid objectId, Oid classId, CHFdwRelationInfo *fpinfo)
 {
 	Oid			extensionOid;
 
@@ -194,8 +194,8 @@ regex_flags_ok(char *flags, bool global_ok)
  *	   Is this object (function/operator/type) shippable to foreign server?
  */
 bool
-chfdw_is_shippable(Node * node, Oid objectId, Oid classId, CHFdwRelationInfo * fpinfo,
-				   CustomObjectDef * *outcdef)
+chfdw_is_shippable(Node *node, Oid objectId, Oid classId, CHFdwRelationInfo *fpinfo,
+				   CustomObjectDef **outcdef)
 {
 	ShippableCacheKey key;
 	ShippableCacheEntry *entry;

@@ -34,13 +34,13 @@
 
 /* Little-endian fixed-width reads at row offset. */
 static inline int8_t
-rd_i8(const uint8_t * p, uint64_t row)
+rd_i8(const uint8_t *p, uint64_t row)
 {
 	return (int8_t) p[row];
 }
 
 static inline uint8_t
-rd_u8(const uint8_t * p, uint64_t row)
+rd_u8(const uint8_t *p, uint64_t row)
 {
 	return p[row];
 }
@@ -52,7 +52,7 @@ rd_bool(const bool *p, uint64_t row)
 }
 
 static inline int16_t
-rd_i16(const uint8_t * p, uint64_t row)
+rd_i16(const uint8_t *p, uint64_t row)
 {
 	int16_t		v;
 
@@ -61,7 +61,7 @@ rd_i16(const uint8_t * p, uint64_t row)
 }
 
 static inline uint16_t
-rd_u16(const uint8_t * p, uint64_t row)
+rd_u16(const uint8_t *p, uint64_t row)
 {
 	uint16_t	v;
 
@@ -70,7 +70,7 @@ rd_u16(const uint8_t * p, uint64_t row)
 }
 
 static inline int32_t
-rd_i32(const uint8_t * p, uint64_t row)
+rd_i32(const uint8_t *p, uint64_t row)
 {
 	int32_t		v;
 
@@ -79,7 +79,7 @@ rd_i32(const uint8_t * p, uint64_t row)
 }
 
 static inline uint32_t
-rd_u32(const uint8_t * p, uint64_t row)
+rd_u32(const uint8_t *p, uint64_t row)
 {
 	uint32_t	v;
 
@@ -88,7 +88,7 @@ rd_u32(const uint8_t * p, uint64_t row)
 }
 
 static inline int64_t
-rd_i64(const uint8_t * p, uint64_t row)
+rd_i64(const uint8_t *p, uint64_t row)
 {
 	int64_t		v;
 
@@ -97,7 +97,7 @@ rd_i64(const uint8_t * p, uint64_t row)
 }
 
 static inline uint64_t
-rd_u64(const uint8_t * p, uint64_t row)
+rd_u64(const uint8_t *p, uint64_t row)
 {
 	uint64_t	v;
 
@@ -106,7 +106,7 @@ rd_u64(const uint8_t * p, uint64_t row)
 }
 
 static inline float
-rd_f32(const uint8_t * p, uint64_t row)
+rd_f32(const uint8_t *p, uint64_t row)
 {
 	float		v;
 
@@ -115,7 +115,7 @@ rd_f32(const uint8_t * p, uint64_t row)
 }
 
 static inline double
-rd_f64(const uint8_t * p, uint64_t row)
+rd_f64(const uint8_t *p, uint64_t row)
 {
 	double		v;
 
@@ -124,11 +124,11 @@ rd_f64(const uint8_t * p, uint64_t row)
 }
 
 static inline void
-slice_str(const chc_column * col, uint64_t row,
-		  const char **out_ptr, size_t * out_len)
+slice_str(const chc_column *col, uint64_t row,
+		  const char **out_ptr, size_t *out_len)
 {
-	const		uint64_t *offs = chc_column_string_offsets(col);
-	const		uint8_t *data = chc_column_string_data(col);
+	const uint64_t *offs = chc_column_string_offsets(col);
+	const uint8_t *data = chc_column_string_data(col);
 	uint64_t	start = row == 0 ? 0 : offs[row - 1];
 	uint64_t	end = offs[row];
 
@@ -137,7 +137,7 @@ slice_str(const chc_column * col, uint64_t row,
 }
 
 static Oid
-ch_kind_to_pg_oid(const chc_type * type)
+ch_kind_to_pg_oid(const chc_type *type)
 {
 	switch (chc_type_kind(type))
 	{
@@ -201,8 +201,8 @@ ch_kind_to_pg_oid(const chc_type * type)
 	return InvalidOid;
 }
 
-static Datum read_value(const chc_column * col, const chc_type * type,
-						uint64_t row, Oid * valtype, bool *is_null);
+static Datum read_value(const chc_column *col, const chc_type *type,
+						uint64_t row, Oid *valtype, bool *is_null);
 
 /*
  * Format a ClickHouse Decimal (two's-complement signed integer in LE bytes of
@@ -210,7 +210,7 @@ static Datum read_value(const chc_column * col, const chc_type * type,
  * carried on the column type) into `out`. Returns bytes written, -1 on overflow.
  */
 static int
-format_decimal_text(const uint8_t * bytes, size_t width, uint32_t scale,
+format_decimal_text(const uint8_t *bytes, size_t width, uint32_t scale,
 					char *out, size_t out_cap)
 {
 	uint32_t	mag[8];
@@ -284,10 +284,10 @@ format_decimal_text(const uint8_t * bytes, size_t width, uint32_t scale,
 }
 
 static Datum
-read_decimal(const chc_column * col, const chc_type * type, uint64_t row)
+read_decimal(const chc_column *col, const chc_type *type, uint64_t row)
 {
 	size_t		es;
-	const		uint8_t *p = (const uint8_t *) chc_column_fixed_data(col, &es);
+	const uint8_t *p = (const uint8_t *) chc_column_fixed_data(col, &es);
 	uint32_t	scale = (uint32_t) chc_type_decimal_scale(type);
 	char		buf[80];
 	int			rc;
@@ -310,7 +310,7 @@ read_decimal(const chc_column * col, const chc_type * type, uint64_t row)
 }
 
 static Datum
-read_string_as_text(const chc_column * col, uint64_t row)
+read_string_as_text(const chc_column *col, uint64_t row)
 {
 	const char *p;
 	size_t		len;
@@ -320,20 +320,20 @@ read_string_as_text(const chc_column * col, uint64_t row)
 }
 
 static Datum
-read_fixedstring_as_text(const chc_column * col, uint64_t row)
+read_fixedstring_as_text(const chc_column *col, uint64_t row)
 {
 	size_t		width;
-	const		uint8_t *base = chc_column_fixed_data(col, &width);
+	const uint8_t *base = chc_column_fixed_data(col, &width);
 
 	return PointerGetDatum(cstring_to_text_with_len((const char *) base + row * width,
 													width));
 }
 
 static Datum
-read_uuid(const chc_column * col, uint64_t row)
+read_uuid(const chc_column *col, uint64_t row)
 {
 	pg_uuid_t  *u = (pg_uuid_t *) palloc(sizeof(pg_uuid_t));
-	const		uint8_t *p = (uint8_t *) chc_column_fixed_data(col, NULL) + row * 16;
+	const uint8_t *p = (uint8_t *) chc_column_fixed_data(col, NULL) + row * 16;
 	uint64_t	a,
 				b;
 
@@ -351,7 +351,7 @@ read_uuid(const chc_column * col, uint64_t row)
  * BE bytes of dotted-quad, so pg_hton32 the value into ip_addr directly.
  */
 static Datum
-read_ipv4(const chc_column * col, uint64_t row)
+read_ipv4(const chc_column *col, uint64_t row)
 {
 	inet	   *res = (inet *) palloc0(sizeof(inet));
 	uint32_t	addr;
@@ -367,7 +367,7 @@ read_ipv4(const chc_column * col, uint64_t row)
 
 /* IPv6 wire is already network order; same layout as PG inet ip_addr. */
 static Datum
-read_ipv6(const chc_column * col, uint64_t row)
+read_ipv6(const chc_column *col, uint64_t row)
 {
 	inet	   *res = (inet *) palloc0(sizeof(inet));
 
@@ -379,10 +379,10 @@ read_ipv6(const chc_column * col, uint64_t row)
 }
 
 static Datum
-read_enum_as_text(const chc_column * col, const chc_type * type, uint64_t row)
+read_enum_as_text(const chc_column *col, const chc_type *type, uint64_t row)
 {
 	size_t		es;
-	const		uint8_t *p = (const uint8_t *) chc_column_fixed_data(col, &es);
+	const uint8_t *p = (const uint8_t *) chc_column_fixed_data(col, &es);
 	int64_t		v = 0;
 
 	if (es == 1)
@@ -417,7 +417,7 @@ read_enum_as_text(const chc_column * col, const chc_type * type, uint64_t row)
  * table declares the column as `json`).
  */
 static Datum
-read_json(const chc_column * col, uint64_t row, Oid valtype)
+read_json(const chc_column *col, uint64_t row, Oid valtype)
 {
 	const char *p;
 	size_t		len;
@@ -440,11 +440,11 @@ read_json(const chc_column * col, uint64_t row, Oid valtype)
  * sentinel for the Nullable variant.
  */
 static Datum
-read_lc_string(const chc_column * col, const chc_type * type, uint64_t row,
-			   Oid * valtype, bool *is_null)
+read_lc_string(const chc_column *col, const chc_type *type, uint64_t row,
+			   Oid *valtype, bool *is_null)
 {
 	int			ks = chc_column_lc_key_size(col);
-	const		uint8_t *kp = (const uint8_t *) chc_column_lc_keys(col) + (size_t) row * ks;
+	const uint8_t *kp = (const uint8_t *) chc_column_lc_keys(col) + (size_t) row * ks;
 	uint64_t	k = 0;
 
 	switch (ks)
@@ -477,13 +477,13 @@ read_lc_string(const chc_column * col, const chc_type * type, uint64_t row,
 					 errmsg("pg_clickhouse: unexpected LowCardinality key size %d", ks)));
 	}
 
-	const		chc_column *dict = chc_column_lc_dict(col);
-	const		chc_type *inner_t = chc_type_child(type, 0);
+	const chc_column *dict = chc_column_lc_dict(col);
+	const chc_type *inner_t = chc_type_child(type, 0);
 
 	if (chc_type_kind(inner_t) == CHC_NULLABLE
 		&& chc_column_layout(dict) == CHC_COL_NULLABLE)
 	{
-		const		uint8_t *dnm = chc_column_null_map(dict);
+		const uint8_t *dnm = chc_column_null_map(dict);
 
 		if (dnm && dnm[k])
 		{
@@ -504,17 +504,17 @@ read_lc_string(const chc_column * col, const chc_type * type, uint64_t row,
 }
 
 static Datum
-read_array(const chc_column * col, const chc_type * type, uint64_t row,
-		   Oid * valtype, bool *is_null)
+read_array(const chc_column *col, const chc_type *type, uint64_t row,
+		   Oid *valtype, bool *is_null)
 {
-	const		uint64_t *offs = chc_column_array_offsets(col);
+	const uint64_t *offs = chc_column_array_offsets(col);
 	uint64_t	start = row == 0 ? 0 : offs[row - 1];
 	uint64_t	end = offs[row];
 	uint64_t	len = end - start;
-	const		chc_type *inner_t = chc_type_child(type, 0);
-	const		chc_column *inner = chc_column_array_values(col);
+	const chc_type *inner_t = chc_type_child(type, 0);
+	const chc_column *inner = chc_column_array_values(col);
 	ch_binary_array_t *slot = (ch_binary_array_t *) palloc(sizeof(ch_binary_array_t));
-	const		chc_type *leaf = type;
+	const chc_type *leaf = type;
 	int			ndim = 0;
 
 	/*
@@ -565,8 +565,8 @@ read_array(const chc_column * col, const chc_type * type, uint64_t row,
 }
 
 static Datum
-read_tuple(const chc_column * col, const chc_type * type, uint64_t row,
-		   Oid * valtype, bool *is_null)
+read_tuple(const chc_column *col, const chc_type *type, uint64_t row,
+		   Oid *valtype, bool *is_null)
 {
 	size_t		n = chc_type_n_children(type);
 	ch_binary_tuple_t *slot;
@@ -585,8 +585,8 @@ read_tuple(const chc_column * col, const chc_type * type, uint64_t row,
 
 	for (size_t i = 0; i < n; ++i)
 	{
-		const		chc_type *ft = chc_type_child(type, i);
-		const		chc_column *fc = chc_column_tuple_child(col, i);
+		const chc_type *ft = chc_type_child(type, i);
+		const chc_column *fc = chc_column_tuple_child(col, i);
 
 		slot->datums[i] = read_value(fc, ft, row, &slot->types[i], &slot->nulls[i]);
 	}
@@ -597,17 +597,17 @@ read_tuple(const chc_column * col, const chc_type * type, uint64_t row,
 }
 
 static Datum
-read_value(const chc_column * col, const chc_type * type, uint64_t row,
-		   Oid * valtype, bool *is_null)
+read_value(const chc_column *col, const chc_type *type, uint64_t row,
+		   Oid *valtype, bool *is_null)
 {
 	/* Unwrap outer Nullable, handling nulls here. */
 	if (chc_type_kind(type) == CHC_NULLABLE)
 	{
-		const		chc_type *inner_t = chc_type_child(type, 0);
+		const chc_type *inner_t = chc_type_child(type, 0);
 
 		if (chc_column_layout(col) == CHC_COL_NULLABLE)
 		{
-			const		uint8_t *nm = chc_column_null_map(col);
+			const uint8_t *nm = chc_column_null_map(col);
 
 			if (nm && nm[row])
 			{
@@ -752,7 +752,7 @@ read_value(const chc_column * col, const chc_type * type, uint64_t row,
 /* ---- read state ----------------------------------------------------- */
 
 static bool
-load_block(ch_binary_read_state_t * state)
+load_block(ch_binary_read_state_t *state)
 {
 	state->cur = ch_binary_response_fetch_next_block(state->resp);
 	if (state->cur == NULL)
@@ -768,7 +768,7 @@ load_block(ch_binary_read_state_t * state)
 }
 
 void
-ch_binary_read_state_init(ch_binary_read_state_t * state, ch_binary_response_t * resp)
+ch_binary_read_state_init(ch_binary_read_state_t *state, ch_binary_response_t *resp)
 {
 	const char *resp_err;
 	size_t		ncols;
@@ -810,7 +810,7 @@ ch_binary_read_state_init(ch_binary_read_state_t * state, ch_binary_response_t *
 }
 
 bool
-ch_binary_read_row(ch_binary_read_state_t * state)
+ch_binary_read_row(ch_binary_read_state_t *state)
 {
 	size_t		ncols;
 
@@ -846,8 +846,8 @@ again:
 			 * STRING- serialized formatting.
 			 */
 			Oid			t = state->coltypes[i];
-			const		chc_column *col = chc_block_column(state->cur, i);
-			const		chc_type *ct = chc_block_column_type(state->cur, i);
+			const chc_column *col = chc_block_column(state->cur, i);
+			const chc_type *ct = chc_block_column_type(state->cur, i);
 
 			state->values[i] = read_value(col, ct, state->row, &t, &state->nulls[i]);
 		}
@@ -885,7 +885,7 @@ again:
 }
 
 void
-ch_binary_read_state_free(ch_binary_read_state_t * state)
+ch_binary_read_state_free(ch_binary_read_state_t *state)
 {
 	/* state->error is palloc'd; freed with surrounding memory context. */
 	state->error = NULL;

@@ -46,7 +46,7 @@ struct ch_binary_response_t
 };
 
 static void
-resp_set_error(ch_binary_response_t * resp, const char *msg)
+resp_set_error(ch_binary_response_t *resp, const char *msg)
 {
 	if (resp->error)
 		return;
@@ -54,7 +54,7 @@ resp_set_error(ch_binary_response_t * resp, const char *msg)
 }
 
 static void
-resp_set_exception(ch_binary_response_t * resp, const chc_exception * ex)
+resp_set_exception(ch_binary_response_t *resp, const chc_exception *ex)
 {
 	if (resp->error)
 		return;
@@ -78,7 +78,7 @@ resp_set_exception(ch_binary_response_t * resp, const chc_exception * ex)
  * (progress, log, profile, ...) are silently consumed.
  */
 static void
-pump_one(ch_binary_response_t * resp)
+pump_one(ch_binary_response_t *resp)
 {
 	MemoryContext old = MemoryContextSwitchTo(resp->cxt);
 	chc_packet	pkt = {};
@@ -187,7 +187,7 @@ drain_set_deadline(struct ch_binary_state *s, int64_t deadline_us)
  * cache drops the connection.
  */
 static void
-drain_until_eos(ch_binary_response_t * resp)
+drain_until_eos(ch_binary_response_t *resp)
 {
 	if (resp->eos)
 		return;
@@ -240,7 +240,7 @@ drain_until_eos(ch_binary_response_t * resp)
 }
 
 ch_binary_response_t *
-ch_binary_simple_query(ch_binary_connection_t * conn, const ch_query * query,
+ch_binary_simple_query(ch_binary_connection_t *conn, const ch_query *query,
 					   bool (*check_cancel) (void))
 {
 	struct ch_binary_state *s = conn_state(conn);
@@ -263,7 +263,7 @@ ch_binary_simple_query(ch_binary_connection_t * conn, const ch_query * query,
 	bool		want_json_as_string = server_supports_json_as_string(s->client);
 
 	{
-		const		kv_list *kv = query->settings;
+		const kv_list *kv = query->settings;
 
 		if (kv)
 			n_user_settings = (size_t) kv->length;
@@ -399,7 +399,7 @@ done:
 }
 
 void
-ch_binary_response_free(ch_binary_response_t * resp)
+ch_binary_response_free(ch_binary_response_t *resp)
 {
 	if (!resp)
 		return;
@@ -421,25 +421,25 @@ ch_binary_response_free(ch_binary_response_t * resp)
 }
 
 const char *
-ch_binary_response_error(const ch_binary_response_t * resp)
+ch_binary_response_error(const ch_binary_response_t *resp)
 {
 	return resp ? resp->error : NULL;
 }
 
 bool
-ch_binary_response_success(const ch_binary_response_t * resp)
+ch_binary_response_success(const ch_binary_response_t *resp)
 {
 	return resp && resp->success;
 }
 
 size_t
-ch_binary_response_columns(const ch_binary_response_t * resp)
+ch_binary_response_columns(const ch_binary_response_t *resp)
 {
 	return resp ? resp->columns_count : 0;
 }
 
-const		chc_block *
-ch_binary_response_fetch_next_block(ch_binary_response_t * resp)
+const chc_block *
+ch_binary_response_fetch_next_block(ch_binary_response_t *resp)
 {
 	if (!resp)
 		return NULL;

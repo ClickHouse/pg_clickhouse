@@ -55,7 +55,7 @@ typedef struct ch_cursor
 	double		total_time;
 	size_t		columns_count;
 	uintptr_t  *conversion_states;	/* for binary */
-}			ch_cursor;
+} ch_cursor;
 
 typedef struct ChFdwScanRowContext
 {
@@ -65,20 +65,20 @@ typedef struct ChFdwScanRowContext
 	ch_cursor  *cursor;			/* result of query from clickhouse */
 	Datum	   *values;			/* collected values for each column */
 	bool	   *nulls;			/* indicates null columns */
-}			ChFdwScanRowContext;
+} ChFdwScanRowContext;
 
 typedef void (*disconnect_method) (void *conn);
-typedef void (*check_conn_method) (const char *password, UserMapping * user);
-typedef ch_cursor * (*simple_query_method) (void *conn, const ch_query * query);
-typedef void (*simple_insert_method) (void *conn, const ch_query * query);
-typedef Datum * (*cursor_fetch_row_method) (ChFdwScanRowContext * ctx);
+typedef void (*check_conn_method) (const char *password, UserMapping *user);
+typedef ch_cursor *(*simple_query_method) (void *conn, const ch_query *query);
+typedef void (*simple_insert_method) (void *conn, const ch_query *query);
+typedef Datum *(*cursor_fetch_row_method) (ChFdwScanRowContext *ctx);
 typedef void *(*prepare_insert_method) (void *conn, ResultRelInfo *, List *,
 										const ch_query *, char *);
-typedef void (*insert_tuple_method) (void *state, TupleTableSlot * slot);
+typedef void (*insert_tuple_method) (void *state, TupleTableSlot *slot);
 typedef void (*finalize_insert_method) (void *state);
-typedef ch_cursor * (*streaming_query_method) (void *conn,
-											   const ch_query * query,
-											   int32 fetch_size);
+typedef ch_cursor *(*streaming_query_method) (void *conn,
+											  const ch_query *query,
+											  int32 fetch_size);
 typedef bool (*is_broken_method) (const void *conn);
 
 typedef struct
@@ -93,20 +93,20 @@ typedef struct
 	streaming_query_method streaming_query; /* NULL if not supported */
 	cursor_fetch_row_method streaming_fetch_row;	/* NULL if not supported */
 	is_broken_method is_broken; /* NULL means connection is never broken */
-}			libclickhouse_methods;
+} libclickhouse_methods;
 
 typedef struct
 {
 	libclickhouse_methods *methods;
 	void	   *conn;
 	bool		is_binary;
-}			ch_connection;
+} ch_connection;
 
 ch_connection_details *connstring_parse(const char *connstring);
-ch_connection chfdw_http_connect(ch_connection_details * details);
-ch_connection chfdw_binary_connect(ch_connection_details * details);
-text	   *chfdw_http_fetch_raw_data(ch_cursor * cursor);
-List	   *chfdw_construct_create_tables(ImportForeignSchemaStmt * stmt, ForeignServer * server);
+ch_connection chfdw_http_connect(ch_connection_details *details);
+ch_connection chfdw_binary_connect(ch_connection_details *details);
+text	   *chfdw_http_fetch_raw_data(ch_cursor *cursor);
+List	   *chfdw_construct_create_tables(ImportForeignSchemaStmt *stmt, ForeignServer *server);
 char	   *ch_quote_literal(const char *rawstr);
 char	   *chfdw_datum_to_ch_literal(Datum value, Oid type);
 const char *ch_quote_ident(const char *rawstr);
@@ -116,7 +116,7 @@ typedef enum
 	CH_DEFAULT,
 	CH_COLLAPSING_MERGE_TREE,
 	CH_AGGREGATING_MERGE_TREE
-}			CHRemoteTableEngine;
+} CHRemoteTableEngine;
 
 /*
  * FDW-specific planner information kept in RelOptInfo.fdw_private for a
@@ -223,52 +223,52 @@ typedef struct CHFdwRelationInfo
 	 * escaped.
 	 */
 	char		ch_table_sign_field[CH_ESCAPED_NAMEDATALEN];
-}			CHFdwRelationInfo;
+} CHFdwRelationInfo;
 
 /* in fdw.c */
-extern ForeignServer * chfdw_get_foreign_server(Relation rel);
-extern Expr * chfdw_find_em_expr_for_input_target(PlannerInfo * root,
-												  EquivalenceClass * ec,
-												  PathTarget * target);
-extern Expr * chfdw_find_em_expr_for_rel(EquivalenceClass * ec, RelOptInfo * rel);
+extern ForeignServer *chfdw_get_foreign_server(Relation rel);
+extern Expr *chfdw_find_em_expr_for_input_target(PlannerInfo *root,
+												 EquivalenceClass *ec,
+												 PathTarget *target);
+extern Expr *chfdw_find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel);
 
 /* in connection.c */
-extern ch_connection chfdw_get_connection(UserMapping * user);
+extern ch_connection chfdw_get_connection(UserMapping *user);
 extern void chfdw_exec_query(ch_connection conn, const char *query);
 extern void chfdw_report_error(int elevel, ch_connection conn,
 							   bool clear, const char *sql);
 
 /* in option.c */
-extern kv_list * chfdw_get_session_settings(void);
+extern kv_list *chfdw_get_session_settings(void);
 bool		chfdw_pushdown_regex_ok(void);
 
 extern void
-			chfdw_extract_options(List * defelems, char **driver, char **host, int *port,
+			chfdw_extract_options(List *defelems, char **driver, char **host, int *port,
 								  char **dbname, char **username, char **password,
-								  char **compression, tls_mode * tls,
-								  tls_version * min_tls_version);
-extern List * chfdw_parse_options(const char *options, bool with_comma, bool with_equal);
+								  char **compression, tls_mode *tls,
+								  tls_version *min_tls_version);
+extern List *chfdw_parse_options(const char *options, bool with_comma, bool with_equal);
 
 /* in deparse.c */
-extern void chfdw_classify_conditions(PlannerInfo * root,
-									  RelOptInfo * baserel,
-									  List * input_conds,
-									  List * *remote_conds,
-									  List * *local_conds);
-extern bool chfdw_is_foreign_expr(PlannerInfo * root,
-								  RelOptInfo * baserel,
-								  Expr * expr);
-extern bool is_foreign_param(PlannerInfo * root,
-							 RelOptInfo * baserel,
-							 Expr * expr);
-extern char *chfdw_deparse_insert_sql(StringInfo buf, RangeTblEntry * rte,
+extern void chfdw_classify_conditions(PlannerInfo *root,
+									  RelOptInfo *baserel,
+									  List *input_conds,
+									  List **remote_conds,
+									  List **local_conds);
+extern bool chfdw_is_foreign_expr(PlannerInfo *root,
+								  RelOptInfo *baserel,
+								  Expr *expr);
+extern bool is_foreign_param(PlannerInfo *root,
+							 RelOptInfo *baserel,
+							 Expr *expr);
+extern char *chfdw_deparse_insert_sql(StringInfo buf, RangeTblEntry *rte,
 									  Index rtindex, Relation rel,
-									  List * targetAttrs);
-extern List * chfdw_build_tlist_to_deparse(RelOptInfo * foreignrel);
-extern void chfdw_deparse_select_stmt_for_rel(StringInfo buf, PlannerInfo * root, RelOptInfo * rel,
-											  List * tlist, List * remote_conds, List * pathkeys,
+									  List *targetAttrs);
+extern List *chfdw_build_tlist_to_deparse(RelOptInfo *foreignrel);
+extern void chfdw_deparse_select_stmt_for_rel(StringInfo buf, PlannerInfo *root, RelOptInfo *rel,
+											  List *tlist, List *remote_conds, List *pathkeys,
 											  bool has_final_sort, bool has_limit, bool is_subquery,
-											  List * *retrieved_attrs, List * *params_list);
+											  List **retrieved_attrs, List **params_list);
 extern const char *chfdw_get_jointype_name(JoinType jointype);
 char	   *chfdw_array_to_ch_literal(Datum arr);
 
@@ -282,7 +282,7 @@ extern int	chfdw_is_equal_op(Oid opno);
 typedef struct ConnCacheKey
 {
 	Oid			userid;
-}			ConnCacheKey;
+} ConnCacheKey;
 
 typedef struct ConnCacheEntry
 {
@@ -292,7 +292,7 @@ typedef struct ConnCacheEntry
 	bool		invalidated;	/* true if reconnect is pending */
 	uint32		server_hashvalue;	/* hash value of foreign server OID */
 	uint32		mapping_hashvalue;	/* hash value of user mapping OID */
-}			ConnCacheEntry;
+} ConnCacheEntry;
 
 /* Custom behavior types */
 typedef enum
@@ -344,7 +344,7 @@ typedef enum
 	CF_TO_CHAR,					/* to_char(timestamp[tz], fmt) →
 								 * formatDateTime, with strict format
 								 * translation */
-}			custom_object_type;
+} custom_object_type;
 
 typedef enum
 {
@@ -362,7 +362,7 @@ typedef struct CustomObjectDef
 	int			paren_count;	/* Number closing parens; defaults to 1 */
 	Oid			rowfunc;
 	void	   *cf_context;
-}			CustomObjectDef;
+} CustomObjectDef;
 
 typedef struct CustomColumnInfo
 {
@@ -373,21 +373,21 @@ typedef struct CustomColumnInfo
 	custom_object_type coltype;
 
 	CHRemoteTableEngine table_engine;
-}			CustomColumnInfo;
+} CustomColumnInfo;
 
-extern bool chfdw_check_for_ordered_aggregate(Aggref * agg);
-extern CustomObjectDef * chfdw_check_for_custom_function(Oid funcid);
-extern CustomObjectDef * chfdw_check_for_custom_type(Oid typeoid);
-extern void chfdw_apply_custom_table_options(CHFdwRelationInfo * fpinfo, Oid relid);
-extern CustomColumnInfo * chfdw_get_custom_column_info(Oid relid, uint16 varattno);
-extern CustomObjectDef * chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form);
+extern bool chfdw_check_for_ordered_aggregate(Aggref *agg);
+extern CustomObjectDef *chfdw_check_for_custom_function(Oid funcid);
+extern CustomObjectDef *chfdw_check_for_custom_type(Oid typeoid);
+extern void chfdw_apply_custom_table_options(CHFdwRelationInfo *fpinfo, Oid relid);
+extern CustomColumnInfo *chfdw_get_custom_column_info(Oid relid, uint16 varattno);
+extern CustomObjectDef *chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form);
 
 extern Datum ch_timestamp_out(PG_FUNCTION_ARGS);
 extern Datum ch_date_out(PG_FUNCTION_ARGS);
 extern Datum ch_time_out(PG_FUNCTION_ARGS);
 
-extern bool chfdw_is_shippable(Node * node, Oid objectId, Oid classId, CHFdwRelationInfo * fpinfo,
-							   CustomObjectDef * *outcdef);
+extern bool chfdw_is_shippable(Node *node, Oid objectId, Oid classId, CHFdwRelationInfo *fpinfo,
+							   CustomObjectDef **outcdef);
 extern double time_diff(struct timeval *prior, struct timeval *latter);
 
 /*

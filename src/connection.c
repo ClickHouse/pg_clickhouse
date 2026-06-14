@@ -34,11 +34,11 @@
 /*
  * Connection cache (initialized on first use)
  */
-static HTAB * ConnectionHash = NULL;
+static HTAB *ConnectionHash = NULL;
 static void chfdw_inval_callback(Datum arg, int cacheid, uint32 hashvalue);
 
 static ch_connection
-clickhouse_connect(ForeignServer * server, UserMapping * user)
+clickhouse_connect(ForeignServer *server, UserMapping *user)
 {
 	char	   *driver = "http";
 
@@ -69,7 +69,7 @@ clickhouse_connect(ForeignServer * server, UserMapping * user)
 }
 
 ch_connection
-chfdw_get_connection(UserMapping * user)
+chfdw_get_connection(UserMapping *user)
 {
 	bool		found;
 	ConnCacheEntry *entry;

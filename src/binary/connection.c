@@ -238,7 +238,7 @@ tls_connect(struct ch_binary_state *s, const char *host, tls_version min_version
 }
 
 ch_binary_connection_t *
-ch_binary_connect(ch_connection_details * details)
+ch_binary_connect(ch_connection_details *details)
 {
 	const char *host = details->host ? details->host : "127.0.0.1";
 	int			port = details->port;
@@ -331,7 +331,7 @@ ch_binary_connect(ch_connection_details * details)
 }
 
 bool
-ch_binary_is_broken(const ch_binary_connection_t * conn)
+ch_binary_is_broken(const ch_binary_connection_t *conn)
 {
 	if (!conn)
 		return false;
@@ -341,7 +341,7 @@ ch_binary_is_broken(const ch_binary_connection_t * conn)
 }
 
 void
-ch_binary_close(ch_binary_connection_t * conn)
+ch_binary_close(ch_binary_connection_t *conn)
 {
 	if (!conn)
 		return;

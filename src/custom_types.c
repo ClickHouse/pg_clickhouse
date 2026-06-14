@@ -225,9 +225,9 @@
 #define STR_STARTS_WITH(str, sub) strncmp(str, sub, strlen(sub)) == 0
 #define STR_EQUAL(a, b) strcmp(a, b) == 0
 
-static HTAB * custom_objects_cache = NULL;
+static HTAB *custom_objects_cache = NULL;
 static HTAB
-* custom_columns_cache = NULL;
+		   *custom_columns_cache = NULL;
 
 static HTAB *
 create_custom_objects_cache(void)
@@ -273,7 +273,7 @@ create_custom_columns_cache(void)
 }
 
 inline static void
-init_custom_entry(CustomObjectDef * entry)
+init_custom_entry(CustomObjectDef *entry)
 {
 	entry->cf_type = CF_USUAL;
 	entry->custom_name[0] = '\0';
@@ -287,7 +287,7 @@ init_custom_entry(CustomObjectDef * entry)
  * aggregate function.
  */
 inline bool
-chfdw_check_for_ordered_aggregate(Aggref * agg)
+chfdw_check_for_ordered_aggregate(Aggref *agg)
 {
 	switch (agg->aggfnoid)
 	{
@@ -1072,12 +1072,12 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form)
  * New options might also require tweaking merge_fdw_options().
  */
 static void
-			populate_custom_column_entry(CustomColumnInfo * entry, Oid relid,
+			populate_custom_column_entry(CustomColumnInfo *entry, Oid relid,
 										 AttrNumber attnum, const char *attname,
 										 CHRemoteTableEngine table_engine);
 
 void
-chfdw_apply_custom_table_options(CHFdwRelationInfo * fpinfo, Oid relid)
+chfdw_apply_custom_table_options(CHFdwRelationInfo *fpinfo, Oid relid)
 {
 	ListCell   *lc;
 	TupleDesc	tupdesc;
@@ -1151,7 +1151,7 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo * fpinfo, Oid relid)
  * Caller has already inserted the entry under (relid, attnum).
  */
 static void
-populate_custom_column_entry(CustomColumnInfo * entry, Oid relid,
+populate_custom_column_entry(CustomColumnInfo *entry, Oid relid,
 							 AttrNumber attnum, const char *attname,
 							 CHRemoteTableEngine table_engine)
 {

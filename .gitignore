@@ -5,6 +5,7 @@ results/
 *.dll
 *.bc
 tmp/
+dev/typedefs.list
 regression.diffs
 regression.out
 /pg_clickhouse-*

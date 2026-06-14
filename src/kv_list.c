@@ -4,7 +4,8 @@
 #include "nodes/pathnodes.h"
 #include "utils/guc.h"
 
-static kv_list * allocate_list(size_t size, int allocate)
+static kv_list *
+allocate_list(size_t size, int allocate)
 {
 	kv_list    *pairs;
 
@@ -36,7 +37,8 @@ static kv_list * allocate_list(size_t size, int allocate)
 	return pairs;
 }
 
-extern kv_list * new_kv_list_from_pg_list(List * list, int allocate)
+extern kv_list *
+new_kv_list_from_pg_list(List *list, int allocate)
 {
 	ListCell   *lc;
 	DefElem    *elem;
@@ -81,7 +83,8 @@ extern kv_list * new_kv_list_from_pg_list(List * list, int allocate)
 	return pairs;
 }
 
-extern kv_iter new_kv_iter(const kv_list * ns)
+extern kv_iter
+new_kv_iter(const kv_list *ns)
 {
 	char	   *name;
 
@@ -101,7 +104,7 @@ extern kv_iter new_kv_iter(const kv_list * ns)
 }
 
 extern bool
-kv_iter_next(kv_iter * iter)
+kv_iter_next(kv_iter *iter)
 {
 	if (iter->togo == 0)
 		return false;
@@ -114,7 +117,7 @@ kv_iter_next(kv_iter * iter)
 }
 
 extern bool
-kv_iter_done(kv_iter * iter)
+kv_iter_done(kv_iter *iter)
 {
 	return iter->togo == 0;
 }

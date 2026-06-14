@@ -29,7 +29,7 @@ repos:
       - id: indent
         name: indent code
         language: system
-        entry: ./dev/indent.sh
+        entry: make indent
         pass_filenames: false
   - repo: local
     hooks:

@@ -28,44 +28,44 @@
 static bool initialized = false;
 
 static void http_disconnect(void *conn);
-static ch_cursor * http_simple_query(void *conn, const ch_query * query);
-static ch_cursor * http_streaming_query(void *conn, const ch_query * query,
-										int32 fetch_size);
-static void http_simple_insert(void *conn, const ch_query * query);
+static ch_cursor *http_simple_query(void *conn, const ch_query *query);
+static ch_cursor *http_streaming_query(void *conn, const ch_query *query,
+									   int32 fetch_size);
+static void http_simple_insert(void *conn, const ch_query *query);
 static void http_cursor_free(void *);
 static void http_streaming_cursor_free(void *);
-static Datum * http_fetch_row(ChFdwScanRowContext * ctx);
-static Datum * http_streaming_fetch_row(ChFdwScanRowContext * ctx);
-static Datum * http_fetch_row_from_state(ChFdwScanRowContext * ctx,
-										 ch_http_read_state * state);
+static Datum *http_fetch_row(ChFdwScanRowContext *ctx);
+static Datum *http_streaming_fetch_row(ChFdwScanRowContext *ctx);
+static Datum *http_fetch_row_from_state(ChFdwScanRowContext *ctx,
+										ch_http_read_state *state);
 static void *http_prepare_insert(void *, ResultRelInfo *, List *, const ch_query *, char *);
 static void http_insert_tuple(void *, TupleTableSlot *);
-static void char_to_datum(ChFdwScanRowContext * ctx, int attnum, char *data, size_t len);
-static void report_http_stream_query_failure(void *conn, const ch_query * query,
-											 HttpStream * stream);
+static void char_to_datum(ChFdwScanRowContext *ctx, int attnum, char *data, size_t len);
+static void report_http_stream_query_failure(void *conn, const ch_query *query,
+											 HttpStream *stream);
 
 static libclickhouse_methods http_methods =
 {
 	.disconnect = http_disconnect,
-		.simple_query = http_simple_query,
-		.fetch_row = http_fetch_row,
-		.prepare_insert = http_prepare_insert,
-		.insert_tuple = http_insert_tuple,
-		.streaming_query = http_streaming_query,
-		.streaming_fetch_row = http_streaming_fetch_row,
+	.simple_query = http_simple_query,
+	.fetch_row = http_fetch_row,
+	.prepare_insert = http_prepare_insert,
+	.insert_tuple = http_insert_tuple,
+	.streaming_query = http_streaming_query,
+	.streaming_fetch_row = http_streaming_fetch_row,
 };
 
 static void binary_disconnect(void *conn);
-static ch_cursor * binary_simple_query(void *conn, const ch_query * query);
+static ch_cursor *binary_simple_query(void *conn, const ch_query *query);
 static void binary_cursor_free(void *cursor);
 static bool binary_is_broken(const void *conn);
 
 /* static void binary_simple_insert(void *conn, const char *query); */
-static Datum * binary_fetch_row(ChFdwScanRowContext * ctx);
-static void binary_insert_tuple(void *, TupleTableSlot * slot);
+static Datum *binary_fetch_row(ChFdwScanRowContext *ctx);
+static void binary_insert_tuple(void *, TupleTableSlot *slot);
 static void binary_finalize_insert(void *istate);
 static void *binary_prepare_insert(void *, ResultRelInfo *, List *,
-								   const ch_query * query, char *table_name);
+								   const ch_query *query, char *table_name);
 static char *ch_escape_string(const char *s, size_t len);
 static void ch_quote_literal_internal(char *dst, const char *src, size_t len);
 extern char *ch_quote_literal(const char *rawstr);
@@ -74,14 +74,14 @@ extern const char *ch_quote_ident(const char *rawstr);
 static libclickhouse_methods binary_methods =
 {
 	.disconnect = binary_disconnect,
-		.simple_query = binary_simple_query,
-		.fetch_row = binary_fetch_row,
-		.prepare_insert = binary_prepare_insert,
-		.insert_tuple = binary_insert_tuple,
-		.finalize_insert = binary_finalize_insert,
-		.streaming_query = NULL,
-		.streaming_fetch_row = NULL,
-		.is_broken = binary_is_broken,
+	.simple_query = binary_simple_query,
+	.fetch_row = binary_fetch_row,
+	.prepare_insert = binary_prepare_insert,
+	.insert_tuple = binary_insert_tuple,
+	.finalize_insert = binary_finalize_insert,
+	.streaming_query = NULL,
+	.streaming_fetch_row = NULL,
+	.is_broken = binary_is_broken,
 };
 
 static int
@@ -105,7 +105,7 @@ is_canceled(void)
 }
 
 ch_connection
-chfdw_http_connect(ch_connection_details * details)
+chfdw_http_connect(ch_connection_details *details)
 {
 	ch_connection res;
 	ch_http_connection_t *conn;
@@ -200,8 +200,8 @@ kill_query(void *conn, const char *query_id)
 }
 
 static void
-report_http_stream_query_failure(void *conn, const ch_query * query,
-								 HttpStream * stream)
+report_http_stream_query_failure(void *conn, const ch_query *query,
+								 HttpStream *stream)
 {
 	long		status = ch_http_stream_status(stream);
 
@@ -247,7 +247,7 @@ report_http_stream_query_failure(void *conn, const ch_query * query,
 }
 
 static ch_cursor *
-http_simple_query(void *conn, const ch_query * query)
+http_simple_query(void *conn, const ch_query *query)
 {
 	int			attempts = 0;
 	MemoryContext tempcxt,
@@ -331,7 +331,7 @@ again:
 }
 
 static void
-http_simple_insert(void *conn, const ch_query * query)
+http_simple_insert(void *conn, const ch_query *query)
 {
 	ch_http_response_t *resp = ch_http_simple_query(conn, query);
 
@@ -383,7 +383,7 @@ http_streaming_cursor_free(void *c)
  * via CURL pause/resume, keeping memory proportional to batch size.
  */
 static ch_cursor *
-http_streaming_query(void *conn, const ch_query * query, int32 fetch_size)
+http_streaming_query(void *conn, const ch_query *query, int32 fetch_size)
 {
 	int			attempts = 0;
 	MemoryContext tempcxt = NULL,
@@ -464,7 +464,7 @@ again:
  * reinitialize the parser on the refilled buffer.
  */
 static Datum *
-http_streaming_fetch_row(ChFdwScanRowContext * ctx)
+http_streaming_fetch_row(ChFdwScanRowContext *ctx)
 {
 	ch_cursor  *cursor = ctx->cursor;
 	ch_http_read_state *state = cursor->read_state;
@@ -508,7 +508,7 @@ http_streaming_fetch_row(ChFdwScanRowContext * ctx)
 }
 
 static Datum *
-http_fetch_row_from_state(ChFdwScanRowContext * ctx, ch_http_read_state * state)
+http_fetch_row_from_state(ChFdwScanRowContext *ctx, ch_http_read_state *state)
 {
 	int			rc = CH_CONT;
 	size_t		attcount = list_length(ctx->retrieved_attrs);
@@ -602,7 +602,7 @@ http_fetch_row_from_state(ChFdwScanRowContext * ctx, ch_http_read_state * state)
  * which only cares about text.
  */
 static Datum *
-http_fetch_row(ChFdwScanRowContext * ctx)
+http_fetch_row(ChFdwScanRowContext *ctx)
 {
 	ch_cursor  *cursor = ctx->cursor;
 	ch_http_read_state *state = cursor->read_state;
@@ -616,7 +616,7 @@ http_fetch_row(ChFdwScanRowContext * ctx)
  * ctx->tupdesc and ctx->attinmeta.
  */
 static void
-char_to_datum(ChFdwScanRowContext * ctx, int attidx, char *data, size_t len)
+char_to_datum(ChFdwScanRowContext *ctx, int attidx, char *data, size_t len)
 {
 	Oid			pgtype = TupleDescAttr(ctx->tupdesc, attidx)->atttypid;
 
@@ -646,7 +646,7 @@ char_to_datum(ChFdwScanRowContext * ctx, int attidx, char *data, size_t len)
 }
 
 text	   *
-chfdw_http_fetch_raw_data(ch_cursor * cursor)
+chfdw_http_fetch_raw_data(ch_cursor *cursor)
 {
 	ch_http_read_state *state = cursor->read_state;
 
@@ -696,6 +696,7 @@ chfdw_datum_to_ch_literal(Datum value, Oid type)
 
 				getTypeOutputInfo(type, &typoutput, &tl);
 				text = OidOutputFunctionCall(typoutput, value);
+
 				return ch_escape_string(text, strlen(text));
 			}
 		case BYTEAOID:
@@ -733,7 +734,7 @@ chfdw_datum_to_ch_literal(Datum value, Oid type)
  *		Construct values part of INSERT query
  */
 static void
-extend_insert_query(ch_http_insert_state * state, TupleTableSlot * slot)
+extend_insert_query(ch_http_insert_state *state, TupleTableSlot *slot)
 {
 #ifdef USE_ASSERT_CHECKING
 	int			pindex = 0;
@@ -786,8 +787,8 @@ extend_insert_query(ch_http_insert_state * state, TupleTableSlot * slot)
 }
 
 static void *
-http_prepare_insert(void *conn, ResultRelInfo * rri, List * target_attrs,
-					const ch_query * query, char *table_name)
+http_prepare_insert(void *conn, ResultRelInfo *rri, List *target_attrs,
+					const ch_query *query, char *table_name)
 {
 	ch_http_insert_state *state = palloc0(sizeof(ch_http_insert_state));
 
@@ -801,7 +802,7 @@ http_prepare_insert(void *conn, ResultRelInfo * rri, List * target_attrs,
 }
 
 static void
-http_insert_tuple(void *istate, TupleTableSlot * slot)
+http_insert_tuple(void *istate, TupleTableSlot *slot)
 {
 	ch_http_insert_state *state = istate;
 
@@ -820,7 +821,7 @@ http_insert_tuple(void *istate, TupleTableSlot * slot)
 /*** BINARY PROTOCOL ***/
 
 ch_connection
-chfdw_binary_connect(ch_connection_details * details)
+chfdw_binary_connect(ch_connection_details *details)
 {
 	ch_connection res;
 
@@ -844,7 +845,7 @@ binary_is_broken(const void *conn)
 }
 
 static ch_cursor *
-binary_simple_query(void *conn, const ch_query * query)
+binary_simple_query(void *conn, const ch_query *query)
 {
 	MemoryContext tempcxt,
 				oldcxt;
@@ -941,7 +942,7 @@ binary_fetch_row_errcb(void *arg)
 }
 
 static Datum *
-binary_fetch_row(ChFdwScanRowContext * ctx)
+binary_fetch_row(ChFdwScanRowContext *ctx)
 {
 	ListCell   *lc;
 	ch_cursor  *cursor = ctx->cursor;
@@ -1084,8 +1085,8 @@ binary_cursor_free(void *c)
 }
 
 static void *
-binary_prepare_insert(void *conn, ResultRelInfo * rri, List * target_attrs,
-					  const ch_query * query, char *table_name)
+binary_prepare_insert(void *conn, ResultRelInfo *rri, List *target_attrs,
+					  const ch_query *query, char *table_name)
 {
 	ch_binary_insert_state *state = NULL;
 	MemoryContext tempcxt,
@@ -1122,7 +1123,7 @@ binary_prepare_insert(void *conn, ResultRelInfo * rri, List * target_attrs,
 }
 
 static void
-binary_insert_tuple(void *istate, TupleTableSlot * slot)
+binary_insert_tuple(void *istate, TupleTableSlot *slot)
 {
 	ch_binary_insert_state *state = istate;
 
@@ -1224,7 +1225,7 @@ static char *str_types_map[][2] = {
 };
 
 static char *
-parse_type(char *table_name, char *colname, char *part, bool *is_nullable, List * *options)
+parse_type(char *table_name, char *colname, char *part, bool *is_nullable, List **options)
 {
 	char	   *typepart = part;
 	char	   *pos = strstr(typepart, "(");
@@ -1324,7 +1325,7 @@ parse_type(char *table_name, char *colname, char *part, bool *is_nullable, List 
 }
 
 List	   *
-chfdw_construct_create_tables(ImportForeignSchemaStmt * stmt, ForeignServer * server)
+chfdw_construct_create_tables(ImportForeignSchemaStmt *stmt, ForeignServer *server)
 {
 	Oid			userid = GetUserId();
 	UserMapping *user = GetUserMapping(userid, server->serverid);
