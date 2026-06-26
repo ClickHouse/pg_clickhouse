@@ -36,7 +36,7 @@ SELECT count(*) FROM cancel_http_buf_ft;
 SELECT count(*) FROM cancel_binary_ft;
 
 -- The repeated CROSS JOINs intentionally create a large remote result set,
--- so the 10ms timeout fires while the remote query is still running.
+-- so the statement_timeout fires while the remote query is still running.
 -- HTTP streaming: exercises the curl progress-callback cancel path via
 -- the streaming implementation.
 BEGIN;
@@ -55,7 +55,7 @@ COMMIT;
 
 -- Binary: same test, exercising the OnProgress cancel path.
 BEGIN;
-SET LOCAL statement_timeout = '10ms';
+SET LOCAL statement_timeout = '1ms';
 SELECT count(*) FROM cancel_binary_ft a CROSS JOIN cancel_binary_ft b
     CROSS JOIN cancel_binary_ft c CROSS JOIN cancel_binary_ft d;
 COMMIT;
