@@ -293,6 +293,8 @@ find_batch_end(const HttpStream* stream) {
 static void
 compact_buffer(HttpStream* stream) {
     if (stream->parse_pos > 0) {
+        if (stream->parse_pos > stream->write_pos)
+            stream->parse_pos = stream->write_pos;
         size_t remaining = stream->write_pos - stream->parse_pos;
 
         memmove(stream->buf, stream->buf + stream->parse_pos, remaining);
