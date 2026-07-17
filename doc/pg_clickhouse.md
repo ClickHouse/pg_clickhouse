@@ -11,7 +11,7 @@ CREATE EXTENSION pg_clickhouse;
 
 This library contains PostgreSQL extension that enables remote query execution
 on ClickHouse databases, including a [foreign data wrapper]. It supports
-PostgreSQL 13 and higher and ClickHouse 23 and higher.
+PostgreSQL 13 and higher and ClickHouse 23.3 and higher.
 
 ## Getting Started
 
@@ -142,10 +142,6 @@ The supported options are:
     "none", "lz4", or "zstd". Defaults to "lz4". Ignored by the "http" driver.
 *   `dbname`: The ClickHouse database to use upon connecting. Defaults to
     "default".
-*   `fetch_size`: Approximate batch size in bytes for HTTP streaming. Batches
-    split on row boundaries. Defaults to `50000000` (50 MB). `0` disables
-    streaming and buffers the full response. Foreign tables can override this
-    value.
 *   `host`: The host name of the ClickHouse server. Defaults to "localhost";
 *   `min_tls_version`: Minimum TLS protocol version to negotiate on connections
     that use TLS. One of `TLSv1`, `TLSv1.1`, `TLSv1.2`, or `TLSv1.3`. Defaults
@@ -315,9 +311,6 @@ The supported table options are:
 
 *   `database`: The name of the remote database. Defaults to the database
     defined for the foreign server.
-*   `fetch_size`: Approximate batch size in bytes for HTTP streaming.
-    Overrides server-level `fetch_size`. Defaults to `50000000` (50 MB). `0`
-    disables streaming and buffers the full response.
 *   `table_name`: The name of the remote table. Default to the name specified
     for the foreign table.
 *   `engine`: The [table engine] used by the ClickHouse table. For

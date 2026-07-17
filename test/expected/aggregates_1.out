@@ -570,9 +570,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT groupArray(cost) FROM agg_test.hits
 (4 rows)
 
-                                                                                                                      array_agg                                                                                                                       
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {1.29,8.38,4.28,6.51,2.15,3.02,5.94,2.98,5.6,7.01,4.26,7.4,7.55,2.34,7.57,5.66,2.61,3.51,3.52,4.43,5.55,5.24,5.1,1.99,1.81,6.8,3.54,8.14,8.21,4.55,1.33,7.42,2.23,5.24,6.04,8.53,4.43,3.57,2.47,1.2,3.55,8.17,8.24,2.36,4.79,6.75,8.9,7.69,8.09,5.9}
+                                                                                                                          array_agg                                                                                                                          
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {1.29,8.38,4.28,6.51,2.15,3.02,5.94,2.98,5.60,7.01,4.26,7.40,7.55,2.34,7.57,5.66,2.61,3.51,3.52,4.43,5.55,5.24,5.10,1.99,1.81,6.80,3.54,8.14,8.21,4.55,1.33,7.42,2.23,5.24,6.04,8.53,4.43,3.57,2.47,1.20,3.55,8.17,8.24,2.36,4.79,6.75,8.90,7.69,8.09,5.90}
 (1 row)
 
                                       QUERY PLAN                                      
@@ -596,9 +596,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT groupArray(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
 (4 rows)
 
-                     array_agg                      
-----------------------------------------------------
- {5.1,1.99,8.14,8.53,3.57,2.47,8.24,4.79,6.75,7.69}
+                      array_agg                      
+-----------------------------------------------------
+ {5.10,1.99,8.14,8.53,3.57,2.47,8.24,4.79,6.75,7.69}
 (1 row)
 
 -- min(UInt64)
@@ -888,9 +888,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT min(cost) FROM agg_test.hits
 (4 rows)
 
- min 
------
- 1.2
+ min  
+------
+ 1.20
 (1 row)
 
                                   QUERY PLAN                                   
@@ -1206,9 +1206,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT max(cost) FROM agg_test.hits
 (4 rows)
 
- max 
------
- 8.9
+ max  
+------
+ 8.90
 (1 row)
 
                                   QUERY PLAN                                   
@@ -1498,9 +1498,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT stddev_samp(a), stddev_samp(a), stddev_pop(a) FROM agg_test.agg_numbers
 (4 rows)
 
-      stddev       |    stddev_samp    |     stddev_pop     
--------------------+-------------------+--------------------
- 41.22701379758988 | 41.22701379758988 | 35.703641270884404
+      stddev      |   stddev_samp    |    stddev_pop    
+------------------+------------------+------------------
+ 41.2270137975899 | 41.2270137975899 | 35.7036412708844
 (1 row)
 
 -- stddev(int4), stddev_samp(int4), stddev_pop(int4)
@@ -1525,9 +1525,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT stddev_samp(cast(a, 'Nullable(Int32)')), stddev_samp(cast(a, 'Nullable(Int32)')), stddev_pop(cast(a, 'Nullable(Int32)')) FROM agg_test.agg_numbers
 (4 rows)
 
-      stddev       |    stddev_samp    |     stddev_pop     
--------------------+-------------------+--------------------
- 41.22701379758988 | 41.22701379758988 | 35.703641270884404
+      stddev      |   stddev_samp    |    stddev_pop    
+------------------+------------------+------------------
+ 41.2270137975899 | 41.2270137975899 | 35.7036412708844
 (1 row)
 
 -- stddev(int8), stddev_samp(int8), stddev_pop(int8)
@@ -1552,9 +1552,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT stddev_samp(cast(a, 'Nullable(Int64)')), stddev_samp(cast(a, 'Nullable(Int64)')), stddev_pop(cast(a, 'Nullable(Int64)')) FROM agg_test.agg_numbers
 (4 rows)
 
-      stddev       |    stddev_samp    |     stddev_pop     
--------------------+-------------------+--------------------
- 41.22701379758988 | 41.22701379758988 | 35.703641270884404
+      stddev      |   stddev_samp    |    stddev_pop    
+------------------+------------------+------------------
+ 41.2270137975899 | 41.2270137975899 | 35.7036412708844
 (1 row)
 
 -- stddev(float), stddev_samp(float), stddev_pop(float)
@@ -1579,9 +1579,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT stddev_samp(b), stddev_samp(b), stddev_pop(b) FROM agg_test.agg_numbers
 (4 rows)
 
-  stddev   | stddev_samp | stddev_pop 
------------+-------------+------------
- 151.38937 |   151.38937 |  131.10704
+       stddev       |    stddev_samp     |     stddev_pop     
+--------------------+--------------------+--------------------
+ 151.38937377929688 | 151.38937377929688 | 131.10704040527344
 (1 row)
 
 -- stddev(float8), stddev_samp(float8), stddev_pop(float8)
@@ -1633,9 +1633,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT stddev_samp(cast(b, 'Nullable(Decimal)')), stddev_samp(cast(b, 'Nullable(Decimal)')), stddev_pop(cast(b, 'Nullable(Decimal)')) FROM agg_test.agg_numbers
 (4 rows)
 
-      stddev       |    stddev_samp    |     stddev_pop     
--------------------+-------------------+--------------------
- 151.2183851256189 | 151.2183851256189 | 130.95896303804486
+      stddev      |   stddev_samp    |    stddev_pop    
+------------------+------------------+------------------
+ 151.218385125619 | 151.218385125619 | 130.958963038045
 (1 row)
 
 -- var_pop(int2), var_samp(int2), variance(int2)
@@ -1660,9 +1660,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT var_pop(a), var_samp(a), var_samp(a) FROM agg_test.agg_numbers
 (4 rows)
 
- var_pop |      var_samp      |      variance      
----------+--------------------+--------------------
- 1274.75 | 1699.6666666666667 | 1699.6666666666667
+ var_pop |     var_samp     |     variance     
+---------+------------------+------------------
+ 1274.75 | 1699.66666666667 | 1699.66666666667
 (1 row)
 
 -- var_pop(int4), var_samp(int4), variance(int4)
@@ -1687,9 +1687,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT var_pop(cast(a, 'Nullable(Int32)')), var_samp(cast(a, 'Nullable(Int32)')), var_samp(cast(a, 'Nullable(Int32)')) FROM agg_test.agg_numbers
 (4 rows)
 
- var_pop |      var_samp      |      variance      
----------+--------------------+--------------------
- 1274.75 | 1699.6666666666667 | 1699.6666666666667
+ var_pop |     var_samp     |     variance     
+---------+------------------+------------------
+ 1274.75 | 1699.66666666667 | 1699.66666666667
 (1 row)
 
 -- var_pop(int8), var_samp(int8), variance(int8)
@@ -1714,9 +1714,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT var_pop(cast(a, 'Nullable(Int64)')), var_samp(cast(a, 'Nullable(Int64)')), var_samp(cast(a, 'Nullable(Int64)')) FROM agg_test.agg_numbers
 (4 rows)
 
- var_pop |      var_samp      |      variance      
----------+--------------------+--------------------
- 1274.75 | 1699.6666666666667 | 1699.6666666666667
+ var_pop |     var_samp     |     variance     
+---------+------------------+------------------
+ 1274.75 | 1699.66666666667 | 1699.66666666667
 (1 row)
 
 -- var_pop(float), var_samp(float), variance(float)
@@ -1741,9 +1741,9 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    Remote SQL: SELECT var_pop(b), var_samp(b), var_samp(b) FROM agg_test.agg_numbers
 (4 rows)
 
-  var_pop  | var_samp  | variance  
------------+-----------+-----------
- 17189.057 | 22918.742 | 22918.742
+     var_pop     |   var_samp    |   variance    
+-----------------+---------------+---------------
+ 17189.056640625 | 22918.7421875 | 22918.7421875
 (1 row)
 
 -- var_pop(float8), var_samp(float8), variance(float8)

@@ -1,15 +1,10 @@
 -- Test that query cancellation (e.g. Ctrl+C / statement_timeout) works for
 -- both the HTTP and binary drivers during remote query execution.
 
--- HTTP driver (streaming path)
+-- HTTP driver
 CREATE SERVER cancel_http FOREIGN DATA WRAPPER clickhouse_fdw
-    OPTIONS(dbname 'cancel_test', driver 'http', fetch_size '1');
+    OPTIONS(dbname 'cancel_test', driver 'http');
 CREATE USER MAPPING FOR CURRENT_USER SERVER cancel_http;
-
--- HTTP driver (buffered path)
-CREATE SERVER cancel_http_buf FOREIGN DATA WRAPPER clickhouse_fdw
-    OPTIONS(dbname 'cancel_test', driver 'http', fetch_size '0');
-CREATE USER MAPPING FOR CURRENT_USER SERVER cancel_http_buf;
 
 -- Binary driver
 CREATE SERVER cancel_binary FOREIGN DATA WRAPPER clickhouse_fdw
@@ -25,14 +20,11 @@ SELECT clickhouse_raw_query('INSERT INTO cancel_test.t1
 
 CREATE FOREIGN TABLE cancel_http_ft (c1 int)
     SERVER cancel_http OPTIONS (table_name 't1');
-CREATE FOREIGN TABLE cancel_http_buf_ft (c1 int)
-    SERVER cancel_http_buf OPTIONS (table_name 't1');
 CREATE FOREIGN TABLE cancel_binary_ft (c1 int)
     SERVER cancel_binary OPTIONS (table_name 't1');
 
 -- Warm up connections so the cancel test only covers query execution.
 SELECT count(*) FROM cancel_http_ft;
-SELECT count(*) FROM cancel_http_buf_ft;
 SELECT count(*) FROM cancel_binary_ft;
 
 -- The repeated CROSS JOINs intentionally create a large remote result set,
@@ -45,14 +37,6 @@ SELECT count(*) FROM cancel_http_ft a CROSS JOIN cancel_http_ft b
     CROSS JOIN cancel_http_ft c CROSS JOIN cancel_http_ft d;
 COMMIT;
 
--- HTTP buffered: exercises the curl progress-callback cancel path via
--- the legacy non-streaming (simple_query) implementation.
-BEGIN;
-SET LOCAL statement_timeout = '10ms';
-SELECT count(*) FROM cancel_http_buf_ft a CROSS JOIN cancel_http_buf_ft b
-    CROSS JOIN cancel_http_buf_ft c CROSS JOIN cancel_http_buf_ft d;
-COMMIT;
-
 -- Binary: same test, exercising the OnProgress cancel path.
 BEGIN;
 SET LOCAL statement_timeout = '10ms';
@@ -63,17 +47,13 @@ COMMIT;
 -- Verify each connection is still usable after the canceled query tears down
 -- any remote state.
 SELECT count(*) FROM cancel_http_ft;
-SELECT count(*) FROM cancel_http_buf_ft;
 SELECT count(*) FROM cancel_binary_ft;
 
 -- Cleanup
 DROP FOREIGN TABLE cancel_http_ft;
-DROP FOREIGN TABLE cancel_http_buf_ft;
 DROP FOREIGN TABLE cancel_binary_ft;
 DROP USER MAPPING FOR CURRENT_USER SERVER cancel_http;
-DROP USER MAPPING FOR CURRENT_USER SERVER cancel_http_buf;
 DROP USER MAPPING FOR CURRENT_USER SERVER cancel_binary;
 DROP SERVER cancel_http;
-DROP SERVER cancel_http_buf;
 DROP SERVER cancel_binary;
 SELECT clickhouse_raw_query('DROP DATABASE cancel_test');

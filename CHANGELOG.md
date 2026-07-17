@@ -88,6 +88,14 @@ All notable changes to this project will be documented in this file. It uses the
     positive constant value, pushing it down to a call to `arraySlice()` to
     start the search from the specified index. Thanks to Minh Vu for the PR
     ([#334])!
+*   The HTTP driver now uses ClickHouse's Native format, sharing encoding and
+    decoding with binary driver. Only `clickhouse_raw_query()` retains
+    `TabSeparated` behavior; it will likely be removed in favor of
+    `clickhouse_query() in a future release. ([#328])
+*   Deprecated the `fetch_size` setting, now ignored option. With the switch
+    go binary encoding, the HTTP driver always streams results the same as the
+    binary driver. Setting `fetch_size` triggers a warning and will be removed
+    in a future release. ([#328])
 
 ### 🐞 Bug Fixes
 
@@ -189,6 +197,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#319 Fix foreign scan RTE selection"
   [#326]: https://github.com/ClickHouse/pg_clickhouse/pull/326
     "ClickHouse/pg_clickhouse#326 pg-clickhouse-c"
+  [#328]: https://github.com/ClickHouse/pg_clickhouse/pull/328
+    "ClickHouse/pg_clickhouse#328use native format for http"
   [#330]: https://github.com/ClickHouse/pg_clickhouse/pull/330
     "ClickHouse/pg_clickhouse#330 preserve typmod in binary driver"
   [#331]: https://github.com/ClickHouse/pg_clickhouse/pull/331

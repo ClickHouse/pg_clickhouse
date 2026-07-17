@@ -37,17 +37,6 @@ CREATE FOREIGN TABLE ft1 (
 	c8 text
 ) SERVER http_loopback OPTIONS (table_name 't1');
 
-CREATE FOREIGN TABLE ft1_stream (
-	c1 int NOT NULL,
-	c2 int NOT NULL,
-	c3 text,
-	c4 date,
-	c5 date,
-	c6 varchar(10),
-	c7 char(10) default 'ft1',
-	c8 text
-) SERVER http_loopback OPTIONS (table_name 't1', fetch_size '100');
-
 ALTER FOREIGN TABLE ft1 DROP COLUMN c0;
 
 CREATE FOREIGN TABLE ft2 (
@@ -119,9 +108,6 @@ INSERT INTO ft4
 		   'AAA' || to_char(id, 'FM000'),
 		   (id % 2)::bool
 	FROM generate_series(1, 100) id;
-
--- 15 rows with fetch_size 100 bytes forces multiple streaming batches.
-SELECT c1, c3 FROM ft1_stream WHERE c1 <= 15 ORDER BY c1;
 
 SELECT * FROM ft5 ORDER BY c1 LIMIT 5;
 
@@ -263,48 +249,21 @@ CREATE FOREIGN TABLE bad_name (
 ) SERVER http_loopback_bad OPTIONS ( table_name 't3' );
 SELECT * FROM bad_name;
 
-/* ===== fetch_size option tests ===== */
-
-/* Server-level fetch_size: set to 0 to disable streaming. */
-CREATE SERVER http_no_stream FOREIGN DATA WRAPPER clickhouse_fdw
-    OPTIONS(dbname 'http_test', driver 'http', fetch_size '0');
-CREATE USER MAPPING FOR CURRENT_USER SERVER http_no_stream;
-
-CREATE FOREIGN TABLE ft_no_stream (
-    c1 int NOT NULL,
-    c2 int NOT NULL,
-    c3 text
-) SERVER http_no_stream OPTIONS (table_name 't1');
-
-/* Query with streaming disabled (fetch_size = 0). */
-SELECT c3 FROM ft_no_stream ORDER BY c1 LIMIT 3;
-
-/* Table-level fetch_size overrides server-level. */
-CREATE FOREIGN TABLE ft_override_stream (
-    c1 int NOT NULL,
-    c2 int NOT NULL,
-    c3 text
-) SERVER http_no_stream OPTIONS (table_name 't1', fetch_size '100');
-
-/* Query with table-level streaming override (fetch_size = 100). */
-SELECT c3 FROM ft_override_stream ORDER BY c1 LIMIT 3;
-
-/* Default (no fetch_size set) uses streaming — already tested via ft1. */
-SELECT c3 FROM ft1 ORDER BY c1 LIMIT 3;
-
-/* Negative fetch_size should be rejected. */
+/* Deprecated fetch_size option warns but remains accepted for now. */
 CREATE SERVER http_bad_fetch FOREIGN DATA WRAPPER clickhouse_fdw
-    OPTIONS(dbname 'http_test', driver 'http', fetch_size '-1');
+    OPTIONS(dbname 'http_test', driver 'http', fetch_size '100');
 
 CREATE FOREIGN TABLE ft_bad_fetch (
     c1 int NOT NULL,
     c3 text
-) SERVER http_loopback OPTIONS (table_name 't1', fetch_size '-1');
+) SERVER http_loopback OPTIONS (table_name 't1', fetch_size '100');
+
+DROP FOREIGN TABLE ft_bad_fetch;
+DROP SERVER http_bad_fetch;
 
 /*
- * TabSeparated does not escape `[` or `]` in String values, so a value like
- * `[foo]bar` is wire-indistinguishable from a CH array literal. The parser
- * uses the destination Postgres column type to decide.
+ * Native names the column type on the wire, so a String value like `[foo]bar`
+ * stays text instead of reading as a CH array literal.
  */
 SELECT clickhouse_raw_query('CREATE TABLE http_test.t_brk
     (id String, term String) ENGINE = MergeTree ORDER BY id');
@@ -321,11 +280,6 @@ INSERT INTO ft_brk VALUES
     ('6', 'leading text [bracketed] trailing');
 
 SELECT id, term FROM ft_brk ORDER BY id;
-
-/* Streaming path with a small fetch_size forces multi-batch parsing. */
-CREATE FOREIGN TABLE ft_brk_stream (id text, term text)
-    SERVER http_loopback OPTIONS (table_name 't_brk', fetch_size '32');
-SELECT id, term FROM ft_brk_stream ORDER BY id;
 
 /*
  * Mixed row: real Array(String) column alongside a String column whose value
@@ -381,8 +335,9 @@ CREATE FOREIGN TABLE ft_bytea (id text, v bytea)
 SELECT id, v, v IS NULL AS is_null, octet_length(v) FROM ft_bytea ORDER BY id;
 
 /*
- * time columns strip the exact ISO epoch date prefix. Shorter values or ones
- * with another prefix route through the input function unchanged.
+ * A ClickHouse String mapped to a time column feeds the input function
+ * unchanged, so an ISO timestamp is rejected rather than trimmed to its time
+ * of day.
  */
 SELECT clickhouse_raw_query('CREATE TABLE http_test.t_timestr
     (id String, v String) ENGINE = MergeTree ORDER BY id');
@@ -398,9 +353,8 @@ SELECT v FROM ft_timestr WHERE id = '3';
 SELECT v FROM ft_timestr WHERE id = '1';
 SELECT v FROM ft_timestr WHERE id = '2';
 
-/* nested arrays via http (TabSeparated): rectangular maps to multi-dim,
- * jagged shapes route through array_in and surface its malformed-literal
- * error -- matching the binary path. */
+/* nested arrays via http: rectangular maps to multi-dim, jagged shapes are
+ * rejected -- matching the binary path. */
 SELECT clickhouse_raw_query('CREATE TABLE http_test.nested_arrays (
     c1 Int8, c2 Array(Array(Int32)), c3 Array(Array(String))
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
@@ -447,9 +401,6 @@ SELECT * FROM clickhouse_query('http_loopback', 'SELECT 1, 2') AS t(x int);
 SELECT * FROM clickhouse_query('http_loopback', 'SELECT ''abc''') AS t(x int);
 -- unknown server is rejected
 SELECT * FROM clickhouse_query('no_such_server', 'SELECT 1') AS t(x int);
-
-DROP USER MAPPING FOR CURRENT_USER SERVER http_no_stream;
-DROP SERVER http_no_stream CASCADE;
 
 /* ===== secure option tests ===== */
 

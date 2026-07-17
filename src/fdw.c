@@ -41,6 +41,7 @@
 #endif
 
 /* extension includes. */
+#include "cursor.h"
 #include "fdw.h"
 #include "utils/builtins.h"
 #include "version.h"
@@ -61,9 +62,6 @@ PG_MODULE_MAGIC;
 /* If no remote estimates, assume a sort costs 20% extra */
 #define DEFAULT_FDW_SORT_MULTIPLIER 1.2
 
-/* Approximate batch size in bytes for HTTP streaming (50 MB). */
-#define DEFAULT_FETCH_SIZE (50 * 1000 * 1000)
-
 /*
  * Indexes of FDW-private information stored in fdw_private lists.
  *
@@ -76,8 +74,6 @@ enum FdwScanPrivateIndex {
     FdwScanPrivateSelectSql,
     /* Integer list of attribute numbers retrieved by the SELECT */
     FdwScanPrivateRetrievedAttrs,
-    /* Approximate batch size in bytes for HTTP streaming */
-    FdwScanPrivateFetchSize,
 
     /*
      * String describing join i.e. names of relations being joined and types
@@ -132,7 +128,6 @@ typedef struct ChFdwScanState {
     MemoryContext batch_cxt; /* context holding current batch of tuples */
     MemoryContext temp_cxt;  /* context for per-tuple temporary data */
 
-    int32 fetch_size;  /* approximate batch size in bytes */
     bool is_streaming; /* true when using HTTP streaming */
 } ChFdwScanState;
 
@@ -357,10 +352,6 @@ merge_fdw_options(
     const CHFdwRelationInfo* fpinfo_o,
     const CHFdwRelationInfo* fpinfo_i
 );
-static int
-get_fetch_size_option(DefElem* def);
-static DefElem*
-ch_get_table_or_server_option(CHFdwRelationInfo* fpinfo, char* name);
 
 /* Make one query and close the connection */
 Datum
@@ -389,13 +380,7 @@ clickhouse_raw_query(PG_FUNCTION_ARGS) {
     }
 
     PG_TRY();
-    {
-        ch_cursor* cursor = conn.methods->simple_query(conn.conn, &query);
-
-        res = conn.is_binary ? chfdw_binary_fetch_raw_data(cursor)
-                             : chfdw_http_fetch_raw_data(cursor);
-        MemoryContextDelete(cursor->memcxt);
-    }
+    { res = conn.methods->raw_query(conn.conn, &query); }
     PG_CATCH();
     {
         conn.methods->disconnect(conn.conn);
@@ -549,53 +534,6 @@ time_diff(struct timeval* prior, struct timeval* latter) {
     return x;
 }
 
-static int
-get_fetch_size_option(DefElem* def) {
-    int fetch_size = pg_strtoint32(defGetString(def));
-
-    if (fetch_size < 0) {
-        ereport(
-            ERROR,
-            errcode(ERRCODE_FDW_INVALID_ATTRIBUTE_VALUE),
-            errmsg(
-                "invalid value for option \"%s\": %s", def->defname, defGetString(def)
-            ),
-            errhint("fetch_size must be greater than or equal to 0")
-        );
-    }
-
-    return fetch_size;
-}
-
-/*
- * Utility function to fetch a cascading option definition from `fpinfo`.
- * Returns the first option that matches in `fpinfo->table->options` or, if
- * none, then the first found in `fpinfo->server->options`. Returns `NULL`
- * when none found.
- */
-static DefElem*
-ch_get_table_or_server_option(CHFdwRelationInfo* fpinfo, char* name) {
-    ListCell* lc;
-
-    foreach (lc, fpinfo->table->options) {
-        DefElem* def = (DefElem*)lfirst(lc);
-
-        if (strcmp(def->defname, name) == 0) {
-            return def;
-        }
-    }
-
-    foreach (lc, fpinfo->server->options) {
-        DefElem* def = (DefElem*)lfirst(lc);
-
-        if (strcmp(def->defname, name) == 0) {
-            return def;
-        }
-    }
-
-    return NULL;
-}
-
 /*
  * clickhouseGetForeignRelSize
  *		Estimate # of rows and width of the result of the scan
@@ -635,15 +573,6 @@ clickhouseGetForeignRelSize(
     fpinfo->fdw_startup_cost     = DEFAULT_FDW_STARTUP_COST;
     fpinfo->fdw_tuple_cost       = DEFAULT_FDW_TUPLE_COST;
     fpinfo->shippable_extensions = NIL;
-
-    /*
-     * Extract fetch_size: table option overrides server option, default
-     * DEFAULT_FETCH_SIZE. Value is approximate batch size in bytes; 0 means
-     * buffer entire response (disable HTTP streaming).
-     */
-    DefElem* def = ch_get_table_or_server_option(fpinfo, "fetch_size");
-
-    fpinfo->fetch_size = def ? get_fetch_size_option(def) : DEFAULT_FETCH_SIZE;
 
     chfdw_apply_custom_table_options(fpinfo, foreigntableid);
 
@@ -1096,9 +1025,7 @@ clickhouseGetForeignPlan(
      * Build the fdw_private list that will be available to the executor.
      * Items in the list must match order in enum FdwScanPrivateIndex.
      */
-    fdw_private = list_make3(
-        makeString(sql.data), retrieved_attrs, makeInteger(fpinfo->fetch_size)
-    );
+    fdw_private = list_make2(makeString(sql.data), retrieved_attrs);
     if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel)) {
         fdw_private = lappend(fdw_private, makeString(fpinfo->relation_name->data));
     }
@@ -1198,8 +1125,6 @@ clickhouseBeginForeignScan(ForeignScanState* node, int eflags) {
     fsstate->query = strVal(list_nth(fsplan->fdw_private, FdwScanPrivateSelectSql));
     fsstate->retrieved_attrs =
         (List*)list_nth(fsplan->fdw_private, FdwScanPrivateRetrievedAttrs);
-    fsstate->fetch_size =
-        intVal(list_nth(fsplan->fdw_private, FdwScanPrivateFetchSize));
 
     /* Create contexts for batches of tuples and per-tuple temp workspace. */
     fsstate->batch_cxt = AllocSetContextCreate(
@@ -1363,12 +1288,11 @@ clickhouseIterateForeignScan(ForeignScanState* node) {
         }
 
         fsstate->is_streaming =
-            fsstate->fetch_size > 0 &&
             fsstate->scan_conn.gate.methods->streaming_query != NULL;
 
         if (fsstate->is_streaming) {
             fsstate->ch_cursor = fsstate->scan_conn.gate.methods->streaming_query(
-                fsstate->scan_conn.gate.conn, &query, fsstate->fetch_size
+                fsstate->scan_conn.gate.conn, &query
             );
         } else {
             /* Binary still falls back to the simple path for now. */
@@ -2519,7 +2443,6 @@ merge_fdw_options(
     fpinfo->fdw_tuple_cost       = fpinfo_o->fdw_tuple_cost;
     fpinfo->shippable_extensions = fpinfo_o->shippable_extensions;
     fpinfo->use_remote_estimate  = fpinfo_o->use_remote_estimate;
-    fpinfo->fetch_size           = fpinfo_o->fetch_size;
 
     /* Merge the table level options from either side of the join. */
     if (fpinfo_i) {
@@ -2533,12 +2456,6 @@ merge_fdw_options(
          */
         fpinfo->use_remote_estimate =
             fpinfo_o->use_remote_estimate || fpinfo_i->use_remote_estimate;
-
-        /*
-         * Set fetch size to maximum of the joining sides, since larger joins
-         * benefit from bigger batches.
-         */
-        fpinfo->fetch_size = Max(fpinfo_o->fetch_size, fpinfo_i->fetch_size);
     }
 }
 

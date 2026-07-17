@@ -83,8 +83,6 @@ static bool
 is_valid_option(const char* keyword, Oid context);
 static bool
 is_ch_option(const char* keyword);
-static void
-validate_fetch_size_option(DefElem* def);
 static bool
 parse_min_tls_version(const char* val, tls_version* out);
 
@@ -138,7 +136,14 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
         }
 
         if (strcmp(def->defname, "fetch_size") == 0) {
-            validate_fetch_size_option(def);
+            ereport(
+                WARNING,
+                errcode(ERRCODE_WARNING_DEPRECATED_FEATURE),
+                errmsg(
+                    "option \"fetch_size\" is deprecated and ignored; will be "
+                    "removed in a future release"
+                )
+            );
         }
 
         if (strcmp(def->defname, "secure") == 0) {
@@ -246,22 +251,6 @@ InitChFdwOptions(void) {
     memcpy(popt, non_ch_options, sizeof(non_ch_options));
     popt->is_ch_opt = true;
     popt++;
-}
-
-static void
-validate_fetch_size_option(DefElem* def) {
-    int fetch_size = pg_strtoint32(defGetString(def));
-
-    if (fetch_size < 0) {
-        ereport(
-            ERROR,
-            errcode(ERRCODE_FDW_INVALID_ATTRIBUTE_VALUE),
-            errmsg(
-                "invalid value for option \"%s\": %s", def->defname, defGetString(def)
-            ),
-            errhint("fetch_size must be greater than or equal to 0")
-        );
-    }
 }
 
 /*

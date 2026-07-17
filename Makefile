@@ -30,10 +30,14 @@ CH_C_DIR = $(PGCH_DIR)/clickhouse-c
 # own warnings (eg -Wsign-compare in PG array.h macros) don't trip -Werror.
 # PGCH_MSG_PREFIX prefixes every message pg-clickhouse-c raises; it expands
 # inside the ereport macros, so every TU must see the same definition.
-PG_CPPFLAGS = -I./src/include -isystem $(CH_C_DIR) -isystem $(PGCH_DIR) -isystem $(shell $(PG_CONFIG) --includedir-server) -DPGCH_MSG_PREFIX='"pg_clickhouse: "'
+# clickhouse-c recopies server exceptions and transport errors through
+# chc_err.msg, 256 bytes by default, so match CH_ERROR_MSG_LEN; it sizes a
+# struct shared across TUs, so every TU must see the same definition too.
+# pglink.c asserts the pairing.
+PG_CPPFLAGS = -I./src/include -isystem $(CH_C_DIR) -isystem $(PGCH_DIR) -isystem $(shell $(PG_CONFIG) --includedir-server) -DPGCH_MSG_PREFIX='"pg_clickhouse: "' -DCHC_ERR_MSG_LEN=4096
 
 # Link OpenSSL (for TLS in the binary driver), curl (for the HTTP driver),
-# libuuid (for http_streaming.c's query-id generator), and lz4 / zstd
+# libuuid (for http.c's query-id generator), and lz4 / zstd
 # (for the binary driver's compressed-frame codecs).
 PG_LDFLAGS = -lssl -lcrypto -llz4 -lzstd $(shell $(CURL_CONFIG) --libs)
 
