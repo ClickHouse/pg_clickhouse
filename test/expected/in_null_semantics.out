@@ -6,10 +6,12 @@
 -- The has()/countEqual() functions also match a NULL probe against a NULL
 -- element as if it were an ordinary value. Every shape below ships regardless:
 -- deparse.c uses the cheap native form when it can prove neither side can be
--- NULL, and a guarded CASE otherwise that checks at runtime instead, computing
--- Postgres's exact three-valued answer (NULL, not FALSE, or worse, TRUE)
--- in every context. These tests ensure both forms deparse correctly and that
--- the rows returned match local (Postgres) semantics either way.
+-- NULL (or when the only possible divergence is FALSE-for-NULL and the result
+-- merely qualifies rows), and a guarded CASE otherwise that checks at runtime
+-- instead, computing Postgres's exact three-valued answer (NULL, not FALSE,
+-- or worse, TRUE) in every context. These tests ensure both forms deparse
+-- correctly and that the rows returned match local (Postgres) semantics
+-- either way.
 CREATE SERVER in_null_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'in_null_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER in_null_svr;
@@ -61,15 +63,15 @@ SELECT id FROM tnull WHERE xn IN (1, 500) ORDER BY id;
   1
 (1 row)
 
--- A NULL in the list can't be proven absent, so this ships via a guarded
--- CASE instead of the native IN, computing the real answer at runtime
+-- A NULL in the list only pulls results toward FALSE, which a WHERE treats
+-- like the NULL Postgres computes: still the native IN
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM tnull WHERE xn IN (1, NULL) ORDER BY id;
-                                                                                                                     QUERY PLAN                                                                                                                      
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                             QUERY PLAN                                              
+-----------------------------------------------------------------------------------------------------
  Foreign Scan on in_null_test.tnull
    Output: id
-   Remote SQL: SELECT id FROM in_null_test.tnull WHERE ((CASE WHEN xn IS NULL AND notEmpty([1,NULL]) THEN NULL WHEN countEqual([1,NULL], xn) > 0 THEN true WHEN countEqual([1,NULL], NULL) > 0 THEN NULL ELSE false END)) ORDER BY id ASC NULLS LAST
+   Remote SQL: SELECT id FROM in_null_test.tnull WHERE ((xn IN (1,NULL))) ORDER BY id ASC NULLS LAST
 (3 rows)
 
 SELECT id FROM tnull WHERE xn IN (1, NULL) ORDER BY id;
@@ -77,6 +79,40 @@ SELECT id FROM tnull WHERE xn IN (1, NULL) ORDER BY id;
 ----
   1
 (1 row)
+
+-- OR preserves the truth context, so the native IN still ships
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tnull WHERE xp > 500 OR xn IN (1, NULL) ORDER BY id;
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on in_null_test.tnull
+   Output: id
+   Remote SQL: SELECT id FROM in_null_test.tnull WHERE (((xp > 500) OR (xn IN (1,NULL)))) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM tnull WHERE xp > 500 OR xn IN (1, NULL) ORDER BY id;
+ id 
+----
+  1
+(1 row)
+
+-- An IS NULL test observes the exact value even inside a WHERE clause: the
+-- guarded CASE ships instead, keeping id 2's NULL distinct from a FALSE
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tnull WHERE (xn IN (1, NULL)) IS NULL ORDER BY id;
+                                                                                                                          QUERY PLAN                                                                                                                           
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on in_null_test.tnull
+   Output: id
+   Remote SQL: SELECT id FROM in_null_test.tnull WHERE (((CASE WHEN xn IS NULL AND notEmpty([1,NULL]) THEN NULL WHEN countEqual([1,NULL], xn) > 0 THEN true WHEN countEqual([1,NULL], NULL) > 0 THEN NULL ELSE false END) IS NULL)) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM tnull WHERE (xn IN (1, NULL)) IS NULL ORDER BY id;
+ id 
+----
+  2
+  3
+(2 rows)
 
 -- ============================================================
 -- 2. NOT IN over a constant list: always pushable, native when NULL-free
@@ -475,12 +511,12 @@ SELECT xn <> ANY(ARRAY[xn, 500]) AS flag, count(*) FROM tnull GROUP BY flag ORDE
 -- An aggregate FILTER only qualifies rows, so it keeps truth-context rules
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT count(*) FILTER (WHERE xn IN (1, NULL)) FROM tnull;
-                                                                                                           QUERY PLAN                                                                                                           
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
  Foreign Scan
    Output: (count(*) FILTER (WHERE (xn = ANY ('{1,NULL}'::integer[]))))
    Relations: Aggregate on (tnull)
-   Remote SQL: SELECT countIf((((CASE WHEN xn IS NULL AND notEmpty([1,NULL]) THEN NULL WHEN countEqual([1,NULL], xn) > 0 THEN true WHEN countEqual([1,NULL], NULL) > 0 THEN NULL ELSE false END)) > 0)) FROM in_null_test.tnull
+   Remote SQL: SELECT countIf((((xn IN (1,NULL))) > 0)) FROM in_null_test.tnull
 (4 rows)
 
 SELECT count(*) FILTER (WHERE xn IN (1, NULL)) FROM tnull;

@@ -122,6 +122,17 @@ typedef struct deparse_expr_cxt {
     bool no_sort_parens; /* determines sort group clause format */
 
     /*
+     * True while the expression being deparsed only qualifies rows (as in a
+     * filter). For our purposes, denotes NULL and FALSE are interchangeable.
+     * This is the deparse-time analog of the walker's `EXPR_CTX_TRUTH`.
+     * Set to true where the walker sets `EXPR_CTX_TRUTH` (appendConditions,
+     * SubPlan quals, aggregate FILTERs, CASE WHEN conditions), restored to
+     * false by `deparseExpr` anywhere the walker assigns either other value.
+     * Only used to reduce the number of guards emitted by queries.
+     */
+    bool truth_ctx;
+
+    /*
      * True when the statement being deparsed inlines at least one SubPlan.
      * Computed once up front (a contain_subplans scan over the tlist/quals)
      * before any emission begins, and never propagated between contexts.
@@ -2373,6 +2384,9 @@ appendConditions(List* exprs, deparse_expr_cxt* context) {
     bool is_first  = true;
     StringInfo buf = context->buf;
 
+    /* These conditions only qualify rows (walker: EXPR_CTX_TRUTH) */
+    context->truth_ctx = true;
+
     foreach (lc, exprs) {
         Expr* expr = (Expr*)lfirst(lc);
 
@@ -2392,6 +2406,8 @@ appendConditions(List* exprs, deparse_expr_cxt* context) {
 
         is_first = false;
     }
+
+    context->truth_ctx = false;
 }
 
 /* Output join name for given join type */
@@ -2919,8 +2935,31 @@ deparseStringLiteral(StringInfo buf, const char* val) {
  */
 static void
 deparseExpr(Expr* node, deparse_expr_cxt* context) {
+    bool truth_ctx;
+
     if (node == NULL) {
         return;
+    }
+
+    /*
+     * Mirrors foreign_expr_walker's `ExprTruthCtx` transitions by hand (see
+     * the NOTE on that enum). An `EXPR_CTX_TRUTH` context survives only into
+     * the nodes below: deparseRelabelType passes it through untouched (a
+     * cast has no operands of its own to distinguish), while deparseBoolExpr
+     * (under NOT), deparseCaseExpr, and deparseScalarArrayOpExpr unset it
+     * internally for whichever of their operands the walker also treats as
+     * exact. Every other node uses its children's exact values.
+     */
+    truth_ctx = context->truth_ctx;
+    switch (nodeTag(node)) {
+    case T_BoolExpr:
+    case T_CaseExpr:
+    case T_RelabelType:
+    case T_ScalarArrayOpExpr:
+        break;
+    default:
+        context->truth_ctx = false;
+        break;
     }
 
     switch (nodeTag(node)) {
@@ -2997,6 +3036,9 @@ deparseExpr(Expr* node, deparse_expr_cxt* context) {
         elog(ERROR, "unsupported expression type for deparse: %d", (int)nodeTag(node));
         break;
     }
+
+    /* Restore for siblings: one child's degrade must not leak sideways. */
+    context->truth_ctx = truth_ctx;
 }
 
 /*
@@ -3681,11 +3723,14 @@ deparseSubPlan(SubPlan* node, deparse_expr_cxt* context) {
  */
 static void
 deparseSubPlanQuals(Node* quals, deparse_expr_cxt* context) {
+    /* Interior quals only qualify the subquery's own rows: truth context */
+    context->truth_ctx = true;
     if (IsA(quals, List)) {
         appendConditions((List*)quals, context);
     } else {
         deparseExpr((Expr*)quals, context);
     }
+    context->truth_ctx = false;
 }
 
 /*
@@ -5431,9 +5476,13 @@ deparseScalarArrayOpExpr(ScalarArrayOpExpr* node, deparse_expr_cxt* context) {
     Expr* arg1       = linitial(node->args);
     Expr* arg2       = lsecond(node->args);
     CHEqualOp optype = chfdw_is_equal_op(node->opno);
+    bool truth_ctx   = context->truth_ctx;
     foreign_glob_cxt glob_cxt;
     SaopArrayNulls nulls;
     bool cheap_ok;
+
+    /* Both arguments' values are observable inputs (walker: EXPR_CTX_EXACT) */
+    context->truth_ctx = false;
 
     if (optype == CH_OP_NONE) {
         ereport(
@@ -5457,9 +5506,13 @@ deparseScalarArrayOpExpr(ScalarArrayOpExpr* node, deparse_expr_cxt* context) {
      * Very narrow case for IN()/NOT IN(): the native form is exact once the
      * array is a nice, non-empty, provably NULL-free constant, regardless
      * of the probe (ClickHouse's native IN propagates a NULL probe
-     * correctly; see the block comment above)
+     * correctly; see the block comment above). A list that may carry a NULL
+     * diverges only toward FALSE for `IN` (which does not matter in a TRUTH
+     * context) and toward TRUE for `NOT IN` (which breaks any context).
      */
-    if (nulls == SAOP_ARR_NULL_FREE && is_ok_in_expr(arg2) &&
+    if ((nulls == SAOP_ARR_NULL_FREE ||
+         (truth_ctx && node->useOr && optype == CH_OP_EQ)) &&
+        is_ok_in_expr(arg2) &&
         ((node->useOr && optype == CH_OP_EQ) || (!node->useOr && optype == CH_OP_NE))) {
         appendStringInfoChar(buf, '(');
         deparseAsIn(node, context, optype);
@@ -5535,6 +5588,9 @@ deparseBoolExpr(BoolExpr* node, deparse_expr_cxt* context) {
         break;
     case NOT_EXPR: {
         Node* arg = (Node*)linitial(node->args);
+
+        /* FALSE-for-NULL below NOT surfaces as TRUE-for-NULL above: exact */
+        context->truth_ctx = false;
 
         /*
          * NOT over an ANY SubPlan is Postgres's x NOT IN (SELECT ..). When a
@@ -5807,9 +5863,11 @@ deparsePartialStatArray(Aggref* node, AggPartialKind kind, deparse_expr_cxt* con
 
     /* Capture FILTER condition as each component's -If argument. */
     if (node->aggfilter) {
-        cf = psprintf(
+        context->truth_ctx = true; /* FILTER only qualifies rows */
+        cf                 = psprintf(
             ", (%s) > 0", deparseExprToString((Expr*)node->aggfilter, context)
         );
+        context->truth_ctx = false;
     }
 
     if (kind == AGG_PARTIAL_AVG_INT) {
@@ -6072,7 +6130,9 @@ deparseAggref(Aggref* node, deparse_expr_cxt* context) {
 
         if (node->aggfilter) {
             appendStringInfoString(buf, "((");
+            context->truth_ctx = true; /* FILTER only qualifies rows */
             deparseExpr((Expr*)node->aggfilter, context);
+            context->truth_ctx = false;
             appendStringInfoString(buf, ") > 0)");
         }
 
@@ -6097,7 +6157,9 @@ deparseAggref(Aggref* node, deparse_expr_cxt* context) {
         appendStringInfoString(buf, fpinfo->ch_table_sign_field);
         appendStringInfoChar(buf, ',');
         if (node->aggfilter) {
+            context->truth_ctx = true; /* FILTER only qualifies rows */
             deparseExpr((Expr*)node->aggfilter, context);
+            context->truth_ctx = false;
             appendStringInfoString(buf, " AND ");
         }
         deparseExpr((Expr*)((TargetEntry*)linitial(node->args))->expr, context);
@@ -6282,7 +6344,8 @@ deparseCaseExpr(CaseExpr* node, deparse_expr_cxt* context) {
 
     StringInfo buf = context->buf;
     ListCell* lc;
-    char* conv = NULL;
+    char* conv     = NULL;
+    bool truth_ctx = context->truth_ctx;
 
     if (node->casetype == INT2OID || node->casetype == INT4OID ||
         node->casetype == INT8OID) {
@@ -6293,6 +6356,7 @@ deparseCaseExpr(CaseExpr* node, deparse_expr_cxt* context) {
     appendStringInfoString(buf, "CASE");
     if (node->arg) {
         appendStringInfoChar(buf, ' ');
+        context->truth_ctx = false; /* the comparison value is observable */
         deparseExpr(node->arg, context);
     }
 
@@ -6301,7 +6365,11 @@ deparseCaseExpr(CaseExpr* node, deparse_expr_cxt* context) {
 
         Assert(IsA(arg, CaseWhen));
         appendStringInfoString(buf, " WHEN ");
+        /* A WHEN condition takes the same branch for NULL and FALSE... */
+        context->truth_ctx = true;
         deparseExpr(arg->expr, context);
+        /* ...while a result is only truth-tolerant if the CASE itself is */
+        context->truth_ctx = truth_ctx;
 
         /*
          * in simple cases like WHEN val THEN we should extend the condition

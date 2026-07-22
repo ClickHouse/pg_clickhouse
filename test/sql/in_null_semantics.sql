@@ -6,10 +6,12 @@
 -- The has()/countEqual() functions also match a NULL probe against a NULL
 -- element as if it were an ordinary value. Every shape below ships regardless:
 -- deparse.c uses the cheap native form when it can prove neither side can be
--- NULL, and a guarded CASE otherwise that checks at runtime instead, computing
--- Postgres's exact three-valued answer (NULL, not FALSE, or worse, TRUE)
--- in every context. These tests ensure both forms deparse correctly and that
--- the rows returned match local (Postgres) semantics either way.
+-- NULL (or when the only possible divergence is FALSE-for-NULL and the result
+-- merely qualifies rows), and a guarded CASE otherwise that checks at runtime
+-- instead, computing Postgres's exact three-valued answer (NULL, not FALSE,
+-- or worse, TRUE) in every context. These tests ensure both forms deparse
+-- correctly and that the rows returned match local (Postgres) semantics
+-- either way.
 CREATE SERVER in_null_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'in_null_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER in_null_svr;
@@ -46,11 +48,22 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM tnull WHERE xn IN (1, 500) ORDER BY id;
 SELECT id FROM tnull WHERE xn IN (1, 500) ORDER BY id;
 
--- A NULL in the list can't be proven absent, so this ships via a guarded
--- CASE instead of the native IN, computing the real answer at runtime
+-- A NULL in the list only pulls results toward FALSE, which a WHERE treats
+-- like the NULL Postgres computes: still the native IN
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM tnull WHERE xn IN (1, NULL) ORDER BY id;
 SELECT id FROM tnull WHERE xn IN (1, NULL) ORDER BY id;
+
+-- OR preserves the truth context, so the native IN still ships
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tnull WHERE xp > 500 OR xn IN (1, NULL) ORDER BY id;
+SELECT id FROM tnull WHERE xp > 500 OR xn IN (1, NULL) ORDER BY id;
+
+-- An IS NULL test observes the exact value even inside a WHERE clause: the
+-- guarded CASE ships instead, keeping id 2's NULL distinct from a FALSE
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tnull WHERE (xn IN (1, NULL)) IS NULL ORDER BY id;
+SELECT id FROM tnull WHERE (xn IN (1, NULL)) IS NULL ORDER BY id;
 
 -- ============================================================
 -- 2. NOT IN over a constant list: always pushable, native when NULL-free
