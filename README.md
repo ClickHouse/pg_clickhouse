@@ -248,8 +248,6 @@ adding DML features. Our road map:
 *   Support batch insertion via COPY
 *   Add a function to execute an arbitrary ClickHouse query and return its
     results as a tables
-*   Add support for pushdown of UNION queries when they all query the remote
-    database
 
 ## Authors
 

@@ -297,6 +297,17 @@ timezone.sql
  25.8+      | timezone.out
  23-25.7    | timezone_1.out
 
+union_pushdown.sql
+------------------
+
+ Postgres | File
+----------|-------------------
+ 13-19    | union_pushdown.out
+
+ ClickHouse | File
+------------|-------------------
+ 23+        | union_pushdown.out
+
 where_sub.sql
 -------------
 

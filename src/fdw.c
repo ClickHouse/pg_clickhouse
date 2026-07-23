@@ -42,6 +42,7 @@
 
 /* extension includes. */
 #include "fdw.h"
+#include "setop.h"
 #include "utils/builtins.h"
 #include "version.h"
 
@@ -83,7 +84,9 @@ enum FdwScanPrivateIndex {
      * String describing join i.e. names of relations being joined and types
      * of join, added when the scan is join
      */
-    FdwScanPrivateRelations
+    FdwScanPrivateRelations,
+    /* Effective user OID for scans without a representative foreign-table RTE */
+    FdwScanPrivateUserId
 };
 
 /*
@@ -177,6 +180,10 @@ typedef struct {
     int64 count_est;
     int64 offset_est;
 } ChFdwPathExtraData;
+
+typedef struct ChFdwSetopValidationState {
+    int32 fetch_size;
+} ChFdwSetopValidationState;
 
 /*
  * SQL functions
@@ -331,6 +338,12 @@ add_foreign_grouping_paths(
     GroupPathExtraData* extra
 );
 static void
+add_foreign_distinct_paths(
+    PlannerInfo* root,
+    RelOptInfo* input_rel,
+    RelOptInfo* distinct_rel
+);
+static void
 add_foreign_window_paths(
     PlannerInfo* root,
     RelOptInfo* input_rel,
@@ -361,6 +374,70 @@ static int
 get_fetch_size_option(DefElem* def);
 static DefElem*
 ch_get_table_or_server_option(CHFdwRelationInfo* fpinfo, char* name);
+static bool
+setop_exec_param_walker(Node* node, void* context);
+static bool
+setop_restrictinfos_require_local_gate(List* conditions);
+static bool
+setop_relation_requires_local_gate(RelOptInfo* rel);
+static bool
+distinct_expr_is_safe(Node* expr);
+static bool
+distinct_target_is_safe(PathTarget* target);
+static bool
+setop_grouping_target_is_safe(
+    PlannerInfo* root,
+    RelOptInfo* input_rel,
+    RelOptInfo* grouped_rel,
+    List* setop_tlist
+);
+static bool
+setop_relation_uses_default_engine(RelOptInfo* rel);
+static bool
+setop_foreign_path_ok(const ForeignPath* path, void* arg);
+static bool
+is_flattened_union_all(PlannerInfo* root, RelOptInfo* input_rel);
+static bool
+is_flattened_union_all_grouping(
+    PlannerInfo* root,
+    RelOptInfo* input_rel,
+    GroupPathExtraData* extra
+);
+static AppendPath*
+make_setop_append_path(PlannerInfo* root, AppendPath* append_path);
+static bool
+find_setop_path(
+    PlannerInfo* root,
+    RelOptInfo* rel,
+    AppendPath** append_path,
+    bool* is_distinct,
+    ChFdwSetopPathInfo* path_info,
+    int32* fetch_size,
+    Cost* startup_cost,
+    Cost* total_cost
+);
+static void
+add_foreign_setop_path(
+    PlannerInfo* root,
+    RelOptInfo* output_rel,
+    AppendPath* append_path,
+    bool is_distinct,
+    const ChFdwSetopPathInfo* path_info,
+    int32 fetch_size,
+    Cost startup_cost,
+    Cost total_cost
+);
+static void
+add_foreign_setop_grouping_path(
+    PlannerInfo* root,
+    RelOptInfo* input_rel,
+    RelOptInfo* grouped_rel,
+    AppendPath* append_path,
+    const ChFdwSetopPathInfo* path_info,
+    int32 fetch_size,
+    Cost startup_cost,
+    Cost total_cost
+);
 
 /* Make one query and close the connection */
 Datum
@@ -849,6 +926,42 @@ typedef struct WindowFuncSubstState {
 
 static Node*
 replace_windowfuncs_mutator(Node* node, WindowFuncSubstState* state);
+static ForeignScan*
+clickhouseGetForeignSetopPlan(RelOptInfo* foreignrel, List* tlist, Plan* outer_plan);
+static ForeignScan*
+clickhouseGetForeignSetopGroupingPlan(
+    PlannerInfo* root,
+    RelOptInfo* foreignrel,
+    List* tlist,
+    Plan* outer_plan
+);
+static void
+build_foreign_setop_query(
+    RelOptInfo* foreignrel,
+    CHFdwRelationInfo* fpinfo,
+    Plan* outer_plan,
+    List* setop_tlist,
+    StringInfo sql,
+    List** params_list
+);
+static void
+append_setop_query(
+    StringInfo buf,
+    ForeignScan* scan,
+    int arm_number,
+    int param_offset,
+    int expected_columns
+);
+static void
+append_renumbered_query(StringInfo buf, const char* query, int param_offset);
+static List*
+setop_projection_positions(
+    ForeignScan* scan,
+    int expected_columns,
+    int* source_columns
+);
+static List*
+make_setop_scan_tlist(List* source_tlist);
 
 static Node*
 replace_windowfuncs_mutator_callback(Node* node, void* state) {
@@ -890,6 +1003,388 @@ replace_windowfuncs_mutator(Node* node, WindowFuncSubstState* state) {
 }
 
 /*
+ * Append query while shifting ClickHouse parameter indexes. Each arm was
+ * planned independently and therefore starts numbering at p1.
+ */
+static void
+append_renumbered_query(StringInfo buf, const char* query, int param_offset) {
+    const char* cursor = query;
+    char quote         = '\0';
+
+    while (*cursor) {
+        if (quote != '\0') {
+            appendStringInfoChar(buf, *cursor);
+
+            if (*cursor == '\\' && cursor[1] != '\0') {
+                appendStringInfoChar(buf, cursor[1]);
+                cursor += 2;
+                continue;
+            }
+            if (*cursor == quote) {
+                if (cursor[1] == quote) {
+                    appendStringInfoChar(buf, cursor[1]);
+                    cursor += 2;
+                    continue;
+                }
+                quote = '\0';
+            }
+            cursor++;
+            continue;
+        }
+
+        if (*cursor == '\'' || *cursor == '"' || *cursor == '`') {
+            quote = *cursor;
+            appendStringInfoChar(buf, *cursor++);
+            continue;
+        }
+
+        if (cursor[0] == '{' && cursor[1] == 'p' && cursor[2] >= '0' &&
+            cursor[2] <= '9') {
+            const char* number = cursor + 2;
+            const char* end    = number;
+            unsigned long index;
+
+            while (*end >= '0' && *end <= '9') {
+                end++;
+            }
+            if (*end == ':') {
+                index = strtoul(number, NULL, 10);
+                appendStringInfo(buf, "{p%lu", index + param_offset);
+                cursor = end;
+                continue;
+            }
+        }
+
+        appendStringInfoChar(buf, *cursor++);
+    }
+}
+
+/*
+ * Map a ForeignScan's projected output to positions in its remote result.
+ * A base scan reconstructs a table row according to retrieved_attrs before
+ * applying its plan target list. Join and upper scans expose fdw_scan_tlist
+ * directly. Set-operation arms may only use those already-remote columns;
+ * any local expression keeps the UNION local.
+ */
+static List*
+setop_projection_positions(
+    ForeignScan* scan,
+    int expected_columns,
+    int* source_columns
+) {
+    List* positions = NIL;
+    ListCell* lc;
+
+    if (scan->scan.plan.qual != NIL || scan->scan.plan.initPlan != NIL) {
+        return NIL;
+    }
+
+    if (scan->scan.scanrelid > 0) {
+        List* retrieved_attrs =
+            (List*)list_nth(scan->fdw_private, FdwScanPrivateRetrievedAttrs);
+
+        *source_columns = list_length(retrieved_attrs);
+        foreach (lc, scan->scan.plan.targetlist) {
+            TargetEntry* tle = lfirst_node(TargetEntry, lc);
+            Var* var;
+            ListCell* attr_lc;
+            int position = 0;
+            bool found   = false;
+
+            if (tle->resjunk || !IsA(tle->expr, Var)) {
+                return NIL;
+            }
+            var = castNode(Var, tle->expr);
+            if ((int64)var->varno != (int64)scan->scan.scanrelid ||
+                var->varlevelsup != 0 || var->varattno <= 0) {
+                return NIL;
+            }
+
+            foreach (attr_lc, retrieved_attrs) {
+                position++;
+                if (lfirst_int(attr_lc) == var->varattno) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                return NIL;
+            }
+            positions = lappend_int(positions, position);
+        }
+    } else {
+        List* remote_tlist = scan->fdw_scan_tlist;
+
+        *source_columns = list_length(remote_tlist);
+        foreach (lc, scan->scan.plan.targetlist) {
+            TargetEntry* tle = lfirst_node(TargetEntry, lc);
+            TargetEntry* remote_tle;
+
+            if (tle->resjunk) {
+                return NIL;
+            }
+            remote_tle = tlist_member(tle->expr, remote_tlist);
+            if (remote_tle == NULL || remote_tle->resjunk) {
+                return NIL;
+            }
+            positions = lappend_int(positions, remote_tle->resno);
+        }
+    }
+
+    if (*source_columns <= 0 || list_length(positions) != expected_columns) {
+        return NIL;
+    }
+    return positions;
+}
+
+/*
+ * Normalize one independently-planned remote arm to positional cN columns.
+ * tuple(*) avoids depending on source column names, while tupleElement keeps
+ * this compatible with ClickHouse versions that predate derived-table column
+ * alias lists. The explicit output aliases make names deterministic across
+ * reordered base columns, joins, nested UNIONs, and expressions.
+ */
+static void
+append_setop_query(
+    StringInfo buf,
+    ForeignScan* scan,
+    int arm_number,
+    int param_offset,
+    int expected_columns
+) {
+    List* positions;
+    ListCell* lc;
+    int source_columns;
+    int output_column = 0;
+    const char* query = strVal(list_nth(scan->fdw_private, FdwScanPrivateSelectSql));
+
+    positions = setop_projection_positions(scan, expected_columns, &source_columns);
+    if (positions == NIL) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_FDW_ERROR),
+            errmsg("pg_clickhouse: UNION arm requires local projection")
+        );
+    }
+
+    appendStringInfoChar(buf, '(');
+    appendStringInfoString(buf, "SELECT ");
+    foreach (lc, positions) {
+        if (output_column > 0) {
+            appendStringInfoString(buf, ", ");
+        }
+        output_column++;
+        appendStringInfo(
+            buf, "tupleElement(tuple(*), %d) AS c%d", lfirst_int(lc), output_column
+        );
+    }
+
+    appendStringInfoString(buf, " FROM (");
+    append_renumbered_query(buf, query, param_offset);
+    appendStringInfo(buf, ") AS u%d)", arm_number);
+}
+
+/*
+ * Set-operation targets use planner-internal Vars with varno 0, which cannot
+ * appear in a finished ForeignScan. Replace them with unique, typed
+ * placeholders in both plan and scan target lists; setrefs then rewrites the
+ * plan target to INDEX_VAR references to the remote scan tuple.
+ */
+static List*
+make_setop_scan_tlist(List* source_tlist) {
+    List* result = NIL;
+    ListCell* lc;
+    int column = 0;
+
+    foreach (lc, source_tlist) {
+        TargetEntry* source_tle = lfirst_node(TargetEntry, lc);
+        CoerceViaIO* placeholder;
+        RelabelType* relabel;
+        TargetEntry* tle;
+        Oid type;
+        int32 typmod;
+        Oid collation;
+
+        if (source_tle->resjunk) {
+            continue;
+        }
+
+        column++;
+        type      = exprType((Node*)source_tle->expr);
+        typmod    = exprTypmod((Node*)source_tle->expr);
+        collation = exprCollation((Node*)source_tle->expr);
+
+        placeholder      = makeNode(CoerceViaIO);
+        placeholder->arg = (Expr*)makeConst(
+            INT4OID, -1, InvalidOid, sizeof(int32), Int32GetDatum(column), false, true
+        );
+        placeholder->resulttype   = type;
+        placeholder->resultcollid = collation;
+        placeholder->coerceformat = COERCE_IMPLICIT_CAST;
+        placeholder->location     = -1;
+
+        relabel = makeRelabelType(
+            (Expr*)placeholder, type, typmod, collation, COERCE_IMPLICIT_CAST
+        );
+        tle = makeTargetEntry(
+            (Expr*)relabel,
+            column,
+            source_tle->resname ? pstrdup(source_tle->resname) : NULL,
+            false
+        );
+        result = lappend(result, tle);
+    }
+
+    return result;
+}
+
+/*
+ * Build a UNION query from the independently planned pg_clickhouse scans
+ * under the planner's Append path.
+ */
+static void
+build_foreign_setop_query(
+    RelOptInfo* foreignrel,
+    CHFdwRelationInfo* fpinfo,
+    Plan* outer_plan,
+    List* setop_tlist,
+    StringInfo sql,
+    List** params_list
+) {
+    List* foreign_scans = NIL;
+    ListCell* lc;
+    int arm_number = 0;
+    int expected_columns;
+    int param_offset = 0;
+
+    if (outer_plan == NULL ||
+        !chfdw_setop_extract_foreign_scans(
+            outer_plan, foreignrel->serverid, &foreign_scans
+        ) ||
+        list_length(foreign_scans) < 2) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_FDW_ERROR),
+            errmsg("pg_clickhouse: invalid UNION pushdown plan")
+        );
+    }
+
+    expected_columns = list_length(setop_tlist);
+    if (expected_columns <= 0) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_FDW_ERROR),
+            errmsg("pg_clickhouse: UNION has no remote output columns")
+        );
+    }
+
+    initStringInfo(sql);
+    foreach (lc, foreign_scans) {
+        ForeignScan* scan = lfirst_node(ForeignScan, lc);
+        ListCell* param_lc;
+
+        if (arm_number > 0) {
+            appendStringInfoString(
+                sql, fpinfo->setop_all ? " UNION ALL " : " UNION DISTINCT "
+            );
+        }
+        arm_number++;
+        append_setop_query(sql, scan, arm_number, param_offset, expected_columns);
+
+        foreach (param_lc, scan->fdw_exprs) {
+            *params_list = lappend(*params_list, copyObject(lfirst(param_lc)));
+        }
+        param_offset += list_length(scan->fdw_exprs);
+    }
+}
+
+/*
+ * Build a single ForeignScan for a UNION from the independently planned
+ * pg_clickhouse scans under the planner's Append path.
+ */
+static ForeignScan*
+clickhouseGetForeignSetopPlan(RelOptInfo* foreignrel, List* tlist, Plan* outer_plan) {
+    CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)foreignrel->fdw_private;
+    List* params_list         = NIL;
+    List* retrieved_attrs     = NIL;
+    List* fdw_private;
+    StringInfoData sql;
+    List* scan_tlist;
+
+    (void)tlist;
+
+    build_foreign_setop_query(
+        foreignrel, fpinfo, outer_plan, fpinfo->grouped_tlist, &sql, &params_list
+    );
+
+    for (int column = 1; column <= list_length(fpinfo->grouped_tlist); column++) {
+        retrieved_attrs = lappend_int(retrieved_attrs, column);
+    }
+
+    fdw_private = list_make3(
+        makeString(sql.data), retrieved_attrs, makeInteger(fpinfo->fetch_size)
+    );
+    fdw_private = lappend(fdw_private, makeString(fpinfo->relation_name->data));
+    fdw_private =
+        lappend(fdw_private, makeString(psprintf("%u", fpinfo->setop_userid)));
+
+    scan_tlist = make_setop_scan_tlist(fpinfo->grouped_tlist);
+
+    return make_foreignscan(
+        copyObject(scan_tlist), NIL, 0, params_list, fdw_private, scan_tlist, NIL, NULL
+    );
+}
+
+/*
+ * Build grouping or aggregation as a wrapper around a remote UNION ALL.  The
+ * Append input plan is used only to obtain the independently deparsed arm
+ * queries and parameters; the returned scan replaces that input completely.
+ */
+static ForeignScan*
+clickhouseGetForeignSetopGroupingPlan(
+    PlannerInfo* root,
+    RelOptInfo* foreignrel,
+    List* tlist,
+    Plan* outer_plan
+) {
+    CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)foreignrel->fdw_private;
+    List* params_list         = NIL;
+    List* retrieved_attrs     = NIL;
+    List* fdw_private;
+    List* scan_tlist;
+    StringInfoData setop_sql;
+    StringInfoData sql;
+
+    build_foreign_setop_query(
+        foreignrel, fpinfo, outer_plan, fpinfo->setop_tlist, &setop_sql, &params_list
+    );
+
+    initStringInfo(&sql);
+    chfdw_deparse_setop_grouping_stmt(
+        &sql,
+        root,
+        foreignrel,
+        fpinfo->grouped_tlist,
+        fpinfo->setop_tlist,
+        setop_sql.data,
+        &retrieved_attrs,
+        &params_list
+    );
+
+    fdw_private = list_make3(
+        makeString(sql.data), retrieved_attrs, makeInteger(fpinfo->fetch_size)
+    );
+    fdw_private = lappend(fdw_private, makeString(fpinfo->relation_name->data));
+    fdw_private =
+        lappend(fdw_private, makeString(psprintf("%u", fpinfo->setop_userid)));
+    scan_tlist = copyObject(fpinfo->grouped_tlist);
+
+    return make_foreignscan(
+        tlist, NIL, 0, params_list, fdw_private, scan_tlist, NIL, NULL
+    );
+}
+
+/*
  * clickhouseGetForeignPlan
  *		Create ForeignScan plan node which implements selected best path
  */
@@ -919,6 +1414,24 @@ clickhouseGetForeignPlan(
     struct timeval time1, time2;
 
     gettimeofday(&time1, NULL);
+
+    if (fpinfo->is_setop_grouping) {
+        ForeignScan* plan =
+            clickhouseGetForeignSetopGroupingPlan(root, foreignrel, tlist, outer_plan);
+
+        gettimeofday(&time2, NULL);
+        time_used += time_diff(&time1, &time2);
+        return plan;
+    }
+
+    if (fpinfo->is_setop) {
+        ForeignScan* plan =
+            clickhouseGetForeignSetopPlan(foreignrel, tlist, outer_plan);
+
+        gettimeofday(&time2, NULL);
+        time_used += time_diff(&time1, &time2);
+        return plan;
+    }
 
     /*
      * Get FDW private data created by clickhouseGetForeignUpperPaths(), if
@@ -1138,7 +1651,7 @@ clickhouseBeginForeignScan(ForeignScanState* node, int eflags) {
     RangeTblEntry* rte;
     int rtindex;
 #endif
-    Oid userid;
+    Oid userid = InvalidOid;
     UserMapping* user;
     int numParams;
 
@@ -1165,7 +1678,14 @@ clickhouseBeginForeignScan(ForeignScanState* node, int eflags) {
      * fs_relids can also contain synthetic join RTEs, which do not have a
      * relation OID.
      */
-    if (fsplan->scan.scanrelid > 0) {
+    if (list_length(fsplan->fdw_private) > FdwScanPrivateUserId) {
+        userid = (Oid)strtoul(
+            strVal(list_nth(fsplan->fdw_private, FdwScanPrivateUserId)), NULL, 10
+        );
+        if (!OidIsValid(userid)) {
+            userid = GetUserId();
+        }
+    } else if (fsplan->scan.scanrelid > 0) {
         rtindex = fsplan->scan.scanrelid;
     } else {
         rtindex = -1;
@@ -1179,10 +1699,13 @@ clickhouseBeginForeignScan(ForeignScanState* node, int eflags) {
             elog(ERROR, "could not find foreign table for pg_clickhouse scan");
         }
     }
-    rte    = rt_fetch(rtindex, estate->es_range_table);
-    userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
+    if (list_length(fsplan->fdw_private) <= FdwScanPrivateUserId) {
+        rte    = rt_fetch(rtindex, estate->es_range_table);
+        userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
+    }
 #endif
 
+    Assert(OidIsValid(userid));
     user = GetUserMapping(userid, fsplan->fs_server);
 
     /*
@@ -2893,6 +3416,801 @@ foreign_grouping_ok(PlannerInfo* root, RelOptInfo* grouped_rel, Node* havingQual
     return true;
 }
 
+static bool
+setop_exec_param_walker(Node* node, void* context) {
+    (void)context;
+
+    if (node == NULL) {
+        return false;
+    }
+    if (IsA(node, Param) && ((Param*)node)->paramkind == PARAM_EXEC) {
+        return true;
+    }
+    return expression_tree_walker(node, setop_exec_param_walker, context);
+}
+
+static bool
+setop_restrictinfos_require_local_gate(List* conditions) {
+    ListCell* lc;
+
+    foreach (lc, conditions) {
+        RestrictInfo* rinfo = lfirst_node(RestrictInfo, lc);
+
+        if (rinfo->pseudoconstant ||
+            setop_exec_param_walker((Node*)rinfo->clause, NULL)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * Result gating quals and InitPlan parameters are added above a scan only
+ * after path selection. A combined remote UNION drops its input plan, so
+ * reject such arms before offering that path.
+ */
+static bool
+setop_relation_requires_local_gate(RelOptInfo* rel) {
+    CHFdwRelationInfo* fpinfo;
+
+    if (rel == NULL || rel->fdw_private == NULL) {
+        return true;
+    }
+
+    fpinfo = (CHFdwRelationInfo*)rel->fdw_private;
+    if (setop_restrictinfos_require_local_gate(rel->baserestrictinfo) ||
+        setop_restrictinfos_require_local_gate(fpinfo->remote_conds) ||
+        setop_restrictinfos_require_local_gate(fpinfo->local_conds) ||
+        setop_restrictinfos_require_local_gate(fpinfo->joinclauses) ||
+        setop_exec_param_walker((Node*)rel->reltarget->exprs, NULL) ||
+        setop_exec_param_walker((Node*)fpinfo->grouped_tlist, NULL) ||
+        setop_exec_param_walker((Node*)fpinfo->final_remote_exprs, NULL)) {
+        return true;
+    }
+
+    if (fpinfo->outerrel != NULL && fpinfo->outerrel != rel &&
+        setop_relation_requires_local_gate(fpinfo->outerrel)) {
+        return true;
+    }
+    if (fpinfo->innerrel != NULL && fpinfo->innerrel != rel &&
+        setop_relation_requires_local_gate(fpinfo->innerrel)) {
+        return true;
+    }
+    return false;
+}
+
+/*
+ * DISTINCT must use the same equality semantics on both servers. Keep this
+ * list intentionally narrow; notably, bpchar ignores trailing spaces in
+ * PostgreSQL while ClickHouse String does not.
+ */
+static bool
+distinct_expr_is_safe(Node* expr) {
+    Oid type;
+
+    if (expr == NULL) {
+        return false;
+    }
+    type = exprType(expr);
+    switch (type) {
+    case BOOLOID:
+    case INT2OID:
+    case INT4OID:
+    case INT8OID:
+    case DATEOID:
+    case BYTEAOID:
+    case UUIDOID:
+        return true;
+    case VARCHAROID:
+        if (exprTypmod(expr) >= 0) {
+            return false;
+        }
+        /* fall through */
+    case TEXTOID: {
+        Oid collation = exprCollation(expr);
+
+        return !OidIsValid(collation) || get_collation_isdeterministic(collation);
+    }
+    default:
+        return false;
+    }
+}
+
+static bool
+distinct_target_is_safe(PathTarget* target) {
+    ListCell* lc;
+
+    if (target == NULL || target->exprs == NIL) {
+        return false;
+    }
+
+    foreach (lc, target->exprs) {
+        if (!distinct_expr_is_safe((Node*)lfirst(lc))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+typedef struct ChFdwSetopGroupingValidationState {
+    List* setop_tlist;
+    int setop_columns;
+} ChFdwSetopGroupingValidationState;
+
+static TargetEntry*
+setop_grouping_var_target(
+    const Var* var,
+    const ChFdwSetopGroupingValidationState* state
+) {
+    ListCell* lc;
+
+    foreach (lc, state->setop_tlist) {
+        TargetEntry* tle = lfirst_node(TargetEntry, lc);
+
+        if (!tle->resjunk && equal(var, tle->expr)) {
+            return tle;
+        }
+    }
+    if (var->varno == 0 && var->varattno > 0 && var->varattno <= state->setop_columns) {
+        return get_tle_by_resno(state->setop_tlist, var->varattno);
+    }
+    return NULL;
+}
+
+static bool
+setop_grouping_expr_walker(Node* node, void* context) {
+    ChFdwSetopGroupingValidationState* state =
+        (ChFdwSetopGroupingValidationState*)context;
+
+    if (node == NULL) {
+        return false;
+    }
+    if (IsA(node, SubPlan) ||
+        (IsA(node, Param) && ((Param*)node)->paramkind == PARAM_EXEC)) {
+        return true;
+    }
+    if (IsA(node, Var)) {
+        Var* var         = (Var*)node;
+        TargetEntry* tle = setop_grouping_var_target(var, state);
+
+        return var->varlevelsup != 0 || tle == NULL ||
+               exprType((Node*)var) != exprType((Node*)tle->expr) ||
+               exprTypmod((Node*)var) != exprTypmod((Node*)tle->expr) ||
+               exprCollation((Node*)var) != exprCollation((Node*)tle->expr);
+    }
+    return expression_tree_walker(node, setop_grouping_expr_walker, context);
+}
+
+static bool
+setop_grouping_distinct_walker(Node* node, void* context) {
+    (void)context;
+
+    if (node == NULL) {
+        return false;
+    }
+    if (IsA(node, Aggref)) {
+        Aggref* agg = (Aggref*)node;
+        ListCell* lc;
+
+        foreach (lc, agg->aggdistinct) {
+            SortGroupClause* sort_clause = lfirst_node(SortGroupClause, lc);
+            TargetEntry* tle =
+                get_sortgroupref_tle(sort_clause->tleSortGroupRef, agg->args);
+
+            if (!distinct_expr_is_safe((Node*)tle->expr)) {
+                return true;
+            }
+        }
+    }
+    return expression_tree_walker(node, setop_grouping_distinct_walker, context);
+}
+
+static bool
+setop_grouping_target_is_safe(
+    PlannerInfo* root,
+    RelOptInfo* input_rel,
+    RelOptInfo* grouped_rel,
+    List* setop_tlist
+) {
+    ChFdwSetopGroupingValidationState state = {
+        .setop_tlist   = setop_tlist,
+        .setop_columns = list_length(setop_tlist),
+    };
+    PathTarget* target = grouped_rel->reltarget;
+    ListCell* lc;
+    int index = 0;
+
+    (void)input_rel;
+
+    if (setop_tlist == NIL || target == NULL || target->exprs == NIL ||
+        setop_grouping_expr_walker((Node*)target->exprs, &state) ||
+        setop_grouping_distinct_walker((Node*)target->exprs, NULL)) {
+        return false;
+    }
+
+    foreach (lc, target->exprs) {
+        Node* expr    = (Node*)lfirst(lc);
+        Index sortref = get_pathtarget_sortgroupref(target, index++);
+
+        if (sortref != 0 &&
+            get_sortgroupref_clause_noerr(sortref, root->parse->groupClause) != NULL &&
+            !distinct_expr_is_safe(expr)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool
+setop_relation_uses_default_engine(RelOptInfo* rel) {
+    CHFdwRelationInfo* fpinfo;
+
+    if (rel == NULL || rel->fdw_private == NULL) {
+        return false;
+    }
+    fpinfo = (CHFdwRelationInfo*)rel->fdw_private;
+    if (fpinfo->ch_table_engine != CH_DEFAULT) {
+        return false;
+    }
+    if (fpinfo->outerrel != NULL && fpinfo->outerrel != rel &&
+        !setop_relation_uses_default_engine(fpinfo->outerrel)) {
+        return false;
+    }
+    if (fpinfo->innerrel != NULL && fpinfo->innerrel != rel &&
+        !setop_relation_uses_default_engine(fpinfo->innerrel)) {
+        return false;
+    }
+    return true;
+}
+
+static bool
+setop_foreign_path_ok(const ForeignPath* path, void* arg) {
+    ChFdwSetopValidationState* state = (ChFdwSetopValidationState*)arg;
+    RelOptInfo* rel                  = path->path.parent;
+    CHFdwRelationInfo* fpinfo;
+    ListCell* lc;
+
+    if (rel == NULL || rel->fdwroutine == NULL ||
+        rel->fdwroutine->GetForeignPlan != clickhouseGetForeignPlan ||
+        rel->fdw_private == NULL) {
+        return false;
+    }
+
+    fpinfo = (CHFdwRelationInfo*)rel->fdw_private;
+    if (!fpinfo->pushdown_safe || fpinfo->local_conds != NIL ||
+        (path->fdw_outerpath != NULL && !fpinfo->is_setop) ||
+        setop_relation_requires_local_gate(rel)) {
+        return false;
+    }
+
+    /*
+     * Base and join scans only project Vars remotely. Upper scans have
+     * already built and validated an explicit remote target list.
+     */
+    if (!IS_UPPER_REL(rel)) {
+        foreach (lc, rel->reltarget->exprs) {
+            Var* var;
+
+            if (!IsA(lfirst(lc), Var)) {
+                return false;
+            }
+            var = (Var*)lfirst(lc);
+            if (var->varlevelsup != 0 || var->varattno <= 0) {
+                return false;
+            }
+        }
+    }
+
+    state->fetch_size = Max(state->fetch_size, fpinfo->fetch_size);
+    return true;
+}
+
+static bool
+is_flattened_union_all_relation(PlannerInfo* root, RelOptInfo* input_rel) {
+    Query* parse = root->parse;
+    RangeTblEntry* rte;
+    ListCell* lc;
+    int children = 0;
+
+    if (input_rel == NULL || input_rel->reloptkind != RELOPT_BASEREL ||
+        input_rel->rtekind != RTE_SUBQUERY || input_rel->relid <= 0 ||
+        input_rel->baserestrictinfo != NIL ||
+        !bms_is_empty(input_rel->lateral_relids) || parse->jointree == NULL ||
+        list_length(parse->jointree->fromlist) != 1 ||
+        !IsA(linitial(parse->jointree->fromlist), RangeTblRef) ||
+        (int64)((RangeTblRef*)linitial(parse->jointree->fromlist))->rtindex !=
+            (int64)input_rel->relid) {
+        return false;
+    }
+
+    rte = planner_rt_fetch(input_rel->relid, root);
+    if (rte->rtekind != RTE_SUBQUERY || !rte->inh || /* codespell:ignore inh */
+        rte->securityQuals != NIL) {
+        return false;
+    }
+
+    foreach (lc, root->append_rel_list) {
+        AppendRelInfo* appinfo = lfirst_node(AppendRelInfo, lc);
+
+        if (appinfo->parent_relid != input_rel->relid) {
+            continue;
+        }
+        if (OidIsValid(appinfo->parent_reltype) || OidIsValid(appinfo->child_reltype) ||
+            OidIsValid(appinfo->parent_reloid)) {
+            return false;
+        }
+        children++;
+    }
+
+    return children >= 2;
+}
+
+static bool
+is_flattened_union_all(PlannerInfo* root, RelOptInfo* input_rel) {
+    Query* parse = root->parse;
+
+    return is_flattened_union_all_relation(root, input_rel) &&
+           parse->commandType == CMD_SELECT && parse->setOperations == NULL &&
+           parse->groupClause == NIL && parse->groupingSets == NIL &&
+           parse->havingQual == NULL && parse->windowClause == NIL &&
+           parse->distinctClause == NIL && parse->sortClause == NIL &&
+           parse->limitOffset == NULL && parse->limitCount == NULL &&
+           parse->rowMarks == NIL && !parse->hasAggs && !parse->hasTargetSRFs;
+}
+
+static bool
+is_flattened_union_all_grouping(
+    PlannerInfo* root,
+    RelOptInfo* input_rel,
+    GroupPathExtraData* extra
+) {
+    Query* parse = root->parse;
+
+    return extra != NULL && extra->havingQual == NULL &&
+           is_flattened_union_all_relation(root, input_rel) &&
+           parse->commandType == CMD_SELECT && parse->setOperations == NULL &&
+           (parse->groupClause != NIL || parse->hasAggs) &&
+           parse->groupingSets == NIL && parse->havingQual == NULL &&
+           parse->windowClause == NIL && parse->distinctClause == NIL &&
+           parse->sortClause == NIL && parse->limitOffset == NULL &&
+           parse->limitCount == NULL && parse->rowMarks == NIL && !parse->hasTargetSRFs;
+}
+
+static AppendPath*
+make_setop_append_path(PlannerInfo* root, AppendPath* append_path) {
+#if PG_VERSION_NUM >= 190000
+    AppendPathInput input = {
+        .subpaths                = list_copy(append_path->subpaths),
+        .partial_subpaths        = NIL,
+        .child_append_relid_sets = list_copy(append_path->child_append_relid_sets),
+    };
+
+    return create_append_path(
+        root,
+        append_path->path.parent,
+        input,
+        append_path->path.pathkeys,
+        NULL,
+        0,
+        false,
+        append_path->path.rows
+    );
+#else
+    return create_append_path(
+        root,
+        append_path->path.parent,
+        list_copy(append_path->subpaths),
+        NIL,
+        append_path->path.pathkeys,
+        NULL,
+        0,
+        false,
+#if PG_VERSION_NUM < 140000
+        NIL,
+#endif
+        append_path->path.rows
+    );
+#endif
+}
+
+static bool
+find_setop_path(
+    PlannerInfo* root,
+    RelOptInfo* rel,
+    AppendPath** append_path,
+    bool* is_distinct,
+    ChFdwSetopPathInfo* path_info,
+    int32* fetch_size,
+    Cost* startup_cost,
+    Cost* total_cost
+) {
+    ListCell* lc;
+    bool found = false;
+
+    foreach (lc, rel->pathlist) {
+        Path* path = (Path*)lfirst(lc);
+        AppendPath* candidate;
+        ChFdwSetopPathInfo candidate_info;
+        ChFdwSetopValidationState state = { 0 };
+        bool candidate_distinct;
+
+        candidate = chfdw_setop_find_append_path(path, &candidate_distinct);
+        if (candidate == NULL) {
+            Path* subpath = NULL;
+
+#if PG_VERSION_NUM >= 190000
+            if (IsA(path, UniquePath)) {
+                subpath = ((UniquePath*)path)->subpath;
+            }
+#else
+            if (IsA(path, UpperUniquePath)) {
+                subpath = ((UpperUniquePath*)path)->subpath;
+            }
+#endif
+            if (subpath != NULL && IsA(subpath, MergeAppendPath)) {
+                MergeAppendPath* merge_path = (MergeAppendPath*)subpath;
+                AppendPath merge_append;
+
+                memset(&merge_append, 0, sizeof(merge_append));
+                merge_append.path.parent   = rel;
+                merge_append.path.pathkeys = NIL;
+                merge_append.path.rows     = path->rows;
+                merge_append.subpaths      = merge_path->subpaths;
+#if PG_VERSION_NUM >= 190000
+                merge_append.child_append_relid_sets =
+                    merge_path->child_append_relid_sets;
+#endif
+                candidate          = make_setop_append_path(root, &merge_append);
+                candidate_distinct = true;
+            }
+        }
+        if (candidate == NULL ||
+            !chfdw_setop_extract_foreign_paths(
+                candidate, setop_foreign_path_ok, &state, &candidate_info
+            ) ||
+            (candidate_distinct &&
+             !distinct_target_is_safe(candidate->path.pathtarget))) {
+            continue;
+        }
+
+        if (!found || path->total_cost < *total_cost) {
+            /*
+             * add_path() can discard the original candidate while retaining
+             * this ForeignPath. Keep a private AppendPath wrapper around its
+             * child paths for create_foreignscan_plan().
+             */
+            *append_path  = make_setop_append_path(root, candidate);
+            *is_distinct  = candidate_distinct;
+            *path_info    = candidate_info;
+            *fetch_size   = state.fetch_size;
+            *startup_cost = path->startup_cost;
+            *total_cost   = path->total_cost;
+            found         = true;
+        }
+    }
+
+    return found;
+}
+
+static void
+add_foreign_setop_path(
+    PlannerInfo* root,
+    RelOptInfo* output_rel,
+    AppendPath* append_path,
+    bool is_distinct,
+    const ChFdwSetopPathInfo* path_info,
+    int32 fetch_size,
+    Cost startup_cost,
+    Cost total_cost
+) {
+    CHFdwRelationInfo* fpinfo;
+    CHFdwRelationInfo* input_fpinfo;
+    ForeignPath* setop_path;
+    int arm_count = list_length(path_info->foreign_paths);
+
+    if (output_rel->fdw_private != NULL || arm_count < 2) {
+        return;
+    }
+
+    fpinfo = (CHFdwRelationInfo*)palloc0(sizeof(CHFdwRelationInfo));
+    input_fpinfo =
+        (CHFdwRelationInfo*)((ForeignPath*)linitial(path_info->foreign_paths))
+            ->path.parent->fdw_private;
+
+    fpinfo->pushdown_safe = true;
+    fpinfo->stage         = UPPERREL_SETOP;
+    fpinfo->is_setop      = true;
+    fpinfo->setop_all     = !is_distinct;
+    fpinfo->setop_userid  = path_info->userid;
+    fpinfo->grouped_tlist = make_tlist_from_pathtarget(append_path->path.pathtarget);
+    fpinfo->server        = GetForeignServer(path_info->serverid);
+    fpinfo->relation_name = makeStringInfo();
+    appendStringInfo(
+        fpinfo->relation_name,
+        "%s on (%d remote queries)",
+        is_distinct ? "Union distinct" : "Union all",
+        arm_count
+    );
+    merge_fdw_options(fpinfo, input_fpinfo, NULL);
+    fpinfo->fetch_size = Max(fpinfo->fetch_size, fetch_size);
+
+    output_rel->fdw_private     = fpinfo;
+    output_rel->fdwroutine      = path_info->fdwroutine;
+    output_rel->serverid        = path_info->serverid;
+    output_rel->userid          = path_info->userid;
+    output_rel->useridiscurrent = path_info->useridiscurrent;
+
+    total_cost =
+        Max(startup_cost, total_cost - DEFAULT_FDW_STARTUP_COST * (arm_count - 1));
+    setop_path = create_foreign_upper_path(
+        root,
+        output_rel,
+        append_path->path.pathtarget,
+        append_path->path.rows,
+#if PG_VERSION_NUM >= 180000
+        0,
+#endif
+        startup_cost,
+        total_cost,
+        NIL,
+        (Path*)append_path,
+#if PG_VERSION_NUM >= 170000
+        NIL,
+#endif
+        NIL
+    );
+    add_path(output_rel, (Path*)setop_path);
+}
+
+/*
+ * Add a grouping path whose input is a flattened, fully remote UNION ALL.
+ * The input relation is a PostgreSQL subquery rather than an FDW upper
+ * relation, so give it enough synthetic FDW metadata for the existing
+ * grouping safety checks while retaining the original AppendPath for plan
+ * construction.
+ */
+static void
+add_foreign_setop_grouping_path(
+    PlannerInfo* root,
+    RelOptInfo* input_rel,
+    RelOptInfo* grouped_rel,
+    AppendPath* append_path,
+    const ChFdwSetopPathInfo* path_info,
+    int32 fetch_size,
+    Cost startup_cost,
+    Cost total_cost
+) {
+    CHFdwRelationInfo* setop_fpinfo;
+    CHFdwRelationInfo* grouped_fpinfo;
+    CHFdwRelationInfo* arm_fpinfo;
+    ForeignPath* grouped_path;
+    List* setop_tlist;
+    double rows;
+    int width;
+    int arm_count = list_length(path_info->foreign_paths);
+    void* old_input_private;
+    FdwRoutine* old_input_routine;
+    Oid old_input_serverid;
+    Oid old_input_userid;
+    bool old_input_useridiscurrent;
+    ListCell* lc;
+
+    if (arm_count < 2 || input_rel->fdw_private != NULL ||
+        grouped_rel->fdw_private != NULL || append_path->path.pathkeys != NIL ||
+        append_path->path.pathtarget == NULL ||
+        append_path->path.pathtarget->exprs == NIL) {
+        return;
+    }
+
+    arm_fpinfo  = (CHFdwRelationInfo*)((ForeignPath*)linitial(path_info->foreign_paths))
+                      ->path.parent->fdw_private;
+    setop_tlist = make_tlist_from_pathtarget(append_path->path.pathtarget);
+    if (!setop_grouping_target_is_safe(root, input_rel, grouped_rel, setop_tlist)) {
+        return;
+    }
+    foreach (lc, path_info->foreign_paths) {
+        ForeignPath* arm_path = lfirst_node(ForeignPath, lc);
+
+        if (!setop_relation_uses_default_engine(arm_path->path.parent)) {
+            return;
+        }
+    }
+
+    setop_fpinfo                = palloc0(sizeof(CHFdwRelationInfo));
+    setop_fpinfo->pushdown_safe = true;
+    setop_fpinfo->stage         = UPPERREL_SETOP;
+    setop_fpinfo->is_setop      = true;
+    setop_fpinfo->setop_all     = true;
+    setop_fpinfo->setop_userid  = path_info->userid;
+    setop_fpinfo->grouped_tlist = setop_tlist;
+    setop_fpinfo->server        = GetForeignServer(path_info->serverid);
+    setop_fpinfo->relation_name = makeStringInfo();
+    setop_fpinfo->fetch_size    = fetch_size;
+    appendStringInfo(
+        setop_fpinfo->relation_name, "Union all on (%d remote queries)", arm_count
+    );
+    merge_fdw_options(setop_fpinfo, arm_fpinfo, NULL);
+    setop_fpinfo->fetch_size = Max(setop_fpinfo->fetch_size, fetch_size);
+
+    old_input_private         = input_rel->fdw_private;
+    old_input_routine         = input_rel->fdwroutine;
+    old_input_serverid        = input_rel->serverid;
+    old_input_userid          = input_rel->userid;
+    old_input_useridiscurrent = input_rel->useridiscurrent;
+
+    input_rel->fdw_private     = setop_fpinfo;
+    input_rel->fdwroutine      = path_info->fdwroutine;
+    input_rel->serverid        = path_info->serverid;
+    input_rel->userid          = path_info->userid;
+    input_rel->useridiscurrent = path_info->useridiscurrent;
+
+    grouped_fpinfo                    = palloc0(sizeof(CHFdwRelationInfo));
+    grouped_fpinfo->stage             = UPPERREL_GROUP_AGG;
+    grouped_fpinfo->outerrel          = input_rel;
+    grouped_fpinfo->table             = setop_fpinfo->table;
+    grouped_fpinfo->server            = setop_fpinfo->server;
+    grouped_fpinfo->user              = setop_fpinfo->user;
+    grouped_fpinfo->is_setop_grouping = true;
+    grouped_fpinfo->setop_all         = true;
+    grouped_fpinfo->setop_userid      = path_info->userid;
+    grouped_fpinfo->setop_tlist       = copyObject(setop_tlist);
+    merge_fdw_options(grouped_fpinfo, setop_fpinfo, NULL);
+    grouped_fpinfo->fetch_size = Max(grouped_fpinfo->fetch_size, fetch_size);
+    grouped_rel->fdw_private   = grouped_fpinfo;
+
+    if (!foreign_grouping_ok(root, grouped_rel, NULL) ||
+        setop_grouping_expr_walker(
+            (Node*)grouped_fpinfo->grouped_tlist,
+            &(ChFdwSetopGroupingValidationState){
+                .setop_tlist   = setop_tlist,
+                .setop_columns = list_length(setop_tlist),
+            }
+        )) {
+        grouped_rel->fdw_private   = NULL;
+        input_rel->fdw_private     = old_input_private;
+        input_rel->fdwroutine      = old_input_routine;
+        input_rel->serverid        = old_input_serverid;
+        input_rel->userid          = old_input_userid;
+        input_rel->useridiscurrent = old_input_useridiscurrent;
+        return;
+    }
+
+    input_rel->fdw_private     = old_input_private;
+    input_rel->fdwroutine      = old_input_routine;
+    input_rel->serverid        = old_input_serverid;
+    input_rel->userid          = old_input_userid;
+    input_rel->useridiscurrent = old_input_useridiscurrent;
+
+    grouped_rel->fdwroutine      = path_info->fdwroutine;
+    grouped_rel->serverid        = path_info->serverid;
+    grouped_rel->userid          = path_info->userid;
+    grouped_rel->useridiscurrent = path_info->useridiscurrent;
+
+    estimate_path_cost_size(&rows, &width, &startup_cost, &total_cost, 0.1);
+    grouped_fpinfo->rows         = rows;
+    grouped_fpinfo->width        = width;
+    grouped_fpinfo->startup_cost = startup_cost;
+    grouped_fpinfo->total_cost   = total_cost;
+
+    grouped_path = create_foreign_upper_path(
+        root,
+        grouped_rel,
+        grouped_rel->reltarget,
+        rows,
+#if PG_VERSION_NUM >= 180000
+        0,
+#endif
+        startup_cost,
+        total_cost,
+        NIL,
+        (Path*)append_path,
+#if PG_VERSION_NUM >= 170000
+        NIL,
+#endif
+        NIL
+    );
+    add_path(grouped_rel, (Path*)grouped_path);
+}
+
+/*
+ * PostgreSQL does not call an FDW's GetForeignUpperPaths callback for set
+ * operations, and it rewrites simple UNION ALL into an append relation.
+ * The global upper-path hook covers both planner representations.
+ */
+void
+chfdw_create_upper_paths_hook(
+    PlannerInfo* root,
+    UpperRelationKind stage,
+    RelOptInfo* input_rel,
+    RelOptInfo* output_rel,
+    void* extra
+) {
+    AppendPath* append_path;
+    ChFdwSetopPathInfo path_info;
+    bool is_distinct;
+    int32 fetch_size;
+    Cost startup_cost;
+    Cost total_cost;
+
+    if (stage == UPPERREL_SETOP) {
+        if (!find_setop_path(
+                root,
+                output_rel,
+                &append_path,
+                &is_distinct,
+                &path_info,
+                &fetch_size,
+                &startup_cost,
+                &total_cost
+            )) {
+            return;
+        }
+        /*
+         * An ordered DISTINCT set operation needs the original setop target
+         * for its local pathkeys. Keep the whole operation local until the
+         * remote setop path can preserve that target exactly.
+         */
+        if (is_distinct && root->parse->sortClause != NIL) {
+            return;
+        }
+    } else if (stage == UPPERREL_FINAL && is_flattened_union_all(root, input_rel)) {
+        if (!find_setop_path(
+                root,
+                input_rel,
+                &append_path,
+                &is_distinct,
+                &path_info,
+                &fetch_size,
+                &startup_cost,
+                &total_cost
+            ) ||
+            is_distinct) {
+            return;
+        }
+    } else if (
+        stage == UPPERREL_GROUP_AGG &&
+        is_flattened_union_all_grouping(root, input_rel, (GroupPathExtraData*)extra)
+    ) {
+        if (!find_setop_path(
+                root,
+                input_rel,
+                &append_path,
+                &is_distinct,
+                &path_info,
+                &fetch_size,
+                &startup_cost,
+                &total_cost
+            ) ||
+            is_distinct) {
+            return;
+        }
+        add_foreign_setop_grouping_path(
+            root,
+            input_rel,
+            output_rel,
+            append_path,
+            &path_info,
+            fetch_size,
+            startup_cost,
+            total_cost
+        );
+        return;
+    } else {
+        return;
+    }
+
+    add_foreign_setop_path(
+        root,
+        output_rel,
+        append_path,
+        is_distinct,
+        &path_info,
+        fetch_size,
+        startup_cost,
+        total_cost
+    );
+}
+
 /*
  * clickhouseGetForeignUpperPaths
  *		Add paths for post-join operations like aggregation, grouping etc. if
@@ -2922,10 +4240,22 @@ clickhouseGetForeignUpperPaths(
         return;
     }
 
+    /*
+     * Set operations are represented by a complete remote query. Keep later
+     * ORDER BY/LIMIT stages local until they have dedicated wrapper deparse.
+     */
+    if (((CHFdwRelationInfo*)input_rel->fdw_private)->is_setop) {
+        return;
+    }
+    if (IS_UPPER_REL(input_rel) &&
+        ((CHFdwRelationInfo*)input_rel->fdw_private)->stage == UPPERREL_DISTINCT) {
+        return;
+    }
+
     /* Ignore stages we don't support; and skip any duplicate calls. */
     if ((stage != UPPERREL_GROUP_AGG && stage != UPPERREL_PARTIAL_GROUP_AGG &&
-         stage != UPPERREL_WINDOW && stage != UPPERREL_ORDERED &&
-         stage != UPPERREL_FINAL) ||
+         stage != UPPERREL_WINDOW && stage != UPPERREL_DISTINCT &&
+         stage != UPPERREL_ORDERED && stage != UPPERREL_FINAL) ||
         output_rel->fdw_private) {
         return;
     }
@@ -2950,6 +4280,9 @@ clickhouseGetForeignUpperPaths(
         break;
     case UPPERREL_WINDOW:
         add_foreign_window_paths(root, input_rel, output_rel);
+        break;
+    case UPPERREL_DISTINCT:
+        add_foreign_distinct_paths(root, input_rel, output_rel);
         break;
     case UPPERREL_ORDERED:
         add_foreign_ordered_paths(root, input_rel, output_rel);
@@ -3086,6 +4419,93 @@ add_foreign_grouping_paths(
 }
 
 /*
+ * Add a path for plain SELECT DISTINCT when every output expression has
+ * matching equality semantics on PostgreSQL and ClickHouse.
+ */
+static void
+add_foreign_distinct_paths(
+    PlannerInfo* root,
+    RelOptInfo* input_rel,
+    RelOptInfo* distinct_rel
+) {
+    Query* parse               = root->parse;
+    CHFdwRelationInfo* ifpinfo = input_rel->fdw_private;
+    CHFdwRelationInfo* fpinfo  = distinct_rel->fdw_private;
+    PathTarget* target         = root->upper_targets[UPPERREL_DISTINCT];
+    ForeignPath* distinct_path;
+    List* tlist = NIL;
+    ListCell* lc;
+    double rows;
+    int width;
+    Cost startup_cost;
+    Cost total_cost;
+    int index = 0;
+
+    if ((input_rel->reloptkind != RELOPT_BASEREL &&
+         input_rel->reloptkind != RELOPT_JOINREL) ||
+        parse->distinctClause == NIL || parse->hasDistinctOn || parse->hasTargetSRFs ||
+        ifpinfo->local_conds || !distinct_target_is_safe(target) ||
+        !setop_relation_uses_default_engine(input_rel)) {
+        return;
+    }
+
+    fpinfo->outerrel = input_rel;
+    fpinfo->table    = ifpinfo->table;
+    fpinfo->server   = ifpinfo->server;
+    fpinfo->user     = ifpinfo->user;
+    merge_fdw_options(fpinfo, ifpinfo, NULL);
+
+    foreach (lc, target->exprs) {
+        Expr* expr  = lfirst_node(Expr, lc);
+        Index sgref = get_pathtarget_sortgroupref(target, index++);
+        TargetEntry* tle;
+
+        if (!chfdw_is_foreign_expr(root, distinct_rel, expr, true) ||
+            is_foreign_param(root, distinct_rel, expr)) {
+            return;
+        }
+
+        tle = makeTargetEntry(expr, list_length(tlist) + 1, NULL, false);
+        tle->ressortgroupref = sgref;
+        tlist                = lappend(tlist, tle);
+    }
+
+    fpinfo->grouped_tlist    = tlist;
+    fpinfo->pushdown_safe    = true;
+    fpinfo->rel_startup_cost = -1;
+    fpinfo->rel_total_cost   = -1;
+    fpinfo->relation_name    = makeStringInfo();
+    appendStringInfo(
+        fpinfo->relation_name, "Distinct on (%s)", ifpinfo->relation_name->data
+    );
+
+    estimate_path_cost_size(&rows, &width, &startup_cost, &total_cost, 0.1);
+    fpinfo->rows         = rows;
+    fpinfo->width        = width;
+    fpinfo->startup_cost = startup_cost;
+    fpinfo->total_cost   = total_cost;
+
+    distinct_path = create_foreign_upper_path(
+        root,
+        distinct_rel,
+        target,
+        rows,
+#if PG_VERSION_NUM >= 180000
+        0,
+#endif
+        startup_cost,
+        total_cost,
+        NIL,
+        NULL,
+#if PG_VERSION_NUM >= 170000
+        NIL,
+#endif
+        NIL
+    );
+    add_path(distinct_rel, (Path*)distinct_path);
+}
+
+/*
  * foreign_window_ok
  *		Assess whether window functions in the query are safe to push down.
  *
@@ -3188,6 +4608,10 @@ add_foreign_window_paths(
     int width;
     Cost startup_cost;
     Cost total_cost;
+
+    if (root->parse->distinctClause != NIL) {
+        return;
+    }
 
     /* Save the input_rel as outerrel in fpinfo */
     fpinfo->outerrel = input_rel;

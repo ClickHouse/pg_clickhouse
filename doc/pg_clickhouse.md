@@ -577,6 +577,38 @@ try=# EXPLAIN (ANALYZE, VERBOSE)
  the number of rows that must be pulled back into Postgres from 1000 (all of
  them) to just 8, one for each node.
 
+### UNION and CTEs
+
+Plain `SELECT DISTINCT` is pushed down for the same conservative set of
+equality-compatible output types listed below. `DISTINCT ON`, ordered
+`DISTINCT`, and `DISTINCT` over grouping or window results stay in PostgreSQL.
+
+pg_clickhouse can combine `UNION ALL` and `UNION` (`UNION DISTINCT`) into one
+remote query when every arm is already fully pushable through the same foreign
+server and user mapping. If an arm requires local evaluation or uses another
+server, PostgreSQL executes the set operation locally.
+
+`UNION DISTINCT` is pushed down only for output types whose equality semantics
+match on both servers: `boolean`, `smallint`, `integer`, `bigint`, `date`,
+`text` with a deterministic collation, unlimited `varchar`, `bytea`, and
+`uuid`. Other output types keep duplicate elimination in PostgreSQL.
+Direct `UNION DISTINCT` queries with `ORDER BY` also stay local so PostgreSQL
+can apply the requested ordering.
+
+PostgreSQL inlines eligible CTEs before pg_clickhouse plans the query, so
+single-use CTEs and CTEs declared `NOT MATERIALIZED` can participate in
+pushdown. Multiply referenced CTEs using PostgreSQL's default materialization,
+and CTEs declared `MATERIALIZED`, retain evaluate-once semantics and stay
+local.
+
+Grouping and aggregation over a pushed `UNION ALL` can also be executed in
+the same remote query. This requires at least two fully remote arms using the
+same server and user mapping with the default table engine, and no local
+conditions, `HAVING`, outer ordering or limiting, grouping sets, window
+functions, row locking, or set-returning functions. Group keys and aggregate
+`DISTINCT` inputs use the same conservative equality checks as `UNION
+DISTINCT`; unsupported shapes stay local.
+
 ### Partitioned Tables
 
 A PostgreSQL [partitioned table] can mix local partitions with foreign
