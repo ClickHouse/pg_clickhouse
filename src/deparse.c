@@ -5035,6 +5035,17 @@ deparseJsonbDocument(
 }
 
 static void
+deparseJsonbNonnullDocument(
+    Expr* document,
+    JsonbDocumentKind document_kind,
+    deparse_expr_cxt* context
+) {
+    appendStringInfoString(context->buf, "ifNull(");
+    deparseJsonbDocument(document, document_kind, context);
+    appendStringInfoString(context->buf, ", 'null')");
+}
+
+static void
 deparseJsonbExists(
     Expr* document,
     Expr* key,
@@ -5051,7 +5062,7 @@ deparseJsonbExists(
 
     if (document_kind == JSONB_DOCUMENT_STRING) {
         appendStringInfoString(buf, "if(NOT isValidJSON(");
-        deparseJsonbDocument(document, document_kind, context);
+        deparseJsonbNonnullDocument(document, document_kind, context);
         appendStringInfoString(
             buf,
             "), throwIf(1, 'invalid input syntax for type json'), "
@@ -5059,13 +5070,13 @@ deparseJsonbExists(
     }
 
     appendStringInfoString(buf, "multiIf(JSONType(");
-    deparseJsonbDocument(document, document_kind, context);
+    deparseJsonbNonnullDocument(document, document_kind, context);
     appendStringInfoString(buf, ") = 'Object', JSONHas(");
-    deparseJsonbDocument(document, document_kind, context);
+    deparseJsonbNonnullDocument(document, document_kind, context);
     appendStringInfoString(buf, ", ");
     deparseExpr(key, context);
     appendStringInfoString(buf, "), JSONType(");
-    deparseJsonbDocument(document, document_kind, context);
+    deparseJsonbNonnullDocument(document, document_kind, context);
     appendStringInfoString(
         buf,
         ") = 'Array', arrayExists(jsonb_exists_element -> "
@@ -5074,7 +5085,7 @@ deparseJsonbExists(
     );
     deparseExpr(key, context);
     appendStringInfoString(buf, ", JSONExtractArrayRaw(");
-    deparseJsonbDocument(document, document_kind, context);
+    deparseJsonbNonnullDocument(document, document_kind, context);
     appendStringInfoString(buf, ")), 0)");
 
     if (document_kind == JSONB_DOCUMENT_STRING) {

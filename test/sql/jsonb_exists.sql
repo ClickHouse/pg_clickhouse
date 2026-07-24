@@ -34,7 +34,7 @@ SELECT jsonb_exists_remote_sql(
 
 SELECT jsonb_exists_remote_sql(
     $$SELECT id FROM jsonb_exists_compatibility WHERE document ? 'key'$$
-) LIKE '%isValidJSON%';
+) LIKE '%isValidJSON(ifNull%';
 
 SELECT jsonb_exists_remote_sql(
     $$SELECT id FROM jsonb_exists_compatibility
