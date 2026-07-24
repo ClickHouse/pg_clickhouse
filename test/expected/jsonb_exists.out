@@ -1,0 +1,65 @@
+CREATE SERVER jsonb_exists_binary FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (dbname 'jsonb_exists', driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER jsonb_exists_binary;
+CREATE FOREIGN TABLE jsonb_exists_native (
+    id integer,
+    document jsonb
+) SERVER jsonb_exists_binary OPTIONS (table_name 'native_documents');
+CREATE FOREIGN TABLE jsonb_exists_string (
+    id integer,
+    document text
+) SERVER jsonb_exists_binary OPTIONS (table_name 'string_documents');
+CREATE VIEW jsonb_exists_compatibility AS
+SELECT id, pg_catalog.jsonb_in(document::pg_catalog.cstring) AS document
+FROM jsonb_exists_string;
+CREATE FUNCTION jsonb_exists_remote_sql(query text)
+RETURNS text
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    plan jsonb;
+BEGIN
+    EXECUTE 'EXPLAIN (FORMAT JSON, VERBOSE, COSTS OFF) ' || query INTO plan;
+    RETURN plan #>> '{0,Plan,Remote SQL}';
+END
+$$;
+SELECT jsonb_exists_remote_sql(
+    $$SELECT id FROM jsonb_exists_native WHERE document ? 'key'$$
+) LIKE '%JSONHas%';
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT jsonb_exists_remote_sql(
+    $$SELECT id FROM jsonb_exists_compatibility WHERE document ? 'key'$$
+) LIKE '%isValidJSON%';
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT jsonb_exists_remote_sql(
+    $$SELECT id FROM jsonb_exists_compatibility
+      WHERE document ? 'first' OR document ? 'second'$$
+) LIKE '%JSONHas%JSONHas%';
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT jsonb_exists_remote_sql(
+    $$SELECT id FROM jsonb_exists_compatibility
+      WHERE (document || '{}'::jsonb) ? 'key'$$
+) NOT LIKE '%JSONHas%';
+ ?column? 
+----------
+ t
+(1 row)
+
+DROP VIEW jsonb_exists_compatibility;
+DROP FUNCTION jsonb_exists_remote_sql(text);
+DROP FOREIGN TABLE jsonb_exists_string;
+DROP FOREIGN TABLE jsonb_exists_native;
+DROP SERVER jsonb_exists_binary CASCADE;
+NOTICE:  drop cascades to user mapping for ubuntu on server jsonb_exists_binary

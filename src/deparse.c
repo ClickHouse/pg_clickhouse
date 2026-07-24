@@ -198,6 +198,12 @@ typedef enum ExprTruthCtx {
     EXPR_CTX_EXACT,
 } ExprTruthCtx;
 
+typedef enum JsonbDocumentKind {
+    JSONB_DOCUMENT_UNSUPPORTED,
+    JSONB_DOCUMENT_NATIVE,
+    JSONB_DOCUMENT_STRING,
+} JsonbDocumentKind;
+
 /*
  * Functions to determine whether an expression can be evaluated safely on
  * remote server.
@@ -257,6 +263,13 @@ static void
 deparseSQLValueFunction(SQLValueFunction* node, deparse_expr_cxt* context);
 static void
 deparseOpExpr(OpExpr* node, deparse_expr_cxt* context);
+static void
+deparseJsonbExists(
+    Expr* document,
+    Expr* key,
+    JsonbDocumentKind document_kind,
+    deparse_expr_cxt* context
+);
 static void
 deparseOperatorName(StringInfo buf, Form_pg_operator opform);
 static void
@@ -382,6 +395,8 @@ get_relation_column_alias_ids(
     int* relno,
     int* colno
 );
+static JsonbDocumentKind
+classifyJsonbDocument(Expr* expr, Expr** document);
 
 /*
  * Examine each qual clause in input_conds, and classify them into two groups,
@@ -895,6 +910,55 @@ classify_notin_subplan(SubPlan* subplan, PlannerInfo* root, Relids relids) {
 }
 
 /*
+ * Recognize either a native ClickHouse JSON column imported as jsonb or the
+ * compatibility-view shape used for a String containing a JSON document:
+ *
+ *     jsonb_in(foreign_text_column::cstring)
+ *
+ * Arbitrary jsonb expressions stay local because their remote representation
+ * is not known.
+ */
+static JsonbDocumentKind
+classifyJsonbDocument(Expr* expr, Expr** document) {
+    while (IsA(expr, RelabelType)) {
+        expr = ((RelabelType*)expr)->arg;
+    }
+
+    if (IsA(expr, Var) && exprType((Node*)expr) == JSONBOID) {
+        *document = expr;
+        return JSONB_DOCUMENT_NATIVE;
+    }
+
+    if (IsA(expr, FuncExpr)) {
+        FuncExpr* func = (FuncExpr*)expr;
+
+        if (func->funcid == F_JSONB_IN && list_length(func->args) == 1) {
+            Expr* input = (Expr*)linitial(func->args);
+
+            while (IsA(input, RelabelType)) {
+                input = ((RelabelType*)input)->arg;
+            }
+            if (IsA(input, CoerceViaIO)) {
+                CoerceViaIO* cast = (CoerceViaIO*)input;
+                Expr* raw         = cast->arg;
+
+                while (IsA(raw, RelabelType)) {
+                    raw = ((RelabelType*)raw)->arg;
+                }
+                if (cast->resulttype == CSTRINGOID &&
+                    exprType((Node*)raw) == TEXTOID) {
+                    *document = raw;
+                    return JSONB_DOCUMENT_STRING;
+                }
+            }
+        }
+    }
+
+    *document = NULL;
+    return JSONB_DOCUMENT_UNSUPPORTED;
+}
+
+/*
  * Check if expression is safe to execute remotely, and return true if so.
  *
  * We must check that the expression contains only node types we can deparse,
@@ -1076,6 +1140,7 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
     case T_DistinctExpr: /* struct-equivalent to OpExpr */
     {
         OpExpr* oe = (OpExpr*)node;
+        CustomObjectDef* cdef;
 
         /*
          * Similarly, only shippable operators can be sent to remote.
@@ -1084,6 +1149,24 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
          */
         if (!chfdw_is_shippable(node, oe->opno, OperatorRelationId, fpinfo, NULL)) {
             return false;
+        }
+
+        cdef = chfdw_check_for_custom_operator(oe->opno, NULL);
+        if (cdef && cdef->cf_type == CF_JSON_EXISTS) {
+            Expr* document;
+            JsonbDocumentKind document_kind =
+                classifyJsonbDocument((Expr*)linitial(oe->args), &document);
+
+            if (document_kind == JSONB_DOCUMENT_UNSUPPORTED ||
+                !foreign_expr_walker(
+                    (Node*)document, glob_cxt, EXPR_CTX_EXACT
+                ) ||
+                !foreign_expr_walker(
+                    (Node*)lsecond(oe->args), glob_cxt, EXPR_CTX_EXACT
+                )) {
+                return false;
+            }
+            break;
         }
 
         /*
@@ -4936,6 +5019,70 @@ findFunction(Oid typoid, char* name) {
     return result;
 }
 
+static void
+deparseJsonbDocument(
+    Expr* document,
+    JsonbDocumentKind document_kind,
+    deparse_expr_cxt* context
+) {
+    if (document_kind == JSONB_DOCUMENT_NATIVE) {
+        appendStringInfoString(context->buf, "toJSONString(");
+    }
+    deparseExpr(document, context);
+    if (document_kind == JSONB_DOCUMENT_NATIVE) {
+        appendStringInfoChar(context->buf, ')');
+    }
+}
+
+static void
+deparseJsonbExists(
+    Expr* document,
+    Expr* key,
+    JsonbDocumentKind document_kind,
+    deparse_expr_cxt* context
+) {
+    StringInfo buf = context->buf;
+
+    appendStringInfoString(buf, "(if(isNull(");
+    deparseJsonbDocument(document, document_kind, context);
+    appendStringInfoString(buf, ") OR isNull(");
+    deparseExpr(key, context);
+    appendStringInfoString(buf, "), NULL, ");
+
+    if (document_kind == JSONB_DOCUMENT_STRING) {
+        appendStringInfoString(buf, "if(NOT isValidJSON(");
+        deparseJsonbDocument(document, document_kind, context);
+        appendStringInfoString(
+            buf,
+            "), throwIf(1, 'invalid input syntax for type json'), "
+        );
+    }
+
+    appendStringInfoString(buf, "multiIf(JSONType(");
+    deparseJsonbDocument(document, document_kind, context);
+    appendStringInfoString(buf, ") = 'Object', JSONHas(");
+    deparseJsonbDocument(document, document_kind, context);
+    appendStringInfoString(buf, ", ");
+    deparseExpr(key, context);
+    appendStringInfoString(buf, "), JSONType(");
+    deparseJsonbDocument(document, document_kind, context);
+    appendStringInfoString(
+        buf,
+        ") = 'Array', arrayExists(jsonb_exists_element -> "
+        "JSONType(jsonb_exists_element) = 'String' AND "
+        "JSONExtractString(jsonb_exists_element) = "
+    );
+    deparseExpr(key, context);
+    appendStringInfoString(buf, ", JSONExtractArrayRaw(");
+    deparseJsonbDocument(document, document_kind, context);
+    appendStringInfoString(buf, ")), 0)");
+
+    if (document_kind == JSONB_DOCUMENT_STRING) {
+        appendStringInfoChar(buf, ')');
+    }
+    appendStringInfoString(buf, "))");
+}
+
 /*
  * Deparse given operator expression. To avoid problems around priority of
  * operations, we always parenthesize the arguments.
@@ -5064,6 +5211,17 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             appendStringInfoString(buf, ", ");
             deparseExpr(lsecond(node->args), context);
             appendStringInfoChar(buf, ')');
+            goto cleanup;
+        } break;
+        case CF_JSON_EXISTS: {
+            Expr* document;
+            JsonbDocumentKind document_kind =
+                classifyJsonbDocument(linitial(node->args), &document);
+
+            Assert(document_kind != JSONB_DOCUMENT_UNSUPPORTED);
+            deparseJsonbExists(
+                document, lsecond(node->args), document_kind, context
+            );
             goto cleanup;
         } break;
         case CF_JSON_FETCHVAL:

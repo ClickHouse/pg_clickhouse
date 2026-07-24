@@ -949,6 +949,7 @@ chfdw_check_for_custom_type(Oid typeoid) {
 #define OID_TEXT_REGEX_NE_OP 642
 #define OID_TEXT_IREGEX_NE_OP 1229
 #define OID_JSONB_FETCHVAL_OP 3211
+#define OID_JSONB_EXISTS_OP 3247
 #define OID_JSONB_FETCHVAL_TEXT_OP 3477
 #define OID_JSON_FETCHVAL_OP 3962
 #define OID_JSON_FETCHVAL_TEXT_OP 3963
@@ -980,6 +981,8 @@ classify_builtin_operator(Oid opoid) {
     case OID_JSONB_FETCHVAL_TEXT_OP:
     case OID_JSON_FETCHVAL_TEXT_OP:
         return CF_JSON_FETCHVAL_TEXT;
+    case OID_JSONB_EXISTS_OP:
+        return CF_JSON_EXISTS;
     case OID_ARRAY_CONTAINS_OP:
         return CF_ARRAY_CONTAINS;
     case OID_ARRAY_CONTAINED_OP:
