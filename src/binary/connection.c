@@ -329,10 +329,10 @@ ch_binary_connect(ch_connection_details* details) {
             .compression = comp,
         };
         chc_err err = {};
-        int rc      = chc_client_init(&s->client, &opts, &pg_chc_alloc, &s->io, &err);
+        int rc      = chc_client_init(&s->client, &opts, &pgch_alloc, &s->io, &err);
 
         if (rc != CHC_OK) {
-            raise_chc(
+            pgch_raise(
                 &err, ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION, "connection error: "
             );
         }

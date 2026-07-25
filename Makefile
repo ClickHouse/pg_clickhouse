@@ -19,13 +19,18 @@ ARCH         = $(shell uname -m)
 # Collect all the C files to compile into MODULE_big.
 OBJS = $(subst .c,.o, $(wildcard src/*.c src/*/*.c))
 
-# clickhouse-c is a header-only single-header library. Override
-# CH_C_DIR to point elsewhere when developing against a local checkout.
-CH_C_DIR ?= vendor/clickhouse-c
+# clickhouse-c and pg-clickhouse-c are header-only. pg-clickhouse-c vendors the
+# clickhouse-c commit its own signatures compile against, so take that pin
+# rather than a second checkout. Override CH_C_DIR / PGCH_DIR to point
+# elsewhere when developing against a local checkout.
+PGCH_DIR = vendor/pg-clickhouse-c
+CH_C_DIR = $(PGCH_DIR)/clickhouse-c
 
 # Own headers via -I; vendored and PG server headers via -isystem so their
 # own warnings (eg -Wsign-compare in PG array.h macros) don't trip -Werror.
-PG_CPPFLAGS = -I./src/include -isystem $(CH_C_DIR) -isystem $(shell $(PG_CONFIG) --includedir-server)
+# PGCH_MSG_PREFIX prefixes every message pg-clickhouse-c raises; it expands
+# inside the ereport macros, so every TU must see the same definition.
+PG_CPPFLAGS = -I./src/include -isystem $(CH_C_DIR) -isystem $(PGCH_DIR) -isystem $(shell $(PG_CONFIG) --includedir-server) -DPGCH_MSG_PREFIX='"pg_clickhouse: "'
 
 # Link OpenSSL (for TLS in the binary driver), curl (for the HTTP driver),
 # libuuid (for http_streaming.c's query-id generator), and lz4 / zstd
@@ -50,13 +55,15 @@ EXTRA_CLEAN = sql/$(EXTENSION)--$(EXTVERSION).sql src/include/version.h compile_
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-# Clone clickhouse-c submodule.
-$(CH_C_DIR)/clickhouse.h: .gitmodules
-	git submodule update --init
+# Clone vendored submodules, clickhouse-c nested inside pg-clickhouse-c. Spelled
+# out rather than via CH_C_DIR / PGCH_DIR: an override points at a checkout git
+# knows nothing about.
+vendor/pg-clickhouse-c/clickhouse-c/clickhouse.h vendor/pg-clickhouse-c/pg-clickhouse.h: .gitmodules
+	git submodule update --init --recursive
 
-# Require clickhouse-c and the version header. The bitcode twins compile the
-# same sources, so they need the same generated header.
-$(OBJS) $(OBJS:.o=.bc): $(CH_C_DIR)/clickhouse.h src/include/version.h
+# Require both vendored libraries and the version header. The bitcode twins
+# compile the same sources, so they need the same generated header.
+$(OBJS) $(OBJS:.o=.bc): $(CH_C_DIR)/clickhouse.h $(PGCH_DIR)/pg-clickhouse.h src/include/version.h
 
 # Require the versioned SQL script.
 all: sql/$(EXTENSION)--$(EXTVERSION).sql

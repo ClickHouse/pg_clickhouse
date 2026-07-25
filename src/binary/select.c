@@ -39,9 +39,7 @@ struct ch_binary_response_t {
     bool success;
     bool eos; /* END_OF_STREAM or exception seen */
 
-    size_t columns_count;
-    chc_block* staged; /* next block to hand out; owned */
-    chc_block* prev;   /* last block handed out; freed at next fetch */
+    chc_block* staged; /* next block to hand out; ownership passes to caller */
 };
 
 static void
@@ -71,10 +69,10 @@ resp_set_exception(ch_binary_response_t* resp, const chc_exception* ex) {
 
 /*
  * Read one wire packet under resp->cxt and fold it into the response. Sets
- * resp->staged (for non-empty Data), resp->columns_count (on first Data with
- * columns), resp->error (cancel/exception/transport), or resp->eos
- * (END_OF_STREAM / exception / transport failure). Other packet kinds
- * (progress, log, profile, ...) are silently consumed.
+ * resp->staged (for Data with columns; header block may carry zero rows),
+ * resp->error (cancel/exception/transport), or resp->eos (END_OF_STREAM /
+ * exception / transport failure). Other packet kinds (progress, log,
+ * profile, ...) are silently consumed.
  */
 static void
 pump_one(ch_binary_response_t* resp) {
@@ -97,29 +95,24 @@ pump_one(ch_binary_response_t* resp) {
 
     switch (pkt.kind) {
     case CHC_PKT_DATA:
-        if (pkt.block && chc_block_n_columns(pkt.block) > 0) {
-            if (resp->columns_count == 0) {
-                resp->columns_count = chc_block_n_columns(pkt.block);
-            }
-            if (chc_block_n_rows(pkt.block) > 0 && resp->staged == NULL) {
-                size_t ncols = chc_block_n_columns(pkt.block);
-                chc_err verr = {};
-                int vrc      = CHC_OK;
+        if (pkt.block && chc_block_n_columns(pkt.block) > 0 && resp->staged == NULL) {
+            size_t ncols = chc_block_n_columns(pkt.block);
+            chc_err verr = {};
+            int vrc      = CHC_OK;
 
-                for (size_t i = 0; i < ncols; i++) {
-                    vrc = chc_column_validate(chc_block_column(pkt.block, i), &verr);
-                    if (vrc != CHC_OK) {
-                        break;
-                    }
-                }
+            for (size_t i = 0; i < ncols; i++) {
+                vrc = chc_column_validate(chc_block_column(pkt.block, i), &verr);
                 if (vrc != CHC_OK) {
-                    resp_set_error(resp, verr.msg);
-                    resp->state->broken = true;
-                    resp->eos           = true;
-                } else {
-                    resp->staged = pkt.block;
-                    pkt.block    = NULL;
+                    break;
                 }
+            }
+            if (vrc != CHC_OK) {
+                resp_set_error(resp, verr.msg);
+                resp->state->broken = true;
+                resp->eos           = true;
+            } else {
+                resp->staged = pkt.block;
+                pkt.block    = NULL;
             }
         }
         chc_packet_clear(resp->client, &pkt);
@@ -366,11 +359,11 @@ ch_binary_simple_query(
     }
 
     /*
-     * Pump until schema is known so callers can call
-     * ch_binary_response_columns immediately. Empty result sets exit on eos
-     * with columns_count still set from the header Data block.
+     * Pump until first Data block or eos so query-time exceptions surface
+     * before cursor construction. Header block carries schema even for
+     * empty result sets.
      */
-    while (resp->columns_count == 0 && !resp->eos && !resp->error) {
+    while (resp->staged == NULL && !resp->eos && !resp->error) {
         pump_one(resp);
     }
 
@@ -410,31 +403,39 @@ ch_binary_response_success(const ch_binary_response_t* resp) {
     return resp && resp->success;
 }
 
-size_t
-ch_binary_response_columns(const ch_binary_response_t* resp) {
-    return resp ? resp->columns_count : 0;
+/* Adapt TCP response to shared block source. */
+static const chc_block*
+resp_src_next_block(void* ud) {
+    return ch_binary_response_fetch_next_block((ch_binary_response_t*)ud);
+}
+
+static const char*
+resp_src_error(void* ud) {
+    return ch_binary_response_error((ch_binary_response_t*)ud);
+}
+
+pgch_block_source
+ch_binary_response_block_source(ch_binary_response_t* resp) {
+    return (pgch_block_source){
+        .ud         = resp,
+        .next_block = resp_src_next_block,
+        .error      = resp_src_error,
+    };
 }
 
 const chc_block*
 ch_binary_response_fetch_next_block(ch_binary_response_t* resp) {
+    chc_block* blk;
+
     if (!resp) {
         return NULL;
-    }
-
-    if (resp->prev) {
-        chc_block_destroy(resp->prev, &pg_chc_alloc);
-        resp->prev = NULL;
     }
 
     while (resp->staged == NULL && !resp->eos && !resp->error) {
         pump_one(resp);
     }
 
-    if (resp->staged == NULL) {
-        return NULL;
-    }
-
-    resp->prev   = resp->staged;
+    blk          = resp->staged;
     resp->staged = NULL;
-    return resp->prev;
+    return blk;
 }

@@ -78,6 +78,12 @@ All notable changes to this project will be documented in this file. It uses the
     rather than understating foreign scan cost ([#310]).
 *   Added mapping to push down the re2 v0.4 `@~` operator to ClickHouse as
     the `match()` function ([#318]).
+*   Binary driver errors now name the column and type involved, for example
+    `cannot encode integer into ClickHouse Array(Array(Int32)) (column "c2")`
+    in place of `unexpected PG/CH type pair for column 0` ([#326]).
+*   Coerce array elements in binary driver. `Array(Int32)` to `bigint[]`, or
+    `quantilesExactLow()` results into `double precision[]`, no longer fails
+    with `could not cast value from integer[] to bigint[]` ([#326]).
 
 ### 🐞 Bug Fixes
 
@@ -160,6 +166,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#317 Push down the array IN family unconditionally"
   [#319]: https://github.com/ClickHouse/pg_clickhouse/pull/319
     "ClickHouse/pg_clickhouse#319 Fix foreign scan RTE selection"
+  [#326]: https://github.com/ClickHouse/pg_clickhouse/pull/326
+    "ClickHouse/pg_clickhouse#326 pg-clickhouse-c"
 
 ## [v0.3.2] — 2026-06-16
 

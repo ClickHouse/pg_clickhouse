@@ -27,7 +27,7 @@ jobs:
         run: pgxn install re2
       - name: Checkout the Repository
         uses: actions/checkout@v6
-        with: { submodules: true }
+        with: { submodules: recursive }
       - name: Start ClickHouse
         run: .github/ubuntu/clickhouse.sh
       - name: Test

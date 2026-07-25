@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Checkout the Repository
         uses: actions/checkout@v6
-        with: { submodules: true }
+        with: { submodules: recursive }
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
       - name: Log in to GHCR

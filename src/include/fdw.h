@@ -54,7 +54,9 @@ typedef struct ch_cursor {
     double request_time;
     double total_time;
     size_t columns_count;
-    uintptr_t* conversion_states; /* for binary */
+    /* for binary, per returned column: conversion state, target attribute */
+    void** conversion_states;
+    int* fill_dest;
 } ch_cursor;
 
 typedef struct ChFdwScanRowContext {
@@ -457,7 +459,6 @@ typedef struct CustomObjectDef {
     char custom_name[NAMEDATALEN]; /* \0 - no custom name, \1 - many
                                     * names */
     int paren_count;               /* Number closing parens; defaults to 1 */
-    Oid rowfunc;
     void* cf_context;
 } CustomObjectDef;
 

@@ -323,7 +323,6 @@ init_custom_entry(CustomObjectDef* entry) {
     entry->cf_type        = CF_USUAL;
     entry->custom_name[0] = '\0';
     entry->cf_context     = NULL;
-    entry->rowfunc        = InvalidOid;
     entry->paren_count    = 1;
 }
 

@@ -940,7 +940,7 @@ static ch_cursor*
 binary_simple_query(void* conn, const ch_query* query) {
     MemoryContext tempcxt, oldcxt;
     ch_cursor* cursor;
-    ch_binary_read_state_t* state;
+    pgch_reader* state;
 
     ch_binary_response_t* resp = ch_binary_simple_query(conn, query, &is_canceled);
 
@@ -967,15 +967,15 @@ binary_simple_query(void* conn, const ch_query* query) {
     cursor                 = palloc0(sizeof(ch_cursor));
     cursor->conn           = conn;
     cursor->query_response = resp;
-    state         = (ch_binary_read_state_t*)palloc0(sizeof(ch_binary_read_state_t));
-    cursor->query = pstrdup(query->sql);
-    cursor->read_state    = state;
-    cursor->columns_count = ch_binary_response_columns(resp);
-    ch_binary_read_state_init(cursor->read_state, resp);
-    cursor->conversion_states = palloc0(sizeof(uintptr_t) * cursor->columns_count);
-    cursor->memcxt            = tempcxt;
-    cursor->callback.func     = binary_cursor_free;
-    cursor->callback.arg      = cursor;
+    state                  = (pgch_reader*)palloc0(sizeof(pgch_reader));
+    cursor->query          = pstrdup(query->sql);
+    cursor->read_state     = state;
+    pgch_block_source src  = ch_binary_response_block_source(resp);
+    pgch_reader_init(cursor->read_state, &src);
+    cursor->columns_count = pgch_reader_columns(state);
+    cursor->memcxt        = tempcxt;
+    cursor->callback.func = binary_cursor_free;
+    cursor->callback.arg  = cursor;
     MemoryContextRegisterResetCallback(tempcxt, &cursor->callback);
 
     /*
@@ -1078,8 +1078,8 @@ append_tsv_escaped(StringInfo buf, const char* s) {
  */
 text*
 chfdw_binary_fetch_raw_data(ch_cursor* cursor) {
-    ch_binary_read_state_t* state = cursor->read_state;
-    size_t ncols                  = ch_binary_response_columns(state->resp);
+    pgch_reader* state = cursor->read_state;
+    size_t ncols       = pgch_reader_columns(state);
     StringInfoData buf;
 
     if (ncols == 0) {
@@ -1088,7 +1088,7 @@ chfdw_binary_fetch_raw_data(ch_cursor* cursor) {
 
     initStringInfo(&buf);
 
-    while (ch_binary_read_row(state)) {
+    while (pgch_reader_next(state)) {
         for (size_t i = 0; i < ncols; i++) {
             if (i > 0) {
                 appendStringInfoChar(&buf, '\t');
@@ -1097,8 +1097,7 @@ chfdw_binary_fetch_raw_data(ch_cursor* cursor) {
             if (state->nulls[i]) {
                 appendStringInfoString(&buf, "\\N");
             } else {
-                char* val =
-                    ch_binary_value_to_cstring(state->coltypes[i], state->values[i]);
+                char* val = pgch_value_to_cstring(state->coltypes[i], state->values[i]);
 
                 append_tsv_escaped(&buf, val);
                 pfree(val);
@@ -1146,15 +1145,38 @@ binary_fetch_row_errcb(void* arg) {
     errdetail_internal("Remote Query: %.64000s", sql);
 }
 
+/* Conversion state and target attribute per returned column. */
+static void
+build_conversion(ch_cursor* cursor, const ChFdwScanRowContext* ctx) {
+    pgch_reader* state = cursor->read_state;
+    MemoryContext old  = MemoryContextSwitchTo(cursor->memcxt);
+    size_t ncols       = pgch_reader_columns(state);
+    ListCell* lc;
+    size_t j = 0;
+
+    cursor->conversion_states = palloc0(ncols * sizeof(void*));
+    cursor->fill_dest         = palloc0(ncols * sizeof(int));
+    foreach (lc, ctx->retrieved_attrs) {
+        int attnum = lfirst_int(lc);
+
+        cursor->fill_dest[j]         = attnum - 1;
+        cursor->conversion_states[j] = pgch_reader_convert_init(
+            state, j, TupleDescAttr(ctx->tupdesc, attnum - 1)->atttypid
+        );
+        j++;
+    }
+
+    MemoryContextSwitchTo(old);
+}
+
 static Datum*
 binary_fetch_row(ChFdwScanRowContext* ctx) {
-    ListCell* lc;
-    ch_cursor* cursor             = ctx->cursor;
-    List* attrs                   = ctx->retrieved_attrs;
-    TupleDesc tupdesc             = ctx->tupdesc;
-    Datum* values                 = ctx->values;
-    bool* nulls                   = ctx->nulls;
-    ch_binary_read_state_t* state = cursor->read_state;
+    ch_cursor* cursor  = ctx->cursor;
+    List* attrs        = ctx->retrieved_attrs;
+    TupleDesc tupdesc  = ctx->tupdesc;
+    Datum* values      = ctx->values;
+    bool* nulls        = ctx->nulls;
+    pgch_reader* state = cursor->read_state;
     ErrorContextCallback errcallback;
 
     errcallback.callback = binary_fetch_row_errcb;
@@ -1162,16 +1184,19 @@ binary_fetch_row(ChFdwScanRowContext* ctx) {
     errcallback.previous = error_context_stack;
     error_context_stack  = &errcallback;
 
-    bool have_data  = ch_binary_read_row(state);
+    bool have_data  = pgch_reader_next(state);
     size_t attcount = list_length(attrs);
 
     if (state->error) {
+        error_context_stack = errcallback.previous;
+
         /* Prefer consistent interrupt error message when fetch interrupted */
         CHECK_FOR_INTERRUPTS();
         ereport(
             ERROR,
             errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-            errmsg("pg_clickhouse: error while reading row: %s", state->error)
+            errmsg("pg_clickhouse: %s", state->error),
+            errdetail_internal("Remote Query: %.64000s", cursor->query)
         );
     }
 
@@ -1181,7 +1206,7 @@ binary_fetch_row(ChFdwScanRowContext* ctx) {
     }
 
     if (attcount == 0) {
-        if (ch_binary_response_columns(state->resp) == 1 && state->nulls[0]) {
+        if (pgch_reader_columns(state) == 1 && state->nulls[0]) {
             nulls[0] = true;
             goto ok;
         } else {
@@ -1194,83 +1219,27 @@ binary_fetch_row(ChFdwScanRowContext* ctx) {
                 )
             );
         }
-    } else if (attcount != ch_binary_response_columns(state->resp)) {
+    } else if (attcount != pgch_reader_columns(state)) {
         ereport(
             ERROR,
             errcode(ERRCODE_DATATYPE_MISMATCH),
             errmsg_internal(
                 "pg_clickhouse: returned %lu columns, expected %lu",
-                ch_binary_response_columns(state->resp),
+                pgch_reader_columns(state),
                 attcount
             )
         );
     }
 
     if (tupdesc) {
-        size_t j = 0;
-
         Assert(values && nulls);
 
-        foreach (lc, attrs) {
-            int i       = lfirst_int(lc);
-            bool isnull = state->nulls[j];
-            intptr_t convstate;
-
-            if (isnull) {
-                values[i - 1] = (Datum)0;
-            } else {
-            again:
-                convstate = cursor->conversion_states[j];
-                switch (convstate) {
-                case 0: {
-                    MemoryContext old_mcxt;
-
-                    Oid outtype = TupleDescAttr(tupdesc, i - 1)->atttypid;
-                    void* s;
-
-                    /*
-                     * now we're should be in temporary memory
-                     * context, so make sure conversion states outlive
-                     * it.
-                     */
-                    old_mcxt = MemoryContextSwitchTo(cursor->memcxt);
-
-                    /*
-                     * Convert the Postgres Datum, stored by
-                     * ch_binary_read_row() as the type defined by by
-                     * state->coltypes[j], to the type defined by the
-                     * foreign table. No conversion if they're binary
-                     * compatible, but required to allow a static
-                     * ClickHouse type (which maps to a well-known
-                     * Postgres type) to be converted to a compatible
-                     * Postgres value via a CAST.
-                     */
-                    s = ch_binary_init_convert_state(
-                        state->values[j], state->coltypes[j], outtype
-                    );
-                    MemoryContextSwitchTo(old_mcxt);
-
-                    if (s == NULL) {
-                        /* no conversion but state is initialized */
-                        cursor->conversion_states[j] = 1;
-                    } else {
-                        cursor->conversion_states[j] = (uintptr_t)s;
-                    }
-                    goto again;
-                }
-                case 1:
-                    /* no conversion */
-                    values[i - 1] = state->values[j];
-                    break;
-                default:
-                    values[i - 1] =
-                        ch_binary_convert_datum((void*)convstate, state->values[j]);
-                }
-            }
-
-            nulls[i - 1] = isnull;
-            j++;
+        if (cursor->conversion_states == NULL) {
+            build_conversion(cursor, ctx);
         }
+        pgch_reader_fill_map(
+            state, cursor->conversion_states, cursor->fill_dest, values, nulls
+        );
     }
 
 ok:
@@ -1282,13 +1251,8 @@ static void
 binary_cursor_free(void* c) {
     ch_cursor* cursor = c;
 
-    for (size_t i = 0; i < cursor->columns_count; i++) {
-        if (cursor->conversion_states[i] > 1) {
-            ch_binary_free_convert_state((void*)cursor->conversion_states[i]);
-        }
-    }
-
-    ch_binary_read_state_free(cursor->read_state);
+    /* Conversion states live in the context this callback fires for. */
+    pgch_reader_free(cursor->read_state);
     ch_binary_response_free(cursor->query_response);
 }
 
@@ -1319,17 +1283,11 @@ binary_prepare_insert(
     state->memcxt = tempcxt;
     state->callback.func = ch_binary_insert_state_free;
     state->callback.arg  = state;
-    state->conn          = conn;
-    state->table_name    = pstrdup(table_name);
     state->relid         = RelationGetRelid(rri->ri_RelationDesc);
     MemoryContextRegisterResetCallback(tempcxt, &state->callback);
 
-    /* time for c++ stuff */
+    /* enter insert mode, take the column list from the server */
     ch_binary_prepare_insert(conn, query, state);
-
-    /* buffers */
-    state->values = (Datum*)palloc0(sizeof(Datum) * state->len);
-    state->nulls  = (bool*)palloc0(sizeof(bool) * state->len);
     MemoryContextSwitchTo(oldcxt);
 
     return state;
@@ -1340,31 +1298,7 @@ binary_insert_tuple(void* istate, TupleTableSlot* slot) {
     ch_binary_insert_state* state = istate;
 
     if (slot) {
-        if (state->conversion_states == NULL) {
-            MemoryContext old_mcxt;
-
-            old_mcxt = MemoryContextSwitchTo(state->memcxt);
-
-            /*
-             * Set up conversion states so that Postgres Datums of types
-             * defined by the foreign table can be converted to a well-known
-             * Postgres type that the binary INSERT path knows how to convert
-             * to the appropriate ClickHouse type. Binary compatible types
-             * don't convert; others require a CAST. Fails if there is no
-             * cast.
-             */
-            state->conversion_states = ch_binary_make_tuple_map(
-                slot->tts_tupleDescriptor, state->outdesc, state->relid
-            );
-            MemoryContextSwitchTo(old_mcxt);
-        }
-
-        ch_binary_do_output_conversion(state, slot);
-
-        for (size_t i = 0; i < (size_t)state->outdesc->natts; i++) {
-            ch_binary_column_append_data(state, i);
-        }
-
+        ch_binary_insert_tuple(state, slot);
         ch_binary_insert_autoflush(state);
     } else {
         ch_binary_insert_columns(state);

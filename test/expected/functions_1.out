@@ -753,8 +753,11 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_disc(ARRAY[0.9, 0.95, 0.99]) WITH
 (4 rows)
 
 SELECT percentile_disc(ARRAY[0.9, 0.95, 0.99]) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
-ERROR:  pg_clickhouse: could not cast value from bigint[] to double precision[]
-DETAIL:  Remote Query: SELECT quantilesExactLow(0.9,0.95,0.99)(toUnixTimestamp(toTimeZone(c, 'UTC'))) FROM functions_test.t1
+          percentile_disc           
+------------------------------------
+ {1546426800,1546426800,1546426800}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_disc(ARRAY[0.25, 0.5, 0.75]) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
                                                      QUERY PLAN                                                      
 ---------------------------------------------------------------------------------------------------------------------

@@ -246,9 +246,8 @@ $$);
 IMPORT FOREIGN SCHEMA binary_inserts_test LIMIT TO (default_vals)
 FROM SERVER binary_inserts_loopback INTO binary_inserts_test;
 
--- Fails on c2, the first column we try to set to NULL. Will cease to fail if
--- the `if (isnull && !nullable)` block is removed from column_append(). See
--- its comment for details.
+-- Fails on c2, the first column set to NULL: pg-clickhouse-c's writer rejects
+-- NULL into a non-Nullable column rather than writing the type's zero value.
 INSERT INTO default_vals VALUES(
 	1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 	   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,

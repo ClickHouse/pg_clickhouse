@@ -298,7 +298,7 @@ SELECT * FROM nested_arrays ORDER BY c1;
 
 /* shape mismatch with column type must error rather than silently corrupt */
 INSERT INTO nested_arrays VALUES (4, ARRAY[1,2,3], ARRAY['x']);
-ERROR:  pg_clickhouse: unexpected PG/CH type pair for column 0
+ERROR:  pg_clickhouse: cannot encode integer into ClickHouse Array(Array(Int32)) (column "c2")
 /* Check UUIDs and IPs */
 \d addr
            Foreign table "binary_inserts_test.addr"
@@ -481,16 +481,15 @@ $$);
 
 IMPORT FOREIGN SCHEMA binary_inserts_test LIMIT TO (default_vals)
 FROM SERVER binary_inserts_loopback INTO binary_inserts_test;
--- Fails on c2, the first column we try to set to NULL. Will cease to fail if
--- the `if (isnull && !nullable)` block is removed from column_append(). See
--- its comment for details.
+-- Fails on c2, the first column set to NULL: pg-clickhouse-c's writer rejects
+-- NULL into a non-Nullable column rather than writing the type's zero value.
 INSERT INTO default_vals VALUES(
 	1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 	   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 	   NULL, NULL, NULL, NULL, ARRAY[NULL]::int[],
 	   NULL, NULL, NULL
 );
-ERROR:  pg_clickhouse: cannot append NULL to NOT NULL UInt8 column
+ERROR:  pg_clickhouse: cannot append NULL to NOT NULL UInt8 column "c2"
 SELECT * FROM default_vals;
  c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 | c9 | c10 | c11 | c12 | c13 | c14 | c15 | c16 | c17 | c18 | c19 | c20 | c21 | c22 | c23 | c24 | c25 | c26 | c27 | c28 
 ----+----+----+----+----+----+----+----+----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----
