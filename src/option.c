@@ -24,16 +24,20 @@
 #include "commands/defrem.h"
 #include "commands/extension.h"
 #include "nodes/makefuncs.h"
+#include "optimizer/planner.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/varlena.h"
 
-static char* DEFAULT_DBNAME = "default";
+static char* DEFAULT_DBNAME                                      = "default";
+static create_upper_paths_hook_type prev_create_upper_paths_hook = NULL;
 
 #if PG_VERSION_NUM < 160000
 extern PGDLLEXPORT void
 _PG_init(void);
 #endif
+extern PGDLLEXPORT void
+_PG_fini(void);
 
 /*
  * Describes the valid options for objects that this wrapper uses.
@@ -667,6 +671,21 @@ chfdw_settings_assign_hook(const char* newval, void* extra) {
     ch_session_settings_list = (kv_list*)extra;
 }
 
+static void
+chfdw_upper_paths_hook(
+    PlannerInfo* root,
+    UpperRelationKind stage,
+    RelOptInfo* input_rel,
+    RelOptInfo* output_rel,
+    void* extra
+) {
+    if (prev_create_upper_paths_hook) {
+        prev_create_upper_paths_hook(root, stage, input_rel, output_rel, extra);
+    }
+
+    chfdw_create_upper_paths_hook(root, stage, input_rel, output_rel, extra);
+}
+
 /*
  * Module load callback
  */
@@ -716,4 +735,17 @@ _PG_init(void) {
 #if PG_VERSION_NUM >= 150000
     MarkGUCPrefixReserved("pg_clickhouse");
 #endif
+
+    prev_create_upper_paths_hook = create_upper_paths_hook;
+    create_upper_paths_hook      = chfdw_upper_paths_hook;
+}
+
+/*
+ * Module unload callback
+ */
+void
+_PG_fini(void) {
+    if (create_upper_paths_hook == chfdw_upper_paths_hook) {
+        create_upper_paths_hook = prev_create_upper_paths_hook;
+    }
 }

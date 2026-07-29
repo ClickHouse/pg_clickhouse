@@ -223,6 +223,13 @@ typedef struct CHFdwRelationInfo {
     /* Grouping information */
     List* grouped_tlist;
 
+    /* Set-operation information */
+    bool is_setop;
+    bool setop_all;
+    bool is_setop_grouping;
+    Oid setop_userid;
+    List* setop_tlist;
+
     /* Subquery information */
     bool make_outerrel_subquery; /* do we deparse outerrel as a
                                   * subquery? */
@@ -248,6 +255,14 @@ typedef struct CHFdwRelationInfo {
 } CHFdwRelationInfo;
 
 /* in fdw.c */
+extern void
+chfdw_create_upper_paths_hook(
+    PlannerInfo* root,
+    UpperRelationKind stage,
+    RelOptInfo* input_rel,
+    RelOptInfo* output_rel,
+    void* extra
+);
 extern ForeignServer*
 chfdw_get_foreign_server(Relation rel);
 extern Expr*
@@ -350,6 +365,17 @@ chfdw_deparse_select_stmt_for_rel(
     bool has_final_sort,
     bool has_limit,
     bool is_subquery,
+    List** retrieved_attrs,
+    List** params_list
+);
+extern void
+chfdw_deparse_setop_grouping_stmt(
+    StringInfo buf,
+    PlannerInfo* root,
+    RelOptInfo* rel,
+    List* tlist,
+    List* setop_tlist,
+    const char* setop_sql,
     List** retrieved_attrs,
     List** params_list
 );

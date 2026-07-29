@@ -132,6 +132,14 @@ typedef struct deparse_expr_cxt {
     bool has_inlined_subplan;
 
     /*
+     * A composable set-operation query is exposed as a derived table with
+     * positional cN columns.  When set, Vars belonging to scanrel are mapped
+     * through derived_tlist instead of being resolved as range-table columns.
+     */
+    List* derived_tlist;
+    const char* derived_alias;
+
+    /*
      * SubPlan scope. While deparsing the body of a pushed-down SubPlan,
      * subplan points at it and root points at the SubPlan's own PlannerInfo
      * (so planner_rt_fetch resolves varnos against the subquery's rtable).
@@ -245,6 +253,8 @@ static void
 deparseExpr(Expr* expr, deparse_expr_cxt* context);
 static void
 deparseVar(Var* node, deparse_expr_cxt* context);
+static int
+derived_column_number(Var* node, deparse_expr_cxt* context);
 static void
 deparseConst(Const* node, deparse_expr_cxt* context, int showtype);
 static void
@@ -2158,6 +2168,46 @@ chfdw_deparse_select_stmt_for_rel(
 }
 
 /*
+ * Deparse grouping or aggregation over a fully remote set operation.  The
+ * set operation is already a complete query, so expose it as a derived table
+ * and let the normal expression and GROUP BY deparsers handle the upper
+ * target.
+ */
+void
+chfdw_deparse_setop_grouping_stmt(
+    StringInfo buf,
+    PlannerInfo* root,
+    RelOptInfo* rel,
+    List* tlist,
+    List* setop_tlist,
+    const char* setop_sql,
+    List** retrieved_attrs,
+    List** params_list
+) {
+    deparse_expr_cxt context;
+    CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)rel->fdw_private;
+
+    Assert(IS_UPPER_REL(rel));
+    Assert(fpinfo != NULL && fpinfo->outerrel != NULL);
+    Assert(setop_tlist != NIL && setop_sql != NULL);
+
+    memset(&context, 0, sizeof(context));
+    context.buf            = buf;
+    context.root           = root;
+    context.foreignrel     = rel;
+    context.scanrel        = fpinfo->outerrel;
+    context.params_list    = params_list;
+    context.fpinfo         = fpinfo;
+    context.derived_tlist  = setop_tlist;
+    context.derived_alias  = "setop_input";
+    context.no_sort_parens = false;
+
+    deparseSelectSql(tlist, false, retrieved_attrs, &context);
+    appendStringInfo(buf, " FROM (%s) AS %s", setop_sql, context.derived_alias);
+    appendGroupByClause(tlist, &context);
+}
+
+/*
  * Construct a simple SELECT statement that retrieves desired columns
  * of the specified foreign table, and append it to "buf". The output
  * contains just "SELECT ... ".
@@ -2190,6 +2240,9 @@ deparseSelectSql(
      * Construct SELECT list
      */
     appendStringInfoString(buf, "SELECT ");
+    if (IS_UPPER_REL(foreignrel) && fpinfo->stage == UPPERREL_DISTINCT) {
+        appendStringInfoString(buf, "DISTINCT ");
+    }
 
     if (is_subquery) {
         /*
@@ -2985,12 +3038,63 @@ deparseExpr(Expr* node, deparse_expr_cxt* context) {
  * Otherwise, it's effectively a Param (and will in fact be a Param at
  * run time). Handle it the same way we handle plain Params.
  */
+static int
+derived_column_number(Var* node, deparse_expr_cxt* context) {
+    ListCell* lc;
+    int column = 0;
+
+    if (context->derived_tlist == NIL || node->varlevelsup != 0) {
+        return 0;
+    }
+
+    foreach (lc, context->derived_tlist) {
+        TargetEntry* tle = lfirst_node(TargetEntry, lc);
+
+        if (tle->resjunk) {
+            continue;
+        }
+        column++;
+        if (equal(node, tle->expr)) {
+            return column;
+        }
+    }
+
+    /*
+     * A flattened UNION ALL is represented by a subquery RTE, so Vars above
+     * it normally refer directly to its positional output attributes.
+     */
+    if ((node->varno == 0 || (int64)node->varno == (int64)context->scanrel->relid) &&
+        node->varattno > 0) {
+        column = 0;
+        foreach (lc, context->derived_tlist) {
+            TargetEntry* tle = lfirst_node(TargetEntry, lc);
+
+            if (!tle->resjunk && ++column == node->varattno) {
+                return column;
+            }
+        }
+        return 0;
+    }
+    return 0;
+}
+
 static void
 deparseVar(Var* node, deparse_expr_cxt* context) {
     CustomObjectDef* cdef;
     Relids relids = context->scanrel->relids;
     int relno;
     int colno;
+
+    colno = derived_column_number(node, context);
+    if (colno > 0) {
+        appendStringInfo(context->buf, "%s.c%d", context->derived_alias, colno);
+        return;
+    }
+    if (context->derived_tlist != NIL &&
+        (node->varno == 0 || bms_is_member(node->varno, context->scanrel->relids)) &&
+        node->varlevelsup == 0) {
+        elog(ERROR, "could not map derived set-operation column");
+    }
 
     /*
      * Qualify columns when multiple relations are involved, or when a SubPlan
@@ -5679,11 +5783,16 @@ appendAggOrderBy(List* orderList, List* targetList, deparse_expr_cxt* context) {
  */
 static bool
 aggref_on_aggregate_function(Aggref* node, deparse_expr_cxt* context) {
-    List* vars = pull_var_clause((Node*)node->args, 0);
+    List* vars;
     ListCell* lc;
     Relids relids = context->scanrel->relids;
     bool found    = false;
 
+    if (context->derived_tlist != NIL) {
+        return false;
+    }
+
+    vars = pull_var_clause((Node*)node->args, 0);
     foreach (lc, vars) {
         Var* var = (Var*)lfirst(lc);
 
@@ -5801,12 +5910,13 @@ static void
 deparseAggref(Aggref* node, deparse_expr_cxt* context) {
     StringInfo buf = context->buf;
     CustomObjectDef* cdef;
-    CHFdwRelationInfo* fpinfo = context->scanrel->fdw_private;
-    bool aggfilter            = false;
-    bool sign_count_filter    = false;
-    uint8 brcount             = 1;
-    char* name                = get_func_name(node->aggfnoid);
-    bool omit_star            = false; /* Explained below. */
+    CHFdwRelationInfo* fpinfo =
+        context->derived_tlist != NIL ? context->fpinfo : context->scanrel->fdw_private;
+    bool aggfilter         = false;
+    bool sign_count_filter = false;
+    uint8 brcount          = 1;
+    char* name             = get_func_name(node->aggfnoid);
+    bool omit_star         = false; /* Explained below. */
     bool use_variadic;
 
     /* Simple aggregates push down directly */
@@ -6515,7 +6625,8 @@ appendFunctionName(Oid funcid, deparse_expr_cxt* context) {
     Form_pg_proc procform;
     const char* proname;
     CustomObjectDef* cdef;
-    CHFdwRelationInfo* fpinfo = context->scanrel->fdw_private;
+    CHFdwRelationInfo* fpinfo =
+        context->derived_tlist != NIL ? context->fpinfo : context->scanrel->fdw_private;
 
     cdef = chfdw_check_for_custom_function(funcid);
     if (cdef && cdef->custom_name[0] != '\0') {

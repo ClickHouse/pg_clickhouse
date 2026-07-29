@@ -78,6 +78,9 @@ All notable changes to this project will be documented in this file. It uses the
     rather than understating foreign scan cost ([#310]).
 *   Added mapping to push down the re2 v0.4 `@~` operator to ClickHouse as
     the `match()` function ([#318]).
+*   Added pushdown for compatible `UNION ALL`, `UNION DISTINCT`, plain
+    `DISTINCT`, and grouping or aggregation over flattened `UNION ALL`
+    queries ([#324]).
 
 ### 🐞 Bug Fixes
 
@@ -160,6 +163,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#317 Push down the array IN family unconditionally"
   [#319]: https://github.com/ClickHouse/pg_clickhouse/pull/319
     "ClickHouse/pg_clickhouse#319 Fix foreign scan RTE selection"
+  [#324]: https://github.com/ClickHouse/pg_clickhouse/pull/324
+    "ClickHouse/pg_clickhouse#324 Push down compatible UNION queries and grouped set operations"
 
 ## [v0.3.2] — 2026-06-16
 
