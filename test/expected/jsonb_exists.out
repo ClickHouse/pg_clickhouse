@@ -1,65 +1,171 @@
 CREATE SERVER jsonb_exists_binary FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS (dbname 'jsonb_exists', driver 'binary');
+CREATE SERVER
 CREATE USER MAPPING FOR CURRENT_USER SERVER jsonb_exists_binary;
+CREATE USER MAPPING
+SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS jsonb_exists');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('CREATE DATABASE jsonb_exists');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    CREATE TABLE jsonb_exists.native_documents (
+        id Int32,
+        document JSON
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    INSERT INTO jsonb_exists.native_documents VALUES
+        (1, '{"key":1,"first":true}'),
+        (2, '{"other":2}'),
+        (3, '{"other":null}')
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    CREATE TABLE jsonb_exists.string_documents (
+        id Int32,
+        document Nullable(String)
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    INSERT INTO jsonb_exists.string_documents VALUES
+        (1, '{"key":1,"first":true}'),
+        (2, '["key","second",3]'),
+        (3, '{"other":2}'),
+        (4, '["other",3]'),
+        (5, NULL),
+        (6, '"key"')
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
 CREATE FOREIGN TABLE jsonb_exists_native (
     id integer,
     document jsonb
 ) SERVER jsonb_exists_binary OPTIONS (table_name 'native_documents');
+CREATE FOREIGN TABLE
 CREATE FOREIGN TABLE jsonb_exists_string (
     id integer,
     document text
 ) SERVER jsonb_exists_binary OPTIONS (table_name 'string_documents');
+CREATE FOREIGN TABLE
 CREATE VIEW jsonb_exists_compatibility AS
 SELECT id, pg_catalog.jsonb_in(document::pg_catalog.cstring) AS document
 FROM jsonb_exists_string;
-CREATE FUNCTION jsonb_exists_remote_sql(query text)
-RETURNS text
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    plan jsonb;
-BEGIN
-    EXECUTE 'EXPLAIN (FORMAT JSON, VERBOSE, COSTS OFF) ' || query INTO plan;
-    RETURN plan #>> '{0,Plan,Remote SQL}';
-END
-$$;
-SELECT jsonb_exists_remote_sql(
-    $$SELECT id FROM jsonb_exists_native WHERE document ? 'key'$$
-) LIKE '%JSONHas%';
- ?column? 
-----------
- t
+CREATE VIEW
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM jsonb_exists_native WHERE document ? 'key' ORDER BY id;
+                                                                                                                                                                                                                                                                       QUERY PLAN                                                                                                                                                                                                                                                                        
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.jsonb_exists_native
+   Output: id
+   Remote SQL: SELECT id FROM jsonb_exists.native_documents WHERE ((if(isNull(toJSONString(document)) OR isNull('key'), NULL, multiIf(JSONType(ifNull(toJSONString(document), 'null')) = 'Object', JSONHas(ifNull(toJSONString(document), 'null'), 'key'), JSONType(ifNull(toJSONString(document), 'null')) = 'Array', arrayExists(jsonb_exists_element -> JSONType(jsonb_exists_element) = 'String' AND JSONExtractString(jsonb_exists_element) = 'key', JSONExtractArrayRaw(ifNull(toJSONString(document), 'null'))), 0)))) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM jsonb_exists_native WHERE document ? 'key' ORDER BY id;
+ id 
+----
+  1
 (1 row)
 
-SELECT jsonb_exists_remote_sql(
-    $$SELECT id FROM jsonb_exists_compatibility WHERE document ? 'key'$$
-) LIKE '%isValidJSON(ifNull%';
- ?column? 
-----------
- t
-(1 row)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM jsonb_exists_compatibility
+WHERE document ? 'key'
+ORDER BY id;
+                                                                                                                                                                                                                                                                                     QUERY PLAN                                                                                                                                                                                                                                                                                     
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.jsonb_exists_string
+   Output: jsonb_exists_string.id
+   Remote SQL: SELECT id FROM jsonb_exists.string_documents WHERE ((if(isNull(document) OR isNull('key'), NULL, if(NOT isValidJSON(ifNull(document, 'null')), throwIf(1, 'invalid input syntax for type json'), multiIf(JSONType(ifNull(document, 'null')) = 'Object', JSONHas(ifNull(document, 'null'), 'key'), JSONType(ifNull(document, 'null')) = 'Array', arrayExists(jsonb_exists_element -> JSONType(jsonb_exists_element) = 'String' AND JSONExtractString(jsonb_exists_element) = 'key', JSONExtractArrayRaw(ifNull(document, 'null'))), 0))))) ORDER BY id ASC NULLS LAST
+(3 rows)
 
-SELECT jsonb_exists_remote_sql(
-    $$SELECT id FROM jsonb_exists_compatibility
-      WHERE document ? 'first' OR document ? 'second'$$
-) LIKE '%JSONHas%JSONHas%';
- ?column? 
-----------
- t
-(1 row)
+SELECT id FROM jsonb_exists_compatibility
+WHERE document ? 'key'
+ORDER BY id;
+ id 
+----
+  1
+  2
+(2 rows)
 
-SELECT jsonb_exists_remote_sql(
-    $$SELECT id FROM jsonb_exists_compatibility
-      WHERE (document || '{}'::jsonb) ? 'key'$$
-) NOT LIKE '%JSONHas%';
- ?column? 
-----------
- t
-(1 row)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM jsonb_exists_compatibility
+WHERE document ? 'first' OR document ? 'second'
+ORDER BY id;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.jsonb_exists_string
+   Output: jsonb_exists_string.id
+   Remote SQL: SELECT id FROM jsonb_exists.string_documents WHERE (((if(isNull(document) OR isNull('first'), NULL, if(NOT isValidJSON(ifNull(document, 'null')), throwIf(1, 'invalid input syntax for type json'), multiIf(JSONType(ifNull(document, 'null')) = 'Object', JSONHas(ifNull(document, 'null'), 'first'), JSONType(ifNull(document, 'null')) = 'Array', arrayExists(jsonb_exists_element -> JSONType(jsonb_exists_element) = 'String' AND JSONExtractString(jsonb_exists_element) = 'first', JSONExtractArrayRaw(ifNull(document, 'null'))), 0)))) OR (if(isNull(document) OR isNull('second'), NULL, if(NOT isValidJSON(ifNull(document, 'null')), throwIf(1, 'invalid input syntax for type json'), multiIf(JSONType(ifNull(document, 'null')) = 'Object', JSONHas(ifNull(document, 'null'), 'second'), JSONType(ifNull(document, 'null')) = 'Array', arrayExists(jsonb_exists_element -> JSONType(jsonb_exists_element) = 'String' AND JSONExtractString(jsonb_exists_element) = 'second', JSONExtractArrayRaw(ifNull(document, 'null'))), 0)))))) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM jsonb_exists_compatibility
+WHERE document ? 'first' OR document ? 'second'
+ORDER BY id;
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM jsonb_exists_compatibility
+WHERE (document || '{}'::jsonb) ? 'key'
+ORDER BY id;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Foreign Scan on public.jsonb_exists_string
+   Output: jsonb_exists_string.id
+   Filter: ((jsonb_in((jsonb_exists_string.document)::cstring) || '{}'::jsonb) ? 'key'::text)
+   Remote SQL: SELECT id, document FROM jsonb_exists.string_documents ORDER BY id ASC NULLS LAST
+(4 rows)
+
+SELECT id FROM jsonb_exists_compatibility
+WHERE (document || '{}'::jsonb) ? 'key'
+ORDER BY id;
+ id 
+----
+  1
+  2
+  6
+(3 rows)
 
 DROP VIEW jsonb_exists_compatibility;
-DROP FUNCTION jsonb_exists_remote_sql(text);
+DROP VIEW
 DROP FOREIGN TABLE jsonb_exists_string;
+DROP FOREIGN TABLE
 DROP FOREIGN TABLE jsonb_exists_native;
-DROP SERVER jsonb_exists_binary CASCADE;
-NOTICE:  drop cascades to user mapping for ubuntu on server jsonb_exists_binary
+DROP FOREIGN TABLE
+DROP USER MAPPING FOR CURRENT_USER SERVER jsonb_exists_binary;
+DROP USER MAPPING
+SELECT clickhouse_raw_query('DROP DATABASE jsonb_exists');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+DROP SERVER jsonb_exists_binary;
+DROP SERVER
