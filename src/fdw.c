@@ -179,6 +179,7 @@ typedef struct {
 PG_FUNCTION_INFO_V1(clickhouse_fdw_handler);
 PG_FUNCTION_INFO_V1(clickhouse_raw_query);
 PG_FUNCTION_INFO_V1(clickhouse_query);
+PG_FUNCTION_INFO_V1(clickhouse_perform);
 PG_FUNCTION_INFO_V1(clickhouse_op_push_fail);
 PG_FUNCTION_INFO_V1(clickhouse_push_fail);
 PG_FUNCTION_INFO_V1(clickhouse_noop);
@@ -364,6 +365,16 @@ clickhouse_raw_query(PG_FUNCTION_ARGS) {
     ch_connection conn;
     text* res;
 
+    ereport(
+        WARNING,
+        errcode(ERRCODE_WARNING_DEPRECATED_FEATURE),
+        errmsg("pg_clickhouse: clickhouse_raw_query() is deprecated"),
+        errhint(
+            "Use clickhouse_query() or clickhouse_perform(); "
+            "clickhouse_raw_query() will be removed in the next release."
+        )
+    );
+
     if (strcmp(details->driver, "http") == 0) {
         conn = chfdw_http_connect(details);
     } else if (strcmp(details->driver, "binary") == 0) {
@@ -415,7 +426,7 @@ clickhouse_server_version(PG_FUNCTION_ARGS) {
  * Execute a query against a configured foreign server and return its rows,
  * mapping ClickHouse values to the Postgres types named in the caller's column
  * definition list. Reuses the server's driver, credentials and connection
- * cache, unlike clickhouse_raw_query which takes an ad-hoc connection string.
+ * cache.
  */
 Datum
 clickhouse_query(PG_FUNCTION_ARGS) {
@@ -523,6 +534,45 @@ clickhouse_query(PG_FUNCTION_ARGS) {
     chfdw_release_scan_connection(user, sconn);
 
     return (Datum)0;
+}
+
+/*
+ * Execute a statement against a configured foreign server and discard any
+ * result. Procedure counterpart of clickhouse_query() for statements such as
+ * DDL, which return no results to describe in a column definition list.
+ */
+Datum
+clickhouse_perform(PG_FUNCTION_ARGS) {
+    char* server_name;
+    char* sql;
+    ForeignServer* server;
+    UserMapping* user;
+    ch_scan_connection sconn;
+    ch_cursor* cursor;
+
+    /* procedures cannot be declared STRICT, so reject nulls here */
+    if (PG_ARGISNULL(0) || PG_ARGISNULL(1)) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+            errmsg("pg_clickhouse: clickhouse_perform() arguments must not be null")
+        );
+    }
+
+    server_name = text_to_cstring(PG_GETARG_TEXT_P(0));
+    sql         = text_to_cstring(PG_GETARG_TEXT_P(1));
+    server      = GetForeignServerByName(server_name, false);
+    user        = GetUserMapping(GetUserId(), server->serverid);
+    sconn       = chfdw_get_scan_connection(user);
+
+    ch_query query = new_query(sql, 0, NULL, NULL, NULL);
+
+    /* deleting the cursor context drains the connection so it stays reusable */
+    cursor = sconn.gate.methods->simple_query(sconn.gate.conn, &query);
+    MemoryContextDelete(cursor->memcxt);
+    chfdw_release_scan_connection(user, sconn);
+
+    PG_RETURN_VOID();
 }
 
 /* calculate difference */

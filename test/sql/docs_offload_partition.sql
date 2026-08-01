@@ -10,8 +10,11 @@ CREATE SERVER offload_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'offload_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER offload_svr;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS offload_test');
-SELECT clickhouse_raw_query('CREATE DATABASE offload_test');
+CREATE SERVER offload_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER offload_admin;
+
+CALL clickhouse_perform('offload_admin', 'DROP DATABASE IF EXISTS offload_test');
+CALL clickhouse_perform('offload_admin', 'CREATE DATABASE offload_test');
 
 -- Load documented helpers without echoing their bodies; round-trips below guard
 -- against drift, a parse error still surfaces
@@ -102,5 +105,5 @@ DROP TABLE offload_events, offload_plain, offload_badcol, offload_bylist,
 DROP FUNCTION clickhouse_offload_range(regclass, regclass[], name, text, text, name);
 DROP FUNCTION clickhouse_offload_create_table(regclass, name, text, text, text);
 DROP USER MAPPING FOR CURRENT_USER SERVER offload_svr;
-SELECT clickhouse_raw_query('DROP DATABASE offload_test');
+CALL clickhouse_perform('offload_admin', 'DROP DATABASE offload_test');
 DROP SERVER offload_svr CASCADE;

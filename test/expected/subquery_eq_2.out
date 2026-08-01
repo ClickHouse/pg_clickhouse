@@ -6,7 +6,9 @@ SET datestyle = 'ISO';
 -- SubPlan pushdown is gated on ClickHouse 25.8+ (older analyzers reject the
 -- correlated SQL we generate), so the whole test aborts on older servers
 -- rather than carry version-specific expected output.
-SELECT clickhouse_raw_query($$SELECT version()$$) AS ch_version \gset
+CREATE SERVER sub_eq_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER sub_eq_admin;
+SELECT clickhouse_server_version('sub_eq_admin') AS ch_version \gset
 SELECT (split_part(:'ch_version', '.', 1)::int,
         split_part(:'ch_version', '.', 2)::int) < (25, 8) AS no_ch258 \gset
 \if :no_ch258

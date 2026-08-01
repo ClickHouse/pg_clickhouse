@@ -1,14 +1,17 @@
 CREATE SERVER deparse_lookback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'deparse_test');
 CREATE USER MAPPING FOR CURRENT_USER SERVER deparse_lookback;
 
-SELECT clickhouse_raw_query('drop database if exists deparse_test');
-SELECT clickhouse_raw_query('create database deparse_test');
-SELECT clickhouse_raw_query('
+CREATE SERVER deparse_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER deparse_admin;
+
+CALL clickhouse_perform('deparse_admin', 'drop database if exists deparse_test');
+CALL clickhouse_perform('deparse_admin', 'create database deparse_test');
+CALL clickhouse_perform('deparse_admin', '
 	create table deparse_test.t1 (a int, b Int8)
 	engine = MergeTree()
 	order by a');
 
-SELECT clickhouse_raw_query('
+CALL clickhouse_perform('deparse_admin', '
 	insert into deparse_test.t1 select number % 10, number % 10 > 5 from numbers(1, 100);');
 
 CREATE SCHEMA deparse_test;
@@ -26,5 +29,5 @@ SELECT * FROM t1 ORDER BY a NULLS FIRST, b LIMIT 3;
 SELECT * FROM t1 ORDER BY a NULLS FIRST, b LIMIT 3;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER deparse_lookback;
-SELECT clickhouse_raw_query('DROP DATABASE deparse_test');
+CALL clickhouse_perform('deparse_admin', 'DROP DATABASE deparse_test');
 DROP SERVER deparse_lookback CASCADE;

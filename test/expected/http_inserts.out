@@ -1,98 +1,45 @@
 SET datestyle = 'ISO';
 CREATE SERVER http_inserts_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'http_inserts_test', driver 'http');
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_inserts_loopback;
-SELECT clickhouse_raw_query('drop database if exists http_inserts_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('create database http_inserts_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.ints (
+CREATE SERVER http_inserts_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER http_inserts_admin;
+CALL clickhouse_perform('http_inserts_admin', 'drop database if exists http_inserts_test');
+CALL clickhouse_perform('http_inserts_admin', 'create database http_inserts_test');
+CALL clickhouse_perform('http_inserts_admin', 'CREATE TABLE http_inserts_test.ints (
     c1 Int8, c2 Int16, c3 Int32, c4 Int64
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.uints (
+CALL clickhouse_perform('http_inserts_admin', 'CREATE TABLE http_inserts_test.uints (
     c1 UInt8, c2 UInt16, c3 UInt32, c4 UInt64, c5 Bool
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.floats (
+CALL clickhouse_perform('http_inserts_admin', 'CREATE TABLE http_inserts_test.floats (
     c1 Float32, c2 Float64
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1) SETTINGS allow_floating_point_partition_key=1;
 ');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.null_ints (
+CALL clickhouse_perform('http_inserts_admin', 'CREATE TABLE http_inserts_test.null_ints (
     c1 Int8, c2 Nullable(Int32)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.complex (
+CALL clickhouse_perform('http_inserts_admin', 'CREATE TABLE http_inserts_test.complex (
     c1 Int32, c2 Date, c3 DateTime, c4 String, c5 FixedString(10), c6 LowCardinality(String), c7 Date32, c8 DateTime64(3)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.arrays (
+CALL clickhouse_perform('http_inserts_admin', 'CREATE TABLE http_inserts_test.arrays (
     c1 Int32, c2 Array(Int32), c3 Array(String)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.nested_arrays (
+CALL clickhouse_perform('http_inserts_admin', 'CREATE TABLE http_inserts_test.nested_arrays (
     c1 Int32, c2 Array(Array(Int32)), c3 Array(Array(String))
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.addr (
+CALL clickhouse_perform('http_inserts_admin', 'CREATE TABLE http_inserts_test.addr (
     c1 UUID, c2 IPv4, c3 IPv6
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE TABLE http_inserts_test.bytes (
+CALL clickhouse_perform('http_inserts_admin', 'CREATE TABLE http_inserts_test.bytes (
 	c1 Int8, c2 String, c3 FixedString(16)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
 CREATE SCHEMA http_inserts_test;
 IMPORT FOREIGN SCHEMA http_inserts_test FROM SERVER http_inserts_loopback INTO http_inserts_test;
 SET search_path = http_inserts_test, public;
@@ -340,12 +287,7 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM bytes ORDER B
   4 | 4e3c2e4cb7542a45173a8dac939ddc4bc75202e342ebc769b0f5da2f | 8ef30f44c65480d12b650ab6b2b04245
 (4 rows)
 
-SELECT clickhouse_raw_query('TRUNCATE http_inserts_test.bytes');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('http_inserts_admin', 'TRUNCATE http_inserts_test.bytes');
 -- Should fail.
 INSERT INTO bytes
 SELECT n, sha224(bytea('val'||n)), decode(md5('int'||n), 'hex')
@@ -353,12 +295,7 @@ SELECT n, sha224(bytea('val'||n)), decode(md5('int'||n), 'hex')
 ERROR:  value too long for type character varying(16)
 -- Remove FixedString length.
 ALTER FOREIGN TABLE bytes ALTER c3 TYPE TEXT;
-SELECT clickhouse_raw_query('ALTER TABLE http_inserts_test.bytes MODIFY COLUMN c3 String');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('http_inserts_admin', 'ALTER TABLE http_inserts_test.bytes MODIFY COLUMN c3 String');
 -- Should succeed.
 INSERT INTO bytes
 SELECT n, sha224(bytea('val'||n)), decode(md5('int'||n), 'hex')
@@ -382,7 +319,7 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM bytes ORDER B
 (4 rows)
 
 -- Test NULL values.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('http_inserts_admin', $$
 	CREATE TABLE http_inserts_test.null_vals (
 		c1 UInt8,
 		-- INT2OID
@@ -412,11 +349,6 @@ SELECT clickhouse_raw_query($$
 		c27 Nullable(IPv4), c28 Nullable(IPv6)
 	) ENGINE = MergeTree ORDER BY (c1)
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
 IMPORT FOREIGN SCHEMA http_inserts_test LIMIT TO (null_vals)
 FROM SERVER http_inserts_loopback INTO http_inserts_test;
 INSERT INTO null_vals VALUES(
@@ -432,7 +364,7 @@ SELECT * FROM null_vals;
 (1 row)
 
 -- Test default values.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('http_inserts_admin', $$
 	CREATE TABLE http_inserts_test.default_vals (
 		c1 UInt8,
 		-- INT2OID
@@ -462,11 +394,6 @@ SELECT clickhouse_raw_query($$
 		c27 IPv4, c28 IPv6
 	) ENGINE = MergeTree ORDER BY (c1)
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
 IMPORT FOREIGN SCHEMA http_inserts_test LIMIT TO (default_vals)
 FROM SERVER http_inserts_loopback INTO http_inserts_test;
 INSERT INTO default_vals VALUES(
@@ -501,12 +428,7 @@ SELECT * FROM null_ints WHERE c1 >= 20 ORDER BY c1;
 (3 rows)
 
 DROP USER MAPPING FOR CURRENT_USER SERVER http_inserts_loopback;
-SELECT clickhouse_raw_query('DROP DATABASE http_inserts_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('http_inserts_admin', 'DROP DATABASE http_inserts_test');
 DROP SERVER http_inserts_loopback CASCADE;
 NOTICE:  drop cascades to 12 other objects
 DETAIL:  drop cascades to foreign table addr

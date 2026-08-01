@@ -945,6 +945,11 @@ the PostgreSQL column when importing columns; additional types may be used in
 | UInt8      | smallint         |                               |
 | UUID       | uuid             |                               |
 
+Any column also reads into `text`, `varchar`, or another string type. The value
+takes the PostgreSQL type above, then renders through that type's output
+function. UInt64 values above the bigint maximum still error, so render those
+with the ClickHouse `toString()` function.
+
 Additional notes and details follow.
 
 ### BYTEA
@@ -956,7 +961,7 @@ to [BYTEA]. Example:
 
 ```sql
 -- Create clickHouse table with String columns.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('ch_srv', $$
     CREATE TABLE bytes (
 	      c1 Int8, c2 String, c3 String
     ) ENGINE = MergeTree ORDER BY (c1);
@@ -1073,6 +1078,13 @@ These functions provide the interface to query a ClickHouse database.
 
 #### `clickhouse_raw_query`
 
+> [!WARNING]
+> Deprecated: `clickhouse_raw_query()` emits a deprecation warning and will be
+> removed in the next release. Use [`clickhouse_query`](#clickhouse_query) to
+> read rows and [`clickhouse_perform`](#clickhouse_perform) to run statements
+> that return none. Both reuse a configured server's driver, credentials,
+> database, and connection cache instead of an ad-hoc connection string.
+
 ```sql
 SELECT clickhouse_raw_query(
     'CREATE TABLE t1 (x String) ENGINE = Memory',
@@ -1160,21 +1172,45 @@ SELECT * FROM clickhouse_query(
 
 Execute a query against an already-configured foreign server and return its
 rows as a relation, mapping each ClickHouse result column to the PostgreSQL type
-named in the column definition list. Unlike [`clickhouse_raw_query`](#clickhouse_raw_query)
-it reuses the server's `driver`, credentials, database, and the connection cache
-rather than an ad-hoc connection string.
+named in the column definition list. It reuses the server's `driver`,
+credentials, database, and the connection cache.
 
 The first argument is the name of a server created with [CREATE SERVER]. A
 column definition list (`AS name(col type, ...)`) is required: PostgreSQL needs
 the result shape before fetching rows, and it must match the columns the query
 returns. Values are converted from ClickHouse to the declared types the same way
-a foreign table column would be.
+a foreign table column would be. Statements that return no results, such as DDL,
+have nothing to declare; run them with
+[`clickhouse_perform`](#clickhouse_perform) instead.
 
-As with `clickhouse_raw_query`, no role has `EXECUTE` access by default;
-`GRANT` to a role to allow it to use the function.
+No role has `EXECUTE` access by default; `GRANT` to a role to allow it to use
+the function.
 
 ```sql
 GRANT EXECUTE ON FUNCTION clickhouse_query(text, text) TO ch_admin;
+```
+
+#### `clickhouse_perform`
+
+```sql
+CALL clickhouse_perform(
+    'server',
+    'CREATE TABLE remote_table (id Int32) ENGINE = MergeTree ORDER BY id'
+);
+```
+
+Execute a statement against an already-configured foreign server and discard
+any result. Use it for statements that return no rows, such as DDL, where
+[`clickhouse_query`](#clickhouse_query) has no result shape to declare. It
+resolves the server the same way `clickhouse_query` does, reusing its `driver`,
+credentials, database, and the connection cache.
+
+As a procedure it must be invoked with [CALL], not `SELECT`, and it returns no
+rows. No role has `EXECUTE` access by default; `GRANT` to a role to allow it to
+use the procedure.
+
+```sql
+GRANT EXECUTE ON PROCEDURE clickhouse_perform(text, text) TO ch_admin;
 ```
 
 ### Pushdown Functions
@@ -1667,6 +1703,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: DROP EXTENSION"
   [CREATE SERVER]: https://www.postgresql.org/docs/current/sql-createserver.html
     "PostgreSQL Docs: CREATE SERVER"
+  [CALL]: https://www.postgresql.org/docs/current/sql-call.html
+    "PostgreSQL Docs: CALL"
   [ALTER SERVER]: https://www.postgresql.org/docs/current/sql-alterserver.html
     "PostgreSQL Docs: ALTER SERVER"
   [DROP SERVER]: https://www.postgresql.org/docs/current/sql-dropserver.html

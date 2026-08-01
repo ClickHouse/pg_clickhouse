@@ -4,9 +4,12 @@ CREATE SERVER http_json_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbn
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS json_test');
-SELECT clickhouse_raw_query('CREATE DATABASE json_test');
-SELECT clickhouse_raw_query($$
+CREATE SERVER json_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER json_admin;
+
+CALL clickhouse_perform('json_admin', 'DROP DATABASE IF EXISTS json_test');
+CALL clickhouse_perform('json_admin', 'CREATE DATABASE json_test');
+CALL clickhouse_perform('json_admin', $$
     CREATE TABLE json_test.things (
         id   Int32 NOT NULL,
         data JSON NOT NULL
@@ -296,7 +299,7 @@ SELECT * FROM json_bin.things WHERE (data -> 'name')::text = '"widget"';
 SELECT * FROM json_bin.things WHERE (data -> 'name')::text = '"widget"';
 
 -- Edge cases: JSON keys that require identifier quoting.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('json_admin', $$
     CREATE TABLE json_test.special_keys (
         id   Int32 NOT NULL,
         data JSON NOT NULL
@@ -479,14 +482,14 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> '123numeric' = 'num';
 -- =======================================================================
 
 -- Create a table with nested JSON for multi-level path tests.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('json_admin', $$
     CREATE TABLE json_test.events (
         id         UInt32,
         event_name String,
         props      JSON
     ) ENGINE = MergeTree ORDER BY (event_name, id);
 $$);
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('json_admin', $$
     INSERT INTO json_test.events VALUES
         (1, 'order', '{"customerId": "C100", "address": {"city": "Paris", "zip": "75001"}}'),
         (2, 'order', '{"customerId": "C200", "address": {"city": "London", "zip": "SW1A"}}');
@@ -638,7 +641,7 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_http.json_events
 WHERE json_extract_path(props, VARIADIC ARRAY[NULL]::text[]) IS NULL;
 
-SELECT clickhouse_raw_query('DROP DATABASE json_test');
+CALL clickhouse_perform('json_admin', 'DROP DATABASE json_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;
 DROP SERVER binary_json_loopback CASCADE;

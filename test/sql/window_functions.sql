@@ -13,9 +13,12 @@ CREATE SERVER wf_http_svr FOREIGN DATA WRAPPER clickhouse_fdw
 CREATE USER MAPPING FOR CURRENT_USER SERVER wf_http_svr;
 
 -- Create a ClickHouse table.
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS wf_test');
-SELECT clickhouse_raw_query('CREATE DATABASE wf_test');
-SELECT clickhouse_raw_query($$
+CREATE SERVER wf_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER wf_admin;
+
+CALL clickhouse_perform('wf_admin', 'DROP DATABASE IF EXISTS wf_test');
+CALL clickhouse_perform('wf_admin', 'CREATE DATABASE wf_test');
+CALL clickhouse_perform('wf_admin', $$
     CREATE TABLE wf_test.events (
         id          UInt64,
         entity_id   String,
@@ -26,7 +29,7 @@ SELECT clickhouse_raw_query($$
     ORDER BY (event_name, ts_event)
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('wf_admin', $$
     INSERT INTO wf_test.events VALUES
     (1, 'lead_100', 'lead_created', '2026-03-01 10:00:00', 100),
     (2, 'lead_100', 'lead_created', '2026-03-15 14:00:00', 200),
@@ -372,7 +375,7 @@ FROM wf_bin.events
 WHERE event_name = 'lead_created';
 
 -- Clean up.
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS wf_test');
+CALL clickhouse_perform('wf_admin', 'DROP DATABASE IF EXISTS wf_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER wf_bin_svr;
 DROP SERVER wf_bin_svr CASCADE;
 DROP USER MAPPING FOR CURRENT_USER SERVER wf_http_svr;

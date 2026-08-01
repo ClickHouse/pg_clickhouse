@@ -5,40 +5,22 @@ SELECT NOT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = 're2') AS n
 \endif
 CREATE SERVER re2_svr FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 're2_test');
 CREATE USER MAPPING FOR CURRENT_USER SERVER re2_svr;
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS re2_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE DATABASE re2_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query($$
+CREATE SERVER re2_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER re2_admin;
+CALL clickhouse_perform('re2_admin', 'DROP DATABASE IF EXISTS re2_test');
+CALL clickhouse_perform('re2_admin', 'CREATE DATABASE re2_test');
+CALL clickhouse_perform('re2_admin', $$
     CREATE TABLE re2_test.t1 (
         id   Int32,
         val  String
     ) ENGINE = MergeTree ORDER BY id
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('re2_admin', $$
     INSERT INTO re2_test.t1 VALUES
         (1, 'POSIX uses BRE and ERE'),
         (2, 're2 uses finite automata'),
         (3, 'PCRE supports backtracking')
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
 CREATE SCHEMA re2_test;
 IMPORT FOREIGN SCHEMA re2_test FROM SERVER re2_svr INTO re2_test;
 SET search_path = re2_test, public;
@@ -373,11 +355,6 @@ SELECT id FROM t1 WHERE array_length(re2extractallgroupshorizontal(val, '(\w+) (
 
 DROP EXTENSION re2;
 DROP USER MAPPING FOR CURRENT_USER SERVER re2_svr;
-SELECT clickhouse_raw_query('DROP DATABASE re2_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('re2_admin', 'DROP DATABASE re2_test');
 DROP SERVER re2_svr CASCADE;
 NOTICE:  drop cascades to foreign table t1

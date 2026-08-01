@@ -1,9 +1,12 @@
 CREATE SERVER where_sub_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'where_sub_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER where_sub_loopback;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS where_sub_test');
-SELECT clickhouse_raw_query('CREATE DATABASE where_sub_test');
-SELECT clickhouse_raw_query($$
+CREATE SERVER where_sub_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER where_sub_admin;
+
+CALL clickhouse_perform('where_sub_admin', 'DROP DATABASE IF EXISTS where_sub_test');
+CALL clickhouse_perform('where_sub_admin', 'CREATE DATABASE where_sub_test');
+CALL clickhouse_perform('where_sub_admin', $$
     CREATE TABLE where_sub_test.orders  (
         id     Int32,
         date   Date,
@@ -11,7 +14,7 @@ SELECT clickhouse_raw_query($$
     ) ENGINE = MergeTree ORDER BY (id);
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('where_sub_admin', $$
     CREATE TABLE where_sub_test.lines (
         order_id    Int32,
         num         Int32,
@@ -38,6 +41,6 @@ SELECT class, COUNT(*) AS order_count
  GROUP BY class
  ORDER BY class;
 
-SELECT clickhouse_raw_query('DROP DATABASE where_sub_test');
+CALL clickhouse_perform('where_sub_admin', 'DROP DATABASE where_sub_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER where_sub_loopback;
 DROP SERVER where_sub_loopback CASCADE;

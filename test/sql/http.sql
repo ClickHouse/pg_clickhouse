@@ -5,25 +5,28 @@ CREATE SERVER http_loopback2 FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_loopback;
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_loopback2;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS http_test');
-SELECT clickhouse_raw_query('CREATE DATABASE http_test', '');
-SELECT clickhouse_raw_query('CREATE TABLE http_test.t1
+CREATE SERVER http_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER http_admin;
+
+CALL clickhouse_perform('http_admin', 'DROP DATABASE IF EXISTS http_test');
+CALL clickhouse_perform('http_admin', 'CREATE DATABASE http_test');
+CALL clickhouse_perform('http_admin', 'CREATE TABLE http_test.t1
 	(c1 Int, c2 Int, c3 String, c4 Date, c5 Date, c6 String, c7 String, c8 String)
 	ENGINE = MergeTree PARTITION BY c4 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('CREATE TABLE http_test.t2 (c1 Int, c2 String)
+CALL clickhouse_perform('http_admin', 'CREATE TABLE http_test.t2 (c1 Int, c2 String)
 	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
-SELECT clickhouse_raw_query('CREATE TABLE http_test.t3 (c1 Int, c3 String)
+CALL clickhouse_perform('http_admin', 'CREATE TABLE http_test.t3 (c1 Int, c3 String)
 	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
-SELECT clickhouse_raw_query('CREATE TABLE http_test.t4 (c1 Int, c2 Int, c3 String, c4 Bool)
+CALL clickhouse_perform('http_admin', 'CREATE TABLE http_test.t4 (c1 Int, c2 Int, c3 String, c4 Bool)
 	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
-SELECT clickhouse_raw_query('
-	CREATE TABLE tcopy
+CALL clickhouse_perform('http_admin', '
+	CREATE TABLE http_test.tcopy
 		(c1 Int32, c2 Int64, c3 Date, c4 Nullable(DateTime), c5 DateTime, c6 String)
 	ENGINE = MergeTree
 	PARTITION BY c3
 	ORDER BY (c1, c2, c3);
-', 'dbname=http_test');
+');
 
 CREATE FOREIGN TABLE ft1 (
 	c0 int,
@@ -237,9 +240,6 @@ SELECT COUNT(DISTINCT c1) FROM ft2;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
 
 /* Disallow line endings in database names. */
-SELECT clickhouse_raw_query('SELECT 1', E'dbname=''http_test\r\nX-My-Header: 123''');
--- SELECT clickhouse_raw_query('SELECT 1', E$$dbname='test\rX-My-Header: 123'$$);
-
 CREATE SERVER http_loopback_bad FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname E'http_test\r\nX-My-Header: 123');
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_loopback_bad;
 
@@ -265,7 +265,7 @@ DROP SERVER http_bad_fetch;
  * Native names the column type on the wire, so a String value like `[foo]bar`
  * stays text instead of reading as a CH array literal.
  */
-SELECT clickhouse_raw_query('CREATE TABLE http_test.t_brk
+CALL clickhouse_perform('http_admin', 'CREATE TABLE http_test.t_brk
     (id String, term String) ENGINE = MergeTree ORDER BY id');
 
 CREATE FOREIGN TABLE ft_brk (id text, term text)
@@ -285,7 +285,7 @@ SELECT id, term FROM ft_brk ORDER BY id;
  * Mixed row: real Array(String) column alongside a String column whose value
  * starts with `[`. The parser must stay in sync across columns.
  */
-SELECT clickhouse_raw_query('CREATE TABLE http_test.t_brk_mix
+CALL clickhouse_perform('http_admin', 'CREATE TABLE http_test.t_brk_mix
     (id String, tags Array(String), term String) ENGINE = MergeTree ORDER BY id');
 
 CREATE FOREIGN TABLE ft_brk_mix (id text, tags text[], term text)
@@ -302,9 +302,9 @@ SELECT id, tags, term FROM ft_brk_mix ORDER BY id;
  * whose unescaped content happens to start with `\N` (or be exactly `\N`)
  * must not be misread as NULL.
  */
-SELECT clickhouse_raw_query('CREATE TABLE http_test.t_nullmark
+CALL clickhouse_perform('http_admin', 'CREATE TABLE http_test.t_nullmark
     (id String, s String) ENGINE = MergeTree ORDER BY id');
-SELECT clickhouse_raw_query(
+CALL clickhouse_perform('http_admin', 
     'INSERT INTO http_test.t_nullmark VALUES'
     || ' (''1'', ''\\N''),'             /* exactly the 2-char NULL marker as data */
     || ' (''2'', ''\\N foo bar''),'     /* starts with \N */
@@ -321,9 +321,9 @@ FROM ft_nullmark ORDER BY id;
  * bytea columns take raw bytes without the input function. NULL maps to SQL
  * NULL, empty string stays empty, embedded zero bytes survive.
  */
-SELECT clickhouse_raw_query('CREATE TABLE http_test.t_bytea
+CALL clickhouse_perform('http_admin', 'CREATE TABLE http_test.t_bytea
     (id String, v Nullable(String)) ENGINE = MergeTree ORDER BY id');
-SELECT clickhouse_raw_query('INSERT INTO http_test.t_bytea VALUES
+CALL clickhouse_perform('http_admin', 'INSERT INTO http_test.t_bytea VALUES
     (''1'', NULL),
     (''2'', ''''),
     (''3'', char(97, 0, 98)),
@@ -339,9 +339,9 @@ SELECT id, v, v IS NULL AS is_null, octet_length(v) FROM ft_bytea ORDER BY id;
  * unchanged, so an ISO timestamp is rejected rather than trimmed to its time
  * of day.
  */
-SELECT clickhouse_raw_query('CREATE TABLE http_test.t_timestr
+CALL clickhouse_perform('http_admin', 'CREATE TABLE http_test.t_timestr
     (id String, v String) ENGINE = MergeTree ORDER BY id');
-SELECT clickhouse_raw_query('INSERT INTO http_test.t_timestr VALUES
+CALL clickhouse_perform('http_admin', 'INSERT INTO http_test.t_timestr VALUES
     (''1'', ''Z''),
     (''2'', ''xZ''),
     (''3'', ''1970-01-01T00:00:00Z'')');
@@ -355,20 +355,20 @@ SELECT v FROM ft_timestr WHERE id = '2';
 
 /* nested arrays via http: rectangular maps to multi-dim, jagged shapes are
  * rejected -- matching the binary path. */
-SELECT clickhouse_raw_query('CREATE TABLE http_test.nested_arrays (
+CALL clickhouse_perform('http_admin', 'CREATE TABLE http_test.nested_arrays (
     c1 Int8, c2 Array(Array(Int32)), c3 Array(Array(String))
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO http_test.nested_arrays VALUES
+CALL clickhouse_perform('http_admin', 'INSERT INTO http_test.nested_arrays VALUES
     (1, [[1,2],[3,4]], [[''a'',''b''],[''c'',''d'']]),
     (2, [[5,6],[7,8]], [[''e'',''f''],[''g'',''h'']]);
 ');
 
-SELECT clickhouse_raw_query('CREATE TABLE http_test.ragged_arrays (
+CALL clickhouse_perform('http_admin', 'CREATE TABLE http_test.ragged_arrays (
     c1 Int8, c2 Array(Array(Int32))
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO http_test.ragged_arrays VALUES (1, [[1,2,3],[4]]);');
+CALL clickhouse_perform('http_admin', 'INSERT INTO http_test.ragged_arrays VALUES (1, [[1,2,3],[4]]);');
 
 CREATE FOREIGN TABLE ft_nested_arrays (
     c1 int2,
@@ -456,7 +456,7 @@ CREATE SERVER http_min_tls_bad FOREIGN DATA WRAPPER clickhouse_fdw
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback_bad;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback2;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback;
-SELECT clickhouse_raw_query('DROP DATABASE http_test');
+CALL clickhouse_perform('http_admin', 'DROP DATABASE http_test');
 DROP SERVER http_loopback_bad CASCADE;
 DROP SERVER http_loopback2 CASCADE;
 DROP SERVER http_loopback CASCADE;

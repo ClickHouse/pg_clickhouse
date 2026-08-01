@@ -1,85 +1,37 @@
 CREATE SERVER engines_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'engines_test');
 CREATE USER MAPPING FOR CURRENT_USER SERVER engines_loopback;
-SELECT clickhouse_raw_query('drop database if exists engines_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('create database engines_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('
+CREATE SERVER engines_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER engines_admin;
+CALL clickhouse_perform('engines_admin', 'drop database if exists engines_test');
+CALL clickhouse_perform('engines_admin', 'create database engines_test');
+CALL clickhouse_perform('engines_admin', '
 	create table engines_test.t1 (a int, b int)
 	engine = MergeTree()
 	order by a');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('
+CALL clickhouse_perform('engines_admin', '
 	create table engines_test.t2 (a int, b AggregateFunction(sum, Int32))
 	engine = AggregatingMergeTree()
 	order by a');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('
+CALL clickhouse_perform('engines_admin', '
 	create table engines_test.t3 (a int, b Array(Int32), c Array(Int32))
 	engine = MergeTree()
 	order by a');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('
+CALL clickhouse_perform('engines_admin', '
 	insert into engines_test.t1 select number % 10, number from numbers(1, 100);');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('
+CALL clickhouse_perform('engines_admin', '
 	insert into engines_test.t2 select number % 10 as a, sumState(toInt32(number)) as b from numbers(1, 100) group by a;');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('
+CALL clickhouse_perform('engines_admin', '
 	insert into engines_test.t3 select number % 10,
 		[1, number % 10 + 1], [1, 1] from numbers(1, 100);');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('
+CALL clickhouse_perform('engines_admin', '
 	create materialized view engines_test.t1_aggr
 		engine=AggregatingMergeTree()
 		order by a populate as select a, sumState(b) as b from engines_test.t1 group by a;');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('
+CALL clickhouse_perform('engines_admin', '
 	create materialized view engines_test.t3_aggr
 		engine=AggregatingMergeTree()
 		order by a populate as select a, sumMapState(b, c) as b from engines_test.t3 group by a;');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('
+CALL clickhouse_perform('engines_admin', '
 	create table engines_test.t4 (a int,
 		b AggregateFunction(sum, Int32),
 		c AggregateFunction(sumMap, Array(Int32), Array(Int32)),
@@ -88,11 +40,6 @@ SELECT clickhouse_raw_query('
 		f AggregateFunction(quantile, Int32))
 	engine = AggregatingMergeTree()
 	order by a');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
 CREATE SCHEMA engines_test;
 IMPORT FOREIGN SCHEMA engines_test FROM SERVER engines_loopback INTO engines_test;
 SET search_path = engines_test, public;
@@ -274,12 +221,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT a, percentile_disc(0.75) WITHIN GROUP (ORDER
 (4 rows)
 
 DROP USER MAPPING FOR CURRENT_USER SERVER engines_loopback;
-SELECT clickhouse_raw_query('DROP DATABASE engines_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('engines_admin', 'DROP DATABASE engines_test');
 DROP SERVER engines_loopback CASCADE;
 NOTICE:  drop cascades to 6 other objects
 DETAIL:  drop cascades to foreign table t1

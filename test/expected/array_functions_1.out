@@ -1,18 +1,10 @@
 CREATE SERVER arr_svr FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'arr_test');
 CREATE USER MAPPING FOR CURRENT_USER SERVER arr_svr;
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS arr_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE DATABASE arr_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query($$
+CREATE SERVER arr_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER arr_admin;
+CALL clickhouse_perform('arr_admin', 'DROP DATABASE IF EXISTS arr_test');
+CALL clickhouse_perform('arr_admin', 'CREATE DATABASE arr_test');
+CALL clickhouse_perform('arr_admin', $$
     CREATE TABLE arr_test.t1 (
         id   Int32,
         vals Array(Int32),
@@ -20,39 +12,19 @@ SELECT clickhouse_raw_query($$
         list String
     ) ENGINE = MergeTree ORDER BY id
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('arr_admin', $$
     INSERT INTO arr_test.t1 VALUES
         (1, [10,20,30], ['a','b','c'], 'aa-bb-cc'),
         (2, [40,50],    ['d','e'], 'x//z'),
         (3, [60],       ['f'], 'Edit -> Insert -> Line Break')
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('arr_admin', $$
     CREATE TABLE arr_test.empty_arrays (
         id   Int32,
         vals Array(Int32)
     ) ENGINE = MergeTree ORDER BY id
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('INSERT INTO arr_test.empty_arrays VALUES (4, [])');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('arr_admin', 'INSERT INTO arr_test.empty_arrays VALUES (4, [])');
 CREATE SCHEMA arr_test;
 IMPORT FOREIGN SCHEMA arr_test FROM SERVER arr_svr INTO arr_test;
 SET search_path = arr_test, public;
@@ -647,12 +619,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE string_to_array(list, '/', '
 (4 rows)
 
 DROP USER MAPPING FOR CURRENT_USER SERVER arr_svr;
-SELECT clickhouse_raw_query('DROP DATABASE arr_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('arr_admin', 'DROP DATABASE arr_test');
 DROP SERVER arr_svr CASCADE;
 NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to foreign table empty_arrays

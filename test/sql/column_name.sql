@@ -11,12 +11,15 @@ CREATE SERVER cn_bin_loopback FOREIGN DATA WRAPPER clickhouse_fdw
 CREATE USER MAPPING FOR CURRENT_USER SERVER cn_http_loopback;
 CREATE USER MAPPING FOR CURRENT_USER SERVER cn_bin_loopback;
 
-SELECT clickhouse_raw_query('drop database if exists cn_test');
-SELECT clickhouse_raw_query('create database cn_test');
-SELECT clickhouse_raw_query('CREATE TABLE cn_test.t_http (
+CREATE SERVER cn_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER cn_admin;
+
+CALL clickhouse_perform('cn_admin', 'drop database if exists cn_test');
+CALL clickhouse_perform('cn_admin', 'create database cn_test');
+CALL clickhouse_perform('cn_admin', 'CREATE TABLE cn_test.t_http (
     ch_id Int32, ch_val String, plain Nullable(Int32)
 ) ENGINE = MergeTree ORDER BY (ch_id);');
-SELECT clickhouse_raw_query('CREATE TABLE cn_test.t_bin (
+CALL clickhouse_perform('cn_admin', 'CREATE TABLE cn_test.t_bin (
     ch_id Int32, ch_val String, plain Nullable(Int32)
 ) ENGINE = MergeTree ORDER BY (ch_id);');
 
@@ -51,7 +54,7 @@ SELECT * FROM cn_bin  ORDER BY pg_id;
 
 -- Dropped attnum: forces lazy populator to skip an attisdropped slot when
 -- materializing the cache entry on first INSERT.
-SELECT clickhouse_raw_query('CREATE TABLE cn_test.td (
+CALL clickhouse_perform('cn_admin', 'CREATE TABLE cn_test.td (
     ch_id Int32, ch_val String
 ) ENGINE = MergeTree ORDER BY (ch_id);');
 
@@ -67,7 +70,7 @@ SELECT * FROM cn_drop ORDER BY pg_id;
 
 -- Drop column after the cache is primed by an INSERT and SELECT, to confirm
 -- the ATTNUM syscache invalidation purges stale CustomColumnInfo entries.
-SELECT clickhouse_raw_query('CREATE TABLE cn_test.tlate (
+CALL clickhouse_perform('cn_admin', 'CREATE TABLE cn_test.tlate (
     discarded Nullable(Int32), ch_id Int32, ch_val String
 ) ENGINE = MergeTree ORDER BY (ch_id);');
 
@@ -87,6 +90,6 @@ SELECT * FROM cn_drop_late ORDER BY pg_id;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER cn_http_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER cn_bin_loopback;
-SELECT clickhouse_raw_query('DROP DATABASE cn_test');
+CALL clickhouse_perform('cn_admin', 'DROP DATABASE cn_test');
 DROP SERVER cn_http_loopback CASCADE;
 DROP SERVER cn_bin_loopback CASCADE;

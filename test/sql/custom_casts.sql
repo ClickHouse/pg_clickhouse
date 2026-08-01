@@ -2,17 +2,20 @@ CREATE SERVER casts_loopback FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'casts_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER casts_loopback;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS casts_test');
-SELECT clickhouse_raw_query('CREATE DATABASE casts_test');
+CREATE SERVER casts_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER casts_admin;
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('casts_admin', 'DROP DATABASE IF EXISTS casts_test');
+CALL clickhouse_perform('casts_admin', 'CREATE DATABASE casts_test');
+
+CALL clickhouse_perform('casts_admin', $$
 	CREATE TABLE casts_test.things (
         num  integer,
         name text
     ) ENGINE = MergeTree ORDER BY (num);
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('casts_admin', $$
 	INSERT INTO casts_test.things
 	SELECT number, toString(number)
 	  FROM numbers(10);
@@ -48,5 +51,5 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT num FROM things WHERE toUint128(name) IN (1,
 SELECT num FROM things WHERE toUint128(name) IN (1, 2, 3);
 
 DROP USER MAPPING FOR CURRENT_USER SERVER casts_loopback;
-SELECT clickhouse_raw_query('DROP DATABASE casts_test');
+CALL clickhouse_perform('casts_admin', 'DROP DATABASE casts_test');
 DROP SERVER casts_loopback CASCADE;

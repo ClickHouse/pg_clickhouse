@@ -245,8 +245,7 @@ BEGIN
 
     ddl := pg_catalog.format('CREATE TABLE %s (%s) ENGINE = %s ORDER BY %s',
                              ch_table, coldefs, engine, order_by);
-    -- DDL yields no rows; column list is a formality clickhouse_query requires
-    PERFORM * FROM clickhouse_query(server, ddl) AS (ddl_result text);
+    CALL clickhouse_perform(server, ddl);
     RETURN ddl;
 END;
 $create$;

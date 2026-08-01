@@ -7,19 +7,11 @@ CREATE SERVER param_http_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(driver 'http');
 CREATE USER MAPPING FOR CURRENT_USER SERVER param_http_svr;
 -- Create the schema in ClickHouse.
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS param_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE DATABASE param_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query($$
+CREATE SERVER param_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER param_admin;
+CALL clickhouse_perform('param_admin', 'DROP DATABASE IF EXISTS param_test');
+CALL clickhouse_perform('param_admin', 'CREATE DATABASE param_test');
+CALL clickhouse_perform('param_admin', $$
     CREATE TABLE param_test.ft1 (
         c1 Int,
         c2 Int,
@@ -31,13 +23,8 @@ SELECT clickhouse_raw_query($$
         c8 Array(String)
     ) ENGINE = MergeTree PARTITION BY c4 ORDER BY (c1)
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
 -- Insert some data.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('param_admin', $$
     INSERT INTO param_test.ft1
     SELECT number,
            number % 10,
@@ -49,11 +36,6 @@ SELECT clickhouse_raw_query($$
            ['foo']
     FROM numbers(1, 110)
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
 -- ===================================================================
 -- binary foreign tables
 -- ===================================================================
@@ -284,12 +266,7 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
          Output: 1001, 101, 'foo'::text, NULL::timestamp with time zone, NULL::timestamp without time zone, NULL::character varying, 'ft1       '::character(10), NULL::text[]
 (3 rows)
 
-SELECT clickhouse_raw_query('RENAME TABLE param_test.ft1 TO param_test.t1');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.ft1 TO param_test.t1');
 ALTER FOREIGN TABLE bin_test.ft1 OPTIONS (SET table_name 't1');
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
                                                      QUERY PLAN                                                      
@@ -321,12 +298,7 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
          Output: 1001, 101, 'foo'::text, NULL::timestamp with time zone, NULL::timestamp without time zone, NULL::character varying, 'ft1       '::character(10), NULL::text[]
 (3 rows)
 
-SELECT clickhouse_raw_query('RENAME TABLE param_test.t1 TO param_test.ft1');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.t1 TO param_test.ft1');
 ALTER FOREIGN TABLE bin_test.ft1 OPTIONS (SET table_name 'ft1');
 -- implicit parameter
 EXPLAIN (VERBOSE, COSTS OFF) SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4);
@@ -584,12 +556,7 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
          Output: 1001, 101, 'foo'::text, NULL::timestamp with time zone, NULL::timestamp without time zone, NULL::character varying, 'ft1       '::character(10), NULL::text[]
 (3 rows)
 
-SELECT clickhouse_raw_query('RENAME TABLE param_test.ft1 TO param_test.t1');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.ft1 TO param_test.t1');
 ALTER FOREIGN TABLE http_test.ft1 OPTIONS (SET table_name 't1');
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
                                                      QUERY PLAN                                                      
@@ -621,12 +588,7 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
          Output: 1001, 101, 'foo'::text, NULL::timestamp with time zone, NULL::timestamp without time zone, NULL::character varying, 'ft1       '::character(10), NULL::text[]
 (3 rows)
 
-SELECT clickhouse_raw_query('RENAME TABLE param_test.t1 TO param_test.ft1');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.t1 TO param_test.ft1');
 ALTER FOREIGN TABLE http_test.ft1 OPTIONS (SET table_name 'ft1');
 -- implicit parameter
 EXPLAIN (VERBOSE, COSTS OFF) SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4);

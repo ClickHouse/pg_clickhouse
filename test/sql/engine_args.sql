@@ -2,9 +2,12 @@ CREATE SERVER engine_args_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'engine_args_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER engine_args_svr;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS engine_args_test');
-SELECT clickhouse_raw_query('CREATE DATABASE engine_args_test');
-SELECT clickhouse_raw_query($$
+CREATE SERVER engine_args_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER engine_args_admin;
+
+CALL clickhouse_perform('engine_args_admin', 'DROP DATABASE IF EXISTS engine_args_test');
+CALL clickhouse_perform('engine_args_admin', 'CREATE DATABASE engine_args_test');
+CALL clickhouse_perform('engine_args_admin', $$
 	CREATE TABLE engine_args_test.innocuous (
         id UInt32,
         value String
@@ -13,19 +16,19 @@ SELECT clickhouse_raw_query($$
 	ORDER BY id
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('engine_args_admin', $$
     INSERT INTO engine_args_test.innocuous
     VALUES (1, 'public'), (2, 'data'), (3, 'here')
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('engine_args_admin', $$
     CREATE TABLE IF NOT EXISTS engine_args_test.sensitive (
         id UInt32,
         password String
     ) ENGINE=MergeTree() ORDER BY id;
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('engine_args_admin', $$
     INSERT INTO engine_args_test.sensitive
     VALUES (1, 'admin123'), (2, 'password!')
 $$);
@@ -190,6 +193,6 @@ OPTIONS (
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(id) FROM engine_args_test.name_var9;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER engine_args_svr;
-SELECT clickhouse_raw_query('DROP DATABASE engine_args_test');
+CALL clickhouse_perform('engine_args_admin', 'DROP DATABASE engine_args_test');
 
 DROP SERVER engine_args_svr CASCADE;

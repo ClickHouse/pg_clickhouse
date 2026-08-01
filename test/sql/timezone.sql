@@ -8,9 +8,12 @@ CREATE SERVER tz_http_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(driver 'http');
 CREATE USER MAPPING FOR CURRENT_USER SERVER tz_http_svr;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS tz_test');
-SELECT clickhouse_raw_query('CREATE DATABASE tz_test');
-SELECT clickhouse_raw_query($$
+CREATE SERVER tz_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER tz_admin;
+
+CALL clickhouse_perform('tz_admin', 'DROP DATABASE IF EXISTS tz_test');
+CALL clickhouse_perform('tz_admin', 'CREATE DATABASE tz_test');
+CALL clickhouse_perform('tz_admin', $$
     CREATE TABLE tz_test.ts (
         id        Int,
         server_ts DateTime,
@@ -21,7 +24,7 @@ SELECT clickhouse_raw_query($$
 $$);
 
 -- Insert some records, all times set to 10:00:00 UTC.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('tz_admin', $$
     INSERT INTO tz_test.ts
     SELECT number,
            addMonths(toDateTime('2020-01-01 10:00:00', 'UTC'), number * 3),
@@ -31,9 +34,11 @@ SELECT clickhouse_raw_query($$
     FROM numbers(0, 4)
 $$);
 
-SELECT clickhouse_raw_query($$
+-- Read as text under UTC, so every column shows the instant that was stored.
+SET session timezone = 'UTC';
+SELECT * FROM clickhouse_query('tz_admin', $$
     SELECT * FROM tz_test.ts ORDER BY id
-$$);
+$$) AS t(id text, server_ts text, utc_ts text, nyc_ts text, lax_ts text);
 
 CREATE SCHEMA tz_bin;
 IMPORT FOREIGN SCHEMA tz_test FROM SERVER tz_bin_svr INTO tz_bin;

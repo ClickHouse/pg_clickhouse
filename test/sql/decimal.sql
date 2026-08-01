@@ -4,8 +4,11 @@ CREATE SERVER http_decimal_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_decimal_loopback;
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_decimal_loopback;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS decimal_test');
-SELECT clickhouse_raw_query('CREATE DATABASE decimal_test');
+CREATE SERVER decimal_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER decimal_admin;
+
+CALL clickhouse_perform('decimal_admin', 'DROP DATABASE IF EXISTS decimal_test');
+CALL clickhouse_perform('decimal_admin', 'CREATE DATABASE decimal_test');
 
 \set ECHO errors
 SELECT split_part(clickhouse_server_version('binary_decimal_loopback'), '.', 1)::int <= 23 AS ch23 \gset
@@ -16,7 +19,7 @@ SELECT split_part(clickhouse_server_version('binary_decimal_loopback'), '.', 1):
 \endif
 \set ECHO all
 
-SELECT clickhouse_raw_query(format($$
+CALL clickhouse_perform('decimal_admin', format($$
     CREATE TABLE decimal_test.decimals (
         id     Int32          NOT NULL,
         dec    Decimal(8, 0)  NOT NULL,
@@ -49,7 +52,7 @@ INSERT INTO dec_http.decimals VALUES
 SELECT * FROM dec_bin.decimals ORDER BY id;
 SELECT * FROM dec_http.decimals ORDER BY id;
 
-SELECT clickhouse_raw_query('DROP DATABASE decimal_test');
+CALL clickhouse_perform('decimal_admin', 'DROP DATABASE decimal_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_decimal_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_decimal_loopback;
 DROP SERVER binary_decimal_loopback CASCADE;

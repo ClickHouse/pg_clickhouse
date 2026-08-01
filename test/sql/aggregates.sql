@@ -13,9 +13,12 @@ CREATE SERVER agg_http_svr FOREIGN DATA WRAPPER clickhouse_fdw
 CREATE USER MAPPING FOR CURRENT_USER SERVER agg_http_svr;
 
 -- Create a ClickHouse table to query.
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS agg_test');
-SELECT clickhouse_raw_query('CREATE DATABASE agg_test');
-SELECT clickhouse_raw_query($$
+CREATE SERVER agg_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER agg_admin;
+
+CALL clickhouse_perform('agg_admin', 'DROP DATABASE IF EXISTS agg_test');
+CALL clickhouse_perform('agg_admin', 'CREATE DATABASE agg_test');
+CALL clickhouse_perform('agg_admin', $$
     CREATE TABLE agg_test.hits (
         id          Int64               NOT NULL,
         uuid        UUID                NOT NULL,
@@ -29,7 +32,7 @@ $$);
 
 /* Queries used to generate the insert values below.
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('agg_admin', $$
     INSERT INTO agg_test.hits
     WITH gen AS (
         SELECT toDateTime64(concat('2025-12-19 10:42:00.', floor(randUniform(0, 999999))), 6, 'UTC') - (rand() % 86400 * 14) AS ts
@@ -44,12 +47,13 @@ SELECT clickhouse_raw_query($$
         cast(randChiSquared(1) * rand() %8+1 AS Decimal(10, 2))
     FROM gen;
 $$);
-SELECT clickhouse_raw_query('select * from agg_test.hits format values');
+SELECT * FROM clickhouse_query('agg_admin',
+    'select * from agg_test.hits format values') AS t(v text);
 
 */
 
 -- Insert data.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('agg_admin', $$
     INSERT INTO agg_test.hits VALUES
     (3498231651,'8cab5a51-8927-43f4-8104-b2c81ffc3d8a','2025-12-05 11:51:04.390884','2025-12-05','/users/283434',304,1.29),
     (1431223188,'691a0477-c3fa-404d-a478-d4caaaa24832','2025-12-05 12:22:20.135213','2025-12-05','/users/802683',541,8.38),
@@ -104,14 +108,14 @@ SELECT clickhouse_raw_query($$
 $$);
 
 -- Set up a table with some numeric values.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('agg_admin', $$
     CREATE TABLE agg_test.agg_numbers (
         a Int16,
         b Float32
     ) ENGINE = MergeTree ORDER BY (a);
 $$);
  
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('agg_admin', $$
     INSERT INTO agg_test.agg_numbers
     VALUES (56, 7.8)
          , (100, 99.097)

@@ -3,29 +3,32 @@ CREATE SERVER binary_loopback FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'binary_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_loopback;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS binary_test');
-SELECT clickhouse_raw_query('CREATE DATABASE binary_test');
+CREATE SERVER binary_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_admin;
+
+CALL clickhouse_perform('binary_admin', 'DROP DATABASE IF EXISTS binary_test');
+CALL clickhouse_perform('binary_admin', 'CREATE DATABASE binary_test');
 
 -- integer types
-SELECT clickhouse_raw_query('CREATE TABLE binary_test.ints (
+CALL clickhouse_perform('binary_admin', 'CREATE TABLE binary_test.ints (
     c1 Int8, c2 Int16, c3 Int32, c4 Int64,
     c5 UInt8, c6 UInt16, c7 UInt32, c8 UInt64,
     c9 Float32, c10 Float64, c11 Bool
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO binary_test.ints SELECT
+CALL clickhouse_perform('binary_admin', 'INSERT INTO binary_test.ints SELECT
     number, number + 1, number + 2, number + 3, number + 4, number + 5,
     number + 6, number + 7, number + 8.1, number + 9.2, cast(number % 2 as Bool)
     FROM numbers(10);');
 
 -- date and string types
-SELECT clickhouse_raw_query('CREATE TABLE binary_test.types (
+CALL clickhouse_perform('binary_admin', 'CREATE TABLE binary_test.types (
     c1 Date, c2 DateTime, c3 String, c4 FixedString(5), c5 UUID,
     c6 Enum8(''one'' = 1, ''two'' = 2),
     c7 Enum16(''one'' = 1, ''two'' = 2, ''three'' = 3)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO binary_test.types SELECT
+CALL clickhouse_perform('binary_admin', 'INSERT INTO binary_test.types SELECT
     addDays(toDate(''1990-01-01''), number),
     addMinutes(addSeconds(addDays(toDateTime(''1990-01-01 10:00:00'', ''UTC''), number), number), number),
     format(''number {0}'', toString(number)),
@@ -36,51 +39,51 @@ SELECT clickhouse_raw_query('INSERT INTO binary_test.types SELECT
     FROM numbers(10);');
 
 -- array types
-SELECT clickhouse_raw_query('CREATE TABLE binary_test.arrays (
+CALL clickhouse_perform('binary_admin', 'CREATE TABLE binary_test.arrays (
     c1 Array(Int), c2 Array(String)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO binary_test.arrays SELECT
+CALL clickhouse_perform('binary_admin', 'INSERT INTO binary_test.arrays SELECT
     [number, number + 1],
     [format(''num{0}'', toString(number)), format(''num{0}'', toString(number + 1))]
     FROM numbers(10);');
 
 -- nested arrays
-SELECT clickhouse_raw_query('CREATE TABLE binary_test.nested_arrays (
+CALL clickhouse_perform('binary_admin', 'CREATE TABLE binary_test.nested_arrays (
     c1 Int8, c2 Array(Array(Int32)), c3 Array(Array(String))
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO binary_test.nested_arrays VALUES
+CALL clickhouse_perform('binary_admin', 'INSERT INTO binary_test.nested_arrays VALUES
     (1, [[1,2],[3,4]], [[''a'',''b''],[''c'',''d'']]),
     (2, [[5,6],[7,8]], [[''e'',''f''],[''g'',''h'']]);
 ');
 
 -- ragged nested arrays must error: postgres requires hyper-rectangles
-SELECT clickhouse_raw_query('CREATE TABLE binary_test.ragged_arrays (
+CALL clickhouse_perform('binary_admin', 'CREATE TABLE binary_test.ragged_arrays (
     c1 Int8, c2 Array(Array(Int32))
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO binary_test.ragged_arrays VALUES (1, [[1,2,3],[4]]);');
+CALL clickhouse_perform('binary_admin', 'INSERT INTO binary_test.ragged_arrays VALUES (1, [[1,2,3],[4]]);');
 
-SELECT clickhouse_raw_query('CREATE TABLE binary_test.tuples (
+CALL clickhouse_perform('binary_admin', 'CREATE TABLE binary_test.tuples (
     c1 Int8,
     c2 Tuple(Int, String, Float32),
     c3 UInt8
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO binary_test.tuples SELECT
+CALL clickhouse_perform('binary_admin', 'INSERT INTO binary_test.tuples SELECT
     number,
     (number, toString(number), number + 1.0),
     number % 2
     FROM numbers(10);');
 
-SELECT clickhouse_raw_query('CREATE TABLE binary_test.bytes (
+CALL clickhouse_perform('binary_admin', 'CREATE TABLE binary_test.bytes (
     c1 Int8,
     c2 String,
     c3 FixedString(16)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO binary_test.bytes SELECT
+CALL clickhouse_perform('binary_admin', 'INSERT INTO binary_test.bytes SELECT
     number,
     SHA1(''val'' || toString(number)),
     MD5(''val'' || toString(number))
@@ -185,16 +188,11 @@ WHERE c3 IN (
 )
 ORDER BY c1;
 
--- clickhouse_raw_query over the binary protocol
-SELECT clickhouse_raw_query('SELECT 1 AS a, ''x'' AS b', 'driver=binary port=9000');
-SELECT clickhouse_raw_query('SELECT number FROM numbers(3) ORDER BY number', 'driver=binary port=9000');
-SELECT clickhouse_raw_query('SELECT [1,2,3] AS arr, (1, ''a'') AS tup', 'driver=binary port=9000');
-SELECT clickhouse_raw_query('SELECT NULL', 'driver=binary port=9000');
-SELECT clickhouse_raw_query('CREATE TABLE binary_test.raw (c1 Int32) ENGINE = Memory', 'driver=binary port=9000');
--- explicit http driver still works
-SELECT clickhouse_raw_query('SELECT 1', 'driver=http port=8123');
 -- unknown driver is rejected
-SELECT clickhouse_raw_query('SELECT 1', 'driver=bogus');
+CREATE SERVER binary_bogus FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(driver 'bogus');
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_bogus;
+SELECT * FROM clickhouse_query('binary_bogus', 'SELECT 1') AS t(x int);
 
 -- clickhouse_query: server-based typed rowset over the binary driver
 SELECT * FROM clickhouse_query(
@@ -214,10 +212,11 @@ SELECT * FROM clickhouse_query('binary_loopback', 'SELECT 1') AS t(x int, y text
 -- mismatch is rejected even when query returns no rows
 SELECT * FROM clickhouse_query('binary_loopback', 'SELECT 1 WHERE 0')
     AS t(x int, y text);
--- DDL returns zero columns, required placeholder column list is ignored
-SELECT * FROM clickhouse_query(
+-- DDL returns zero columns, so it runs through clickhouse_perform
+CALL clickhouse_perform(
     'binary_loopback', 'CREATE TABLE ddl (c1 Int32) ENGINE = Memory'
-) AS t(x int);
+);
+-- zero columns returned yields no rows; the statement still ran remotely
 SELECT * FROM clickhouse_query('binary_loopback', 'DROP TABLE ddl') AS t(x int);
 -- value not coercible to the declared type is rejected
 SELECT * FROM clickhouse_query('binary_loopback', 'SELECT ''abc''') AS t(x int);
@@ -276,6 +275,6 @@ DROP TYPE nested_tup, nested_tup_inner;
 \endif
 
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_loopback;
-SELECT clickhouse_raw_query('DROP DATABASE binary_test');
+CALL clickhouse_perform('binary_admin', 'DROP DATABASE binary_test');
 
 DROP SERVER binary_loopback CASCADE;

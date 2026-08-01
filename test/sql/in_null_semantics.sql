@@ -14,15 +14,18 @@ CREATE SERVER in_null_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'in_null_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER in_null_svr;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS in_null_test');
-SELECT clickhouse_raw_query('CREATE DATABASE in_null_test');
+CREATE SERVER in_null_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER in_null_admin;
+
+CALL clickhouse_perform('in_null_admin', 'DROP DATABASE IF EXISTS in_null_test');
+CALL clickhouse_perform('in_null_admin', 'CREATE DATABASE in_null_test');
 
 -- xn imports as a plain (nullable) int column, xp as int NOT NULL, and arr
 -- as int[]; its elements' nullability is never provable at plan time
-SELECT clickhouse_raw_query('CREATE TABLE in_null_test.tnull
+CALL clickhouse_perform('in_null_admin', 'CREATE TABLE in_null_test.tnull
     (id Int32, xn Nullable(Int32), xp Int32, arr Array(Int32))
     ENGINE = MergeTree ORDER BY id');
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('in_null_admin', $$
     INSERT INTO in_null_test.tnull
     VALUES (1, 1, 1, [1, 500]), (2, 2, 2, [500]), (3, NULL, 3, [])
 $$);
@@ -219,6 +222,6 @@ ORDER BY id;
 -- Cleanup
 SET SESSION search_path = public;
 DROP SCHEMA in_null_test CASCADE;
-SELECT clickhouse_raw_query('DROP DATABASE in_null_test');
+CALL clickhouse_perform('in_null_admin', 'DROP DATABASE in_null_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER in_null_svr;
 DROP SERVER in_null_svr;

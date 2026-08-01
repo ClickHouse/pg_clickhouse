@@ -6,12 +6,15 @@ CREATE SERVER concur_loopback FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS (dbname 'concur_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER concur_loopback;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS concur_test');
-SELECT clickhouse_raw_query('CREATE DATABASE concur_test');
-SELECT clickhouse_raw_query('CREATE TABLE concur_test.sales (
+CREATE SERVER concur_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER concur_admin;
+
+CALL clickhouse_perform('concur_admin', 'DROP DATABASE IF EXISTS concur_test');
+CALL clickhouse_perform('concur_admin', 'CREATE DATABASE concur_test');
+CALL clickhouse_perform('concur_admin', 'CREATE TABLE concur_test.sales (
     sale_id Int32, item_id Int32, amount Decimal(15, 2)
 ) ENGINE = MergeTree ORDER BY sale_id;');
-SELECT clickhouse_raw_query($$INSERT INTO concur_test.sales VALUES
+CALL clickhouse_perform('concur_admin', $$INSERT INTO concur_test.sales VALUES
     (1, 1, 100), (2, 1, 150), (3, 2, 200), (8, 1, 250)$$);
 
 CREATE SCHEMA concur;
@@ -43,4 +46,4 @@ DROP FOREIGN TABLE concur.sales;
 DROP USER MAPPING FOR CURRENT_USER SERVER concur_loopback;
 DROP SERVER concur_loopback;
 DROP SCHEMA concur;
-SELECT clickhouse_raw_query('DROP DATABASE concur_test');
+CALL clickhouse_perform('concur_admin', 'DROP DATABASE concur_test');

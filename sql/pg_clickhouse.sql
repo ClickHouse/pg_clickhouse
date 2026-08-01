@@ -12,6 +12,9 @@ RETURNS fdw_handler
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
+-- Deprecated, removed in the next release: use clickhouse_query() or
+-- clickhouse_perform(), which reuse a configured server rather than an ad-hoc
+-- connection string. Emits a deprecation warning when called.
 CREATE FUNCTION clickhouse_raw_query(TEXT, TEXT DEFAULT 'host=localhost port=8123')
 RETURNS TEXT
 AS 'MODULE_PATHNAME'
@@ -36,8 +39,19 @@ RETURNS SETOF record
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
--- As with clickhouse_raw_query(), don't let PUBLIC run arbitrary remote queries.
+-- Make sure PUBLIC can't run arbitrary remote queries; roles must be granted
+-- explicit access.
 REVOKE EXECUTE ON FUNCTION clickhouse_query(text, text) FROM PUBLIC;
+
+-- Execute statement against foreign server, discarding any result, e.g.
+-- CALL clickhouse_perform('srv', 'CREATE TABLE t (a Int32) ENGINE = Memory');
+CREATE PROCEDURE clickhouse_perform(TEXT, TEXT)
+AS 'MODULE_PATHNAME'
+LANGUAGE C;
+
+-- Make sure PUBLIC can't run arbitrary remote queries; roles must be granted
+-- explicit access.
+REVOKE EXECUTE ON PROCEDURE clickhouse_perform(text, text) FROM PUBLIC;
 
 CREATE FUNCTION clickhouse_fdw_validator(text[], oid)
 RETURNS VOID

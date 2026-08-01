@@ -61,10 +61,18 @@ All notable changes to this project will be documented in this file. It uses the
 *   Binary driver now supports inserting into `Array(Nullable(T))` columns ([#316]).
 *   Added pushdown for the three-argument forms of `ltrim`, `rtrim`, and
     `btrim` ([#307]).
-*   Added support for binary driver to `clickhouse_raw_query()` ([#309]).
 *   Added `clickhouse_query(server, sql)`, a set-returning function that runs a
     query against a configured foreign server and returns its rows typed by the
     caller's column definition list ([#309]).
+*   Added `clickhouse_perform(server, sql)`, a procedure that runs a statement
+    against a configured foreign server and discards any result, for statements
+    such as DDL returning no results ([#329]).
+*   Deprecated `clickhouse_raw_query()`, which will be removed in next release.
+    Use `clickhouse_query(server, sql)` or `CALL clickhouse_perform(server, sql)`,
+    which use a foreign server rather than a connection string ([#329]).
+*   Any ClickHouse column now reads into `text` or another string type, rendered
+    by the output function of the PostgreSQL type it maps to, rather than
+    failing with `could not cast value` ([#329]).
 *   Added pushdown support for partial aggregates under partitionwise
     aggregation, so a query over a partitioned table mixing local and foreign
     partitions computes the foreign partition's aggregate on ClickHouse
@@ -199,6 +207,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#326 pg-clickhouse-c"
   [#328]: https://github.com/ClickHouse/pg_clickhouse/pull/328
     "ClickHouse/pg_clickhouse#328use native format for http"
+  [#329]: https://github.com/ClickHouse/pg_clickhouse/pull/329
+    "ClickHouse/pg_clickhouse#329 Deprecate clickhouse_raw_query, add clickhouse_perform"
   [#330]: https://github.com/ClickHouse/pg_clickhouse/pull/330
     "ClickHouse/pg_clickhouse#330 preserve typmod in binary driver"
   [#331]: https://github.com/ClickHouse/pg_clickhouse/pull/331

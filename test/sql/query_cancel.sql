@@ -11,11 +11,14 @@ CREATE SERVER cancel_binary FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'cancel_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER cancel_binary;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS cancel_test');
-SELECT clickhouse_raw_query('CREATE DATABASE cancel_test');
-SELECT clickhouse_raw_query('CREATE TABLE cancel_test.t1 (c1 Int32)
+CREATE SERVER cancel_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER cancel_admin;
+
+CALL clickhouse_perform('cancel_admin', 'DROP DATABASE IF EXISTS cancel_test');
+CALL clickhouse_perform('cancel_admin', 'CREATE DATABASE cancel_test');
+CALL clickhouse_perform('cancel_admin', 'CREATE TABLE cancel_test.t1 (c1 Int32)
     ENGINE = MergeTree ORDER BY c1');
-SELECT clickhouse_raw_query('INSERT INTO cancel_test.t1
+CALL clickhouse_perform('cancel_admin', 'INSERT INTO cancel_test.t1
     SELECT number FROM numbers(100)');
 
 CREATE FOREIGN TABLE cancel_http_ft (c1 int)
@@ -56,4 +59,4 @@ DROP USER MAPPING FOR CURRENT_USER SERVER cancel_http;
 DROP USER MAPPING FOR CURRENT_USER SERVER cancel_binary;
 DROP SERVER cancel_http;
 DROP SERVER cancel_binary;
-SELECT clickhouse_raw_query('DROP DATABASE cancel_test');
+CALL clickhouse_perform('cancel_admin', 'DROP DATABASE cancel_test');

@@ -10,26 +10,29 @@ CREATE SCHEMA clickhouse_except;
 CREATE USER MAPPING FOR CURRENT_USER SERVER import_loopback;
 CREATE USER MAPPING FOR CURRENT_USER SERVER import_loopback_bin;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS import_test');
-SELECT clickhouse_raw_query('CREATE DATABASE import_test');
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS import_test_2');
-SELECT clickhouse_raw_query('CREATE DATABASE import_test_2');
+CREATE SERVER import_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER import_admin;
+
+CALL clickhouse_perform('import_admin', 'DROP DATABASE IF EXISTS import_test');
+CALL clickhouse_perform('import_admin', 'CREATE DATABASE import_test');
+CALL clickhouse_perform('import_admin', 'DROP DATABASE IF EXISTS import_test_2');
+CALL clickhouse_perform('import_admin', 'CREATE DATABASE import_test_2');
 
 -- numeric types
-SELECT clickhouse_raw_query('CREATE TABLE import_test.ints (
+CALL clickhouse_perform('import_admin', 'CREATE TABLE import_test.ints (
     c1 Int8, c2 Int16, c3 Int32, c4 Int64,
     c5 UInt8, c6 UInt16, c7 UInt32, c8 UInt64,
     c9 Float32, c10 Nullable(Float64)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO import_test.ints SELECT
+CALL clickhouse_perform('import_admin', 'INSERT INTO import_test.ints SELECT
     number, number + 1, number + 2, number + 3, number + 4, number + 5,
     number + 6, number + 7, number + 8.1, number + 9.2 FROM numbers(10);');
-SELECT clickhouse_raw_query('INSERT INTO import_test.ints SELECT
+CALL clickhouse_perform('import_admin', 'INSERT INTO import_test.ints SELECT
     number, number + 1, number + 2, number + 3, number + 4, number + 5,
     number + 6, number + 7, number + 8.1, NULL FROM numbers(10, 2);');
 
-SELECT clickhouse_raw_query('CREATE TABLE import_test.types (
+CALL clickhouse_perform('import_admin', 'CREATE TABLE import_test.types (
     c1 Date, c2 DateTime, c3 String, c4 FixedString(5), c5 UUID,
     c6 Enum8(''one'' = 1, ''two'' = 2),
     c7 Enum16(''one'' = 1, ''two'' = 2, ''three'' = 3),
@@ -37,7 +40,7 @@ SELECT clickhouse_raw_query('CREATE TABLE import_test.types (
     c8 LowCardinality(String)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO import_test.types SELECT
+CALL clickhouse_perform('import_admin', 'INSERT INTO import_test.types SELECT
     addDays(toDate(''1990-01-01''), number),
     addMinutes(addSeconds(addDays(toDateTime(''1990-01-01 10:00:00'', ''UTC''), number), number), number),
     format(''number {0}'', toString(number)),
@@ -49,20 +52,20 @@ SELECT clickhouse_raw_query('INSERT INTO import_test.types SELECT
     format(''cardinal {0}'', toString(number))
     FROM numbers(10);');
 
-SELECT clickhouse_raw_query('CREATE TABLE import_test.types2 (
+CALL clickhouse_perform('import_admin', 'CREATE TABLE import_test.types2 (
     c1 LowCardinality(Nullable(String))
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1) SETTINGS allow_nullable_key = 1;
 ');
-SELECT clickhouse_raw_query('INSERT INTO import_test.types2 SELECT
+CALL clickhouse_perform('import_admin', 'INSERT INTO import_test.types2 SELECT
     format(''cardinal {0}'', toString(number + 1))
     FROM numbers(10);');
 
-SELECT clickhouse_raw_query('CREATE TABLE import_test.ip (
+CALL clickhouse_perform('import_admin', 'CREATE TABLE import_test.ip (
     c1 IPv4,
     c2 IPv6
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('import_admin', $$
     INSERT INTO import_test.ip VALUES
     ('116.106.34.242', '2001:44c8:129:2632:33:0:252:2'),
     ('116.106.34.243', '2a02:e980:1e::1'),
@@ -70,24 +73,24 @@ SELECT clickhouse_raw_query($$
 $$);
 
 -- array types
-SELECT clickhouse_raw_query('CREATE TABLE import_test.arrays (
+CALL clickhouse_perform('import_admin', 'CREATE TABLE import_test.arrays (
     c1 Array(Int), c2 Array(String)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO import_test.arrays SELECT
+CALL clickhouse_perform('import_admin', 'INSERT INTO import_test.arrays SELECT
     [number, number + 1],
     [format(''num{0}'', toString(number)), format(''num{0}'', toString(number + 1))]
     FROM numbers(10);');
 
 -- tuple
-SELECT clickhouse_raw_query('CREATE TABLE import_test.tuples (
+CALL clickhouse_perform('import_admin', 'CREATE TABLE import_test.tuples (
     c1 Int8,
     c2 Tuple(Int, String, Float32),
 	c3 Nested(a Int, b Int),
 	c4 Int16
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('INSERT INTO import_test.tuples SELECT
+CALL clickhouse_perform('import_admin', 'INSERT INTO import_test.tuples SELECT
     number,
     (number, toString(number), number + 1.0),
 	[toInt32(number),1,1],
@@ -96,20 +99,20 @@ SELECT clickhouse_raw_query('INSERT INTO import_test.tuples SELECT
     FROM numbers(10);');
 
 -- datetime with timezones
-SELECT clickhouse_raw_query('CREATE TABLE import_test.timezones (
+CALL clickhouse_perform('import_admin', 'CREATE TABLE import_test.timezones (
 	t1 DateTime64(6,''UTC''),
 	t2 DateTime64(6,''Europe/Berlin''),
 	t4 DateTime(''Europe/Berlin''),
 	t5 DateTime64(6))
 	ENGINE = MergeTree ORDER BY (t1) SETTINGS index_granularity=8192;');
 
-SELECT clickhouse_raw_query('INSERT INTO import_test.timezones VALUES (
+CALL clickhouse_perform('import_admin', 'INSERT INTO import_test.timezones VALUES (
 	''2020-01-01 11:00:00'',
 	''2020-01-01 11:00:00'',
 	''2020-01-01 11:00:00'',
 	''2020-01-01 11:00:00'')');
 
-SELECT clickhouse_raw_query('INSERT INTO import_test.timezones VALUES (
+CALL clickhouse_perform('import_admin', 'INSERT INTO import_test.timezones VALUES (
 	''2020-01-01 12:00:00'',
 	''2020-01-01 12:00:00'',
 	''2020-01-01 12:00:00'',
@@ -171,7 +174,7 @@ IMPORT FOREIGN SCHEMA "import_test" EXCEPT (ints, types) FROM SERVER import_loop
 \d+ clickhouse_except.tuples;
 
 -- check custom database
-SELECT clickhouse_raw_query('CREATE TABLE import_test_2.custom_option (a Int64) ENGINE = MergeTree ORDER BY (a)');
+CALL clickhouse_perform('import_admin', 'CREATE TABLE import_test_2.custom_option (a Int64) ENGINE = MergeTree ORDER BY (a)');
 IMPORT FOREIGN SCHEMA "import_test_2" FROM SERVER import_loopback INTO clickhouse;
 
 EXPLAIN VERBOSE SELECT * FROM clickhouse.custom_option;
@@ -179,7 +182,7 @@ ALTER FOREIGN TABLE clickhouse.custom_option OPTIONS (DROP database);
 EXPLAIN VERBOSE SELECT * FROM clickhouse.custom_option;
 
 -- check overflows.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('import_admin', $$
     INSERT INTO import_test.ints (c1, c2, c3, c4, c5, c6, c7, c8, c9, c10) VALUES
     (
         -- Min values
@@ -195,11 +198,13 @@ SELECT clickhouse_raw_query($$
     )
 $$);
 
-SELECT clickhouse_raw_query($$
-    SELECT * FROM import_test.ints
+SELECT * FROM clickhouse_query('import_admin', $$
+    SELECT c1, c2, c3, c4, c5, c6, c7, c9, c10
+    FROM import_test.ints
     WHERE c1 IN (127, -128)
     ORDER BY c1;
-$$);
+$$) AS t(c1 text, c2 text, c3 text, c4 text, c5 text,
+         c6 text, c7 text, c9 text, c10 text);
 
 -- Error on 18446744073709551615.
 SELECT * FROM clickhouse_bin.ints
@@ -228,7 +233,7 @@ ORDER BY c1;
 DROP USER MAPPING FOR CURRENT_USER SERVER import_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER import_loopback_bin;
 
-SELECT clickhouse_raw_query('DROP DATABASE import_test');
-SELECT clickhouse_raw_query('DROP DATABASE import_test_2');
+CALL clickhouse_perform('import_admin', 'DROP DATABASE import_test');
+CALL clickhouse_perform('import_admin', 'DROP DATABASE import_test_2');
 DROP SERVER import_loopback_bin CASCADE;
 DROP SERVER import_loopback CASCADE;

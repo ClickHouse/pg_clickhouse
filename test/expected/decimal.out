@@ -3,20 +3,12 @@ CREATE SERVER binary_decimal_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTION
 CREATE SERVER http_decimal_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'decimal_test', driver 'http');
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_decimal_loopback;
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_decimal_loopback;
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS decimal_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE DATABASE decimal_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CREATE SERVER decimal_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER decimal_admin;
+CALL clickhouse_perform('decimal_admin', 'DROP DATABASE IF EXISTS decimal_test');
+CALL clickhouse_perform('decimal_admin', 'CREATE DATABASE decimal_test');
 \set ECHO errors
-SELECT clickhouse_raw_query(format($$
+CALL clickhouse_perform('decimal_admin', format($$
     CREATE TABLE decimal_test.decimals (
         id     Int32          NOT NULL,
         dec    Decimal(8, 0)  NOT NULL,
@@ -26,11 +18,6 @@ SELECT clickhouse_raw_query(format($$
         dec0   Decimal%s      NOT NULL
     ) ENGINE = MergeTree PARTITION BY id ORDER BY (id);
 $$, :'bare_dec'));
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
 CREATE SCHEMA dec_bin;
 CREATE SCHEMA dec_http;
 IMPORT FOREIGN SCHEMA "decimal_test" FROM SERVER binary_decimal_loopback INTO dec_bin;
@@ -93,12 +80,7 @@ SELECT * FROM dec_http.decimals ORDER BY id;
   6 |       0 |     0.0000 |          0.000000 |            0.00000000 |           0
 (6 rows)
 
-SELECT clickhouse_raw_query('DROP DATABASE decimal_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('decimal_admin', 'DROP DATABASE decimal_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_decimal_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_decimal_loopback;
 DROP SERVER binary_decimal_loopback CASCADE;

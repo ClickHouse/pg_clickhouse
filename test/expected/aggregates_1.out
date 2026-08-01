@@ -1,34 +1,4 @@
 \unset ECHO
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
                Foreign table "agg_bin.agg_numbers"
  Column |   Type   | Collation | Nullable | Default | FDW options 
 --------+----------+-----------+----------+---------+-------------

@@ -13,5 +13,14 @@ RETURNS SETOF record
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
--- As with clickhouse_raw_query(), don't let PUBLIC run arbitrary remote queries.
+-- Don't let PUBLIC run arbitrary remote queries.
 REVOKE EXECUTE ON FUNCTION clickhouse_query(text, text) FROM PUBLIC;
+
+-- Execute statement against foreign server, discarding any result, e.g.
+-- CALL clickhouse_perform('srv', 'CREATE TABLE t (a Int32) ENGINE = Memory');
+CREATE PROCEDURE clickhouse_perform(TEXT, TEXT)
+AS 'MODULE_PATHNAME'
+LANGUAGE C;
+
+-- Don't let PUBLIC run arbitrary remote queries.
+REVOKE EXECUTE ON PROCEDURE clickhouse_perform(text, text) FROM PUBLIC;

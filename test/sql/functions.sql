@@ -6,14 +6,17 @@ CREATE SERVER functions_loopback FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'functions_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS functions_test');
-SELECT clickhouse_raw_query('CREATE DATABASE functions_test');
+CREATE SERVER functions_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER functions_admin;
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', 'DROP DATABASE IF EXISTS functions_test');
+CALL clickhouse_perform('functions_admin', 'CREATE DATABASE functions_test');
+
+CALL clickhouse_perform('functions_admin', $$
 	CREATE TABLE functions_test.t1 (a int, b int, c DateTime) ENGINE = MergeTree ORDER BY (a);
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t1 VALUES
 		(1, 1, '2019-01-01 10:00:00'),
 		(2, 2, '2019-01-02 10:00:00'),
@@ -21,23 +24,23 @@ SELECT clickhouse_raw_query($$
 		(2, 3, '2019-01-02 10:00:00')
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
 	drop dictionary if exists functions_test.t3_dict
 $$);
 
-SELECT clickhouse_raw_query('
+CALL clickhouse_perform('functions_admin', '
 	create table functions_test.t3 (a Int32, b Nullable(Int32))
 	engine = MergeTree()
 	order by a');
-SELECT clickhouse_raw_query('CREATE TABLE functions_test.t3_map (key1 Int32, key2 String,
+CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t3_map (key1 Int32, key2 String,
         val String) engine=TinyLog();');
-SELECT clickhouse_raw_query('CREATE TABLE functions_test.t4 (val String) engine=TinyLog();');
-SELECT clickhouse_raw_query('CREATE TABLE functions_test.t5 (ts DateTime) engine=TinyLog();');
-SELECT clickhouse_raw_query('CREATE TABLE functions_test.t6 (i64 Int64, f64 Float64) engine=TinyLog();');
-SELECT clickhouse_raw_query('CREATE TABLE functions_test.t7(dt Date) engine=TinyLog();');
-SELECT clickhouse_raw_query('CREATE TABLE functions_test.t8 (ts DateTime) engine=TinyLog();');
+CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t4 (val String) engine=TinyLog();');
+CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t5 (ts DateTime) engine=TinyLog();');
+CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t6 (i64 Int64, f64 Float64) engine=TinyLog();');
+CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t7(dt Date) engine=TinyLog();');
+CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t8 (ts DateTime) engine=TinyLog();');
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t5 VALUES
 		('2025-10-15T20:12:25'),
 		('2026-11-16T32:13:26'),
@@ -47,7 +50,7 @@ SELECT clickhouse_raw_query($$
 		('2030-03-20T02:16:30')
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t7 VALUES
 		('2025-10-15'),
 		('2024-11-16'),
@@ -57,7 +60,7 @@ SELECT clickhouse_raw_query($$
 		('2020-03-20')
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t8 VALUES
 		('2026-08-02T12:00:00'),
 		('2026-08-03T12:00:00'),
@@ -68,7 +71,7 @@ SELECT clickhouse_raw_query($$
 		('2026-08-08T12:00:00')
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t6 VALUES
 		(20423, 20423.123),
 		(2042323443, 2042323443.232),
@@ -86,25 +89,25 @@ CREATE FOREIGN TABLE t6 (i64 BIGINT, f64 FLOAT8) SERVER functions_loopback;
 CREATE FOREIGN TABLE t7 (ts date) SERVER functions_loopback;
 CREATE FOREIGN TABLE t8 (ts timestamp) SERVER functions_loopback;
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t3
 	SELECT number+1, number+2
 	  FROM numbers(10);
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t3_map
 	SELECT toString(number+1), 'key' || toString(number+1), 'val' || toString(number+1)
 	  FROM numbers(10);
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t4
 	SELECT 'val' || toString(number+1)
 	  FROM numbers(2);
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
 	create dictionary functions_test.t3_dict
     (key1 Int32, key2 String, val String)
     primary key key1, key2
@@ -410,7 +413,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE date_trunc('day', c) > date_
 DO $$
 DECLARE
 	-- Capture the CLickHouse major an minor version parse.
-	chv int[] := regexp_matches(clickhouse_raw_query('SELECT version()'), '^(\d+)\.(\d+)')::int[];
+	chv int[] := regexp_matches(clickhouse_server_version('functions_loopback'), '^(\d+)\.(\d+)')::int[];
 	opt TEXT = '';
 	output JSONB;
     result record;
@@ -421,10 +424,10 @@ BEGIN
 			opt := ' SETTINGS enable_time_time64_type = 1';
 		END IF;
 		-- Set up a foreign table mapping timetz to Time64.
-		PERFORM clickhouse_raw_query(
+		CALL clickhouse_perform('functions_admin',
 			'CREATE TABLE functions_test.times (t64 Time64) engine=TinyLog()' || opt
 		);
-		PERFORM clickhouse_raw_query($q$
+		CALL clickhouse_perform('functions_admin', $q$
 			INSERT INTO functions_test.times
 			VALUES ('16:14:50.922787819'),
 				   ('00:00:00'),
@@ -583,7 +586,7 @@ SELECT to_char(ts, t4.val) FROM t5, t4 LIMIT 1;
 
 -- reverse pushes down as reverseUTF8 to preserve code-point order on
 -- multi-byte input
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
     INSERT INTO functions_test.t4 VALUES ('Ωαβ'), ('hello')
 $$);
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -690,7 +693,7 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT i64 FROM t6 WHERE f64 < pi();
 
 -- lower(text) / upper(text) push down as lowerUTF8 / upperUTF8.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
     INSERT INTO functions_test.t4 VALUES ('VAL3'), ('Mixed')
 $$);
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -785,7 +788,7 @@ SELECT val FROM t4 WHERE encode(val::bytea, val) = val;
 -- a trailing newline, 60 wraps once mid-string. Matching the pushed-down base64
 -- against PG's own MIME output of the same bytes confirms they agree
 -- byte-for-byte.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('functions_admin', $$
     INSERT INTO functions_test.t4 VALUES (repeat('a', 57)), (repeat('a', 60))
 $$);
 SELECT octet_length(val) AS n FROM t4
@@ -812,5 +815,5 @@ WHERE encode(val::bytea, 'base64url') IN (
 \endif
 
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
-SELECT clickhouse_raw_query('DROP DATABASE functions_test');
+CALL clickhouse_perform('functions_admin', 'DROP DATABASE functions_test');
 DROP SERVER functions_loopback CASCADE;

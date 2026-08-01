@@ -1,12 +1,15 @@
 SET datestyle = 'ISO';
 
--- Seed a small table through the http helper (clickhouse_raw_query is http).
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS compression_test');
-SELECT clickhouse_raw_query('CREATE DATABASE compression_test');
-SELECT clickhouse_raw_query('CREATE TABLE compression_test.t (
+-- Seed a small table through the http admin server.
+CREATE SERVER comp_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER comp_admin;
+
+CALL clickhouse_perform('comp_admin', 'DROP DATABASE IF EXISTS compression_test');
+CALL clickhouse_perform('comp_admin', 'CREATE DATABASE compression_test');
+CALL clickhouse_perform('comp_admin', 'CREATE TABLE compression_test.t (
     c1 Int32, c2 String
 ) ENGINE = MergeTree ORDER BY c1;');
-SELECT clickhouse_raw_query('INSERT INTO compression_test.t
+CALL clickhouse_perform('comp_admin', 'INSERT INTO compression_test.t
     SELECT number, format(''row {0}'', toString(number)) FROM numbers(5);');
 
 -- One server, reconfigured per case: ALTER SERVER invalidates the cached
@@ -43,5 +46,5 @@ SELECT * FROM ft ORDER BY c1;
 
 DROP FOREIGN TABLE ft;
 DROP USER MAPPING FOR CURRENT_USER SERVER comp;
-SELECT clickhouse_raw_query('DROP DATABASE compression_test');
+CALL clickhouse_perform('comp_admin', 'DROP DATABASE compression_test');
 DROP SERVER comp CASCADE;

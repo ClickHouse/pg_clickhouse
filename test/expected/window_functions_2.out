@@ -1,24 +1,4 @@
 \unset ECHO
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
 -- ROW_NUMBER pushdown (binary)
            QUERY PLAN            
 ---------------------------------
@@ -350,11 +330,6 @@ DETAIL:  Remote Query: SELECT entity_id, amount, cume_dist() OVER (ORDER BY amou
  lead_200  | 2026-03-20 11:00:00+00 |   2 |   2
  lead_300  | 2026-03-05 08:00:00+00 |   1 |   1
 (5 rows)
-
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
 
 NOTICE:  drop cascades to foreign table wf_bin.events
 NOTICE:  drop cascades to foreign table wf_http.events

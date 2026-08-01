@@ -3,14 +3,17 @@ CREATE SERVER regex_loopback FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'regex_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER regex_loopback;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS regex_test');
-SELECT clickhouse_raw_query('CREATE DATABASE regex_test');
+CREATE SERVER regex_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER regex_admin;
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('regex_admin', 'DROP DATABASE IF EXISTS regex_test');
+CALL clickhouse_perform('regex_admin', 'CREATE DATABASE regex_test');
+
+CALL clickhouse_perform('regex_admin', $$
 	CREATE TABLE regex_test.strings(id Int32, val String) engine=TinyLog()
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('regex_admin', $$
 	INSERT INTO regex_test.strings
 	VALUES (1, 'val1'),
 		   (2, 'val2'),
@@ -269,5 +272,5 @@ $_$;
 \set ECHO all
 
 DROP USER MAPPING FOR CURRENT_USER SERVER regex_loopback;
-SELECT clickhouse_raw_query('DROP DATABASE regex_test');
+CALL clickhouse_perform('regex_admin', 'DROP DATABASE regex_test');
 DROP SERVER regex_loopback CASCADE;

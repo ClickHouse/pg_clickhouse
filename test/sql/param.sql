@@ -9,9 +9,12 @@ CREATE SERVER param_http_svr FOREIGN DATA WRAPPER clickhouse_fdw
 CREATE USER MAPPING FOR CURRENT_USER SERVER param_http_svr;
 
 -- Create the schema in ClickHouse.
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS param_test');
-SELECT clickhouse_raw_query('CREATE DATABASE param_test');
-SELECT clickhouse_raw_query($$
+CREATE SERVER param_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER param_admin;
+
+CALL clickhouse_perform('param_admin', 'DROP DATABASE IF EXISTS param_test');
+CALL clickhouse_perform('param_admin', 'CREATE DATABASE param_test');
+CALL clickhouse_perform('param_admin', $$
     CREATE TABLE param_test.ft1 (
         c1 Int,
         c2 Int,
@@ -25,7 +28,7 @@ SELECT clickhouse_raw_query($$
 $$);
 
 -- Insert some data.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('param_admin', $$
     INSERT INTO param_test.ft1
     SELECT number,
            number % 10,
@@ -120,12 +123,12 @@ PREPARE st6 AS SELECT * FROM bin_test.ft1 t1 WHERE t1.c1 = t1.c2 ORDER BY t1.c1;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
 PREPARE st7 AS INSERT INTO bin_test.ft1 (c1,c2,c3) VALUES (1001,101,'foo');
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
-SELECT clickhouse_raw_query('RENAME TABLE param_test.ft1 TO param_test.t1');
+CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.ft1 TO param_test.t1');
 ALTER FOREIGN TABLE bin_test.ft1 OPTIONS (SET table_name 't1');
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
 EXECUTE st6;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
-SELECT clickhouse_raw_query('RENAME TABLE param_test.t1 TO param_test.ft1');
+CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.t1 TO param_test.ft1');
 ALTER FOREIGN TABLE bin_test.ft1 OPTIONS (SET table_name 'ft1');
 
 -- implicit parameter
@@ -223,12 +226,12 @@ PREPARE st6 AS SELECT * FROM http_test.ft1 t1 WHERE t1.c1 = t1.c2 ORDER BY t1.c1
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
 PREPARE st7 AS INSERT INTO http_test.ft1 (c1,c2,c3) VALUES (1001,101,'foo');
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
-SELECT clickhouse_raw_query('RENAME TABLE param_test.ft1 TO param_test.t1');
+CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.ft1 TO param_test.t1');
 ALTER FOREIGN TABLE http_test.ft1 OPTIONS (SET table_name 't1');
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
 EXECUTE st6;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
-SELECT clickhouse_raw_query('RENAME TABLE param_test.t1 TO param_test.ft1');
+CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.t1 TO param_test.ft1');
 ALTER FOREIGN TABLE http_test.ft1 OPTIONS (SET table_name 'ft1');
 
 -- implicit parameter

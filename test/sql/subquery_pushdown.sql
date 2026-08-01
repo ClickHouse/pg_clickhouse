@@ -4,18 +4,21 @@ SET datestyle = 'ISO';
 CREATE SERVER subquery_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'subquery_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER subquery_loopback;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS subquery_test');
-SELECT clickhouse_raw_query('CREATE DATABASE subquery_test');
+CREATE SERVER subquery_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER subquery_admin;
+
+CALL clickhouse_perform('subquery_admin', 'DROP DATABASE IF EXISTS subquery_test');
+CALL clickhouse_perform('subquery_admin', 'CREATE DATABASE subquery_test');
 
 -- Create TPC-H orders table (matching official schema)
-SELECT clickhouse_raw_query('CREATE TABLE subquery_test.orders
+CALL clickhouse_perform('subquery_admin', 'CREATE TABLE subquery_test.orders
 	(o_orderkey Int32, o_custkey Int32, o_orderstatus FixedString(1), o_totalprice Decimal(15,2),
 	 o_orderdate Date, o_orderpriority FixedString(15), o_clerk FixedString(15), o_shippriority Int32, o_comment String)
 	ENGINE = MergeTree ORDER BY o_orderkey;
 ');
 
 -- Create TPC-H lineitem table (matching official schema)
-SELECT clickhouse_raw_query('CREATE TABLE subquery_test.lineitem
+CALL clickhouse_perform('subquery_admin', 'CREATE TABLE subquery_test.lineitem
 	(l_orderkey Int32, l_partkey Int32, l_suppkey Int32, l_linenumber Int32,
 	 l_quantity Decimal(15,2), l_extendedprice Decimal(15,2), l_discount Decimal(15,2), l_tax Decimal(15,2),
 	 l_returnflag FixedString(1), l_linestatus FixedString(1), l_shipdate Date, l_commitdate Date,
@@ -24,7 +27,7 @@ SELECT clickhouse_raw_query('CREATE TABLE subquery_test.lineitem
 ');
 
 -- Insert sample orders data
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('subquery_admin', $$
 	INSERT INTO subquery_test.orders VALUES
 	(1, 100, 'O', 1000.00, '1993-07-15', '1-URGENT', 'Clerk#000000001', 0, 'order1'),
 	(2, 101, 'O', 2000.00, '1993-07-20', '2-HIGH', 'Clerk#000000002', 0, 'order2'),
@@ -37,7 +40,7 @@ SELECT clickhouse_raw_query($$
 $$);
 
 -- Insert sample lineitem data (l_commitdate < l_receiptdate for some items)
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('subquery_admin', $$
 	INSERT INTO subquery_test.lineitem VALUES
 	(1, 10, 1, 1, 10.00, 100.00, 0.10, 0.05, 'N', 'O', '1993-07-20', '1993-07-15', '1993-07-25', 'DELIVER IN PERSON', 'TRUCK', 'item1'),
 	(2, 20, 2, 1, 20.00, 200.00, 0.10, 0.05, 'N', 'O', '1993-07-25', '1993-07-20', '1993-07-30', 'DELIVER IN PERSON', 'AIR', 'item2'),
@@ -110,6 +113,6 @@ WHERE EXISTS (SELECT 1 FROM lineitem WHERE l_orderkey = o_orderkey)
 ORDER BY o_orderkey;
 
 -- Cleanup
-SELECT clickhouse_raw_query('DROP DATABASE subquery_test');
+CALL clickhouse_perform('subquery_admin', 'DROP DATABASE subquery_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER subquery_loopback;
 DROP SERVER subquery_loopback CASCADE;

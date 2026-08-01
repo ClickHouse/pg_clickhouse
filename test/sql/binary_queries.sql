@@ -5,17 +5,20 @@ CREATE SERVER binary_queries_loopback2 FOREIGN DATA WRAPPER clickhouse_fdw OPTIO
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback;
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback2;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS binary_queries_test');
-SELECT clickhouse_raw_query('CREATE DATABASE binary_queries_test');
-SELECT clickhouse_raw_query('CREATE TABLE binary_queries_test.t1
+CREATE SERVER binary_queries_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_queries_admin;
+
+CALL clickhouse_perform('binary_queries_admin', 'DROP DATABASE IF EXISTS binary_queries_test');
+CALL clickhouse_perform('binary_queries_admin', 'CREATE DATABASE binary_queries_test');
+CALL clickhouse_perform('binary_queries_admin', 'CREATE TABLE binary_queries_test.t1
 	(c1 Int, c2 Int, c3 String, c4 Date, c5 Date, c6 String, c7 String, c8 String)
 	ENGINE = MergeTree PARTITION BY c4 ORDER BY (c1);
 ');
-SELECT clickhouse_raw_query('CREATE TABLE binary_queries_test.t2 (c1 Int, c2 String)
+CALL clickhouse_perform('binary_queries_admin', 'CREATE TABLE binary_queries_test.t2 (c1 Int, c2 String)
 	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
-SELECT clickhouse_raw_query('CREATE TABLE binary_queries_test.t3 (c1 Int, c3 String)
+CALL clickhouse_perform('binary_queries_admin', 'CREATE TABLE binary_queries_test.t3 (c1 Int, c3 String)
 	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
-SELECT clickhouse_raw_query('CREATE TABLE binary_queries_test.t4 (c1 Int, c2 Int, c3 String)
+CALL clickhouse_perform('binary_queries_admin', 'CREATE TABLE binary_queries_test.t4 (c1 Int, c2 Int, c3 String)
 	ENGINE = MergeTree PARTITION BY c1 % 10000 ORDER BY (c1);');
 
 CREATE SCHEMA binary_queries_test;
@@ -58,7 +61,7 @@ CREATE FOREIGN TABLE ft6 (
 	c3 text
 ) SERVER binary_queries_loopback2 OPTIONS (table_name 't4');
 
-select clickhouse_raw_query($$
+CALL clickhouse_perform('binary_queries_admin', $$
     INSERT INTO binary_queries_test.t1
         SELECT number,
                number % 10,
@@ -70,13 +73,13 @@ select clickhouse_raw_query($$
                'foo'
         FROM numbers(1, 110);$$);
 
-select clickhouse_raw_query($$
+CALL clickhouse_perform('binary_queries_admin', $$
     INSERT INTO binary_queries_test.t2
         SELECT number,
                concat('AAA', toString(number))
         FROM numbers(1, 100);$$);
 
-select clickhouse_raw_query($$
+CALL clickhouse_perform('binary_queries_admin', $$
     INSERT INTO binary_queries_test.t4
         SELECT number,
                number + 1,
@@ -218,7 +221,7 @@ WHERE t1.c1 < 4
 GROUP BY t4.c1
 ORDER BY t4.c1;
 
-SELECT clickhouse_raw_query('DROP DATABASE binary_queries_test');
+CALL clickhouse_perform('binary_queries_admin', 'DROP DATABASE binary_queries_test');
 
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback2;
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback;

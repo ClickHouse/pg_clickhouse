@@ -2,53 +2,56 @@ SET datestyle = 'ISO';
 CREATE SERVER binary_inserts_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'binary_inserts_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 
-SELECT clickhouse_raw_query('drop database if exists binary_inserts_test');
-SELECT clickhouse_raw_query('create database binary_inserts_test');
-SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.ints (
+CREATE SERVER binary_inserts_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_inserts_admin;
+
+CALL clickhouse_perform('binary_inserts_admin', 'drop database if exists binary_inserts_test');
+CALL clickhouse_perform('binary_inserts_admin', 'create database binary_inserts_test');
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.ints (
     c1 Int8, c2 Int16, c3 Int32, c4 Int64
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
 
-SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.uints (
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.uints (
     c1 UInt8, c2 UInt16, c3 UInt32, c4 UInt64, c5 Bool
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
 
-SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.floats (
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.floats (
     c1 Float32, c2 Float64
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1) SETTINGS allow_floating_point_partition_key=1;
 ');
 
-SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.null_ints (
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.null_ints (
     c1 Int8, c2 Nullable(Int32)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
 
-SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.complex (
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.complex (
     c1 Int32, c2 Date, c3 DateTime, c4 String, c5 FixedString(10), c6 LowCardinality(String), c7 Date32, c8 DateTime64(3)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
 
-SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.arrays (
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.arrays (
     c1 Int32, c2 Array(Int32), c3 Array(String)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
 
-SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.nested_arrays (
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.nested_arrays (
     c1 Int32, c2 Array(Array(Int32)), c3 Array(Array(String))
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
 
-SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.addr (
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.addr (
     c1 UUID, c2 IPv4, c3 IPv6
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
 ');
 
-SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.bytes (
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.bytes (
 	c1 Int8, c2 String, c3 FixedString(16)
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);');
 
-SELECT clickhouse_raw_query('CREATE TABLE binary_inserts_test.not_nullable (
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.not_nullable (
 	c1 Int8, c2 Nullable(Enum(''x''=1)), c3 Nullable(Enum16(''x''=1)), c4 LowCardinality(Nullable(String))
 ) ENGINE = MergeTree ORDER BY (c1);');
 
@@ -148,7 +151,7 @@ SELECT * FROM bbytes ORDER BY c1;
 -- Nul bytes should truncate TEXT columns.
 SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM bytes ORDER BY c1;
 
-SELECT clickhouse_raw_query('TRUNCATE binary_inserts_test.bytes');
+CALL clickhouse_perform('binary_inserts_admin', 'TRUNCATE binary_inserts_test.bytes');
 
 -- Should fail.
 INSERT INTO bytes
@@ -157,7 +160,7 @@ SELECT n, sha224(bytea('val'||n)), decode(md5('int'||n), 'hex')
 
 -- Remove FixedString length.
 ALTER FOREIGN TABLE bytes ALTER c3 TYPE TEXT;
-SELECT clickhouse_raw_query('ALTER TABLE binary_inserts_test.bytes MODIFY COLUMN c3 String');
+CALL clickhouse_perform('binary_inserts_admin', 'ALTER TABLE binary_inserts_test.bytes MODIFY COLUMN c3 String');
 
 -- Should succeed.
 INSERT INTO bytes
@@ -168,7 +171,7 @@ SELECT * FROM bbytes ORDER BY c1;
 SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM bytes ORDER BY c1;
 
 -- Test NULL values.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('binary_inserts_admin', $$
 	CREATE TABLE binary_inserts_test.null_vals (
 		c1 UInt8,
 		-- INT2OID
@@ -212,7 +215,7 @@ INSERT INTO null_vals VALUES(
 SELECT * FROM null_vals;
 
 -- Test default values.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('binary_inserts_admin', $$
 	CREATE TABLE binary_inserts_test.default_vals (
 		c1 UInt8,
 		-- INT2OID
@@ -277,5 +280,5 @@ COPY null_ints (c1, c2) FROM stdin;
 SELECT * FROM null_ints WHERE c1 >= 20 ORDER BY c1;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
-SELECT clickhouse_raw_query('DROP DATABASE binary_inserts_test');
+CALL clickhouse_perform('binary_inserts_admin', 'DROP DATABASE binary_inserts_test');
 DROP SERVER binary_inserts_loopback CASCADE;

@@ -477,12 +477,12 @@ Here's an excerpt from the CSV file you're using in table format. The
   |          4 | Manhattan     | Alphabet City           | Yellow Zone  |
   |          5 | Staten Island | Arden Heights           | Boro Zone    |
 
-1.  Still in Postgres, use the `clickhouse_raw_query` function to create a
+1.  Still in Postgres, use the `clickhouse_perform` procedure to create a
     ClickHouse [dictionary] named `taxi_zone_dictionary` and populate the
     dictionary from the CSV file in S3:
 
     ```sql
-    SELECT clickhouse_raw_query($$
+    CALL clickhouse_perform('taxi_srv', $$
         CREATE DICTIONARY taxi.taxi_zone_dictionary (
             LocationID Int64 DEFAULT 0,
             Borough String,
@@ -493,7 +493,7 @@ Here's an excerpt from the CSV file you're using in table format. The
         SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
         LIFETIME(MIN 0 MAX 0)
         LAYOUT(HASHED_ARRAY())
-    $$, 'host=localhost dbname=taxi');
+    $$);
     ```
 
     > [!NOTE]

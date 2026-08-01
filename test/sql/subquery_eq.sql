@@ -7,7 +7,10 @@ SET datestyle = 'ISO';
 -- SubPlan pushdown is gated on ClickHouse 25.8+ (older analyzers reject the
 -- correlated SQL we generate), so the whole test aborts on older servers
 -- rather than carry version-specific expected output.
-SELECT clickhouse_raw_query($$SELECT version()$$) AS ch_version \gset
+CREATE SERVER sub_eq_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER sub_eq_admin;
+
+SELECT clickhouse_server_version('sub_eq_admin') AS ch_version \gset
 SELECT (split_part(:'ch_version', '.', 1)::int,
         split_part(:'ch_version', '.', 2)::int) < (25, 8) AS no_ch258 \gset
 \if :no_ch258
@@ -19,47 +22,47 @@ CREATE SERVER sub_eq_svr FOREIGN DATA WRAPPER clickhouse_fdw
        OPTIONS(dbname 'sub_eq_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER sub_eq_svr;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS sub_eq_test');
-SELECT clickhouse_raw_query('CREATE DATABASE sub_eq_test');
+CALL clickhouse_perform('sub_eq_admin', 'DROP DATABASE IF EXISTS sub_eq_test');
+CALL clickhouse_perform('sub_eq_admin', 'CREATE DATABASE sub_eq_test');
 
-SELECT clickhouse_raw_query($$
-    CREATE TABLE region (
+CALL clickhouse_perform('sub_eq_admin', $$
+    CREATE TABLE sub_eq_test.region (
         r_regionkey  Int32,
         r_name       String,
         r_comment    String)
     ENGINE = MergeTree ORDER BY (r_regionkey);
-$$, 'dbname=sub_eq_test');
+$$);
 
-SELECT clickhouse_raw_query($$
-    INSERT INTO region
+CALL clickhouse_perform('sub_eq_admin', $$
+    INSERT INTO sub_eq_test.region
     VALUES (0,'AFRICA','lar deposits.')
          , (1,'AMERICA','hs use ironic, even requests. s')
          , (2,'ASIA','ges. thinly even pinto beans ca')
          , (3,'EUROPE','ly final courts cajole furiously final excuse')
          , (4,'MIDDLE EAST','quickly special accounts cajole carefully blithely close requests.')
-$$, 'dbname=sub_eq_test');
+$$);
 
 -- Create and load TPC-H Tables.
-SELECT clickhouse_raw_query($$
-    CREATE TABLE nation (
+CALL clickhouse_perform('sub_eq_admin', $$
+    CREATE TABLE sub_eq_test.nation (
         n_nationkey  Int32,
         n_name       String,
         n_regionkey  Int32,
         n_comment    String)
     ENGINE = MergeTree ORDER BY (n_nationkey);
-$$, 'dbname=sub_eq_test');
+$$);
 
-SELECT clickhouse_raw_query($$
-    INSERT INTO nation
+CALL clickhouse_perform('sub_eq_admin', $$
+    INSERT INTO sub_eq_test.nation
     VALUES (6,'FRANCE',3,'ruefully final requests. regular, ironi')
          , (7,'GERMANY',3,'platelets.')
          , (19,'ROMANIA',3,'asymptotes are about the furious multipliers.')
          , (22,'RUSSIA',3,'requests against the platelets.')
          , (23,'UNITED KINGDOM',3,'means boost carefully special requests.')
-$$, 'dbname=sub_eq_test');
+$$);
 
-SELECT clickhouse_raw_query($$
-    CREATE TABLE part (
+CALL clickhouse_perform('sub_eq_admin', $$
+    CREATE TABLE sub_eq_test.part (
         p_partkey     Int32,
         p_name        String,
         p_mfgr        String,
@@ -70,10 +73,10 @@ SELECT clickhouse_raw_query($$
         p_retailprice Decimal(15,2),
         p_comment     String)
     ENGINE = MergeTree ORDER BY (p_partkey);
-$$, 'dbname=sub_eq_test');
+$$);
 
-SELECT clickhouse_raw_query($$
-    INSERT INTO part
+CALL clickhouse_perform('sub_eq_admin', $$
+    INSERT INTO sub_eq_test.part
     VALUES (20428,'chocolate ivory lace aquamarine spring','Manufacturer#4','Brand#43','LARGE BRUSHED BRASS',15,'MED BOX',1348.42,'al foxes. irony')
          , (70284,'slate chartreuse metallic firebrick plum','Manufacturer#4','Brand#44','STANDARD PLATED BRASS',15,'MED BAG',1254.28,'s wake silently a')
          , (73936,'cyan light indian salmon goldenrod','Manufacturer#4','Brand#45','ECONOMY PLATED BRASS',15,'JUMBO DRUM',1909.93,'foxes kin')
@@ -82,10 +85,10 @@ SELECT clickhouse_raw_query($$
          , (109220,'violet snow steel purple turquoise','Manufacturer#4','Brand#41','ECONOMY BURNISHED BRASS',15,'WRAP PACK',1229.22,'cites')
          , (170979,'lawn blue steel burnished cream','Manufacturer#4','Brand#45','PROMO BRUSHED BRASS',15,'MED BAG',2049.97,'are busily')
          , (186694,'chocolate sandy seashell indian forest','Manufacturer#4','Brand#45','PROMO POLISHED BRASS',15,'SM BAG',1780.69,'e the carefully re')
-$$, 'dbname=sub_eq_test');
+$$);
 
-SELECT clickhouse_raw_query($$
-    CREATE TABLE supplier (
+CALL clickhouse_perform('sub_eq_admin', $$
+    CREATE TABLE sub_eq_test.supplier (
         s_suppkey     Int32,
         s_name        String,
         s_address     String,
@@ -94,10 +97,10 @@ SELECT clickhouse_raw_query($$
         s_acctbal     Decimal(15,2),
         s_comment     String)
     ENGINE = MergeTree ORDER BY (s_suppkey);
-$$, 'dbname=sub_eq_test');
+$$);
 
-SELECT clickhouse_raw_query($$
-    INSERT INTO supplier
+CALL clickhouse_perform('sub_eq_admin', $$
+    INSERT INTO sub_eq_test.supplier
     VALUES (1731,'Supplier#000001731','Dqy8LQtY5i8GygrdOC1lt,OVsIgrGoL8Z3PMs',7,'17-115-638-8685',686.5,'lar requests. final, final platelets around the carefully even deposit')
          , (2931,'Supplier#000002931','aUivhoesqMqv0FmJcPBMxBSl8DJvXBGj',7,'17-905-318-3455',555.18,'t the fluffily ironic packages wake furiously')
          , (3113,'Supplier#000003113','HjX8M2Bjlz7pAcLzpyKT9 wNb',7,'17-164-471-2650',-604.88,'he ruthlessly final requests. express requests cajole quick')
@@ -105,20 +108,20 @@ SELECT clickhouse_raw_query($$
          , (3937,'Supplier#000003937','kqEOwdVW,qJsJdcv6PwDJ6ii14mugDK3OgZN ngI',7,'17-621-453-7063',-63.88,'y pending asymptotes. foxes are. deposits sleep quickly b')
          , (5299,'Supplier#000005299','m7Y2G8Pg,kl5AoMPK',7,'17-904-495-9057',-752.27,'. carefully close foxes x-ray. carefully even package')
          , (9733,'Supplier#000009733','XIkUGlZFKq4IiZsAIRxFwzVBw7D',7,'17-789-292-3060',-271.69,'ions. boldly regular requests play furiously. furiously busy')
-$$, 'dbname=sub_eq_test');
+$$);
 
-SELECT clickhouse_raw_query($$
-    CREATE TABLE partsupp (
+CALL clickhouse_perform('sub_eq_admin', $$
+    CREATE TABLE sub_eq_test.partsupp (
         ps_partkey     Int32,
         ps_suppkey     Int32,
         ps_availqty    Int32,
         ps_supplycost  Decimal(15,2),
         ps_comment     String)
     ENGINE = MergeTree ORDER BY (ps_partkey, ps_suppkey);
-$$, 'dbname=sub_eq_test');
+$$);
 
-SELECT clickhouse_raw_query($$
-    INSERT INTO partsupp
+CALL clickhouse_perform('sub_eq_admin', $$
+    INSERT INTO sub_eq_test.partsupp
     VALUES (20428,429,5391,624.88,'among the furiously pending deposits. slyly even instruction')
          , (20428,2931,5672,97.08,'lly final ideas. dolphins are slyly.')
          , (20428,5433,990,457,'ly. carefully regular packages wake never.')
@@ -151,7 +154,7 @@ SELECT clickhouse_raw_query($$
          , (186694,4249,9871,999.65,'all asymptotes cajole furiously ironic, pending dependencies.')
          , (186694,6695,9308,448.14,'serve closely above the even deposits.')
          , (186694,9213,154,593.87,'forges hang furiously pending deposits.')
-$$, 'dbname=sub_eq_test');
+$$);
 
 -- Import the foreign tables.
 CREATE SCHEMA sub_eq_test;
@@ -210,6 +213,6 @@ EXPLAIN (VERBOSE, COSTS OFF) :query2
 :query2
 
 -- Cleanup
-SELECT clickhouse_raw_query('DROP DATABASE sub_eq_test');
+CALL clickhouse_perform('sub_eq_admin', 'DROP DATABASE sub_eq_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER sub_eq_svr;
 DROP SERVER sub_eq_svr CASCADE;

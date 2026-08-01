@@ -9,10 +9,13 @@ CREATE SERVER ilike_regex_http_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'ilike_regex_test', driver 'http');
 CREATE USER MAPPING FOR CURRENT_USER SERVER ilike_regex_http_svr;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS ilike_regex_test');
-SELECT clickhouse_raw_query('CREATE DATABASE ilike_regex_test');
+CREATE SERVER ilike_regex_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER ilike_regex_admin;
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('ilike_regex_admin', 'DROP DATABASE IF EXISTS ilike_regex_test');
+CALL clickhouse_perform('ilike_regex_admin', 'CREATE DATABASE ilike_regex_test');
+
+CALL clickhouse_perform('ilike_regex_admin', $$
     CREATE TABLE ilike_regex_test.events (
         id     Int32,
         name   String,
@@ -20,7 +23,7 @@ SELECT clickhouse_raw_query($$
     ) ENGINE = MergeTree ORDER BY id
 $$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('ilike_regex_admin', $$
     INSERT INTO ilike_regex_test.events VALUES
         (1, 'page_view',   '/users/profile'),
         (2, 'Page_View',   '/users/settings'),
@@ -157,7 +160,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ilike_regex_bin.events WHERE name ~* 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ilike_regex_bin.events WHERE name !~* '^page' ORDER BY id;
 
 -- Cleanup
-SELECT clickhouse_raw_query('DROP DATABASE ilike_regex_test');
+CALL clickhouse_perform('ilike_regex_admin', 'DROP DATABASE ilike_regex_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER ilike_regex_bin_svr;
 DROP USER MAPPING FOR CURRENT_USER SERVER ilike_regex_http_svr;
 DROP SERVER ilike_regex_bin_svr CASCADE;

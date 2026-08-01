@@ -1,19 +1,11 @@
 CREATE SERVER engine_args_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'engine_args_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER engine_args_svr;
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS engine_args_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query('CREATE DATABASE engine_args_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query($$
+CREATE SERVER engine_args_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER engine_args_admin;
+CALL clickhouse_perform('engine_args_admin', 'DROP DATABASE IF EXISTS engine_args_test');
+CALL clickhouse_perform('engine_args_admin', 'CREATE DATABASE engine_args_test');
+CALL clickhouse_perform('engine_args_admin', $$
 	CREATE TABLE engine_args_test.innocuous (
         id UInt32,
         value String
@@ -21,40 +13,20 @@ SELECT clickhouse_raw_query($$
 	ENGINE = MergeTree()
 	ORDER BY id
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('engine_args_admin', $$
     INSERT INTO engine_args_test.innocuous
     VALUES (1, 'public'), (2, 'data'), (3, 'here')
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('engine_args_admin', $$
     CREATE TABLE IF NOT EXISTS engine_args_test.sensitive (
         id UInt32,
         password String
     ) ENGINE=MergeTree() ORDER BY id;
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('engine_args_admin', $$
     INSERT INTO engine_args_test.sensitive
     VALUES (1, 'admin123'), (2, 'password!')
 $$);
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
 CREATE SCHEMA engine_args_test;
 -- Should fail on invalid column name (also attempted SQL injection).
 CREATE FOREIGN TABLE engine_args_test.dr_evil (id INT) SERVER engine_args_svr
@@ -297,12 +269,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(id) FROM engine_args_test.name_var9;
 (4 rows)
 
 DROP USER MAPPING FOR CURRENT_USER SERVER engine_args_svr;
-SELECT clickhouse_raw_query('DROP DATABASE engine_args_test');
- clickhouse_raw_query 
-----------------------
- 
-(1 row)
-
+CALL clickhouse_perform('engine_args_admin', 'DROP DATABASE engine_args_test');
 DROP SERVER engine_args_svr CASCADE;
 NOTICE:  drop cascades to 17 other objects
 DETAIL:  drop cascades to foreign table engine_args_test.dr_evil

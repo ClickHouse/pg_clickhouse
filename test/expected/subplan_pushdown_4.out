@@ -10,7 +10,9 @@
 -- correlated / NOT IN SQL we generate), so the whole test aborts on older
 -- servers rather than carry version-specific expected output.
 SET datestyle = 'ISO';
-SELECT clickhouse_raw_query($$SELECT version()$$) AS ch_version \gset
+CREATE SERVER subplan_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER subplan_admin;
+SELECT clickhouse_server_version('subplan_admin') AS ch_version \gset
 SELECT (split_part(:'ch_version', '.', 1)::int,
         split_part(:'ch_version', '.', 2)::int) < (25, 8) AS no_ch258 \gset
 \if :no_ch258

@@ -11,7 +11,10 @@
 -- servers rather than carry version-specific expected output.
 SET datestyle = 'ISO';
 
-SELECT clickhouse_raw_query($$SELECT version()$$) AS ch_version \gset
+CREATE SERVER subplan_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER subplan_admin;
+
+SELECT clickhouse_server_version('subplan_admin') AS ch_version \gset
 SELECT (split_part(:'ch_version', '.', 1)::int,
         split_part(:'ch_version', '.', 2)::int) < (25, 8) AS no_ch258 \gset
 \if :no_ch258
@@ -23,17 +26,17 @@ CREATE SERVER subplan_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'subplan_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER subplan_svr;
 
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS subplan_test');
-SELECT clickhouse_raw_query('CREATE DATABASE subplan_test');
+CALL clickhouse_perform('subplan_admin', 'DROP DATABASE IF EXISTS subplan_test');
+CALL clickhouse_perform('subplan_admin', 'CREATE DATABASE subplan_test');
 
-SELECT clickhouse_raw_query('CREATE TABLE subplan_test.items
+CALL clickhouse_perform('subplan_admin', 'CREATE TABLE subplan_test.items
     (item_id Int32, grp Int32, price Decimal(15,2), qty Int32)
     ENGINE = MergeTree ORDER BY item_id');
-SELECT clickhouse_raw_query('CREATE TABLE subplan_test.sales
+CALL clickhouse_perform('subplan_admin', 'CREATE TABLE subplan_test.sales
     (sale_id Int32, item_id Int32, amount Decimal(15,2), region String)
     ENGINE = MergeTree ORDER BY sale_id');
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('subplan_admin', $$
     INSERT INTO subplan_test.items VALUES
     (1, 1, 10.00, 5), (2, 1, 20.00, 3), (3, 1, 30.00, 8),
     (4, 2, 15.00, 2), (5, 2, 25.00, 7), (6, 3, 50.00, 1)
@@ -43,7 +46,7 @@ $$);
 -- 1.5x threshold is 250.00 and sale 8 (250.00) does NOT qualify; under a
 -- capture bug the threshold collapses to the global 1.5*avg = 241.88 and
 -- sale 8 WOULD qualify.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('subplan_admin', $$
     INSERT INTO subplan_test.sales VALUES
     (1, 1, 100.00, 'east'), (2, 1, 150.00, 'west'),
     (3, 2, 200.00, 'east'), (4, 3, 120.00, 'east'),
@@ -203,9 +206,9 @@ DROP ROLE regress_subplan_nomap;
 --     and a NOT EXISTS poison check for NULLs in the set — each
 --     emitted only when the corresponding proof fails.
 -- ============================================================
-SELECT clickhouse_raw_query('CREATE TABLE subplan_test.maybe_null
+CALL clickhouse_perform('subplan_admin', 'CREATE TABLE subplan_test.maybe_null
     (id Int32, val Nullable(Int32)) ENGINE = MergeTree ORDER BY id');
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('subplan_admin', $$
     INSERT INTO subplan_test.maybe_null VALUES (1, 1), (2, 2), (3, NULL), (4, 7)
 $$);
 CREATE FOREIGN TABLE maybe_null (id int NOT NULL, val int)
@@ -264,4 +267,4 @@ SET SESSION search_path = public;
 DROP SCHEMA subplan_test CASCADE;
 DROP USER MAPPING FOR CURRENT_USER SERVER subplan_svr;
 DROP SERVER subplan_svr CASCADE;
-SELECT clickhouse_raw_query('DROP DATABASE subplan_test');
+CALL clickhouse_perform('subplan_admin', 'DROP DATABASE subplan_test');

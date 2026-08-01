@@ -6,10 +6,13 @@ CREATE SERVER pwagg_svr FOREIGN DATA WRAPPER clickhouse_fdw
 CREATE USER MAPPING FOR CURRENT_USER SERVER pwagg_svr;
 
 -- ClickHouse holds cold data
-SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS pwagg_test');
-SELECT clickhouse_raw_query('CREATE DATABASE pwagg_test');
-SELECT clickhouse_raw_query('CREATE TABLE pwagg_test.events (id Int32, ts Date, val Int32, amt Float64) ENGINE = MergeTree ORDER BY ts');
-SELECT clickhouse_raw_query($$INSERT INTO pwagg_test.events VALUES (1,'2023-01-15',10,10),(2,'2023-02-10',20,20),(3,'2023-03-20',30,30),(4,'2023-04-05',40,40)$$);
+CREATE SERVER pwagg_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER pwagg_admin;
+
+CALL clickhouse_perform('pwagg_admin', 'DROP DATABASE IF EXISTS pwagg_test');
+CALL clickhouse_perform('pwagg_admin', 'CREATE DATABASE pwagg_test');
+CALL clickhouse_perform('pwagg_admin', 'CREATE TABLE pwagg_test.events (id Int32, ts Date, val Int32, amt Float64) ENGINE = MergeTree ORDER BY ts');
+CALL clickhouse_perform('pwagg_admin', $$INSERT INTO pwagg_test.events VALUES (1,'2023-01-15',10,10),(2,'2023-02-10',20,20),(3,'2023-03-20',30,30),(4,'2023-04-05',40,40)$$);
 
 -- Partitioned table whose cold 2023 range lives on ClickHouse as a foreign
 -- partition while the hot 2024 range stays local: the layout a consumer builds
@@ -51,5 +54,5 @@ RESET enable_partitionwise_aggregate;
 
 DROP TABLE events;
 DROP USER MAPPING FOR CURRENT_USER SERVER pwagg_svr;
-SELECT clickhouse_raw_query('DROP DATABASE pwagg_test');
+CALL clickhouse_perform('pwagg_admin', 'DROP DATABASE pwagg_test');
 DROP SERVER pwagg_svr CASCADE;
