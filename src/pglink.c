@@ -1157,12 +1157,12 @@ build_conversion(ch_cursor* cursor, const ChFdwScanRowContext* ctx) {
     cursor->conversion_states = palloc0(ncols * sizeof(void*));
     cursor->fill_dest         = palloc0(ncols * sizeof(int));
     foreach (lc, ctx->retrieved_attrs) {
-        int attnum = lfirst_int(lc);
+        int attnum            = lfirst_int(lc);
+        Form_pg_attribute att = TupleDescAttr(ctx->tupdesc, attnum - 1);
 
-        cursor->fill_dest[j]         = attnum - 1;
-        cursor->conversion_states[j] = pgch_reader_convert_init(
-            state, j, TupleDescAttr(ctx->tupdesc, attnum - 1)->atttypid
-        );
+        cursor->fill_dest[j] = attnum - 1;
+        cursor->conversion_states[j] =
+            pgch_reader_convert_init(state, j, att->atttypid, att->atttypmod);
         j++;
     }
 

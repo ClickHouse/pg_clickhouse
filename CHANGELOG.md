@@ -112,6 +112,8 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed an error when incorrectly selecting an invalid relation OID when
     selecting the user to execute the remote query. Thanks to Kostia R for the
     PR ([#319])!
+*   Fixed omission of typmod behavior in binary driver causing incorrect values.
+    For example, padding will be preserved in char(x) columns now ([#330]).
 
 ### 📚 Documentation
 
@@ -168,6 +170,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#319 Fix foreign scan RTE selection"
   [#326]: https://github.com/ClickHouse/pg_clickhouse/pull/326
     "ClickHouse/pg_clickhouse#326 pg-clickhouse-c"
+  [#330]: https://github.com/ClickHouse/pg_clickhouse/pull/330
+    "ClickHouse/pg_clickhouse#330 preserve typmod in binary driver"
 
 ## [v0.3.2] — 2026-06-16
 
