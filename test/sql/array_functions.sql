@@ -17,7 +17,6 @@ SELECT clickhouse_raw_query($$
         (2, [40,50],    ['d','e'], 'x//z'),
         (3, [60],       ['f'], 'Edit -> Insert -> Line Break')
 $$);
-
 CREATE SCHEMA arr_test;
 IMPORT FOREIGN SCHEMA arr_test FROM SERVER arr_svr INTO arr_test;
 SET search_path = arr_test, public;
@@ -65,10 +64,61 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t1 WHERE cardinality(vals) = 3;
 SELECT * FROM t1 WHERE cardinality(vals) = 3;
 
--- array_position → indexOf
+-- array_position → nullIf(indexOf, 0)
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t1 WHERE array_position(vals, 20) = 2;
 SELECT * FROM t1 WHERE array_position(vals, 20) = 2;
+
+-- array_position returns NULL rather than zero when the value is absent.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE array_position(vals, 999) IS NULL ORDER BY id;
+SELECT id FROM t1 WHERE array_position(vals, 999) IS NULL ORDER BY id;
+-- Returns no records because result is `NULL` not `0`.
+SELECT id FROM t1 WHERE array_position(vals, 999) = 0 ORDER BY id;
+
+-- Third argument constant > 0 should push down arraySlice().
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE array_position(vals, 20, 2) = 2;
+SELECT * FROM t1 WHERE array_position(vals, 20, 2) = 2;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1
+WHERE array_position(vals, 20, 2) * 10 = 20
+ORDER BY id;
+SELECT id FROM t1
+WHERE array_position(vals, 20, 2) * 10 = 20
+ORDER BY id;
+
+-- Third argument should push down arraySlice(), not found should return NULL.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1
+WHERE array_position(vals, 999, 2) IS NULL
+ORDER BY id;
+SELECT id FROM t1
+WHERE array_position(vals, 999, 2) IS NULL
+ORDER BY id;
+
+-- Should be safe to start search outside array bounds.
+SELECT id FROM t1
+WHERE array_position(vals, 20, 100) IS NULL
+ORDER BY id;
+
+-- Should not find 10 in index 1 because we're starting from 2.
+SELECT id FROM t1
+WHERE array_position(vals, 10, 2) IS NULL
+ORDER BY id;
+
+-- Third argument < 1 should prevent pushdown.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1
+WHERE array_position(vals, 20, 0) = 2
+ORDER BY id;
+
+-- Non-constant third argument should not push down.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1
+WHERE array_position(vals, 20, id) IS NOT NULL
+ORDER BY id;
 
 -- array_length → length (drops dimension arg)
 EXPLAIN (VERBOSE, COSTS OFF)

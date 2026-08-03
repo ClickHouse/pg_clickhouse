@@ -115,14 +115,14 @@ SELECT * FROM t1 WHERE cardinality(vals) = 3;
   1 | {10,20,30} | {a,b,c} | aa-bb-cc
 (1 row)
 
--- array_position → indexOf
+-- array_position → nullIf(indexOf, 0)
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t1 WHERE array_position(vals, 20) = 2;
-                                         QUERY PLAN                                         
---------------------------------------------------------------------------------------------
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
  Foreign Scan on arr_test.t1
    Output: id, vals, tags, list
-   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((indexOf(vals, 20) = 2))
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE (((nullIf(indexOf(vals, 20), 0)) = 2))
 (3 rows)
 
 SELECT * FROM t1 WHERE array_position(vals, 20) = 2;
@@ -130,6 +130,135 @@ SELECT * FROM t1 WHERE array_position(vals, 20) = 2;
 ----+------------+---------+----------
   1 | {10,20,30} | {a,b,c} | aa-bb-cc
 (1 row)
+
+-- array_position returns NULL rather than zero when the value is absent.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE array_position(vals, 999) IS NULL ORDER BY id;
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.t1 WHERE (((nullIf(indexOf(vals, 999), 0)) IS NULL)) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM t1 WHERE array_position(vals, 999) IS NULL ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+-- Returns no records because result is `NULL` not `0`.
+SELECT id FROM t1 WHERE array_position(vals, 999) = 0 ORDER BY id;
+ id 
+----
+(0 rows)
+
+-- Third argument constant > 0 should push down arraySlice().
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 WHERE array_position(vals, 20, 2) = 2;
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id, vals, tags, list
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE (((nullIf(indexOf(arraySlice(vals, 2), 20), 0) + (2 - 1)) = 2))
+(3 rows)
+
+SELECT * FROM t1 WHERE array_position(vals, 20, 2) = 2;
+ id |    vals    |  tags   |   list   
+----+------------+---------+----------
+  1 | {10,20,30} | {a,b,c} | aa-bb-cc
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1
+WHERE array_position(vals, 20, 2) * 10 = 20
+ORDER BY id;
+                                                                    QUERY PLAN                                                                     
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.t1 WHERE ((((nullIf(indexOf(arraySlice(vals, 2), 20), 0) + (2 - 1)) * 10) = 20)) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM t1
+WHERE array_position(vals, 20, 2) * 10 = 20
+ORDER BY id;
+ id 
+----
+  1
+(1 row)
+
+-- Third argument should push down arraySlice(), not found should return NULL.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1
+WHERE array_position(vals, 999, 2) IS NULL
+ORDER BY id;
+                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.t1 WHERE (((nullIf(indexOf(arraySlice(vals, 2), 999), 0) + (2 - 1)) IS NULL)) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM t1
+WHERE array_position(vals, 999, 2) IS NULL
+ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+-- Should be safe to start search outside array bounds.
+SELECT id FROM t1
+WHERE array_position(vals, 20, 100) IS NULL
+ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+-- Should not find 10 in index 1 because we're starting from 2.
+SELECT id FROM t1
+WHERE array_position(vals, 10, 2) IS NULL
+ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+-- Third argument < 1 should prevent pushdown.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1
+WHERE array_position(vals, 20, 0) = 2
+ORDER BY id;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Filter: (array_position(t1.vals, 20, 0) = 2)
+   Remote SQL: SELECT id, vals FROM arr_test.t1 ORDER BY id ASC NULLS LAST
+(4 rows)
+
+-- Non-constant third argument should not push down.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1
+WHERE array_position(vals, 20, id) IS NOT NULL
+ORDER BY id;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Filter: (array_position(t1.vals, 20, t1.id) IS NOT NULL)
+   Remote SQL: SELECT id, vals FROM arr_test.t1 ORDER BY id ASC NULLS LAST
+(4 rows)
 
 -- array_length → length (drops dimension arg)
 EXPLAIN (VERBOSE, COSTS OFF)

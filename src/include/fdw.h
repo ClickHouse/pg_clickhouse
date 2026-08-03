@@ -426,6 +426,7 @@ typedef enum {
     CF_CURRENT_SCHEMA,         /* CF_CURRENT_SCHEMA → string literal */
     CF_CLOCK_TIMESTAMP,        /* clock_timestamp → nowInBlock64(6, $TZ) */
     CF_ARRAY_LENGTH,           /* array_length → length, drop dim arg */
+    CF_ARRAY_POSITION,         /* array_position → nullIf(indexOf(), 0) */
     CF_ARRAY_PREPEND,          /* array_prepend → arrayPushFront, swap args */
     CF_STRING_TO_ARRAY,        /* string_to_array → splitByString, swap
                                 * args */

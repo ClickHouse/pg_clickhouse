@@ -33,6 +33,7 @@
 #define F_TIMEZONE_TEXT_TIMESTAMPTZ F_TIMESTAMPTZ_ZONE
 #define F_DATE_PART_TEXT_TIMESTAMPTZ F_TIMESTAMPTZ_PART
 #define F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE F_ARRAY_POSITION
+#define F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE_INT4 3278
 #define F_BTRIM_TEXT_TEXT F_BTRIM
 #define F_BTRIM_TEXT F_BTRIM1
 #define F_STRPOS 868
@@ -464,7 +465,9 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         def->ch_name = "toTimeZone";
         return true;
     case F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE:
-        def->ch_name = "indexOf";
+    case F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE_INT4:
+        def->cf_type = CF_ARRAY_POSITION;
+        def->ch_name = "\1";
         return true;
     case F_BTRIM_TEXT_TEXT:
     case F_BTRIM_TEXT:

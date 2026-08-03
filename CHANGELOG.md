@@ -84,6 +84,10 @@ All notable changes to this project will be documented in this file. It uses the
 *   Coerce array elements in binary driver. `Array(Int32)` to `bigint[]`, or
     `quantilesExactLow()` results into `double precision[]`, no longer fails
     with `could not cast value from integer[] to bigint[]` ([#326]).
+*   Added support for the third argument to `array_position()` when it's a
+    positive constant value, pushing it down to a call to `arraySlice()` to
+    start the search from the specified index. Thanks to Minh Vu for the PR
+    ([#334])!
 
 ### 🐞 Bug Fixes
 
@@ -122,6 +126,8 @@ All notable changes to this project will be documented in this file. It uses the
     serializer previously for scalar values (now simplified), preventing
     PostgreSQL `IN` lists from producing invalid or mismatched `FixedString`
     comparisons. Thanks to @jxom for the PR (#333)!
+*   Fixed `array_position()` pushdown to return `NULL`, rather than zero, when
+    ClickHouse does not find an element. Thanks to Minh Vu for the PR ([#334])!
 
 ### 📚 Documentation
 
@@ -184,6 +190,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#331 Preserve PostgreSQL DOW semantics in pushdown"
   [#333]: https://github.com/ClickHouse/pg_clickhouse/pull/333
     "ClickHouse/pg_clickhouse#333 fix: encode bytea array literals"
+  [#334]: https://github.com/ClickHouse/pg_clickhouse/pull/334
+    "ClickHouse/pg_clickhouse#334 Preserve array_position not-found semantics"
 
 ## [v0.3.2] — 2026-06-16
 

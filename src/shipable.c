@@ -248,6 +248,25 @@ chfdw_is_shippable(
                     return false;
                 }
             } break;
+            case CF_ARRAY_POSITION: {
+                FuncExpr* func = (FuncExpr*)node;
+                List* args     = func->args;
+
+                if (list_length(args) == 2) {
+                    break;
+                }
+
+                if (list_length(args) != 3) {
+                    return false;
+                }
+                /* We allow positive third argument > 0. */
+                Expr* start = (Expr*)list_nth(args, 2);
+                if (!IsA(start, Const) || ((Const*)start)->constisnull ||
+                    DatumGetInt32(((Const*)start)->constvalue) <= 0) {
+                    return false;
+                }
+                break;
+            }
             case CF_TO_CHAR: {
                 /* format must be a constant with exact CH translation */
                 Expr* fmt = (Expr*)list_nth(((FuncExpr*)node)->args, 1);

@@ -4591,6 +4591,31 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             deparseExpr((Expr*)linitial(node->args), context);
             appendStringInfoChar(buf, ')');
             return;
+        case CF_ARRAY_POSITION:
+            appendStringInfoChar(buf, '(');
+            /* Use nullIf() to Convert CH 0 return value to NULL. */
+            appendStringInfoString(buf, "nullIf(indexOf(");
+            if (list_length(node->args) == 3) {
+                /* Use arraySlice() to start search from the specified index. */
+                appendStringInfoString(buf, "arraySlice(");
+                deparseExpr((Expr*)linitial(node->args), context);
+                appendStringInfoString(buf, ", ");
+                deparseExpr((Expr*)list_nth(node->args, 2), context);
+                appendStringInfoString(buf, "), ");
+            } else {
+                deparseExpr((Expr*)linitial(node->args), context);
+                appendStringInfoString(buf, ", ");
+            }
+            deparseExpr((Expr*)list_nth(node->args, 1), context);
+            appendStringInfoString(buf, "), 0)");
+            if (list_length(node->args) == 3) {
+                /* Restore start index to index number. */
+                appendStringInfoString(buf, " + (");
+                deparseExpr((Expr*)list_nth(node->args, 2), context);
+                appendStringInfoString(buf, " - 1)");
+            }
+            appendStringInfoChar(buf, ')');
+            return;
         case CF_TRIM_ARRAY:
             /* arrayResize(arr, length(arr) - n) */
             appendStringInfoChar(buf, '(');
