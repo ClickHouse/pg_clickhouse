@@ -171,6 +171,19 @@ SELECT * FROM ftuples ORDER BY c1;
 
 -- Bytes.
 SELECT * FROM fbytes ORDER BY c1;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT c1 FROM fbytes
+WHERE c3 IN (
+    decode('8de92ce2033cf3ca03fa8cc63e7a703f', 'hex'),
+    decode('9163c8c66d03c512404cca8549a250e7', 'hex')
+)
+ORDER BY c1;
+SELECT c1 FROM fbytes
+WHERE c3 IN (
+    decode('8de92ce2033cf3ca03fa8cc63e7a703f', 'hex'),
+    decode('9163c8c66d03c512404cca8549a250e7', 'hex')
+)
+ORDER BY c1;
 
 -- clickhouse_raw_query over the binary protocol
 SELECT clickhouse_raw_query('SELECT 1 AS a, ''x'' AS b', 'driver=binary port=9000');

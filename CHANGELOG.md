@@ -118,6 +118,10 @@ All notable changes to this project will be documented in this file. It uses the
     PR ([#319])!
 *   Fixed omission of typmod behavior in binary driver causing incorrect values.
     For example, padding will be preserved in char(x) columns now ([#330]).
+*   Encode `bytea` array elements with the ClickHouse binary-literal
+    serializer previously for scalar values (now simplified), preventing
+    PostgreSQL `IN` lists from producing invalid or mismatched `FixedString`
+    comparisons. Thanks to @jxom for the PR (#333)!
 
 ### 📚 Documentation
 
@@ -178,6 +182,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#330 preserve typmod in binary driver"
   [#331]: https://github.com/ClickHouse/pg_clickhouse/pull/331
     "ClickHouse/pg_clickhouse#331 Preserve PostgreSQL DOW semantics in pushdown"
+  [#333]: https://github.com/ClickHouse/pg_clickhouse/pull/333
+    "ClickHouse/pg_clickhouse#333 fix: encode bytea array literals"
 
 ## [v0.3.2] — 2026-06-16
 
