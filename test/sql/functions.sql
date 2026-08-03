@@ -35,6 +35,7 @@ SELECT clickhouse_raw_query('CREATE TABLE functions_test.t4 (val String) engine=
 SELECT clickhouse_raw_query('CREATE TABLE functions_test.t5 (ts DateTime) engine=TinyLog();');
 SELECT clickhouse_raw_query('CREATE TABLE functions_test.t6 (i64 Int64, f64 Float64) engine=TinyLog();');
 SELECT clickhouse_raw_query('CREATE TABLE functions_test.t7(dt Date) engine=TinyLog();');
+SELECT clickhouse_raw_query('CREATE TABLE functions_test.t8 (ts DateTime) engine=TinyLog();');
 
 SELECT clickhouse_raw_query($$
 	INSERT INTO functions_test.t5 VALUES
@@ -57,6 +58,17 @@ SELECT clickhouse_raw_query($$
 $$);
 
 SELECT clickhouse_raw_query($$
+	INSERT INTO functions_test.t8 VALUES
+		('2026-08-02T12:00:00'),
+		('2026-08-03T12:00:00'),
+		('2026-08-04T12:00:00'),
+		('2026-08-05T12:00:00'),
+		('2026-08-06T12:00:00'),
+		('2026-08-07T12:00:00'),
+		('2026-08-08T12:00:00')
+$$);
+
+SELECT clickhouse_raw_query($$
 	INSERT INTO functions_test.t6 VALUES
 		(20423, 20423.123),
 		(2042323443, 2042323443.232),
@@ -72,6 +84,7 @@ CREATE FOREIGN TABLE t4 (val text) SERVER functions_loopback;
 CREATE FOREIGN TABLE t5 (ts timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t6 (i64 BIGINT, f64 FLOAT8) SERVER functions_loopback;
 CREATE FOREIGN TABLE t7 (ts date) SERVER functions_loopback;
+CREATE FOREIGN TABLE t8 (ts timestamp) SERVER functions_loopback;
 
 SELECT clickhouse_raw_query($$
 	INSERT INTO functions_test.t3
@@ -274,6 +287,8 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('doy', ts) = '351
 SELECT ts FROM t5 WHERE date_part('doy', ts) = '351';
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
 SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('dow', ts) AS dow FROM t8 GROUP BY dow ORDER BY dow;
+SELECT date_part('dow', ts) AS dow FROM t8 GROUP BY dow ORDER BY dow;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('quarter', ts) = '1';
 SELECT ts FROM t5 WHERE date_part('quarter', ts) = '1';
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('isoyear', ts) = '2025';

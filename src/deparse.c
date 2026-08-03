@@ -4421,8 +4421,9 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             return;
         }
         case CF_DATE_PART: {
-            Const* arg     = (Const*)linitial(node->args);
-            char* parttype = TextDatumGetCString(arg->constvalue);
+            Const* arg        = (Const*)linitial(node->args);
+            char* parttype    = TextDatumGetCString(arg->constvalue);
+            bool postgres_dow = false;
 
             CSTRING_TOLOWER(parttype);
 
@@ -4432,6 +4433,7 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
                 appendStringInfoString(buf, "toDayOfYear");
             } else if (strcmp(parttype, "dow") == 0) {
                 appendStringInfoString(buf, "toDayOfWeek");
+                postgres_dow = true;
             } else if (strcmp(parttype, "year") == 0) {
                 appendStringInfoString(buf, "toYear");
             } else if (strcmp(parttype, "month") == 0) {
@@ -4461,6 +4463,10 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             pfree(parttype);
             appendStringInfoChar(buf, '(');
             deparseExpr(list_nth(node->args, 1), context);
+            if (postgres_dow) {
+                /* Mode 2 aligns with Postgres behavior (Sunday = 0). */
+                appendStringInfoString(buf, ", 2");
+            }
             appendStringInfoChar(buf, ')');
             return;
         }

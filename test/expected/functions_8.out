@@ -88,6 +88,12 @@ SELECT clickhouse_raw_query('CREATE TABLE functions_test.t7(dt Date) engine=Tiny
  
 (1 row)
 
+SELECT clickhouse_raw_query('CREATE TABLE functions_test.t8 (ts DateTime) engine=TinyLog();');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
 SELECT clickhouse_raw_query($$
 	INSERT INTO functions_test.t5 VALUES
 		('2025-10-15T20:12:25'),
@@ -117,6 +123,21 @@ $$);
 (1 row)
 
 SELECT clickhouse_raw_query($$
+	INSERT INTO functions_test.t8 VALUES
+		('2026-08-02T12:00:00'),
+		('2026-08-03T12:00:00'),
+		('2026-08-04T12:00:00'),
+		('2026-08-05T12:00:00'),
+		('2026-08-06T12:00:00'),
+		('2026-08-07T12:00:00'),
+		('2026-08-08T12:00:00')
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
 	INSERT INTO functions_test.t6 VALUES
 		(20423, 20423.123),
 		(2042323443, 2042323443.232),
@@ -136,6 +157,7 @@ CREATE FOREIGN TABLE t4 (val text) SERVER functions_loopback;
 CREATE FOREIGN TABLE t5 (ts timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t6 (i64 BIGINT, f64 FLOAT8) SERVER functions_loopback;
 CREATE FOREIGN TABLE t7 (ts date) SERVER functions_loopback;
+CREATE FOREIGN TABLE t8 (ts timestamp) SERVER functions_loopback;
 SELECT clickhouse_raw_query($$
 	INSERT INTO functions_test.t3
 	SELECT number+1, number+2
@@ -860,12 +882,12 @@ SELECT date_part('doy'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d
 (2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('dow'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
-                                                                                      QUERY PLAN                                                                                      
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                          QUERY PLAN                                                                                           
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (date_part('dow'::text, timezone('UTC'::text, c)))
    Relations: Aggregate on (t2)
-   Remote SQL: SELECT toDayOfWeek(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toDayOfWeek(toTimeZone(c, 'UTC'))) ORDER BY toDayOfWeek(toTimeZone(c, 'UTC')) ASC NULLS LAST
+   Remote SQL: SELECT toDayOfWeek(toTimeZone(c, 'UTC'), 2) FROM functions_test.t1 GROUP BY (toDayOfWeek(toTimeZone(c, 'UTC'), 2)) ORDER BY toDayOfWeek(toTimeZone(c, 'UTC'), 2) ASC NULLS LAST
 (4 rows)
 
 SELECT date_part('dow'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
@@ -1125,11 +1147,11 @@ SELECT ts FROM t5 WHERE date_part('doy', ts) = '351';
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfWeek(ts) = 2))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfWeek(ts, 2) = 2))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
@@ -1138,6 +1160,27 @@ SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
  2026-11-17 00:13:26
  2028-01-18 15:15:28
 (2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('dow', ts) AS dow FROM t8 GROUP BY dow ORDER BY dow;
+                                                               QUERY PLAN                                                                
+-----------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_part('dow'::text, ts))
+   Relations: Aggregate on (t8)
+   Remote SQL: SELECT toDayOfWeek(ts, 2) FROM functions_test.t8 GROUP BY (toDayOfWeek(ts, 2)) ORDER BY toDayOfWeek(ts, 2) ASC NULLS LAST
+(4 rows)
+
+SELECT date_part('dow', ts) AS dow FROM t8 GROUP BY dow ORDER BY dow;
+ dow 
+-----
+   0
+   1
+   2
+   3
+   4
+   5
+   6
+(7 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('quarter', ts) = '1';
                                  QUERY PLAN                                 
@@ -1342,11 +1385,11 @@ SELECT ts FROM t5 WHERE EXTRACT(doy FROM ts) = 351;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(dow FROM ts) = 2;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfWeek(ts) = 2))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfWeek(ts, 2) = 2))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(dow FROM ts) = 2;
@@ -2869,7 +2912,7 @@ SELECT clickhouse_raw_query('DROP DATABASE functions_test');
 (1 row)
 
 DROP SERVER functions_loopback CASCADE;
-NOTICE:  drop cascades to 8 other objects
+NOTICE:  drop cascades to 9 other objects
 DETAIL:  drop cascades to foreign table t1
 drop cascades to foreign table t2
 drop cascades to foreign table t3
@@ -2878,3 +2921,4 @@ drop cascades to foreign table t4
 drop cascades to foreign table t5
 drop cascades to foreign table t6
 drop cascades to foreign table t7
+drop cascades to foreign table t8

@@ -95,6 +95,10 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed a use-after-free of a foreign scan's batch memory context on rescan
     that could corrupt memory and hang ([#296]).
 *   Fixed subsecond precision lost inserting timestamps over HTTP ([#300]).
+*   Fixed `date_part('dow', ...)` and `EXTRACT(DOW FROM ...)` pushdown to use
+    PostgreSQL's Sunday (`0`) through Saturday (`6`) numbering, rather than
+    ClickHouse's default Monday through Sunday scheme. Thanks to Minh Vu for
+    the PR ([#331])!
 *   Fixed undefined behavior: out-of-bounds reads in key/value iteration, and
     binary driver's simple query path; `CollapsingMergeTree` validation; missing
     rejection of non-`Const`/null units in `date_trunc`/`date_part` pushdown;
@@ -172,6 +176,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#326 pg-clickhouse-c"
   [#330]: https://github.com/ClickHouse/pg_clickhouse/pull/330
     "ClickHouse/pg_clickhouse#330 preserve typmod in binary driver"
+  [#331]: https://github.com/ClickHouse/pg_clickhouse/pull/331
+    "ClickHouse/pg_clickhouse#331 Preserve PostgreSQL DOW semantics in pushdown"
 
 ## [v0.3.2] — 2026-06-16
 
