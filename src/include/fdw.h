@@ -406,6 +406,8 @@ typedef enum {
                                 * length(arr)-n) */
     CF_ARRAY_SORT_DESC,        /* array_sort(arr,desc) →
                                 * arrayReverseSort/arraySort */
+    CF_ARRAY_AGG,              /* array_agg → groupArray; tuple-wrap nullable
+                                * inputs because groupArray skips NULLs */
     CF_ARRAY_FILL,             /* array_fill → arrayWithConstant,
                                 * swap+extract */
     CF_ARRAY_CONTAINS,         /* @> → hasAll(left, right) */

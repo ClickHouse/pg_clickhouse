@@ -134,6 +134,8 @@ All notable changes to this project will be documented in this file. It uses the
     serializer previously for scalar values (now simplified), preventing
     PostgreSQL `IN` lists from producing invalid or mismatched `FixedString`
     comparisons. Thanks to @jxom for the PR (#333)!
+*   Fixed `array_agg()` pushdown dropping `NULL` elements because ClickHouse's
+    `groupArray()` skips them ([#340]).
 *   Fixed `array_position()` pushdown to return `NULL`, rather than zero, when
     ClickHouse does not find an element. Thanks to Minh Vu for the PR ([#334])!
 *   Fixed `array_length()` pushdown to preserve empty-array and requested
@@ -211,6 +213,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#335 Reject JSON paths containing NULL elements"
   [#336]: https://github.com/ClickHouse/pg_clickhouse/pull/336
     "ClickHouse/pg_clickhouse#336 Preserve array_length semantics"
+  [#340]: https://github.com/ClickHouse/pg_clickhouse/pull/340
+    "ClickHouse/pg_clickhouse#340 Preserve NULLs in array_agg pushdown"
 
 ## [v0.3.2] — 2026-06-16
 

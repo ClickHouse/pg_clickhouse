@@ -119,6 +119,16 @@ SELECT clickhouse_raw_query($$
          , (42, 324.78)
 $$);
 
+SELECT clickhouse_raw_query($$
+    CREATE TABLE agg_test.null_agg (
+        v Nullable(Int32)
+    ) ENGINE = TinyLog;
+$$);
+
+SELECT clickhouse_raw_query($$
+    INSERT INTO agg_test.null_agg VALUES (1), (NULL), (2), (1), (NULL)
+$$);
+
 CREATE SCHEMA agg_bin;
 CREATE SCHEMA agg_http;
 IMPORT FOREIGN SCHEMA "agg_test" FROM SERVER agg_bin_svr INTO agg_bin;
@@ -239,6 +249,33 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT array_agg(cost) FROM agg_bin.hits WHERE cost
 SELECT array_agg(cost) FROM agg_bin.hits WHERE id < :id_limit;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT array_agg(cost) FROM agg_http.hits WHERE cost < :id_limit;
 SELECT array_agg(cost) FROM agg_http.hits WHERE id < :id_limit;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT array_agg(v) FROM agg_bin.null_agg;
+SELECT array_agg(v) FROM agg_bin.null_agg;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT array_agg(v) FROM agg_http.null_agg;
+SELECT array_agg(v) FROM agg_http.null_agg;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT array_agg(v) FILTER (WHERE v > 1) FROM agg_bin.null_agg;
+SELECT array_agg(v) FILTER (WHERE v > 1) FROM agg_bin.null_agg;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT array_agg(v) FILTER (WHERE v > 1) FROM agg_http.null_agg;
+SELECT array_agg(v) FILTER (WHERE v > 1) FROM agg_http.null_agg;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT array_agg(DISTINCT v) FROM agg_bin.null_agg;
+SELECT array_agg(DISTINCT v) FROM agg_bin.null_agg;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT array_agg(DISTINCT v) FROM agg_http.null_agg;
+SELECT array_agg(DISTINCT v) FROM agg_http.null_agg;
+
+-- array_agg() with ORDER BY stays local because groupArray() is unordered.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT array_agg(v ORDER BY v) FROM agg_bin.null_agg;
+SELECT array_agg(v ORDER BY v) FROM agg_bin.null_agg;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT array_agg(v ORDER BY v) FROM agg_http.null_agg;
+SELECT array_agg(v ORDER BY v) FROM agg_http.null_agg;
 
 -- min()
 \echo -- min(UInt64)
