@@ -132,6 +132,13 @@ typedef struct deparse_expr_cxt {
     bool has_inlined_subplan;
 
     /*
+     * True when the statement contains a float array_position() expression.
+     * Its lambda may capture an outer column, so use relation aliases even
+     * for a single-table scan.
+     */
+    bool has_float_array_position;
+
+    /*
      * SubPlan scope. While deparsing the body of a pushed-down SubPlan,
      * subplan points at it and root points at the SubPlan's own PlannerInfo
      * (so planner_rt_fetch resolves varnos against the subquery's rtable).
@@ -247,6 +254,8 @@ static void
 deparseVar(Var* node, deparse_expr_cxt* context);
 static void
 deparseConst(Const* node, deparse_expr_cxt* context, int showtype);
+static bool
+has_float_array_position_walker(Node* node, void* context);
 static void
 deparseParam(Param* node, deparse_expr_cxt* context);
 static void
@@ -2095,8 +2104,9 @@ chfdw_deparse_select_stmt_for_rel(
     }
 
     /*
-     * Detect inlined SubPlans before emitting anything: their presence forces
-     * r{N} qualification throughout the statement (see has_inlined_subplan).
+     * Detect inlined SubPlans and float array_position() before emitting
+     * anything: both cases force r{N} qualification throughout the statement
+     * (see has_inlined_subplan and has_float_array_position).
      * Quals may carry RestrictInfo decoration, which expression_tree_walker
      * does not look through on all versions, so unwrap manually. remote_conds
      * is checked too: for upper relations it becomes the HAVING clause.
@@ -2113,6 +2123,9 @@ chfdw_deparse_select_stmt_for_rel(
             if (contain_subplans(clause)) {
                 context.has_inlined_subplan = true;
             }
+            if (has_float_array_position_walker(clause, NULL)) {
+                context.has_float_array_position = true;
+            }
         }
         foreach (lc, remote_conds) {
             Node* clause = (Node*)lfirst(lc);
@@ -2123,9 +2136,15 @@ chfdw_deparse_select_stmt_for_rel(
             if (contain_subplans(clause)) {
                 context.has_inlined_subplan = true;
             }
+            if (has_float_array_position_walker(clause, NULL)) {
+                context.has_float_array_position = true;
+            }
         }
         if (contain_subplans((Node*)tlist)) {
             context.has_inlined_subplan = true;
+        }
+        if (has_float_array_position_walker((Node*)tlist, NULL)) {
+            context.has_float_array_position = true;
         }
     }
 
@@ -2249,7 +2268,8 @@ deparseFromExpr(List* quals, deparse_expr_cxt* context) {
         buf,
         context->root,
         scanrel,
-        (bms_num_members(scanrel->relids) > 1 || context->has_inlined_subplan),
+        (bms_num_members(scanrel->relids) > 1 || context->has_inlined_subplan ||
+         context->has_float_array_position),
         (Index)0,
         NULL,
         context->params_list
@@ -2978,6 +2998,35 @@ deparseExpr(Expr* node, deparse_expr_cxt* context) {
     }
 }
 
+static bool
+has_float_array_position_walker(Node* node, void* context) {
+    (void)context;
+
+    if (node == NULL) {
+        return false;
+    }
+
+    if (IsA(node, FuncExpr)) {
+        FuncExpr* func = (FuncExpr*)node;
+        CustomObjectDef* cdef = chfdw_check_for_custom_function(func->funcid);
+
+        if (cdef && cdef->cf_type == CF_ARRAY_POSITION && func->args != NIL) {
+            Oid element = get_base_element_type(
+                exprType((Node*)linitial(func->args))
+            );
+
+            if (OidIsValid(element)) {
+                element = getBaseType(element);
+            }
+            if (element == FLOAT4OID || element == FLOAT8OID) {
+                return true;
+            }
+        }
+    }
+
+    return expression_tree_walker(node, has_float_array_position_walker, context);
+}
+
 /*
  * Deparse given Var node into context->buf.
  *
@@ -2997,7 +3046,9 @@ deparseVar(Var* node, deparse_expr_cxt* context) {
      * is inlined anywhere in the statement (unqualified outer columns would
      * be captured by the subquery's scope).
      */
-    bool qualify_col = (bms_num_members(relids) > 1 || context->has_inlined_subplan);
+    bool qualify_col =
+        (bms_num_members(relids) > 1 || context->has_inlined_subplan ||
+         context->has_float_array_position);
 
     /*
      * SubPlan scope: the Var's varno indexes the subquery's own rtable
@@ -3462,11 +3513,20 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
     case FLOAT4OID:
     case FLOAT8OID:
     case NUMERICOID: {
-        /*
-         * No need to quote unless it's a special value such as 'NaN'.
-         * See comments in get_const_expr().
-         */
-        if (strspn(extval, "0123456789+-eE.") == strlen(extval)) {
+        if ((node->consttype == FLOAT4OID || node->consttype == FLOAT8OID) &&
+            strcmp(extval, "NaN") == 0) {
+            appendStringInfoString(buf, "nan");
+        } else if (
+            (node->consttype == FLOAT4OID || node->consttype == FLOAT8OID) &&
+            (strcmp(extval, "Infinity") == 0 || strcmp(extval, "+Infinity") == 0)
+        ) {
+            appendStringInfoString(buf, "inf");
+        } else if (
+            (node->consttype == FLOAT4OID || node->consttype == FLOAT8OID) &&
+            strcmp(extval, "-Infinity") == 0
+        ) {
+            appendStringInfoString(buf, "-inf");
+        } else if (strspn(extval, "0123456789+-eE.") == strlen(extval)) {
             if (extval[0] == '+' || extval[0] == '-') {
                 appendStringInfo(buf, "(%s)", extval);
             } else {

@@ -25,24 +25,25 @@ SELECT clickhouse_raw_query($$
         nullable_float_vals Array(Nullable(Float64)),
         needle32            Float32,
         needle64            Float64,
-        nullable_needle     Nullable(Float64)
+        nullable_needle     Nullable(Float64),
+        x                   Float64
     ) ENGINE = MergeTree ORDER BY id
 $$);
 SELECT clickhouse_raw_query($$
     INSERT INTO arr_test.float_arrays VALUES
-        (1, [1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [NULL, 2.0], 2.0, 2.0, NULL),
-        (2, [1.0, nan], [1.0, nan], [NULL, nan], nan, nan, nan),
-        (3, [1.0, 2.0], [1.0, 2.0], [NULL, 2.0], nan, nan, 2.0),
-        (4, [nan, 5.0, nan], [nan, 5.0, nan], [nan, 5.0, nan], nan, nan, nan),
+        (1, [1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [NULL, 2.0], 2.0, 2.0, NULL, 999.0),
+        (2, [1.0, nan], [1.0, nan], [NULL, nan], nan, nan, nan, 999.0),
+        (3, [1.0, 2.0], [1.0, 2.0], [NULL, 2.0], nan, nan, 2.0, 999.0),
+        (4, [nan, 5.0, nan], [nan, 5.0, nan], [nan, 5.0, nan], nan, nan, nan, 999.0),
         (5,
             [reinterpretAsFloat32(toUInt32(2143289345))],
             [reinterpretAsFloat64(toUInt64(9221120237041090561))],
             [reinterpretAsFloat64(toUInt64(9221120237041090561))],
             reinterpretAsFloat32(toUInt32(2143289346)),
             reinterpretAsFloat64(toUInt64(9221120237041090562)),
-            reinterpretAsFloat64(toUInt64(9221120237041090562))),
-        (6, [], [], [], 1.0, 1.0, NULL),
-        (7, [1.0], [1.0], [NULL, 2.0], 1.0, 1.0, 3.0)
+            reinterpretAsFloat64(toUInt64(9221120237041090562)), 999.0),
+        (6, [], [], [], 1.0, 1.0, NULL, 999.0),
+        (7, [1.0], [1.0], [NULL, 2.0], 1.0, 1.0, 3.0, 999.0)
 $$);
 CREATE SCHEMA arr_test;
 IMPORT FOREIGN SCHEMA arr_test FROM SERVER arr_svr INTO arr_test;
@@ -165,6 +166,28 @@ SELECT id, array_position(float32_vals, needle32),
        array_position(float64_vals, needle64)
 FROM float_arrays
 ORDER BY id;
+
+-- Captured columns must be qualified so they are not shadowed by the lambda.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, x) IS NULL
+ORDER BY id;
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, x) IS NULL
+ORDER BY id;
+
+-- PostgreSQL special float constants must remain numeric on ClickHouse.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, 'NaN'::float8) IS NOT NULL
+ORDER BY id;
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, 'NaN'::float8) IS NOT NULL
+ORDER BY id;
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, 'Infinity'::float8) IS NULL
+  AND array_position(float64_vals, '-Infinity'::float8) IS NULL
+ORDER BY id;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM float_arrays
 WHERE array_position(float64_vals, needle64, 2) = 3
@@ -175,6 +198,9 @@ ORDER BY id;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM float_arrays
 WHERE array_position(nullable_float_vals, nullable_needle) IS NOT NULL
+ORDER BY id;
+SELECT id, array_position(nullable_float_vals, nullable_needle)
+FROM float_arrays
 ORDER BY id;
 SELECT id FROM float_arrays
 WHERE array_position(nullable_float_vals, nullable_needle) IS NOT NULL
