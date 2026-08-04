@@ -4591,23 +4591,48 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             deparseExpr((Expr*)linitial(node->args), context);
             appendStringInfoChar(buf, ')');
             return;
-        case CF_ARRAY_POSITION:
+        case CF_ARRAY_POSITION: {
+            Expr* array = (Expr*)linitial(node->args);
+            Oid element = get_base_element_type(exprType((Node*)array));
+            bool float_array;
+
+            if (OidIsValid(element)) {
+                element = getBaseType(element);
+            }
+            float_array = element == FLOAT4OID || element == FLOAT8OID;
+
             appendStringInfoChar(buf, '(');
-            /* Use nullIf() to Convert CH 0 return value to NULL. */
-            appendStringInfoString(buf, "nullIf(indexOf(");
+            if (float_array) {
+                appendStringInfoString(buf, "nullIf(arrayFirstIndex(x -> ");
+                appendStringInfoString(buf, "((isNull(x) AND isNull(");
+                deparseExpr((Expr*)list_nth(node->args, 1), context);
+                appendStringInfoString(buf, ")) OR (x = ");
+                deparseExpr((Expr*)list_nth(node->args, 1), context);
+                appendStringInfoString(buf, ") OR (isNaN(x) AND isNaN(");
+                deparseExpr((Expr*)list_nth(node->args, 1), context);
+                appendStringInfoString(buf, "))), ");
+            } else {
+                /* Use nullIf() to Convert CH 0 return value to NULL. */
+                appendStringInfoString(buf, "nullIf(indexOf(");
+            }
             if (list_length(node->args) == 3) {
                 /* Use arraySlice() to start search from the specified index. */
                 appendStringInfoString(buf, "arraySlice(");
-                deparseExpr((Expr*)linitial(node->args), context);
+                deparseExpr(array, context);
                 appendStringInfoString(buf, ", ");
                 deparseExpr((Expr*)list_nth(node->args, 2), context);
-                appendStringInfoString(buf, "), ");
+                appendStringInfoChar(buf, ')');
             } else {
-                deparseExpr((Expr*)linitial(node->args), context);
-                appendStringInfoString(buf, ", ");
+                deparseExpr(array, context);
             }
-            deparseExpr((Expr*)list_nth(node->args, 1), context);
+
+            if (!float_array) {
+                appendStringInfoString(buf, ", ");
+                deparseExpr((Expr*)list_nth(node->args, 1), context);
+            }
+
             appendStringInfoString(buf, "), 0)");
+
             if (list_length(node->args) == 3) {
                 /* Restore start index to index number. */
                 appendStringInfoString(buf, " + (");
@@ -4616,6 +4641,7 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             }
             appendStringInfoChar(buf, ')');
             return;
+        }
         case CF_TRIM_ARRAY:
             /* arrayResize(arr, length(arr) - n) */
             appendStringInfoChar(buf, '(');

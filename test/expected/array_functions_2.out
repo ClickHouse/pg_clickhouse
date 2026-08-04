@@ -36,6 +36,43 @@ $$);
  
 (1 row)
 
+SELECT clickhouse_raw_query($$
+    CREATE TABLE arr_test.float_arrays (
+        id                  Int32,
+        float32_vals        Array(Float32),
+        float64_vals        Array(Float64),
+        nullable_float_vals Array(Nullable(Float64)),
+        needle32            Float32,
+        needle64            Float64,
+        nullable_needle     Nullable(Float64)
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query($$
+    INSERT INTO arr_test.float_arrays VALUES
+        (1, [1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [NULL, 2.0], 2.0, 2.0, NULL),
+        (2, [1.0, nan], [1.0, nan], [NULL, nan], nan, nan, nan),
+        (3, [1.0, 2.0], [1.0, 2.0], [NULL, 2.0], nan, nan, 2.0),
+        (4, [nan, 5.0, nan], [nan, 5.0, nan], [nan, 5.0, nan], nan, nan, nan),
+        (5,
+            [reinterpretAsFloat32(toUInt32(2143289345))],
+            [reinterpretAsFloat64(toUInt64(9221120237041090561))],
+            [reinterpretAsFloat64(toUInt64(9221120237041090561))],
+            reinterpretAsFloat32(toUInt32(2143289346)),
+            reinterpretAsFloat64(toUInt64(9221120237041090562)),
+            reinterpretAsFloat64(toUInt64(9221120237041090562))),
+        (6, [], [], [], 1.0, 1.0, NULL),
+        (7, [1.0], [1.0], [NULL, 2.0], 1.0, 1.0, 3.0)
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
 CREATE SCHEMA arr_test;
 IMPORT FOREIGN SCHEMA arr_test FROM SERVER arr_svr INTO arr_test;
 SET search_path = arr_test, public;
@@ -259,6 +296,107 @@ ORDER BY id;
    Filter: (array_position(t1.vals, 20, t1.id) IS NOT NULL)
    Remote SQL: SELECT id, vals FROM arr_test.t1 ORDER BY id ASC NULLS LAST
 (4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM float_arrays
+WHERE array_position(float32_vals, needle32) IS NOT NULL
+ORDER BY id;
+                                                                 QUERY PLAN                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.float_arrays
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.float_arrays WHERE (((nullIf(arrayFirstIndex(x -> ((isNull(x) AND isNull(needle32)) OR (x = needle32) OR (isNaN(x) AND isNaN(needle32))), float32_vals), 0)) IS NOT NULL)) ORDER BY id ASC NULLS LAST
+(7 rows)
+
+SELECT id FROM float_arrays
+WHERE array_position(float32_vals, needle32) IS NOT NULL
+ORDER BY id;
+ id 
+----
+  1
+  2
+  4
+  5
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, needle64) IS NOT NULL
+ORDER BY id;
+                                                                 QUERY PLAN                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.float_arrays
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.float_arrays WHERE (((nullIf(arrayFirstIndex(x -> ((isNull(x) AND isNull(needle64)) OR (x = needle64) OR (isNaN(x) AND isNaN(needle64))), float64_vals), 0)) IS NOT NULL)) ORDER BY id ASC NULLS LAST
+(7 rows)
+
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, needle64) IS NOT NULL
+ORDER BY id;
+ id 
+----
+  1
+  2
+  4
+  5
+(4 rows)
+
+SELECT id, array_position(float32_vals, needle32),
+       array_position(float64_vals, needle64)
+FROM float_arrays
+ORDER BY id;
+ id | array_position | array_position 
+----+----------------+----------------
+  1 |              2 |              2
+  2 |              2 |              2
+  3 |                |               
+  4 |              1 |              1
+  5 |              1 |              1
+  6 |                |               
+  7 |              1 |              1
+(7 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, needle64, 2) = 3
+ORDER BY id;
+                                                                 QUERY PLAN                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.float_arrays
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.float_arrays WHERE (((nullIf(arrayFirstIndex(x -> ((isNull(x) AND isNull(needle64)) OR (x = needle64) OR (isNaN(x) AND isNaN(needle64))), arraySlice(float64_vals, 2)), 0) + (2 - 1)) = 3)) ORDER BY id ASC NULLS LAST
+(7 rows)
+
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, needle64, 2) = 3
+ORDER BY id;
+ id 
+----
+  4
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM float_arrays
+WHERE array_position(nullable_float_vals, nullable_needle) IS NOT NULL
+ORDER BY id;
+                                                                 QUERY PLAN                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.float_arrays
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.float_arrays WHERE (((nullIf(arrayFirstIndex(x -> ((isNull(x) AND isNull(nullable_needle)) OR (x = nullable_needle) OR (isNaN(x) AND isNaN(nullable_needle))), nullable_float_vals), 0)) IS NOT NULL)) ORDER BY id ASC NULLS LAST
+(7 rows)
+
+SELECT id FROM float_arrays
+WHERE array_position(nullable_float_vals, nullable_needle) IS NOT NULL
+ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+  4
+  5
+(5 rows)
 
 -- array_length → length (drops dimension arg)
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -618,4 +756,6 @@ SELECT clickhouse_raw_query('DROP DATABASE arr_test');
 (1 row)
 
 DROP SERVER arr_svr CASCADE;
-NOTICE:  drop cascades to foreign table t1
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table float_arrays
+drop cascades to foreign table t1

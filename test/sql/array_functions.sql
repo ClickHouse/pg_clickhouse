@@ -17,6 +17,33 @@ SELECT clickhouse_raw_query($$
         (2, [40,50],    ['d','e'], 'x//z'),
         (3, [60],       ['f'], 'Edit -> Insert -> Line Break')
 $$);
+SELECT clickhouse_raw_query($$
+    CREATE TABLE arr_test.float_arrays (
+        id                  Int32,
+        float32_vals        Array(Float32),
+        float64_vals        Array(Float64),
+        nullable_float_vals Array(Nullable(Float64)),
+        needle32            Float32,
+        needle64            Float64,
+        nullable_needle     Nullable(Float64)
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+SELECT clickhouse_raw_query($$
+    INSERT INTO arr_test.float_arrays VALUES
+        (1, [1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [NULL, 2.0], 2.0, 2.0, NULL),
+        (2, [1.0, nan], [1.0, nan], [NULL, nan], nan, nan, nan),
+        (3, [1.0, 2.0], [1.0, 2.0], [NULL, 2.0], nan, nan, 2.0),
+        (4, [nan, 5.0, nan], [nan, 5.0, nan], [nan, 5.0, nan], nan, nan, nan),
+        (5,
+            [reinterpretAsFloat32(toUInt32(2143289345))],
+            [reinterpretAsFloat64(toUInt64(9221120237041090561))],
+            [reinterpretAsFloat64(toUInt64(9221120237041090561))],
+            reinterpretAsFloat32(toUInt32(2143289346)),
+            reinterpretAsFloat64(toUInt64(9221120237041090562)),
+            reinterpretAsFloat64(toUInt64(9221120237041090562))),
+        (6, [], [], [], 1.0, 1.0, NULL),
+        (7, [1.0], [1.0], [NULL, 2.0], 1.0, 1.0, 3.0)
+$$);
 CREATE SCHEMA arr_test;
 IMPORT FOREIGN SCHEMA arr_test FROM SERVER arr_svr INTO arr_test;
 SET search_path = arr_test, public;
@@ -118,6 +145,39 @@ ORDER BY id;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM t1
 WHERE array_position(vals, 20, id) IS NOT NULL
+ORDER BY id;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM float_arrays
+WHERE array_position(float32_vals, needle32) IS NOT NULL
+ORDER BY id;
+SELECT id FROM float_arrays
+WHERE array_position(float32_vals, needle32) IS NOT NULL
+ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, needle64) IS NOT NULL
+ORDER BY id;
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, needle64) IS NOT NULL
+ORDER BY id;
+SELECT id, array_position(float32_vals, needle32),
+       array_position(float64_vals, needle64)
+FROM float_arrays
+ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, needle64, 2) = 3
+ORDER BY id;
+SELECT id FROM float_arrays
+WHERE array_position(float64_vals, needle64, 2) = 3
+ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM float_arrays
+WHERE array_position(nullable_float_vals, nullable_needle) IS NOT NULL
+ORDER BY id;
+SELECT id FROM float_arrays
+WHERE array_position(nullable_float_vals, nullable_needle) IS NOT NULL
 ORDER BY id;
 
 -- array_length → length (drops dimension arg)
