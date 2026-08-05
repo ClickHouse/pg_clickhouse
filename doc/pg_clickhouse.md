@@ -1233,7 +1233,8 @@ equivalents as follows:
 *   `array_append`: [arrayPushBack](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayPushBack)
 *   `array_prepend`: [arrayPushFront](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayPushFront)
 *   `array_remove`: [arrayRemove](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayRemove)
-*   `array_length` & `cardinality`: [length](https://clickhouse.com/docs/sql-reference/functions/array-functions#length)
+*   `cardinality`: [length](https://clickhouse.com/docs/sql-reference/functions/array-functions#length)
+*   `array_length(array, 1)`: `nullIf(length(array), 0)`
 *   `array_to_string`: [arrayStringConcat](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayStringConcat)
 *   `string_to_array`: [splitByString](https://clickhouse.com/docs/sql-reference/functions/splitting-merging-functions#splitByString)
 *   `split_part`: [splitByString](https://clickhouse.com/docs/sql-reference/functions/splitting-merging-functions#splitByString) + array subscript

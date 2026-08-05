@@ -36,6 +36,23 @@ $$);
  
 (1 row)
 
+SELECT clickhouse_raw_query($$
+    CREATE TABLE arr_test.empty_arrays (
+        id   Int32,
+        vals Array(Int32)
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+SELECT clickhouse_raw_query('INSERT INTO arr_test.empty_arrays VALUES (4, [])');
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
 CREATE SCHEMA arr_test;
 IMPORT FOREIGN SCHEMA arr_test FROM SERVER arr_svr INTO arr_test;
 SET search_path = arr_test, public;
@@ -260,14 +277,14 @@ ORDER BY id;
    Remote SQL: SELECT id, vals FROM arr_test.t1 ORDER BY id ASC NULLS LAST
 (4 rows)
 
--- array_length → length (drops dimension arg)
+-- array_length → nullIf(length(), 0) for the first dimension
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t1 WHERE array_length(vals, 1) = 2;
-                                      QUERY PLAN                                       
----------------------------------------------------------------------------------------
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
  Foreign Scan on arr_test.t1
    Output: id, vals, tags, list
-   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((length(vals) = 2))
+   Remote SQL: SELECT id, vals, tags, list FROM arr_test.t1 WHERE (((nullIf(length(vals), 0)) = 2))
 (3 rows)
 
 SELECT * FROM t1 WHERE array_length(vals, 1) = 2;
@@ -275,6 +292,49 @@ SELECT * FROM t1 WHERE array_length(vals, 1) = 2;
 ----+---------+-------+------
   2 | {40,50} | {d,e} | x//z
 (1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM empty_arrays WHERE array_length(vals, 1) IS NULL ORDER BY id;
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.empty_arrays
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.empty_arrays WHERE (((nullIf(length(vals), 0)) IS NULL)) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM empty_arrays WHERE array_length(vals, 1) IS NULL ORDER BY id;
+ id 
+----
+  4
+(1 row)
+
+-- Other dimensions and dynamic dimensions must evaluate locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE array_length(vals, 2) IS NULL ORDER BY id;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Filter: (array_length(t1.vals, 2) IS NULL)
+   Remote SQL: SELECT id, vals FROM arr_test.t1 ORDER BY id ASC NULLS LAST
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE array_length(vals, id) IS NULL ORDER BY id;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Filter: (array_length(t1.vals, t1.id) IS NULL)
+   Remote SQL: SELECT id, vals FROM arr_test.t1 ORDER BY id ASC NULLS LAST
+(4 rows)
+
+SELECT id FROM t1 WHERE array_length(vals, id) IS NULL ORDER BY id;
+ id 
+----
+  2
+  3
+(2 rows)
 
 -- array_prepend → arrayPushFront (args reversed)
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -622,4 +682,6 @@ SELECT clickhouse_raw_query('DROP DATABASE arr_test');
 (1 row)
 
 DROP SERVER arr_svr CASCADE;
-NOTICE:  drop cascades to foreign table t1
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table empty_arrays
+drop cascades to foreign table t1

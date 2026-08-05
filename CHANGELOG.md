@@ -128,6 +128,8 @@ All notable changes to this project will be documented in this file. It uses the
     comparisons. Thanks to @jxom for the PR (#333)!
 *   Fixed `array_position()` pushdown to return `NULL`, rather than zero, when
     ClickHouse does not find an element. Thanks to Minh Vu for the PR ([#334])!
+*   Fixed `array_length()` pushdown to preserve empty-array and requested
+    dimension semantics. Thanks to Minh Vu for the PR ([#336])!
 
 ### 📚 Documentation
 
@@ -192,6 +194,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#333 fix: encode bytea array literals"
   [#334]: https://github.com/ClickHouse/pg_clickhouse/pull/334
     "ClickHouse/pg_clickhouse#334 Preserve array_position not-found semantics"
+  [#336]: https://github.com/ClickHouse/pg_clickhouse/pull/336
+    "ClickHouse/pg_clickhouse#336 Preserve array_length semantics"
 
 ## [v0.3.2] — 2026-06-16
 

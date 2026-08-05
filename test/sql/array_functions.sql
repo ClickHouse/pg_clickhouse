@@ -17,6 +17,14 @@ SELECT clickhouse_raw_query($$
         (2, [40,50],    ['d','e'], 'x//z'),
         (3, [60],       ['f'], 'Edit -> Insert -> Line Break')
 $$);
+SELECT clickhouse_raw_query($$
+    CREATE TABLE arr_test.empty_arrays (
+        id   Int32,
+        vals Array(Int32)
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+SELECT clickhouse_raw_query('INSERT INTO arr_test.empty_arrays VALUES (4, [])');
+
 CREATE SCHEMA arr_test;
 IMPORT FOREIGN SCHEMA arr_test FROM SERVER arr_svr INTO arr_test;
 SET search_path = arr_test, public;
@@ -120,10 +128,20 @@ SELECT id FROM t1
 WHERE array_position(vals, 20, id) IS NOT NULL
 ORDER BY id;
 
--- array_length → length (drops dimension arg)
+-- array_length → nullIf(length(), 0) for the first dimension
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t1 WHERE array_length(vals, 1) = 2;
 SELECT * FROM t1 WHERE array_length(vals, 1) = 2;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM empty_arrays WHERE array_length(vals, 1) IS NULL ORDER BY id;
+SELECT id FROM empty_arrays WHERE array_length(vals, 1) IS NULL ORDER BY id;
+
+-- Other dimensions and dynamic dimensions must evaluate locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE array_length(vals, 2) IS NULL ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE array_length(vals, id) IS NULL ORDER BY id;
+SELECT id FROM t1 WHERE array_length(vals, id) IS NULL ORDER BY id;
 
 -- array_prepend → arrayPushFront (args reversed)
 EXPLAIN (VERBOSE, COSTS OFF)

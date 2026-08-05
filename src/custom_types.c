@@ -646,9 +646,11 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     case F_ARRAY_TO_STRING_ANYARRAY_TEXT:
         def->ch_name = "arrayStringConcat";
         return true;
-    case F_CARDINALITY:
     case F_ARRAY_LENGTH:
         def->cf_type = CF_ARRAY_LENGTH;
+        def->ch_name = "\1";
+        return true;
+    case F_CARDINALITY:
         def->ch_name = "length";
         return true;
     case F_ARRAY_REVERSE:
