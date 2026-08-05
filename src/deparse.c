@@ -302,6 +302,8 @@ deparseSelectSql(
     List** retrieved_attrs,
     deparse_expr_cxt* context
 );
+static Expr*
+findPathKeyExpr(PathKey* pathkey, bool has_final_sort, deparse_expr_cxt* context);
 static void
 appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* context);
 static void
@@ -2146,6 +2148,17 @@ chfdw_deparse_select_stmt_for_rel(
         if (has_float_array_position_walker((Node*)tlist, NULL)) {
             context.has_float_array_position = true;
         }
+        if (pathkeys) {
+            foreach (lc, pathkeys) {
+                Expr* em_expr = findPathKeyExpr(lfirst(lc), has_final_sort, &context);
+
+                if (em_expr != NULL &&
+                    has_float_array_position_walker((Node*)em_expr, NULL)) {
+                    context.has_float_array_position = true;
+                    break;
+                }
+            }
+        }
     }
 
     /* Construct SELECT clause */
@@ -3007,13 +3020,11 @@ has_float_array_position_walker(Node* node, void* context) {
     }
 
     if (IsA(node, FuncExpr)) {
-        FuncExpr* func = (FuncExpr*)node;
+        FuncExpr* func        = (FuncExpr*)node;
         CustomObjectDef* cdef = chfdw_check_for_custom_function(func->funcid);
 
         if (cdef && cdef->cf_type == CF_ARRAY_POSITION && func->args != NIL) {
-            Oid element = get_base_element_type(
-                exprType((Node*)linitial(func->args))
-            );
+            Oid element = get_base_element_type(exprType((Node*)linitial(func->args)));
 
             if (OidIsValid(element)) {
                 element = getBaseType(element);
@@ -6544,48 +6555,46 @@ appendGroupByClause(List* tlist, deparse_expr_cxt* context) {
  * relation. From given pathkeys expressions belonging entirely to the given
  * base relation are obtained and deparsed.
  */
+static Expr*
+findPathKeyExpr(PathKey* pathkey, bool has_final_sort, deparse_expr_cxt* context) {
+    RelOptInfo* baserel       = context->scanrel;
+    CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)context->foreignrel->fdw_private;
+
+    if (has_final_sort) {
+        PathTarget* target = context->foreignrel->reltarget;
+
+        if (target->exprs == NIL) {
+            target = context->root->upper_targets[fpinfo->stage];
+        }
+        return chfdw_find_em_expr_for_input_target(
+            context->root, pathkey->pk_eclass, target
+        );
+    }
+
+    if (IS_JOIN_REL(context->foreignrel) &&
+        (fpinfo->jointype == JOIN_SEMI || fpinfo->jointype == JOIN_ANTI)) {
+        Expr* em_expr =
+            chfdw_find_em_expr_for_rel(pathkey->pk_eclass, fpinfo->outerrel);
+
+        if (em_expr == NULL) {
+            em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
+        }
+        return em_expr;
+    }
+
+    return chfdw_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
+}
+
 static void
 appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* context) {
     ListCell* lcell;
-    char* delim               = " ";
-    RelOptInfo* baserel       = context->scanrel;
-    StringInfo buf            = context->buf;
-    CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)context->foreignrel->fdw_private;
+    char* delim    = " ";
+    StringInfo buf = context->buf;
 
     appendStringInfoString(buf, " ORDER BY");
     foreach (lcell, pathkeys) {
         PathKey* pathkey = lfirst(lcell);
-        Expr* em_expr;
-
-        if (has_final_sort) {
-            /*
-             * By construction, context->foreignrel is the input relation to
-             * the final sort.  Upper rels may have an empty reltarget; fall
-             * back to the planner's upper target for that stage.
-             */
-            PathTarget* target = context->foreignrel->reltarget;
-
-            if (target->exprs == NIL) {
-                target = context->root->upper_targets[fpinfo->stage];
-            }
-            em_expr = chfdw_find_em_expr_for_input_target(
-                context->root, pathkey->pk_eclass, target
-            );
-        } else if (
-            IS_JOIN_REL(context->foreignrel) &&
-            (fpinfo->jointype == JOIN_SEMI || fpinfo->jointype == JOIN_ANTI)
-        ) {
-            /*
-             * For SEMI/ANTI JOINs, prefer expressions from the outer relation
-             * since inner relation columns are not visible in the output.
-             */
-            em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass, fpinfo->outerrel);
-            if (em_expr == NULL) {
-                em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
-            }
-        } else {
-            em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
-        }
+        Expr* em_expr    = findPathKeyExpr(pathkey, has_final_sort, context);
 
         Assert(em_expr != NULL);
 

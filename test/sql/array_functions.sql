@@ -176,6 +176,14 @@ SELECT id FROM float_arrays
 WHERE array_position(float64_vals, x) IS NULL
 ORDER BY id;
 
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id
+FROM float_arrays
+ORDER BY array_position(float64_vals, x), id;
+SELECT id
+FROM float_arrays
+ORDER BY array_position(float64_vals, x), id;
+
 -- PostgreSQL special float constants must remain numeric on ClickHouse.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM float_arrays
