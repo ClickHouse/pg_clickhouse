@@ -277,6 +277,8 @@ static void
 deparseArrayExpr(ArrayExpr* node, deparse_expr_cxt* context);
 static void
 deparseArrayList(ArrayExpr* node, deparse_expr_cxt* context);
+static char*
+deparseExprToString(Expr* expr, deparse_expr_cxt* context);
 static void
 printRemoteParam(
     int paramindex,
@@ -4716,6 +4718,84 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             }
 
             pfree(format);
+            return;
+        }
+        case CF_SUBSTRING: {
+            Expr* value = (Expr*)linitial(node->args);
+            Expr* start = (Expr*)lsecond(node->args);
+            bool safe_bounds;
+            const char* function_name =
+                node->funcresulttype == BYTEAOID ? "substring" : "substringUTF8";
+            char* valuesql = deparseExprToString(value, context);
+            char* startsql = deparseExprToString(start, context);
+            char* adjusted_start_sql;
+
+            Assert(list_length(node->args) == 2 || list_length(node->args) == 3);
+
+            safe_bounds = IsA(start, Const) && !((Const*)start)->constisnull &&
+                          DatumGetInt32(((Const*)start)->constvalue) >= 1;
+            if (safe_bounds && list_length(node->args) == 3) {
+                Expr* length = (Expr*)lthird(node->args);
+
+                safe_bounds = IsA(length, Const) && !((Const*)length)->constisnull &&
+                              DatumGetInt32(((Const*)length)->constvalue) >= 0;
+            }
+
+            if (safe_bounds) {
+                appendStringInfo(buf, "%s(%s, %s", function_name, valuesql, startsql);
+                if (list_length(node->args) == 3) {
+                    appendStringInfoString(buf, ", ");
+                    deparseExpr((Expr*)lthird(node->args), context);
+                }
+                appendStringInfoChar(buf, ')');
+
+                pfree(startsql);
+                pfree(valuesql);
+                return;
+            }
+
+            /* ClickHouse treats negative starts as offsets from the end. */
+            adjusted_start_sql = psprintf("if(%1$s < 1, 1, %1$s)", startsql);
+
+            if (list_length(node->args) == 2) {
+                appendStringInfo(
+                    buf, "%s(%s, %s)", function_name, valuesql, adjusted_start_sql
+                );
+            } else {
+                Expr* length              = (Expr*)lthird(node->args);
+                char* lengthsql           = deparseExprToString(length, context);
+                char* adjusted_length_sql = psprintf(
+                    "if(toInt64(%2$s) + toInt64(%1$s) > 2147483647, 2147483647, "
+                    "if(toInt64(%2$s) + toInt64(%1$s) < 1, 0, "
+                    "toInt64(%2$s) + toInt64(%1$s) - %3$s))",
+                    lengthsql,
+                    startsql,
+                    adjusted_start_sql
+                );
+
+                /* PostgreSQL's substring functions are strict. */
+                appendStringInfo(
+                    buf,
+                    "if(throwIf(isNotNull(%s) AND isNotNull(%s) AND isNotNull(%s) "
+                    "AND %s < 0, 'negative substring length not allowed'), NULL, "
+                    "%s(%s, %s, %s))",
+                    valuesql,
+                    startsql,
+                    lengthsql,
+                    lengthsql,
+                    function_name,
+                    valuesql,
+                    adjusted_start_sql,
+                    adjusted_length_sql
+                );
+
+                pfree(adjusted_length_sql);
+                pfree(lengthsql);
+            }
+
+            pfree(adjusted_start_sql);
+            pfree(startsql);
+            pfree(valuesql);
             return;
         }
         default:
