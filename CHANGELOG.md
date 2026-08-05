@@ -130,6 +130,9 @@ All notable changes to this project will be documented in this file. It uses the
     ClickHouse does not find an element. Thanks to Minh Vu for the PR ([#334])!
 *   Fixed `array_length()` pushdown to preserve empty-array and requested
     dimension semantics. Thanks to Minh Vu for the PR ([#336])!
+*   Taught `json_extract_path*()` and `jsonb_extract_path*()` not to push down
+    when the path array contains any `NULL` elements. Thanks to Minh Vu for
+    the PR ([#335])!
 
 ### 📚 Documentation
 
@@ -194,6 +197,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#333 fix: encode bytea array literals"
   [#334]: https://github.com/ClickHouse/pg_clickhouse/pull/334
     "ClickHouse/pg_clickhouse#334 Preserve array_position not-found semantics"
+  [#335]: https://github.com/ClickHouse/pg_clickhouse/pull/335
+    "ClickHouse/pg_clickhouse#335 Reject JSON paths containing NULL elements"
   [#336]: https://github.com/ClickHouse/pg_clickhouse/pull/336
     "ClickHouse/pg_clickhouse#336 Preserve array_length semantics"
 

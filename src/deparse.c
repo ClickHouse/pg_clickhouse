@@ -1031,6 +1031,11 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
                 return false;
             }
 
+            Const* path = (Const*)lsecond(fe->args);
+            if (array_contains_nulls(DatumGetArrayTypeP(path->constvalue))) {
+                return false;
+            }
+
             /* Only recurse on the column expression. */
             if (!foreign_expr_walker(
                     (Node*)linitial(fe->args), glob_cxt, EXPR_CTX_EXACT

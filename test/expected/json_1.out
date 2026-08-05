@@ -1662,6 +1662,20 @@ SELECT id FROM json_bin.events WHERE jsonb_extract_path(props, 'address', 'city'
   1
 (1 row)
 
+-- NULL path elements must evaluate locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events
+WHERE jsonb_extract_path_text(
+    props, VARIADIC ARRAY['address', NULL, 'city']::text[]
+) IS NULL;
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Filter: (jsonb_extract_path_text(events.props, VARIADIC '{address,NULL,city}'::text[]) IS NULL)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
+
 -- =======================================================================
 -- json_extract_path_text / json_extract_path pushdown
 -- =======================================================================
@@ -1866,6 +1880,17 @@ SELECT id FROM json_bin.json_events WHERE json_extract_path(props, 'address', 'c
 ----
   1
 (1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.json_events
+WHERE json_extract_path(props, VARIADIC ARRAY[NULL]::text[]) IS NULL;
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Foreign Scan on json_http.json_events
+   Output: id
+   Filter: (json_extract_path(json_events.props, VARIADIC '{NULL}'::text[]) IS NULL)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
 
 SELECT clickhouse_raw_query('DROP DATABASE json_test');
  clickhouse_raw_query 
