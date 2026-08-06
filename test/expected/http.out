@@ -68,16 +68,6 @@ CREATE FOREIGN TABLE ft1 (
 	c7 char(10) default 'ft1',
 	c8 text
 ) SERVER http_loopback OPTIONS (table_name 't1');
-CREATE FOREIGN TABLE ft1_stream (
-	c1 int NOT NULL,
-	c2 int NOT NULL,
-	c3 text,
-	c4 date,
-	c5 date,
-	c6 varchar(10),
-	c7 char(10) default 'ft1',
-	c8 text
-) SERVER http_loopback OPTIONS (table_name 't1', fetch_size '100');
 ALTER FOREIGN TABLE ft1 DROP COLUMN c0;
 CREATE FOREIGN TABLE ft2 (
 	c1 int NOT NULL,
@@ -155,27 +145,6 @@ INSERT INTO ft4
 		   'AAA' || to_char(id, 'FM000'),
 		   (id % 2)::bool
 	FROM generate_series(1, 100) id;
--- 15 rows with fetch_size 100 bytes forces multiple streaming batches.
-SELECT c1, c3 FROM ft1_stream WHERE c1 <= 15 ORDER BY c1;
- c1 |  c3   
-----+-------
-  1 | 00001
-  2 | 00002
-  3 | 00003
-  4 | 00004
-  5 | 00005
-  6 | 00006
-  7 | 00007
-  8 | 00008
-  9 | 00009
- 10 | 00010
- 11 | 00011
- 12 | 00012
- 13 | 00013
- 14 | 00014
- 15 | 00015
-(15 rows)
-
 SELECT * FROM ft5 ORDER BY c1 LIMIT 5;
  c1 | c2 |   c3   | c4 
 ----+----+--------+----
@@ -858,64 +827,20 @@ SELECT * FROM bad_name;
 ERROR:  pg_clickhouse: unsupported line ending character in database name
 DETAIL:  Invalid database name: 'http_test
 X-My-Header: 123'
-/* ===== fetch_size option tests ===== */
-/* Server-level fetch_size: set to 0 to disable streaming. */
-CREATE SERVER http_no_stream FOREIGN DATA WRAPPER clickhouse_fdw
-    OPTIONS(dbname 'http_test', driver 'http', fetch_size '0');
-CREATE USER MAPPING FOR CURRENT_USER SERVER http_no_stream;
-CREATE FOREIGN TABLE ft_no_stream (
-    c1 int NOT NULL,
-    c2 int NOT NULL,
-    c3 text
-) SERVER http_no_stream OPTIONS (table_name 't1');
-/* Query with streaming disabled (fetch_size = 0). */
-SELECT c3 FROM ft_no_stream ORDER BY c1 LIMIT 3;
-  c3   
--------
- 00001
- 00002
- 00003
-(3 rows)
-
-/* Table-level fetch_size overrides server-level. */
-CREATE FOREIGN TABLE ft_override_stream (
-    c1 int NOT NULL,
-    c2 int NOT NULL,
-    c3 text
-) SERVER http_no_stream OPTIONS (table_name 't1', fetch_size '100');
-/* Query with table-level streaming override (fetch_size = 100). */
-SELECT c3 FROM ft_override_stream ORDER BY c1 LIMIT 3;
-  c3   
--------
- 00001
- 00002
- 00003
-(3 rows)
-
-/* Default (no fetch_size set) uses streaming — already tested via ft1. */
-SELECT c3 FROM ft1 ORDER BY c1 LIMIT 3;
-  c3   
--------
- 00001
- 00002
- 00003
-(3 rows)
-
-/* Negative fetch_size should be rejected. */
+/* Deprecated fetch_size option warns but remains accepted for now. */
 CREATE SERVER http_bad_fetch FOREIGN DATA WRAPPER clickhouse_fdw
-    OPTIONS(dbname 'http_test', driver 'http', fetch_size '-1');
-ERROR:  invalid value for option "fetch_size": -1
-HINT:  fetch_size must be greater than or equal to 0
+    OPTIONS(dbname 'http_test', driver 'http', fetch_size '100');
+WARNING:  option "fetch_size" is deprecated and ignored; will be removed in a future release
 CREATE FOREIGN TABLE ft_bad_fetch (
     c1 int NOT NULL,
     c3 text
-) SERVER http_loopback OPTIONS (table_name 't1', fetch_size '-1');
-ERROR:  invalid value for option "fetch_size": -1
-HINT:  fetch_size must be greater than or equal to 0
+) SERVER http_loopback OPTIONS (table_name 't1', fetch_size '100');
+WARNING:  option "fetch_size" is deprecated and ignored; will be removed in a future release
+DROP FOREIGN TABLE ft_bad_fetch;
+DROP SERVER http_bad_fetch;
 /*
- * TabSeparated does not escape `[` or `]` in String values, so a value like
- * `[foo]bar` is wire-indistinguishable from a CH array literal. The parser
- * uses the destination Postgres column type to decide.
+ * Native names the column type on the wire, so a String value like `[foo]bar`
+ * stays text instead of reading as a CH array literal.
  */
 SELECT clickhouse_raw_query('CREATE TABLE http_test.t_brk
     (id String, term String) ENGINE = MergeTree ORDER BY id');
@@ -934,20 +859,6 @@ INSERT INTO ft_brk VALUES
     ('5', '[a,b,c]_trailing'),
     ('6', 'leading text [bracketed] trailing');
 SELECT id, term FROM ft_brk ORDER BY id;
- id |               term                
-----+-----------------------------------
- 1  | [abc_def]_ghi.jkl_mno
- 2  | plainstring
- 3  | [just_brackets]
- 4  | []
- 5  | [a,b,c]_trailing
- 6  | leading text [bracketed] trailing
-(6 rows)
-
-/* Streaming path with a small fetch_size forces multi-batch parsing. */
-CREATE FOREIGN TABLE ft_brk_stream (id text, term text)
-    SERVER http_loopback OPTIONS (table_name 't_brk', fetch_size '32');
-SELECT id, term FROM ft_brk_stream ORDER BY id;
  id |               term                
 ----+-----------------------------------
  1  | [abc_def]_ghi.jkl_mno
@@ -1049,8 +960,9 @@ SELECT id, v, v IS NULL AS is_null, octet_length(v) FROM ft_bytea ORDER BY id;
 (4 rows)
 
 /*
- * time columns strip the exact ISO epoch date prefix. Shorter values or ones
- * with another prefix route through the input function unchanged.
+ * A ClickHouse String mapped to a time column feeds the input function
+ * unchanged, so an ISO timestamp is rejected rather than trimmed to its time
+ * of day.
  */
 SELECT clickhouse_raw_query('CREATE TABLE http_test.t_timestr
     (id String, v String) ENGINE = MergeTree ORDER BY id');
@@ -1071,18 +983,16 @@ SELECT clickhouse_raw_query('INSERT INTO http_test.t_timestr VALUES
 CREATE FOREIGN TABLE ft_timestr (id text, v time)
     SERVER http_loopback OPTIONS (table_name 't_timestr');
 SELECT v FROM ft_timestr WHERE id = '3';
-    v     
-----------
- 00:00:00
-(1 row)
-
+ERROR:  invalid input syntax for type time: "1970-01-01T00:00:00Z"
+DETAIL:  Remote Query: SELECT v FROM http_test.t_timestr WHERE ((id = '3'))
 SELECT v FROM ft_timestr WHERE id = '1';
 ERROR:  invalid input syntax for type time: "Z"
+DETAIL:  Remote Query: SELECT v FROM http_test.t_timestr WHERE ((id = '1'))
 SELECT v FROM ft_timestr WHERE id = '2';
 ERROR:  invalid input syntax for type time: "xZ"
-/* nested arrays via http (TabSeparated): rectangular maps to multi-dim,
- * jagged shapes route through array_in and surface its malformed-literal
- * error -- matching the binary path. */
+DETAIL:  Remote Query: SELECT v FROM http_test.t_timestr WHERE ((id = '2'))
+/* nested arrays via http: rectangular maps to multi-dim, jagged shapes are
+ * rejected -- matching the binary path. */
 SELECT clickhouse_raw_query('CREATE TABLE http_test.nested_arrays (
     c1 Int8, c2 Array(Array(Int32)), c3 Array(Array(String))
 ) ENGINE = MergeTree PARTITION BY c1 ORDER BY (c1);
@@ -1133,8 +1043,8 @@ SELECT * FROM ft_nested_arrays ORDER BY c1;
 (2 rows)
 
 SELECT * FROM ft_ragged_arrays ORDER BY c1;
-ERROR:  malformed array literal: "{{1,2,3},{4}}"
-DETAIL:  Multidimensional arrays must have sub-arrays with matching dimensions.
+ERROR:  pg_clickhouse: nested arrays must have sub-arrays with matching dimensions
+DETAIL:  Remote Query: SELECT c1, c2 FROM http_test.ragged_arrays ORDER BY c1 ASC NULLS LAST
 -- clickhouse_query: server-based typed rowset over the http driver
 SELECT * FROM clickhouse_query(
     'http_loopback', 'SELECT c1, c3 FROM t1 ORDER BY c1 LIMIT 3'
@@ -1170,19 +1080,15 @@ LINE 1: SELECT * FROM clickhouse_query('http_loopback', 'SELECT 1');
                       ^
 -- fewer columns declared than returned is rejected
 SELECT * FROM clickhouse_query('http_loopback', 'SELECT 1, 2') AS t(x int);
-ERROR:  pg_clickhouse: columns mismatch
-DETAIL:  Number of returned columns does not match expected column count (1).
+ERROR:  pg_clickhouse: returned 2 columns, expected 1
+DETAIL:  Remote Query: SELECT 1, 2
 -- value not coercible to the declared type is rejected
 SELECT * FROM clickhouse_query('http_loopback', 'SELECT ''abc''') AS t(x int);
 ERROR:  invalid input syntax for type integer: "abc"
+DETAIL:  Remote Query: SELECT 'abc'
 -- unknown server is rejected
 SELECT * FROM clickhouse_query('no_such_server', 'SELECT 1') AS t(x int);
 ERROR:  server "no_such_server" does not exist
-DROP USER MAPPING FOR CURRENT_USER SERVER http_no_stream;
-DROP SERVER http_no_stream CASCADE;
-NOTICE:  drop cascades to 2 other objects
-DETAIL:  drop cascades to foreign table ft_no_stream
-drop cascades to foreign table ft_override_stream
 /* ===== secure option tests ===== */
 /* All accepted values for the secure option should pass validation. */
 CREATE SERVER http_secure_on FOREIGN DATA WRAPPER clickhouse_fdw
@@ -1239,16 +1145,14 @@ NOTICE:  drop cascades to foreign table bad_name
 DROP SERVER http_loopback2 CASCADE;
 NOTICE:  drop cascades to foreign table ft6
 DROP SERVER http_loopback CASCADE;
-NOTICE:  drop cascades to 15 other objects
+NOTICE:  drop cascades to 13 other objects
 DETAIL:  drop cascades to foreign table ft1
-drop cascades to foreign table ft1_stream
 drop cascades to foreign table ft2
 drop cascades to foreign table ft3
 drop cascades to foreign table ft4
 drop cascades to foreign table ft5
 drop cascades to foreign table ftcopy
 drop cascades to foreign table ft_brk
-drop cascades to foreign table ft_brk_stream
 drop cascades to foreign table ft_brk_mix
 drop cascades to foreign table ft_nullmark
 drop cascades to foreign table ft_bytea

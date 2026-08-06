@@ -364,10 +364,10 @@ SELECT * FROM clickhouse.arrays ORDER BY c1 LIMIT 2;
 (2 rows)
 
 SELECT * FROM clickhouse.tuples ORDER BY c1 LIMIT 2;
- c1 |    c2     |  c3.a   |  c3.b   | c4 
-----+-----------+---------+---------+----
-  0 | (0,'0',1) | {0,1,1} | {0,2,2} |  0
-  1 | (1,'1',2) | {1,1,1} | {1,2,2} |  1
+ c1 |   c2    |  c3.a   |  c3.b   | c4 
+----+---------+---------+---------+----
+  0 | (0,0,1) | {0,1,1} | {0,2,2} |  0
+  1 | (1,1,2) | {1,1,1} | {1,2,2} |  1
 (2 rows)
 
 SELECT * FROM clickhouse.timezones ORDER BY t1 LIMIT 2;
@@ -713,7 +713,8 @@ DETAIL:  Remote Query: SELECT c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 FROM impor
 SELECT * FROM clickhouse.ints
 WHERE c1 IN (127, -128)
 ORDER BY c1;
-ERROR:  value "18446744073709551615" is out of range for type bigint
+ERROR:  pg_clickhouse: value 18446744073709551615 is out of range of bigint
+DETAIL:  Remote Query: SELECT c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 FROM import_test.ints WHERE ((c1 IN (127,(-128)))) ORDER BY c1 ASC NULLS LAST
 -- Ignore 18446744073709551615
 SELECT * FROM clickhouse_bin.ints WHERE c1 = -128
 UNION

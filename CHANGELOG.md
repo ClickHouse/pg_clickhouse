@@ -90,6 +90,14 @@ All notable changes to this project will be documented in this file. It uses the
     positive constant value, pushing it down to a call to `arraySlice()` to
     start the search from the specified index. Thanks to Minh Vu for the PR
     ([#334])!
+*   The HTTP driver now uses ClickHouse's Native format, sharing encoding and
+    decoding with binary driver. Only `clickhouse_raw_query()` retains
+    `TabSeparated` behavior; it will likely be removed in favor of
+    `clickhouse_query() in a future release. ([#328])
+*   Deprecated the `fetch_size` setting, now ignored option. With the switch
+    go binary encoding, the HTTP driver always streams results the same as the
+    binary driver. Setting `fetch_size` triggers a warning and will be removed
+    in a future release. ([#328])
 
 ### 🐞 Bug Fixes
 
@@ -130,6 +138,11 @@ All notable changes to this project will be documented in this file. It uses the
     comparisons. Thanks to @jxom for the PR (#333)!
 *   Fixed `array_position()` pushdown to return `NULL`, rather than zero, when
     ClickHouse does not find an element. Thanks to Minh Vu for the PR ([#334])!
+*   Fixed `array_length()` pushdown to preserve empty-array and requested
+    dimension semantics. Thanks to Minh Vu for the PR ([#336])!
+*   Taught `json_extract_path*()` and `jsonb_extract_path*()` not to push down
+    when the path array contains any `NULL` elements. Thanks to Minh Vu for
+    the PR ([#335])!
 
 ### 📚 Documentation
 
@@ -186,6 +199,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#319 Fix foreign scan RTE selection"
   [#326]: https://github.com/ClickHouse/pg_clickhouse/pull/326
     "ClickHouse/pg_clickhouse#326 pg-clickhouse-c"
+  [#328]: https://github.com/ClickHouse/pg_clickhouse/pull/328
+    "ClickHouse/pg_clickhouse#328use native format for http"
   [#330]: https://github.com/ClickHouse/pg_clickhouse/pull/330
     "ClickHouse/pg_clickhouse#330 preserve typmod in binary driver"
   [#331]: https://github.com/ClickHouse/pg_clickhouse/pull/331
@@ -194,6 +209,10 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#333 fix: encode bytea array literals"
   [#334]: https://github.com/ClickHouse/pg_clickhouse/pull/334
     "ClickHouse/pg_clickhouse#334 Preserve array_position not-found semantics"
+  [#335]: https://github.com/ClickHouse/pg_clickhouse/pull/335
+    "ClickHouse/pg_clickhouse#335 Reject JSON paths containing NULL elements"
+  [#336]: https://github.com/ClickHouse/pg_clickhouse/pull/336
+    "ClickHouse/pg_clickhouse#336 Preserve array_length semantics"
 
 ## [v0.3.2] — 2026-06-16
 

@@ -339,11 +339,11 @@ SELECT id FROM t1 WHERE re2splitbyregexp(' ', val, 2) = ARRAY['re2','uses'];
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM t1 WHERE array_length(re2extractallgroupsvertical(val, '(\w+) (\w+)'), 1) > 0;
-                                                  QUERY PLAN                                                   
----------------------------------------------------------------------------------------------------------------
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on re2_test.t1
    Output: id
-   Remote SQL: SELECT id FROM re2_test.t1 WHERE ((length(extractAllGroupsVertical(val, '(\\w+) (\\w+)')) > 0))
+   Remote SQL: SELECT id FROM re2_test.t1 WHERE (((nullIf(length(extractAllGroupsVertical(val, '(\\w+) (\\w+)')), 0)) > 0))
 (3 rows)
 
 SELECT id FROM t1 WHERE array_length(re2extractallgroupsvertical(val, '(\w+) (\w+)'), 1) > 0;
@@ -356,11 +356,11 @@ SELECT id FROM t1 WHERE array_length(re2extractallgroupsvertical(val, '(\w+) (\w
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM t1 WHERE array_length(re2extractallgroupshorizontal(val, '(\w+) (\w+)'), 1) = 2;
-                                                   QUERY PLAN                                                    
------------------------------------------------------------------------------------------------------------------
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on re2_test.t1
    Output: id
-   Remote SQL: SELECT id FROM re2_test.t1 WHERE ((length(extractAllGroupsHorizontal(val, '(\\w+) (\\w+)')) = 2))
+   Remote SQL: SELECT id FROM re2_test.t1 WHERE (((nullIf(length(extractAllGroupsHorizontal(val, '(\\w+) (\\w+)')), 0)) = 2))
 (3 rows)
 
 SELECT id FROM t1 WHERE array_length(re2extractallgroupshorizontal(val, '(\w+) (\w+)'), 1) = 2;

@@ -1042,6 +1042,11 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
                 return false;
             }
 
+            Const* path = (Const*)lsecond(fe->args);
+            if (array_contains_nulls(DatumGetArrayTypeP(path->constvalue))) {
+                return false;
+            }
+
             /* Only recurse on the column expression. */
             if (!foreign_expr_walker(
                     (Node*)linitial(fe->args), glob_cxt, EXPR_CTX_EXACT
@@ -1049,6 +1054,22 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
                 return false;
             }
             break;
+        }
+
+        /*
+         * ClickHouse length() only represents the first dimension. A
+         * non-empty PostgreSQL array has the same first-dimension length,
+         * but empty arrays return NULL rather than zero.
+         */
+        if (cdef && cdef->cf_type == CF_ARRAY_LENGTH) {
+            if (list_length(fe->args) != 2 || !IsA(lsecond(fe->args), Const)) {
+                return false;
+            }
+
+            Const* dimension = (Const*)lsecond(fe->args);
+            if (dimension->constisnull || DatumGetInt32(dimension->constvalue) != 1) {
+                return false;
+            }
         }
 
         /*
@@ -4659,9 +4680,9 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             return;
         }
         case CF_ARRAY_LENGTH:
-            appendStringInfoChar(buf, '(');
+            appendStringInfoString(buf, "(nullIf(length(");
             deparseExpr((Expr*)linitial(node->args), context);
-            appendStringInfoChar(buf, ')');
+            appendStringInfoString(buf, "), 0))");
             return;
         case CF_ARRAY_POSITION: {
             Expr* array = (Expr*)linitial(node->args);

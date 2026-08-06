@@ -37,6 +37,15 @@ typedef struct {
 } ch_connection_details;
 
 /*
+ * Polled by a transport while a request is in flight; return true to abort it.
+ * NULL means the request cannot be cancelled.
+ */
+typedef bool (*ch_cancel_check)(void);
+
+/* Used to avoid allocating memory for error text, truncating longer messages. */
+#define CH_ERROR_MSG_LEN 4096
+
+/*
  * ch_query an SQL query to execute on ClickHouse.
  */
 typedef struct {
@@ -52,9 +61,14 @@ typedef struct {
     const List* attr_nums;
     /* List of settings to pass to ClickHouse upon execution. */
     const kv_list* settings;
+    /* Posted verbatim, already prefixed with sql; sql stays set for errors. */
+    const void* body;
+    const size_t body_len;
 } ch_query;
 
 #define new_query(sql, num, vals, tupdesc, attrs)                                      \
     { sql, num, vals, tupdesc, attrs, chfdw_get_session_settings() }
+#define new_body_query(sql, body, len)                                                 \
+    { sql, 0, NULL, NULL, NULL, chfdw_get_session_settings(), body, len }
 
 #endif /* CLICKHOUSE_ENGINE_H */

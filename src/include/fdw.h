@@ -41,23 +41,8 @@
  */
 #define CH_ESCAPED_NAMEDATALEN NAMEDATALEN * 2
 
-/* pglink.c */
+/* cursor.h: an open Native result, whichever driver produced it */
 typedef struct ch_cursor ch_cursor;
-typedef struct ch_cursor {
-    MemoryContext memcxt; /* used for cleanup */
-    MemoryContextCallback callback;
-
-    void* query_response;
-    void* read_state;
-    void* conn;
-    char* query;
-    double request_time;
-    double total_time;
-    size_t columns_count;
-    /* for binary, per returned column: conversion state, target attribute */
-    void** conversion_states;
-    int* fill_dest;
-} ch_cursor;
 
 typedef struct ChFdwScanRowContext {
     TupleDesc tupdesc;        /* tuple descriptor for row */
@@ -71,7 +56,7 @@ typedef struct ChFdwScanRowContext {
 typedef void (*disconnect_method)(void* conn);
 typedef void (*check_conn_method)(const char* password, UserMapping* user);
 typedef ch_cursor* (*simple_query_method)(void* conn, const ch_query* query);
-typedef void (*simple_insert_method)(void* conn, const ch_query* query);
+typedef text* (*raw_query_method)(void* conn, const ch_query* query);
 typedef Datum* (*cursor_fetch_row_method)(ChFdwScanRowContext* ctx);
 typedef void* (*prepare_insert_method)(
     void* conn,
@@ -82,11 +67,7 @@ typedef void* (*prepare_insert_method)(
 );
 typedef void (*insert_tuple_method)(void* state, TupleTableSlot* slot);
 typedef void (*finalize_insert_method)(void* state);
-typedef ch_cursor* (*streaming_query_method)(
-    void* conn,
-    const ch_query* query,
-    int32 fetch_size
-);
+typedef ch_cursor* (*streaming_query_method)(void* conn, const ch_query* query);
 typedef bool (*is_broken_method)(const void* conn);
 
 typedef ch_server_version (*server_version_method)(void* conn);
@@ -94,6 +75,7 @@ typedef ch_server_version (*server_version_method)(void* conn);
 typedef struct {
     disconnect_method disconnect;
     simple_query_method simple_query;
+    raw_query_method raw_query;
     cursor_fetch_row_method fetch_row;
     prepare_insert_method prepare_insert;
     insert_tuple_method insert_tuple;
@@ -108,7 +90,6 @@ typedef struct {
 typedef struct {
     libclickhouse_methods* methods;
     void* conn;
-    bool is_binary;
 } ch_connection;
 
 ch_connection_details*
@@ -124,10 +105,6 @@ chfdw_binary_connect(ch_connection_details* details);
  */
 ch_server_version
 chfdw_get_server_version(UserMapping* user);
-text*
-chfdw_http_fetch_raw_data(ch_cursor* cursor);
-text*
-chfdw_binary_fetch_raw_data(ch_cursor* cursor);
 List*
 chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server);
 char*
@@ -201,8 +178,6 @@ typedef struct CHFdwRelationInfo {
     ForeignTable* table;
     ForeignServer* server;
     UserMapping* user; /* only set in use_remote_estimate mode */
-
-    int32 fetch_size; /* fetch size for this remote table */
 
     /*
      * Name of the relation while EXPLAINing ForeignScan. It is used for join
@@ -286,10 +261,6 @@ extern ch_scan_connection
 chfdw_get_scan_connection(UserMapping* user);
 extern void
 chfdw_release_scan_connection(UserMapping* user, ch_scan_connection sconn);
-extern void
-chfdw_exec_query(ch_connection conn, const char* query);
-extern void
-chfdw_report_error(int elevel, ch_connection conn, bool clear, const char* sql);
 
 /* in option.c */
 extern kv_list*
@@ -425,7 +396,7 @@ typedef enum {
     CF_CURRENT_DATABASE,       /* CURRENT_DATABASE → string literal */
     CF_CURRENT_SCHEMA,         /* CF_CURRENT_SCHEMA → string literal */
     CF_CLOCK_TIMESTAMP,        /* clock_timestamp → nowInBlock64(6, $TZ) */
-    CF_ARRAY_LENGTH,           /* array_length → length, drop dim arg */
+    CF_ARRAY_LENGTH,           /* array_length(array, 1) → nullIf(length(), 0) */
     CF_ARRAY_POSITION,         /* array_position → nullIf(indexOf(), 0) */
     CF_ARRAY_PREPEND,          /* array_prepend → arrayPushFront, swap args */
     CF_STRING_TO_ARRAY,        /* string_to_array → splitByString, swap

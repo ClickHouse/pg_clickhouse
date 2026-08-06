@@ -558,6 +558,13 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_bin.events WHERE jsonb_extract_path(props, 'address', 'city') = '"Paris"'::jsonb;
 SELECT id FROM json_bin.events WHERE jsonb_extract_path(props, 'address', 'city') = '"Paris"'::jsonb;
 
+-- NULL path elements must evaluate locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events
+WHERE jsonb_extract_path_text(
+    props, VARIADIC ARRAY['address', NULL, 'city']::text[]
+) IS NULL;
+
 -- =======================================================================
 -- json_extract_path_text / json_extract_path pushdown
 -- =======================================================================
@@ -626,6 +633,10 @@ SELECT id FROM json_http.json_events WHERE json_extract_path(props, 'address', '
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_bin.json_events WHERE json_extract_path(props, 'address', 'city')::text = '"Paris"';
 SELECT id FROM json_bin.json_events WHERE json_extract_path(props, 'address', 'city')::text = '"Paris"';
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.json_events
+WHERE json_extract_path(props, VARIADIC ARRAY[NULL]::text[]) IS NULL;
 
 SELECT clickhouse_raw_query('DROP DATABASE json_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;

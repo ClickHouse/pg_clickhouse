@@ -1,5 +1,5 @@
 CREATE SERVER try_http FOREIGN DATA WRAPPER clickhouse_fdw
-    OPTIONS(dbname 'try_test', driver 'http', fetch_size '1');
+    OPTIONS(dbname 'try_test', driver 'http');
 CREATE USER MAPPING FOR CURRENT_USER SERVER try_http;
 
 SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS try_test');
@@ -13,8 +13,6 @@ CREATE FOREIGN TABLE try_http_ft (c1 int)
     SERVER try_http OPTIONS (table_name 't1');
 
 SELECT * FROM try_http_ft;
-
-ALTER SERVER try_http OPTIONS (SET fetch_size '3');
 
 SELECT count(*), min(c1), max(c1), sum(c1::bigint) FROM try_http_ft;
 

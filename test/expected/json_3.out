@@ -61,12 +61,8 @@ SELECT * FROM json_bin.things ORDER BY id;
 ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
 DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
 SELECT * FROM json_http.things ORDER BY id;
- id |                               data                               
-----+------------------------------------------------------------------
-  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
-  4 | {"id": "4", "name": "doodad", "size": "large", "stocked": false}
-(2 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
 -- Should also support JSON mapping.
 CREATE FOREIGN TABLE json_bin.json_things (
     id   integer NOT NULL,
@@ -85,13 +81,8 @@ SELECT * FROM json_bin.json_things ORDER BY id;
 ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
 DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
 SELECT * FROM json_http.json_things ORDER BY id;
- id |                           data                            
-----+-----------------------------------------------------------
-  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
-  4 | {"id":"4","name":"doodad","size":"large","stocked":false}
-  6 | {"id":"6","name":"curio","size":"medium","stocked":false}
-(3 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
 -- Subscript access on JSON columns must not be pushed down to ClickHouse.
 -- ClickHouse JSON does not support the jsonb `column['key']` syntax (it
 -- requires dot notation), so subscripts must be evaluated locally by
@@ -106,13 +97,8 @@ SELECT data['name'] FROM json_http.things;
 (3 rows)
 
 SELECT data['name'] FROM json_http.things ORDER BY id;
-   data   
-----------
- "gizmo"
- "doodad"
- "curio"
-(3 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data['name'] FROM json_bin.things;
                    QUERY PLAN                    
@@ -139,12 +125,8 @@ SELECT DISTINCT data['size'] FROM json_http.things;
 (6 rows)
 
 SELECT DISTINCT data['size'] FROM json_http.things;
-   data   
-----------
- "medium"
- "large"
-(2 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT data FROM json_test.things
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT DISTINCT data['size'] FROM json_bin.things;
                       QUERY PLAN                       
@@ -174,12 +156,8 @@ SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'];
 (6 rows)
 
 SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'];
-   data   | count 
-----------+-------
- "medium" |     2
- "large"  |     1
-(2 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT data FROM json_test.things
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data['size'], count(*) FROM json_bin.things GROUP BY data['size'];
                       QUERY PLAN                       
@@ -206,13 +184,8 @@ SELECT data ->> 'name' FROM json_http.things;
 (3 rows)
 
 SELECT data ->> 'name' FROM json_http.things ORDER BY id;
- ?column? 
-----------
- gizmo
- doodad
- curio
-(3 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data ->> 'name' FROM json_bin.things;
                    QUERY PLAN                    
@@ -236,13 +209,8 @@ SELECT data ->> 'name' FROM json_http.json_things;
 (3 rows)
 
 SELECT data ->> 'name' FROM json_http.json_things ORDER BY id;
- ?column? 
-----------
- gizmo
- doodad
- curio
-(3 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data ->> 'name' FROM json_bin.json_things;
                    QUERY PLAN                    
@@ -446,11 +414,8 @@ SELECT * FROM json_http.things
 SELECT * FROM json_http.things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
   ORDER BY id;
- id |                              data                               
-----+-----------------------------------------------------------------
-  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
-(1 row)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things WHERE (((data.name = 'widget') OR (data.name = 'gizmo'))) ORDER BY id ASC NULLS LAST
 SELECT * FROM json_bin.things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
   ORDER BY id;
@@ -475,11 +440,8 @@ SELECT * FROM json_http.json_things
 SELECT * FROM json_http.json_things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
   ORDER BY id;
- id |                           data                           
-----+----------------------------------------------------------
-  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
-(1 row)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things WHERE (((data.name = 'widget') OR (data.name = 'gizmo'))) ORDER BY id ASC NULLS LAST
 SELECT * FROM json_bin.json_things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
   ORDER BY id;
@@ -501,13 +463,8 @@ SELECT * FROM json_http.things ORDER BY data ->> 'name';
 (3 rows)
 
 SELECT * FROM json_http.things ORDER BY data ->> 'name';
- id |                               data                               
-----+------------------------------------------------------------------
-  6 | {"id": "6", "name": "curio", "size": "medium", "stocked": false}
-  4 | {"id": "4", "name": "doodad", "size": "large", "stocked": false}
-  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
-(3 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY data.name ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.things ORDER BY data ->> 'name';
                                       QUERY PLAN                                       
@@ -540,13 +497,8 @@ SELECT * FROM json_http.json_things ORDER BY data ->> 'name';
 (3 rows)
 
 SELECT * FROM json_http.json_things ORDER BY data ->> 'name';
- id |                           data                            
-----+-----------------------------------------------------------
-  6 | {"id":"6","name":"curio","size":"medium","stocked":false}
-  4 | {"id":"4","name":"doodad","size":"large","stocked":false}
-  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
-(3 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY data.name ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_things ORDER BY data ->> 'name';
                                       QUERY PLAN                                       
@@ -579,13 +531,8 @@ SELECT data -> 'name' FROM json_http.things;
 (3 rows)
 
 SELECT data -> 'name' FROM json_http.things ORDER BY id;
- ?column? 
-----------
- "gizmo"
- "doodad"
- "curio"
-(3 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data -> 'name' FROM json_bin.things;
                    QUERY PLAN                    
@@ -608,13 +555,8 @@ SELECT data -> 'name' FROM json_http.json_things;
 (3 rows)
 
 SELECT data -> 'name' FROM json_http.json_things ORDER BY id;
- ?column? 
-----------
- "gizmo"
- "doodad"
- "curio"
-(3 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data -> 'name' FROM json_bin.json_things;
                    QUERY PLAN                    
@@ -696,11 +638,8 @@ SELECT * FROM json_http.things WHERE data -> 'stocked' = 'true'::jsonb;
 (3 rows)
 
 SELECT * FROM json_http.things WHERE data -> 'stocked' = 'true'::jsonb ORDER BY id;
- id |                              data                               
-----+-----------------------------------------------------------------
-  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
-(1 row)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things WHERE ((toJSONString(data.stocked) = 'true')) ORDER BY id ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.things WHERE data -> 'stocked' = 'true'::jsonb;
                                             QUERY PLAN                                             
@@ -724,11 +663,8 @@ SELECT * FROM json_http.json_things WHERE (data -> 'stocked')::text = 'true';
 (3 rows)
 
 SELECT * FROM json_http.json_things WHERE (data -> 'stocked')::text = 'true' ORDER BY id;
- id |                           data                           
-----+----------------------------------------------------------
-  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
-(1 row)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things WHERE ((CAST(toJSONString(data.stocked) AS String) = 'true')) ORDER BY id ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_things WHERE (data -> 'stocked')::text = 'true';
                                                     QUERY PLAN                                                     
@@ -837,11 +773,8 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'my field' = 'hello';
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'my field' = 'hello';
- id |                               data                                
-----+-------------------------------------------------------------------
-  1 | {"select": "reserved", "my field": "hello", "CamelCase": "world"}
-(1 row)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."my field" = 'hello'))
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'my field' = 'hello';
                                           QUERY PLAN                                           
@@ -864,11 +797,8 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'my field' = 'hello';
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'my field' = 'hello';
- id |                             data                             
-----+--------------------------------------------------------------
-  1 | {"CamelCase":"world","my field":"hello","select":"reserved"}
-(1 row)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."my field" = 'hello'))
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'my field' = 'hello';
                                           QUERY PLAN                                           
@@ -892,11 +822,8 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'CamelCase' = 'world';
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'CamelCase' = 'world';
- id |                               data                                
-----+-------------------------------------------------------------------
-  1 | {"select": "reserved", "my field": "hello", "CamelCase": "world"}
-(1 row)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'CamelCase' = 'world';
                                            QUERY PLAN                                           
@@ -919,11 +846,8 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'CamelCase' = 'world';
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'CamelCase' = 'world';
- id |                             data                             
-----+--------------------------------------------------------------
-  1 | {"CamelCase":"world","my field":"hello","select":"reserved"}
-(1 row)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'CamelCase' = 'world';
                                            QUERY PLAN                                           
@@ -947,11 +871,8 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'select' = 'reserved';
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'select' = 'reserved';
- id |                               data                                
-----+-------------------------------------------------------------------
-  1 | {"select": "reserved", "my field": "hello", "CamelCase": "world"}
-(1 row)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."select" = 'reserved'))
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'select' = 'reserved';
                                            QUERY PLAN                                           
@@ -974,11 +895,8 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'select' = 'reserved';
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'select' = 'reserved';
- id |                             data                             
-----+--------------------------------------------------------------
-  1 | {"CamelCase":"world","my field":"hello","select":"reserved"}
-(1 row)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."select" = 'reserved'))
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'select' = 'reserved';
                                            QUERY PLAN                                           
@@ -1380,12 +1298,8 @@ SELECT jsonb_extract_path_text(props, 'customerId') FROM json_http.events;
 (3 rows)
 
 SELECT jsonb_extract_path_text(props, 'customerId') FROM json_http.events ORDER BY id;
- jsonb_extract_path_text 
--------------------------
- C100
- C200
-(2 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT jsonb_extract_path_text(props, 'customerId') FROM json_bin.events;
                                 QUERY PLAN                                 
@@ -1409,12 +1323,8 @@ SELECT jsonb_extract_path_text(props, 'address', 'city') FROM json_http.events;
 (3 rows)
 
 SELECT jsonb_extract_path_text(props, 'address', 'city') FROM json_http.events ORDER BY id;
- jsonb_extract_path_text 
--------------------------
- Paris
- London
-(2 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT jsonb_extract_path_text(props, 'address', 'city') FROM json_bin.events;
                                  QUERY PLAN                                  
@@ -1438,12 +1348,8 @@ SELECT jsonb_extract_path(props, 'address') FROM json_http.events;
 (3 rows)
 
 SELECT jsonb_extract_path(props, 'address') FROM json_http.events;
-        jsonb_extract_path         
------------------------------------
- {"zip": "75001", "city": "Paris"}
- {"zip": "SW1A", "city": "London"}
-(2 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT props FROM json_test.events
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT jsonb_extract_path(props, 'address') FROM json_bin.events;
                             QUERY PLAN                             
@@ -1549,6 +1455,20 @@ SELECT id FROM json_bin.events WHERE jsonb_extract_path(props, 'address', 'city'
   1
 (1 row)
 
+-- NULL path elements must evaluate locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events
+WHERE jsonb_extract_path_text(
+    props, VARIADIC ARRAY['address', NULL, 'city']::text[]
+) IS NULL;
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Filter: (jsonb_extract_path_text(events.props, VARIADIC '{address,NULL,city}'::text[]) IS NULL)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
+
 -- =======================================================================
 -- json_extract_path_text / json_extract_path pushdown
 -- =======================================================================
@@ -1573,12 +1493,8 @@ SELECT json_extract_path_text(props, 'customerId') FROM json_http.json_events;
 (3 rows)
 
 SELECT json_extract_path_text(props, 'customerId') FROM json_http.json_events ORDER BY id;
- json_extract_path_text 
-------------------------
- C100
- C200
-(2 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT json_extract_path_text(props, 'customerId') FROM json_bin.json_events;
                                 QUERY PLAN                                
@@ -1602,12 +1518,8 @@ SELECT json_extract_path_text(props, 'address', 'city') FROM json_http.json_even
 (3 rows)
 
 SELECT json_extract_path_text(props, 'address', 'city') FROM json_http.json_events ORDER BY id;
- json_extract_path_text 
-------------------------
- Paris
- London
-(2 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT json_extract_path_text(props, 'address', 'city') FROM json_bin.json_events;
                                  QUERY PLAN                                 
@@ -1631,12 +1543,8 @@ SELECT json_extract_path(props, 'address') FROM json_http.json_events;
 (3 rows)
 
 SELECT json_extract_path(props, 'address') FROM json_http.json_events;
-       json_extract_path        
---------------------------------
- {"city":"Paris","zip":"75001"}
- {"city":"London","zip":"SW1A"}
-(2 rows)
-
+ERROR:  pg_clickhouse: unsupported JSON serialization version 0 (set output_format_native_write_json_as_string=1)
+DETAIL:  Remote Query: SELECT props FROM json_test.events
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT json_extract_path(props, 'address') FROM json_bin.json_events;
                             QUERY PLAN                            
@@ -1741,6 +1649,17 @@ SELECT id FROM json_bin.json_events WHERE json_extract_path(props, 'address', 'c
 ----
   1
 (1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.json_events
+WHERE json_extract_path(props, VARIADIC ARRAY[NULL]::text[]) IS NULL;
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Foreign Scan on json_http.json_events
+   Output: id
+   Filter: (json_extract_path(json_events.props, VARIADIC '{NULL}'::text[]) IS NULL)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
 
 SELECT clickhouse_raw_query('DROP DATABASE json_test');
  clickhouse_raw_query 
