@@ -3525,16 +3525,17 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
     case FLOAT8OID:
     case NUMERICOID: {
         if ((node->consttype == FLOAT4OID || node->consttype == FLOAT8OID) &&
-            strcmp(extval, "NaN") == 0) {
+            pg_strcasecmp(extval, "NaN") == 0) {
             appendStringInfoString(buf, "nan");
         } else if (
             (node->consttype == FLOAT4OID || node->consttype == FLOAT8OID) &&
-            (strcmp(extval, "Infinity") == 0 || strcmp(extval, "+Infinity") == 0)
+            (pg_strcasecmp(extval, "Infinity") == 0 ||
+             pg_strcasecmp(extval, "+Infinity") == 0)
         ) {
             appendStringInfoString(buf, "inf");
         } else if (
             (node->consttype == FLOAT4OID || node->consttype == FLOAT8OID) &&
-            strcmp(extval, "-Infinity") == 0
+            pg_strcasecmp(extval, "-Infinity") == 0
         ) {
             appendStringInfoString(buf, "-inf");
         } else if (strspn(extval, "0123456789+-eE.") == strlen(extval)) {
