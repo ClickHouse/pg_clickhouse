@@ -29,6 +29,7 @@
 #include "pg-clickhouse-encode.h"
 
 #include "binary_internal.h"
+#include "kv_list.h"
 
 /*
  * output_format_native_write_json_as_string exists on the server from
@@ -101,4 +102,42 @@ ch_binary_drain(ch_binary_connection_t* conn, char** out_msg) {
         chc_packet_clear(conn->client, &pkt);
         return;
     }
+}
+
+/*
+ * ClickHouse uses the last value when a setting appears more than once, so
+ * add driver settings after session settings. Returned names and values use
+ * query memory and remain valid until session_settings changes.
+ */
+chc_query_setting*
+ch_binary_query_settings(
+    const chc_client* c,
+    const ch_query* query,
+    size_t* n_settings
+) {
+    bool json_as_string = server_supports_json_as_string(c);
+    size_t n            = (query->settings ? (size_t)query->settings->length : 0) +
+                          (json_as_string ? 1 : 0);
+
+    *n_settings = n;
+    if (!n) {
+        return NULL;
+    }
+
+    chc_query_setting* settings = palloc0(n * sizeof(*settings));
+    size_t i                    = 0;
+    kv_iter it                  = new_kv_iter(query->settings);
+
+    while (kv_iter_next(&it)) {
+        settings[i].name      = it.name;
+        settings[i].value     = it.value;
+        settings[i].important = true;
+        i++;
+    }
+    if (json_as_string) {
+        settings[i].name      = "output_format_native_write_json_as_string";
+        settings[i].value     = "1";
+        settings[i].important = true;
+    }
+    return settings;
 }

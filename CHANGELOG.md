@@ -115,6 +115,7 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed a use-after-free of a foreign scan's batch memory context on rescan
     that could corrupt memory and hang ([#296]).
 *   Fixed subsecond precision lost inserting timestamps over HTTP ([#300]).
+*   Fixed binary driver to use `pg_clickhouse.session_settings` with inserts.
 *   Fixed `date_part('dow', ...)` and `EXTRACT(DOW FROM ...)` pushdown to use
     PostgreSQL's Sunday (`0`) through Saturday (`6`) numbering, rather than
     ClickHouse's default Monday through Sunday scheme. Thanks to Minh Vu for

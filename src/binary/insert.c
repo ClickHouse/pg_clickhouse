@@ -102,31 +102,18 @@ ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query) {
         memcpy(sql + sql_len, " VALUES", 7);
         sql[sql_len + 7] = '\0';
 
-        /*
-         * On servers that support it (24.10+), tell server to serialize any
-         * JSON columns using STRING wire format. INSERT path doesn't need
-         * this, server reads the per-column version prefix the builder
-         * writes, but we set it on the same packet for symmetry with the
-         * SELECT path and so any RETURNING-style projection on top still
-         * decodes.
-         */
-        chc_query_setting json_setting = {
-            .name      = "output_format_native_write_json_as_string",
-            .value     = "1",
-            .important = true,
+        size_t n_settings;
+        chc_query_setting* settings =
+            ch_binary_query_settings(conn->client, query, &n_settings);
+        chc_query_opts insert_opts = {
+            .settings   = settings,
+            .n_settings = n_settings,
         };
-        chc_query_opts insert_opts     = {};
-        const chc_query_opts* opts_ptr = NULL;
-
-        if (server_supports_json_as_string(conn->client)) {
-            insert_opts.settings   = &json_setting;
-            insert_opts.n_settings = 1;
-            opts_ptr               = &insert_opts;
-        }
 
         chc_err err = {};
-        int rc =
-            chc_client_send_query_ex(conn->client, sql, sql_len + 7, opts_ptr, &err);
+        int rc      = chc_client_send_query_ex(
+            conn->client, sql, sql_len + 7, &insert_opts, &err
+        );
 
         if (rc != CHC_OK) {
             conn->broken = true;

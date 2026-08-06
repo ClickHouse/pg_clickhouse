@@ -5,10 +5,9 @@
  * at a time. pgch_reader pulls the next block via
  * ch_binary_response_fetch_next_block when it exhausts the current one, so
  * peak memory is bounded by one block plus what postgres holds for the
- * current row. Settings come from the foreign-table KV list; we also add
- * output_format_native_write_json_as_string=1 against servers that understand
- * it. Cancel polling drives chc_io's per-read callback; server-side
- * exceptions flag the connection as broken so the cache drops it. Premature
+ * current row. Queries include session and driver settings.
+ * Cancel polling drives chc_io's per-read callback; server-side exceptions
+ * flag the connection as broken so the cache drops it. Premature
  * close (eg LIMIT, error in decode, transaction abort) sends Cancel
  * + drains in ch_binary_response_free so the connection is reusable.
  */
@@ -23,7 +22,6 @@
 #include "utils/palloc.h"
 
 #include "binary_internal.h"
-#include "kv_list.h"
 
 /* Wall-clock cap on drain_until_eos. A well-behaved server acknowledges
  * Cancel by flushing the in-flight block + EndOfStream within a second. */
@@ -181,38 +179,12 @@ ch_binary_simple_query(
     resp->conn            = conn;
     conn->check_cancel_fn = check_cancel;
 
-    size_t n_user_settings = 0;
-    size_t n_params        = (size_t)(query->num_params > 0 ? query->num_params : 0);
-    chc_query_setting* settings = NULL;
-    chc_query_param* params     = NULL;
-    bool want_json_as_string    = server_supports_json_as_string(conn->client);
+    size_t n_params         = (size_t)(query->num_params > 0 ? query->num_params : 0);
+    chc_query_param* params = NULL;
+    size_t n_settings;
+    chc_query_setting* settings =
+        ch_binary_query_settings(conn->client, query, &n_settings);
 
-    {
-        const kv_list* kv = query->settings;
-
-        if (kv) {
-            n_user_settings = (size_t)kv->length;
-        }
-    }
-    size_t n_settings = n_user_settings + (want_json_as_string ? 1 : 0);
-
-    if (n_settings) {
-        settings = palloc0(n_settings * sizeof(*settings));
-        size_t i = 0;
-
-        kv_iter it = new_kv_iter(query->settings);
-        while (kv_iter_next(&it)) {
-            settings[i].name      = it.name;
-            settings[i].value     = it.value;
-            settings[i].important = true;
-            i++;
-        }
-        if (want_json_as_string) {
-            settings[i].name      = "output_format_native_write_json_as_string";
-            settings[i].value     = "1";
-            settings[i].important = true;
-        }
-    }
     if (n_params) {
         params = palloc0(n_params * sizeof(*params));
         for (size_t i = 0; i < n_params; i++) {

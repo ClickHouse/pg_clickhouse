@@ -84,6 +84,17 @@ ch_binary_set_deadline(ch_binary_connection_t* conn, int64_t deadline_us);
 extern bool
 server_supports_json_as_string(const chc_client* c);
 
+/*
+ * Collect settings for query, adding session settings before driver settings.
+ * Store number of settings in *n_settings and return NULL when list is empty.
+ */
+extern chc_query_setting*
+ch_binary_query_settings(
+    const chc_client* c,
+    const ch_query* query,
+    size_t* n_settings
+);
+
 /* Returns memory owned by ex, which must be copied before clearing its packet. */
 extern const char*
 ch_binary_exception_message(const chc_exception* ex);
