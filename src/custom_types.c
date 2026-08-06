@@ -536,7 +536,8 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         def->ch_name = "quantilesExactLow";
         return true;
     case F_ARRAY_AGG_ANYNONARRAY:
-        def->ch_name = "groupArray";
+        def->cf_type = CF_ARRAY_AGG;
+        def->ch_name = "\1";
         return true;
     case F_MD5_BYTEA:
     case F_MD5_TEXT:

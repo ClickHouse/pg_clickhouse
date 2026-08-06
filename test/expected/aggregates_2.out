@@ -29,6 +29,16 @@
  
 (1 row)
 
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
+ clickhouse_raw_query 
+----------------------
+ 
+(1 row)
+
                Foreign table "agg_bin.agg_numbers"
  Column |   Type   | Collation | Nullable | Default | FDW options 
 --------+----------+-----------+----------+---------+-------------
@@ -50,6 +60,13 @@ FDW options: (database 'agg_test', table_name 'agg_numbers', engine 'MergeTree')
 Server: agg_bin_svr
 FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 
+                Foreign table "agg_bin.null_agg"
+ Column |  Type   | Collation | Nullable | Default | FDW options 
+--------+---------+-----------+----------+---------+-------------
+ v      | integer |           |          |         | 
+Server: agg_bin_svr
+FDW options: (database 'agg_test', table_name 'null_agg', engine 'TinyLog')
+
                Foreign table "agg_http.agg_numbers"
  Column |   Type   | Collation | Nullable | Default | FDW options 
 --------+----------+-----------+----------+---------+-------------
@@ -70,6 +87,13 @@ FDW options: (database 'agg_test', table_name 'agg_numbers', engine 'MergeTree')
  cost      | numeric(10,2)            |           | not null |         | 
 Server: agg_http_svr
 FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
+
+                Foreign table "agg_http.null_agg"
+ Column |  Type   | Collation | Nullable | Default | FDW options 
+--------+---------+-----------+----------+---------+-------------
+ v      | integer |           |          |         | 
+Server: agg_http_svr
+FDW options: (database 'agg_test', table_name 'null_agg', engine 'TinyLog')
 
 -- AVG(UInt64)
                    QUERY PLAN                    
@@ -599,6 +623,112 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
                       array_agg                      
 -----------------------------------------------------
  {5.10,1.99,8.14,8.53,3.57,2.47,8.24,4.79,6.75,7.69}
+(1 row)
+
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (array_agg(v))
+   Relations: Aggregate on (null_agg)
+   Remote SQL: SELECT arrayMap(x -> x.1, groupArray(tuple(v))) FROM agg_test.null_agg
+(4 rows)
+
+ array_agg         
+-------------------
+ {1,NULL,2,1,NULL}
+(1 row)
+
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (array_agg(v))
+   Relations: Aggregate on (null_agg)
+   Remote SQL: SELECT arrayMap(x -> x.1, groupArray(tuple(v))) FROM agg_test.null_agg
+(4 rows)
+
+ array_agg         
+-------------------
+ {1,NULL,2,1,NULL}
+(1 row)
+
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (array_agg(v) FILTER (WHERE (v > 1)))
+   Relations: Aggregate on (null_agg)
+   Remote SQL: SELECT arrayMap(x -> x.1, groupArrayIf(tuple(v),(((v > 1)) > 0))) FROM agg_test.null_agg
+(4 rows)
+
+ array_agg 
+-----------
+ {2}
+(1 row)
+
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (array_agg(v) FILTER (WHERE (v > 1)))
+   Relations: Aggregate on (null_agg)
+   Remote SQL: SELECT arrayMap(x -> x.1, groupArrayIf(tuple(v),(((v > 1)) > 0))) FROM agg_test.null_agg
+(4 rows)
+
+ array_agg 
+-----------
+ {2}
+(1 row)
+
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (array_agg(DISTINCT v))
+   Relations: Aggregate on (null_agg)
+   Remote SQL: SELECT arrayMap(x -> x.1, groupArray(DISTINCT tuple(v))) FROM agg_test.null_agg
+(4 rows)
+
+ array_agg  
+------------
+ {1,NULL,2}
+(1 row)
+
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (array_agg(DISTINCT v))
+   Relations: Aggregate on (null_agg)
+   Remote SQL: SELECT arrayMap(x -> x.1, groupArray(DISTINCT tuple(v))) FROM agg_test.null_agg
+(4 rows)
+
+ array_agg  
+------------
+ {1,NULL,2}
+(1 row)
+
+                  QUERY PLAN                   
+-----------------------------------------------
+ Aggregate
+   Output: array_agg(v ORDER BY v)
+   ->  Foreign Scan on agg_bin.null_agg
+         Output: v
+   Remote SQL: SELECT v FROM agg_test.null_agg
+(5 rows)
+
+ array_agg         
+-------------------
+ {1,1,2,NULL,NULL}
+(1 row)
+
+                  QUERY PLAN                   
+-----------------------------------------------
+ Aggregate
+   Output: array_agg(v ORDER BY v)
+   ->  Foreign Scan on agg_http.null_agg
+         Output: v
+   Remote SQL: SELECT v FROM agg_test.null_agg
+(5 rows)
+
+ array_agg         
+-------------------
+ {1,1,2,NULL,NULL}
 (1 row)
 
 -- min(UInt64)
@@ -1786,9 +1916,11 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  17150.25 |    22867 |    22867
 (1 row)
 
-NOTICE:  drop cascades to 2 other objects
+NOTICE:  drop cascades to 3 other objects
 DETAIL:  drop cascades to foreign table agg_bin.agg_numbers
 drop cascades to foreign table agg_bin.hits
-NOTICE:  drop cascades to 2 other objects
+drop cascades to foreign table agg_bin.null_agg
+NOTICE:  drop cascades to 3 other objects
 DETAIL:  drop cascades to foreign table agg_http.agg_numbers
 drop cascades to foreign table agg_http.hits
+drop cascades to foreign table agg_http.null_agg

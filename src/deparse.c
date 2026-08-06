@@ -324,6 +324,8 @@ deparseRangeTblRef(
 static void
 deparseAggref(Aggref* node, deparse_expr_cxt* context);
 static void
+deparseArrayAggref(Aggref* node, deparse_expr_cxt* context);
+static void
 deparseWindowFunc(WindowFunc* node, deparse_expr_cxt* context);
 static void
 appendGroupByClause(List* tlist, deparse_expr_cxt* context);
@@ -1235,7 +1237,9 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
         }
 
         /* groupConcat has no ORDER BY; block ordered string_agg */
-        if (agg->aggfnoid == F_STRING_AGG_TEXT_TEXT && agg->aggorder != NIL) {
+        if ((agg->aggfnoid == F_STRING_AGG_TEXT_TEXT ||
+             agg->aggfnoid == F_ARRAY_AGG_ANYNONARRAY) &&
+            agg->aggorder != NIL) {
             return false;
         }
 
@@ -5855,6 +5859,62 @@ deparsePartialStatArray(Aggref* node, AggPartialKind kind, deparse_expr_cxt* con
     pfree(arg);
 }
 
+static void
+deparseArrayAggref(Aggref* node, deparse_expr_cxt* context) {
+    StringInfo buf = context->buf;
+    foreign_glob_cxt glob_cxt;
+    TargetEntry* arg = NULL;
+    bool nullable;
+    ListCell* lc;
+
+    foreach (lc, node->args) {
+        TargetEntry* tle = lfirst_node(TargetEntry, lc);
+
+        if (!tle->resjunk) {
+            arg = tle;
+            break;
+        }
+    }
+
+    Assert(arg != NULL);
+
+    memset(&glob_cxt, 0, sizeof(glob_cxt));
+    glob_cxt.root       = context->root;
+    glob_cxt.foreignrel = context->foreignrel;
+    glob_cxt.relids     = context->scanrel->relids;
+    nullable            = !expr_never_null((Expr*)arg->expr, &glob_cxt);
+
+    if (nullable) {
+        appendStringInfoString(buf, "arrayMap(x -> x.1, ");
+    }
+    appendStringInfoString(buf, "groupArray");
+    if (node->aggfilter) {
+        appendStringInfoString(buf, "If");
+    }
+    appendStringInfoString(buf, "(");
+    if (node->aggdistinct != NIL) {
+        appendStringInfoString(buf, "DISTINCT ");
+    }
+    if (nullable) {
+        appendStringInfoString(buf, "tuple(");
+    }
+    deparseExpr((Expr*)arg->expr, context);
+    if (nullable) {
+        appendStringInfoChar(buf, ')');
+    }
+
+    if (node->aggfilter) {
+        appendStringInfoString(buf, ",((");
+        deparseExpr((Expr*)node->aggfilter, context);
+        appendStringInfoString(buf, ") > 0)");
+    }
+
+    appendStringInfoChar(buf, ')');
+    if (nullable) {
+        appendStringInfoChar(buf, ')');
+    }
+}
+
 /*
  * Deparse an Aggref node.
  */
@@ -5890,6 +5950,12 @@ deparseAggref(Aggref* node, deparse_expr_cxt* context) {
     /* Find aggregate name from aggfnoid which is a pg_proc entry */
     cdef          = context->func;
     context->func = appendFunctionName(node->aggfnoid, context);
+
+    if (context->func && context->func->cf_type == CF_ARRAY_AGG) {
+        deparseArrayAggref(node, context);
+        context->func = cdef;
+        return;
+    }
 
     /* 'If' part */
     if (context->func && context->func->cf_type == CF_SIGN_COUNT && !node->aggstar) {
