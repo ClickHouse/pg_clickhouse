@@ -50,3 +50,55 @@ server_supports_json_as_string(const chc_client* c) {
     }
     return false;
 }
+
+const char*
+ch_binary_exception_message(const chc_exception* ex) {
+    if (ex) {
+        if (ex->display_text && ex->display_text[0]) {
+            return ex->display_text;
+        }
+        if (ex->name && ex->name[0]) {
+            return ex->name;
+        }
+    }
+    return "server exception";
+}
+
+void
+ch_binary_drain(ch_binary_connection_t* conn, char** out_msg) {
+    if (out_msg) {
+        *out_msg = NULL;
+    }
+
+    for (;;) {
+        chc_packet pkt = {};
+        chc_err err    = {};
+
+        if (chc_client_recv_packet(conn->client, &pkt, &err) != CHC_OK) {
+            conn->broken = true;
+            if (out_msg) {
+                *out_msg = pstrdup(err.msg[0] ? err.msg : "recv_packet failed");
+            }
+            chc_packet_clear(conn->client, &pkt);
+            return;
+        }
+
+        switch (pkt.kind) {
+        case CHC_PKT_EXCEPTION:
+            /* Server usually closes socket after raising, next op would EPIPE */
+            conn->broken = true;
+            if (out_msg) {
+                *out_msg = pstrdup(ch_binary_exception_message(pkt.exception));
+            }
+            break;
+        case CHC_PKT_END_OF_STREAM:
+            break;
+        default:
+            chc_packet_clear(conn->client, &pkt);
+            continue;
+        }
+
+        chc_packet_clear(conn->client, &pkt);
+        return;
+    }
+}

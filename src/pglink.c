@@ -39,6 +39,13 @@ StaticAssertDecl(
 
 static bool initialized = false;
 
+/*
+ * This threshold lets bulk loads stream instead of buffering every row.
+ * ClickHouse can combine small blocks within one INSERT according to the
+ * min_insert_block_size_rows and min_insert_block_size_bytes settings.
+ */
+#define INSERT_FLUSH_BYTES (64 * 1024 * 1024)
+
 /* Rows buffered for one Native INSERT over HTTP. */
 typedef struct {
     char* sql;       /* INSERT statement, for error reporting */
@@ -697,8 +704,7 @@ http_insert_tuple(void* istate, TupleTableSlot* slot) {
             pgch_append_datum(state->writer, i, value, valtype, isnull);
         }
 
-        /* Flush at 64MiB so bulk loads stream instead of buffering every row/ */
-        if (pgch_writer_bytes(state->writer) < 64 * 1024 * 1024) {
+        if (pgch_writer_bytes(state->writer) < INSERT_FLUSH_BYTES) {
             return;
         }
     }
@@ -753,15 +759,11 @@ binary_response_free(void* response) {
 static ch_cursor*
 binary_simple_query(void* conn, const ch_query* query) {
     ch_binary_response_t* resp = ch_binary_simple_query(conn, query, &is_canceled);
+    const char* msg            = ch_binary_response_error(resp);
 
-    if (!ch_binary_response_success(resp)) {
-        const char* msg = ch_binary_response_error(resp);
+    if (msg) {
         char error[CH_ERROR_MSG_LEN];
         int clip, n;
-
-        if (msg == NULL) {
-            msg = "unknown error";
-        }
 
         /* Clip short of a split multibyte character; exceptions are UTF-8 */
         clip = (int)Min(strlen(msg), sizeof(error) - 1);
@@ -831,6 +833,101 @@ http_native_read_error(ch_cursor* cursor) {
     }
 }
 
+/* Maps one ClickHouse column to its PostgreSQL slot attribute. */
+typedef struct {
+    AttrNumber attnum;
+    Oid atttypid;
+} binary_insert_colmap;
+
+/* Tracks rows buffered for one Native INSERT over the native protocol. */
+typedef struct {
+    MemoryContext memcxt; /* Holds state across per-tuple context resets. */
+    MemoryContextCallback callback;
+
+    ch_binary_insert_handle* handle;
+    size_t ncols;                 /* Number of ClickHouse columns. */
+    binary_insert_colmap* colmap; /* Contains ncols entries after the first tuple. */
+    Oid relid;                    /* Foreign table used for column_name lookups. */
+} binary_insert_state;
+
+/*
+ * Matches each ClickHouse column to an input attribute by name and honors the
+ * column_name FDW option. Uses positions when the first input attribute has no
+ * name, because that descriptor contains no attribute names.
+ */
+static void
+build_insert_colmap(binary_insert_state* state, TupleDesc indesc) {
+    ch_binary_insert_handle* h = state->handle;
+    bool positional =
+        indesc->natts > 0 && NameStr(TupleDescAttr(indesc, 0)->attname)[0] == '\0';
+
+    state->colmap = palloc0(state->ncols * sizeof(binary_insert_colmap));
+
+    for (size_t i = 0; i < state->ncols; i++) {
+        binary_insert_colmap* m = &state->colmap[i];
+        const char* chname      = ch_binary_insert_column_name(h, i);
+
+        if (positional) {
+            if (i < (size_t)indesc->natts) {
+                m->attnum = (AttrNumber)(i + 1);
+            }
+        } else {
+            for (int j = 0; j < indesc->natts; j++) {
+                Form_pg_attribute attin = TupleDescAttr(indesc, j);
+                CustomColumnInfo* cinfo;
+                const char* inname;
+
+                if (attin->attisdropped) {
+                    continue;
+                }
+
+                /* Prefer the column_name FDW option over the attribute name. */
+                cinfo  = OidIsValid(state->relid)
+                             ? chfdw_get_custom_column_info(state->relid, j + 1)
+                             : NULL;
+                inname = (cinfo && cinfo->colname[0]) ? cinfo->colname
+                                                      : NameStr(attin->attname);
+
+                if (strcmp(chname, inname) == 0) {
+                    m->attnum = (AttrNumber)(j + 1);
+                    break;
+                }
+            }
+        }
+
+        if (m->attnum == 0) {
+            ereport(
+                ERROR,
+                errcode(ERRCODE_DATATYPE_MISMATCH),
+                errmsg_internal("pg_clickhouse: could not create conversion map"),
+                errdetail(
+                    "ClickHouse column \"%s\" has no matching attribute in type %s.",
+                    chname,
+                    format_type_be(indesc->tdtypeid)
+                )
+            );
+        }
+        m->atttypid = TupleDescAttr(indesc, m->attnum - 1)->atttypid;
+    }
+}
+
+static void
+binary_insert_state_free(void* c) {
+    binary_insert_state* state = c;
+
+    if (state->handle == NULL) {
+        return;
+    }
+
+    /*
+     * MemoryContext reset callbacks cannot report errors. The normal path
+     * finalizes the INSERT before this callback runs. During an abort, release
+     * marks the connection as broken so the next query replaces it.
+     */
+    ch_binary_release_insert(state->handle);
+    state->handle = NULL;
+}
+
 static void*
 binary_prepare_insert(
     void* conn,
@@ -839,7 +936,7 @@ binary_prepare_insert(
     const ch_query* query,
     char* table_name
 ) {
-    ch_binary_insert_state* state = NULL;
+    binary_insert_state* state = NULL;
     MemoryContext tempcxt, oldcxt;
 
     if (table_name == NULL) {
@@ -853,39 +950,61 @@ binary_prepare_insert(
     );
 
     /* prepare cleanup */
-    oldcxt        = MemoryContextSwitchTo(tempcxt);
-    state         = (ch_binary_insert_state*)palloc0(sizeof(ch_binary_insert_state));
-    state->memcxt = tempcxt;
-    state->callback.func = ch_binary_insert_state_free;
+    oldcxt               = MemoryContextSwitchTo(tempcxt);
+    state                = palloc0(sizeof(binary_insert_state));
+    state->memcxt        = tempcxt;
+    state->callback.func = binary_insert_state_free;
     state->callback.arg  = state;
     state->relid         = RelationGetRelid(rri->ri_RelationDesc);
     MemoryContextRegisterResetCallback(tempcxt, &state->callback);
 
     /* enter insert mode, take the column list from the server */
-    ch_binary_prepare_insert(conn, query, state);
+    state->handle = ch_binary_begin_insert(conn, query);
+    state->ncols  = ch_binary_insert_ncols(state->handle);
     MemoryContextSwitchTo(oldcxt);
 
     return state;
 }
 
+/*
+ * Appends one slot of values, with one value for each ClickHouse column. A
+ * NULL slot marks the end of input and flushes any buffered rows.
+ */
 static void
 binary_insert_tuple(void* istate, TupleTableSlot* slot) {
-    ch_binary_insert_state* state = istate;
+    binary_insert_state* state = istate;
+    pgch_writer* writer        = ch_binary_insert_writer(state->handle);
 
-    if (slot) {
-        ch_binary_insert_tuple(state, slot);
-        ch_binary_insert_autoflush(state);
-    } else {
-        ch_binary_insert_columns(state);
+    if (slot != NULL) {
+        if (state->colmap == NULL) {
+            /* Keep the mapping across resets of the per-tuple context. */
+            MemoryContext old = MemoryContextSwitchTo(state->memcxt);
+
+            build_insert_colmap(state, slot->tts_tupleDescriptor);
+            MemoryContextSwitchTo(old);
+        }
+
+        for (size_t i = 0; i < state->ncols; i++) {
+            binary_insert_colmap* m = &state->colmap[i];
+            bool isnull;
+            Datum value = slot_getattr(slot, m->attnum, &isnull);
+
+            pgch_append_datum(writer, i, value, m->atttypid, isnull);
+        }
+
+        if (pgch_writer_bytes(writer) < INSERT_FLUSH_BYTES) {
+            return;
+        }
     }
+    ch_binary_flush_block(state->handle);
 }
 
 static void
 binary_finalize_insert(void* istate) {
-    ch_binary_insert_state* state = istate;
+    binary_insert_state* state = istate;
 
-    if (state && state->insert_block) {
-        ch_binary_finalize_insert(state->insert_block);
+    if (state && state->handle) {
+        ch_binary_finalize_insert(state->handle);
     }
 }
 

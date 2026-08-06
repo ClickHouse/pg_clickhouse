@@ -29,14 +29,11 @@
 #include "binary_internal.h"
 #include "engine.h"
 
-#define CLICKHOUSE_SECURE_PORT 9440
-#define CLICKHOUSE_PLAIN_PORT 9000
-
 static bool
 cancel_adapter(void* ud) {
-    struct ch_binary_state* s = ud;
+    ch_binary_connection_t* conn = ud;
 
-    return s->check_cancel_fn ? s->check_cancel_fn() : false;
+    return conn->check_cancel_fn ? conn->check_cancel_fn() : false;
 }
 
 /*
@@ -66,29 +63,38 @@ parse_compression(const char* s) {
 
 /*
  * Releases OS resources owned by the connection. The chc_client and its
- * read buffer live in s->cxt and are freed by the surrounding
+ * read buffer live in conn->cxt and are freed by the surrounding
  * MemoryContextDelete; only fd / SSL need an explicit close.
  */
 static void
-binary_state_reset_cb(void* arg) {
-    struct ch_binary_state* s = arg;
+binary_conn_reset_cb(void* arg) {
+    ch_binary_connection_t* conn = arg;
 
-    if (s->client) {
-        chc_client_close(s->client);
-        s->client = NULL;
+    if (conn->client) {
+        chc_client_close(conn->client);
+        conn->client = NULL;
     }
-    if (s->ssl) {
-        SSL_shutdown(s->ssl);
-        SSL_free(s->ssl);
-        s->ssl = NULL;
+    if (conn->ssl) {
+        SSL_shutdown(conn->ssl);
+        SSL_free(conn->ssl);
+        conn->ssl = NULL;
     }
-    if (s->ssl_ctx) {
-        SSL_CTX_free(s->ssl_ctx);
-        s->ssl_ctx = NULL;
+    if (conn->ssl_ctx) {
+        SSL_CTX_free(conn->ssl_ctx);
+        conn->ssl_ctx = NULL;
     }
-    if (s->fd >= 0) {
-        close(s->fd);
-        s->fd = -1;
+    if (conn->fd >= 0) {
+        close(conn->fd);
+        conn->fd = -1;
+    }
+}
+
+void
+ch_binary_set_deadline(ch_binary_connection_t* conn, int64_t deadline_us) {
+    if (conn->tls) {
+        chc_openssl_io_set_deadline(&conn->openssl_state, deadline_us);
+    } else {
+        chc_posix_io_set_deadline(&conn->posix_state, deadline_us);
     }
 }
 
@@ -168,7 +174,7 @@ openssl_min_proto_version(tls_version v) {
 }
 
 static void
-tls_connect(struct ch_binary_state* s, const char* host, tls_version min_version) {
+tls_connect(ch_binary_connection_t* conn, const char* host, tls_version min_version) {
     static int openssl_init_done = 0;
 
     if (!openssl_init_done) {
@@ -178,8 +184,8 @@ tls_connect(struct ch_binary_state* s, const char* host, tls_version min_version
         openssl_init_done = 1;
     }
 
-    s->ssl_ctx = SSL_CTX_new(TLS_client_method());
-    if (!s->ssl_ctx) {
+    conn->ssl_ctx = SSL_CTX_new(TLS_client_method());
+    if (!conn->ssl_ctx) {
         ereport(
             ERROR,
             errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
@@ -190,7 +196,8 @@ tls_connect(struct ch_binary_state* s, const char* host, tls_version min_version
 
     int min_proto = openssl_min_proto_version(min_version);
 
-    if (min_proto != 0 && SSL_CTX_set_min_proto_version(s->ssl_ctx, min_proto) != 1) {
+    if (min_proto != 0 &&
+        SSL_CTX_set_min_proto_version(conn->ssl_ctx, min_proto) != 1) {
         ereport(
             ERROR,
             errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
@@ -199,8 +206,8 @@ tls_connect(struct ch_binary_state* s, const char* host, tls_version min_version
         );
     }
     /* Authenticate server: verify chain against system CAs and hostname. */
-    SSL_CTX_set_verify(s->ssl_ctx, SSL_VERIFY_PEER, NULL);
-    if (SSL_CTX_set_default_verify_paths(s->ssl_ctx) != 1) {
+    SSL_CTX_set_verify(conn->ssl_ctx, SSL_VERIFY_PEER, NULL);
+    if (SSL_CTX_set_default_verify_paths(conn->ssl_ctx) != 1) {
         ereport(
             ERROR,
             errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
@@ -209,8 +216,8 @@ tls_connect(struct ch_binary_state* s, const char* host, tls_version min_version
         );
     }
 
-    s->ssl = SSL_new(s->ssl_ctx);
-    if (!s->ssl) {
+    conn->ssl = SSL_new(conn->ssl_ctx);
+    if (!conn->ssl) {
         ereport(
             ERROR,
             errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
@@ -218,9 +225,9 @@ tls_connect(struct ch_binary_state* s, const char* host, tls_version min_version
             errdetail("SSL_new failed")
         );
     }
-    SSL_set_tlsext_host_name(s->ssl, host);
-    SSL_set_hostflags(s->ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-    if (SSL_set1_host(s->ssl, host) != 1) {
+    SSL_set_tlsext_host_name(conn->ssl, host);
+    SSL_set_hostflags(conn->ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+    if (SSL_set1_host(conn->ssl, host) != 1) {
         ereport(
             ERROR,
             errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
@@ -228,10 +235,10 @@ tls_connect(struct ch_binary_state* s, const char* host, tls_version min_version
             errdetail("could not set certificate verification host")
         );
     }
-    SSL_set_fd(s->ssl, s->fd);
-    if (SSL_connect(s->ssl) != 1) {
+    SSL_set_fd(conn->ssl, conn->fd);
+    if (SSL_connect(conn->ssl) != 1) {
         /* verification failures leave error queue empty, use verify result */
-        long vr         = SSL_get_verify_result(s->ssl);
+        long vr         = SSL_get_verify_result(conn->ssl);
         unsigned long e = ERR_peek_last_error();
         char ebuf[256];
 
@@ -260,31 +267,10 @@ tls_connect(struct ch_binary_state* s, const char* host, tls_version min_version
 ch_binary_connection_t*
 ch_binary_connect(ch_connection_details* details) {
     const char* host = details->host ? details->host : "127.0.0.1";
-    /* volatile: set before PG_TRY setjmp, read inside */
-    volatile int port = details->port;
+    int port;
     bool tls;
 
-    switch (details->tls) {
-    case CH_TLS_ON:
-        if (port == 0) {
-            port = CLICKHOUSE_SECURE_PORT;
-        }
-        tls = true;
-        break;
-    case CH_TLS_OFF:
-        if (port == 0) {
-            port = CLICKHOUSE_PLAIN_PORT;
-        }
-        tls = false;
-        break;
-    default: /* CH_TLS_AUTO */
-        if (port == 0) {
-            port =
-                ch_is_cloud_host(host) ? CLICKHOUSE_SECURE_PORT : CLICKHOUSE_PLAIN_PORT;
-        }
-        tls = (port == CLICKHOUSE_SECURE_PORT);
-        break;
-    }
+    ch_resolve_endpoint(details, CH_PORTS_NATIVE, &port, &tls);
 
     chc_compression comp = parse_compression(details->compression);
 
@@ -292,44 +278,45 @@ ch_binary_connect(ch_connection_details* details) {
         CacheMemoryContext, "pg_clickhouse binary connection", ALLOCSET_SMALL_SIZES
     );
     MemoryContext old = MemoryContextSwitchTo(cxt);
-    struct ch_binary_state* s;
     ch_binary_connection_t* conn;
 
     PG_TRY();
     {
-        s                = palloc0(sizeof(*s));
-        conn             = palloc0(sizeof(*conn));
-        s->cxt           = cxt;
-        s->fd            = -1;
-        s->tls           = tls;
-        s->reset_cb.func = binary_state_reset_cb;
-        s->reset_cb.arg  = s;
-        MemoryContextRegisterResetCallback(cxt, &s->reset_cb);
-        conn->client = s;
+        conn                = palloc0(sizeof(*conn));
+        conn->cxt           = cxt;
+        conn->fd            = -1;
+        conn->tls           = tls;
+        conn->reset_cb.func = binary_conn_reset_cb;
+        conn->reset_cb.arg  = conn;
+        MemoryContextRegisterResetCallback(cxt, &conn->reset_cb);
 
-        s->fd = tcp_connect(host, port);
+        conn->fd = tcp_connect(host, port);
         if (tls) {
-            tls_connect(s, host, details->min_tls_version);
-            chc_openssl_io_init(&s->openssl_state, &s->io, s->ssl, cancel_adapter, s);
+            tls_connect(conn, host, details->min_tls_version);
+            chc_openssl_io_init(
+                &conn->openssl_state, &conn->io, conn->ssl, cancel_adapter, conn
+            );
         } else {
-            chc_posix_io_init(&s->posix_state, &s->io, s->fd, cancel_adapter, s);
+            chc_posix_io_init(
+                &conn->posix_state, &conn->io, conn->fd, cancel_adapter, conn
+            );
         }
 
         if (comp != CHC_COMP_NONE) {
             /* both families: server may answer in a different method */
-            chc_lz4_codec_init(&s->codec);
-            chc_zstd_codec_init(&s->codec);
+            chc_lz4_codec_init(&conn->codec);
+            chc_zstd_codec_init(&conn->codec);
         }
 
         chc_client_opts opts = {
             .database    = details->dbname ? details->dbname : "default",
             .user        = details->username ? details->username : "default",
             .password    = details->password ? details->password : "",
-            .codec       = comp != CHC_COMP_NONE ? &s->codec : NULL,
+            .codec       = comp != CHC_COMP_NONE ? &conn->codec : NULL,
             .compression = comp,
         };
         chc_err err = {};
-        int rc      = chc_client_init(&s->client, &opts, &pgch_alloc, &s->io, &err);
+        int rc = chc_client_init(&conn->client, &opts, &pgch_alloc, &conn->io, &err);
 
         if (rc != CHC_OK) {
             pgch_raise(
@@ -351,12 +338,7 @@ ch_binary_connect(ch_connection_details* details) {
 
 bool
 ch_binary_is_broken(const ch_binary_connection_t* conn) {
-    if (!conn) {
-        return false;
-    }
-    const struct ch_binary_state* s = (const struct ch_binary_state*)conn->client;
-
-    return s ? s->broken : false;
+    return conn ? conn->broken : false;
 }
 
 /*
@@ -373,16 +355,11 @@ ch_binary_server_version(
     int* patch
 ) {
     *major = *minor = *patch = 0;
-    if (!conn) {
+    if (!conn || !conn->client) {
         return;
     }
 
-    const struct ch_binary_state* s = (const struct ch_binary_state*)conn->client;
-    if (!s || !s->client) {
-        return;
-    }
-
-    const chc_server_info* info = chc_client_server_info(s->client);
+    const chc_server_info* info = chc_client_server_info(conn->client);
     if (info) {
         *major = (int)info->version_major;
         *minor = (int)info->version_minor;
@@ -392,13 +369,8 @@ ch_binary_server_version(
 
 void
 ch_binary_close(ch_binary_connection_t* conn) {
-    if (!conn) {
-        return;
+    if (conn) {
+        /* The connection itself belongs to this context. */
+        MemoryContextDelete(conn->cxt);
     }
-    struct ch_binary_state* s = conn_state(conn);
-
-    if (s) {
-        MemoryContextDelete(s->cxt);
-    }
-    /* conn itself was palloc'd inside s->cxt; freed by the delete */
 }

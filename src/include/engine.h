@@ -36,6 +36,25 @@ typedef struct {
                                   * when not specified */
 } ch_connection_details;
 
+/* Identifies the protocol family used to choose default ports. */
+typedef enum {
+    CH_PORTS_HTTP,
+    CH_PORTS_NATIVE,
+} ch_port_set;
+
+/*
+ * Resolves the port and TLS mode from the "port" and "secure" options. An
+ * unset port selects the family default. CH_TLS_AUTO uses the cloud hostname
+ * and resolved port to determine whether TLS is required.
+ */
+extern void
+ch_resolve_endpoint(
+    const ch_connection_details* details,
+    ch_port_set ports,
+    int* out_port,
+    bool* out_tls
+);
+
 /*
  * Polled by a transport while a request is in flight; return true to abort it.
  * NULL means the request cannot be cancelled.

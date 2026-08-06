@@ -18,54 +18,44 @@
 
 struct ch_binary_insert_handle {
     MemoryContext cxt;
-    chc_client* client;
-    struct ch_binary_state* state; /* parent connection; used to flag broken
-                                    * state on error */
-    chc_block* initial_block;      /* schema source (server's empty Data) */
+    ch_binary_connection_t* conn;
+    chc_block* initial_block; /* Holds the schema from the server's empty block. */
     size_t ncols;
-    char** names;   /* column names, borrowed by writer's pgch_col */
-    pgch_writer* w; /* row buffers, one per column */
-    bool started;
-    bool finalized; /* finalize_insert has run (success or raised) */
+    char** names;   /* Holds names referenced by the writer's columns. */
+    pgch_writer* w; /* Buffers rows by column. */
+    bool finalized; /* Records whether finalization ran or raised an error. */
 };
 
 static void
-recv_initial_block(struct ch_binary_state* s, ch_binary_insert_handle* h) {
+recv_initial_block(ch_binary_connection_t* conn, ch_binary_insert_handle* h) {
     for (;;) {
         chc_packet pkt = {};
         chc_err err    = {};
-        int rc         = chc_client_recv_packet(s->client, &pkt, &err);
+        int rc         = chc_client_recv_packet(conn->client, &pkt, &err);
 
         if (rc != CHC_OK) {
-            s->broken = true;
+            conn->broken = true;
             pgch_raise(&err, ERRCODE_FDW_ERROR, "could not prepare insert - ");
         }
         if (pkt.kind == CHC_PKT_EXCEPTION) {
-            const char* msg = "server exception";
+            char* msg = pstrdup(ch_binary_exception_message(pkt.exception));
 
-            if (pkt.exception && pkt.exception->display_text) {
-                msg = pkt.exception->display_text;
-            } else if (pkt.exception && pkt.exception->name) {
-                msg = pkt.exception->name;
-            }
-            char* msg_copy = pstrdup(msg);
-
-            s->broken = true;
-            chc_packet_clear(s->client, &pkt);
+            conn->broken = true;
+            chc_packet_clear(conn->client, &pkt);
             ereport(
                 ERROR,
                 errcode(ERRCODE_FDW_ERROR),
-                errmsg("pg_clickhouse: could not prepare insert - %s", msg_copy)
+                errmsg("pg_clickhouse: could not prepare insert - %s", msg)
             );
         }
         if (pkt.kind == CHC_PKT_DATA && pkt.block &&
             chc_block_n_columns(pkt.block) > 0) {
             h->initial_block = pkt.block;
             pkt.block        = NULL;
-            chc_packet_clear(s->client, &pkt);
+            chc_packet_clear(conn->client, &pkt);
             return;
         }
-        chc_packet_clear(s->client, &pkt);
+        chc_packet_clear(conn->client, &pkt);
     }
 }
 
@@ -74,38 +64,25 @@ recv_initial_block(struct ch_binary_state* s, ch_binary_insert_handle* h) {
  * Data; send empty Data + drain so the connection stays usable.
  */
 static void
-drain_aborted_insert(struct ch_binary_state* s) {
+drain_aborted_insert(ch_binary_connection_t* conn) {
     chc_err ce = {};
 
-    (void)chc_client_send_data(s->client, NULL, &ce);
-    for (;;) {
-        chc_packet drain = {};
-
-        ce      = (chc_err){ 0 };
-        int drc = chc_client_recv_packet(s->client, &drain, &ce);
-        bool eos =
-            (drc == CHC_OK &&
-             (drain.kind == CHC_PKT_END_OF_STREAM || drain.kind == CHC_PKT_EXCEPTION));
-
-        chc_packet_clear(s->client, &drain);
-        if (drc != CHC_OK || eos) {
-            break;
-        }
+    if (chc_client_send_data(conn->client, NULL, &ce) != CHC_OK) {
+        conn->broken = true;
+        return;
     }
+    ch_binary_drain(conn, NULL);
 }
 
 ch_binary_insert_handle*
 ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query) {
-    struct ch_binary_state* s = conn_state(conn);
-
     /*
-     * Parent h's cxt to the connection's cxt, not CurrentMemoryContext. The
-     * caller registers a reset callback on a sibling context that drains the
-     * insert via end_insert(h); if h lived under that sibling, MemoryContext
-     * tree teardown would free h before the callback fired.
+     * Allocate the handle under the connection context. The caller's reset
+     * callback lives in a sibling context and releases the handle. Allocating
+     * the handle under that sibling would free it before the callback ran.
      */
     MemoryContext cxt = AllocSetContextCreate(
-        s->cxt, "pg_clickhouse binary insert", ALLOCSET_DEFAULT_SIZES
+        conn->cxt, "pg_clickhouse binary insert", ALLOCSET_DEFAULT_SIZES
     );
     MemoryContext old = MemoryContextSwitchTo(cxt);
     ch_binary_insert_handle* h;
@@ -113,10 +90,9 @@ ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query) {
 
     PG_TRY();
     {
-        h         = palloc0(sizeof(*h));
-        h->cxt    = cxt;
-        h->client = s->client;
-        h->state  = s;
+        h       = palloc0(sizeof(*h));
+        h->cxt  = cxt;
+        h->conn = conn;
 
         /* Append " VALUES" so server enters insert mode. */
         size_t sql_len = strlen(query->sql);
@@ -142,28 +118,28 @@ ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query) {
         chc_query_opts insert_opts     = {};
         const chc_query_opts* opts_ptr = NULL;
 
-        if (server_supports_json_as_string(s->client)) {
+        if (server_supports_json_as_string(conn->client)) {
             insert_opts.settings   = &json_setting;
             insert_opts.n_settings = 1;
             opts_ptr               = &insert_opts;
         }
 
         chc_err err = {};
-        int rc = chc_client_send_query_ex(s->client, sql, sql_len + 7, opts_ptr, &err);
+        int rc =
+            chc_client_send_query_ex(conn->client, sql, sql_len + 7, opts_ptr, &err);
 
         if (rc != CHC_OK) {
-            s->broken = true;
+            conn->broken = true;
             pgch_raise(&err, ERRCODE_FDW_ERROR, "could not prepare insert - ");
         }
 
-        recv_initial_block(s, h);
+        recv_initial_block(conn, h);
 
         /*
          * Server is now waiting our Data; failures past this point need an
          * empty-Data + drain so the connection stays usable.
          */
         need_drain = true;
-        h->started = true;
 
         size_t nc      = chc_block_n_columns(h->initial_block);
         pgch_col* cols = nc ? palloc0(nc * sizeof(pgch_col)) : NULL;
@@ -184,7 +160,7 @@ ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query) {
     PG_CATCH();
     {
         if (need_drain) {
-            drain_aborted_insert(s);
+            drain_aborted_insert(conn);
         }
         MemoryContextSwitchTo(old);
         MemoryContextDelete(cxt);
@@ -211,30 +187,14 @@ ch_binary_insert_column_name(const ch_binary_insert_handle* h, size_t i) {
     return i < h->ncols ? h->names[i] : "";
 }
 
-/*
- * Flush once insert buffered reaches 64MiB, so large COPY or INSERT SELECT
- * streams blocks instead of accumulating all rows in memory. Server coalesces
- * small blocks within one INSERT via min_insert_block_size_rows/bytes.
- */
-void
-ch_binary_insert_autoflush(ch_binary_insert_state* state) {
-    ch_binary_insert_handle* h = state->insert_block;
-
-    if (h && pgch_writer_bytes(h->w) >= 64 * 1024 * 1024) {
-        ch_binary_flush_block(h);
-    }
-}
-
 void
 ch_binary_flush_block(ch_binary_insert_handle* h) {
     MemoryContext old = MemoryContextSwitchTo(h->cxt);
     chc_err err       = {};
-    int rc            = chc_client_send_data(h->client, pgch_writer_build(h->w), &err);
+    int rc = chc_client_send_data(h->conn->client, pgch_writer_build(h->w), &err);
 
     if (rc != CHC_OK) {
-        if (h->state) {
-            h->state->broken = true;
-        }
+        h->conn->broken = true;
         pgch_raise(&err, ERRCODE_FDW_ERROR, "could not insert columns - ");
     }
 
@@ -259,58 +219,16 @@ ch_binary_finalize_insert(ch_binary_insert_handle* h) {
      */
     h->finalized = true;
 
-    if (!(h->started && h->client)) {
-        return;
-    }
-
     MemoryContext old = MemoryContextSwitchTo(h->cxt);
     char* exc_msg     = NULL;
-    bool broke        = false;
     chc_err err       = {};
-    int rc            = chc_client_send_data(h->client, NULL, &err);
 
-    if (rc != CHC_OK) {
-        broke   = true;
-        exc_msg = pstrdup(err.msg[0] ? err.msg : "send_data failed");
+    if (chc_client_send_data(h->conn->client, NULL, &err) != CHC_OK) {
+        h->conn->broken = true;
+        exc_msg         = pstrdup(err.msg[0] ? err.msg : "send_data failed");
     } else {
-        /* Drain until EOS or exception. */
-        for (;;) {
-            chc_packet pkt = {};
-
-            err = (chc_err){ 0 };
-            rc  = chc_client_recv_packet(h->client, &pkt, &err);
-            if (rc != CHC_OK) {
-                broke   = true;
-                exc_msg = pstrdup(err.msg[0] ? err.msg : "recv_packet failed");
-                chc_packet_clear(h->client, &pkt);
-                break;
-            }
-            if (pkt.kind == CHC_PKT_EXCEPTION) {
-                const char* msg = "server exception";
-
-                if (pkt.exception && pkt.exception->display_text) {
-                    msg = pkt.exception->display_text;
-                } else if (pkt.exception && pkt.exception->name) {
-                    msg = pkt.exception->name;
-                }
-                exc_msg = pstrdup(msg);
-                broke   = true;
-                chc_packet_clear(h->client, &pkt);
-                break;
-            }
-            chc_packet_clear(h->client, &pkt);
-            if (pkt.kind == CHC_PKT_END_OF_STREAM) {
-                break;
-            }
-        }
-    }
-
-    /*
-     * Server raised mid-INSERT and typically closes the socket; the next op
-     * would EPIPE. Mark broken so the cache rebuilds.
-     */
-    if (broke && h->state) {
-        h->state->broken = true;
+        /* Marks broken itself on exception or transport failure */
+        ch_binary_drain(h->conn, &exc_msg);
     }
 
     MemoryContextSwitchTo(old);
@@ -339,8 +257,8 @@ ch_binary_release_insert(ch_binary_insert_handle* h) {
         return;
     }
 
-    if (!h->finalized && h->started && h->state) {
-        h->state->broken = true;
+    if (!h->finalized) {
+        h->conn->broken = true;
     }
 
     MemoryContextDelete(h->cxt);

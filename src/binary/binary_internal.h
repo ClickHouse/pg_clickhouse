@@ -18,11 +18,6 @@
 #include "clickhouse.h"
 
 #include "binary.h"
-#include "internal.h"
-
-#if PG_VERSION_NUM < 180000
-#define pg_noreturn pg_attribute_noreturn()
-#endif
 
 /*
  * Pump next Data block off wire (header block may carry zero rows). Caller
@@ -33,26 +28,14 @@
 extern const chc_block*
 ch_binary_response_fetch_next_block(ch_binary_response_t* resp);
 
-extern ch_binary_insert_handle*
-ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query);
-
 /*
- * Tear down handle. Never raises and never talks to server, safe to call
- * from a MemoryContext reset callback during transaction abort. Flags
- * connection broken if finalize did not run.
- */
-extern void
-ch_binary_release_insert(ch_binary_insert_handle* h);
-
-/*
- * Per-connection state smuggled through ch_binary_connection_t.client.
+ * This structure stores state for the opaque ch_binary_connection_t.
  *
- * Lives in own context `cxt` (child of CacheMemoryContext) so connection
- * survives transaction boundaries. Result block buffers don't live here:
- * pgch_alloc routes through CurrentMemoryContext, so blocks land in
- * whichever per-query context the caller has switched to.
+ * It lives in its own context under CacheMemoryContext, so the connection
+ * survives transaction boundaries. Result block buffers use
+ * CurrentMemoryContext and therefore live in the caller's query context.
  */
-struct ch_binary_state {
+struct ch_binary_connection_t {
     /*
      * Connection-lifetime context; holds this struct, the chc_client, and
      * chc_client's initial read buffer. Deleted by ch_binary_close.
@@ -90,28 +73,27 @@ struct ch_binary_state {
     bool broken;
 };
 
-static inline struct ch_binary_state*
-conn_state(ch_binary_connection_t* conn) {
-    return (struct ch_binary_state*)conn->client;
-}
+/*
+ * Limits blocking reads in the active I/O backend. A zero deadline removes
+ * the limit.
+ */
+extern void
+ch_binary_set_deadline(ch_binary_connection_t* conn, int64_t deadline_us);
 
 /* True if server advertises output_format_native_write_json_as_string. */
 extern bool
 server_supports_json_as_string(const chc_client* c);
 
-/* Column buffers behind the handle; encode.c appends through this. */
-extern pgch_writer*
-ch_binary_insert_writer(ch_binary_insert_handle* h);
-
-extern size_t
-ch_binary_insert_ncols(const ch_binary_insert_handle* h);
-
-/* Name the server gave column i of the INSERT, "" when unnamed. */
+/* Returns memory owned by ex, which must be copied before clearing its packet. */
 extern const char*
-ch_binary_insert_column_name(const ch_binary_insert_handle* h, size_t i);
+ch_binary_exception_message(const chc_exception* ex);
 
-/* Send buffered rows and clear; ready for next batch. */
+/*
+ * Consumes packets until the server sends EOS or an exception. Stores a
+ * palloc'd error message in out_msg when requested. Marks the connection as
+ * broken after an exception or transport failure.
+ */
 extern void
-ch_binary_flush_block(ch_binary_insert_handle* h);
+ch_binary_drain(ch_binary_connection_t* conn, char** out_msg);
 
 #endif /* PG_CLICKHOUSE_BINARY_INTERNAL_H */

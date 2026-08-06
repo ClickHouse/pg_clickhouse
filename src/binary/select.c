@@ -2,7 +2,7 @@
  * select.c
  *
  * Submit a SELECT (chc_client_send_query_ex) and pump Data packets one block
- * at a time. decode.c pulls the next block via
+ * at a time. pgch_reader pulls the next block via
  * ch_binary_response_fetch_next_block when it exhausts the current one, so
  * peak memory is bounded by one block plus what postgres holds for the
  * current row. Settings come from the foreign-table KV list; we also add
@@ -31,13 +31,10 @@
 
 struct ch_binary_response_t {
     MemoryContext cxt;
-    struct ch_binary_state* state; /* parent connection state */
-    chc_client* client;            /* recv_packet target */
-    bool (*check_cancel)(void);
+    ch_binary_connection_t* conn;
 
     char* error; /* NULL on success */
-    bool success;
-    bool eos; /* END_OF_STREAM or exception seen */
+    bool eos;    /* True after END_OF_STREAM or an exception. */
 
     chc_block* staged; /* next block to hand out; ownership passes to caller */
 };
@@ -48,23 +45,6 @@ resp_set_error(ch_binary_response_t* resp, const char* msg) {
         return;
     }
     resp->error = pstrdup(msg && *msg ? msg : "?");
-}
-
-static void
-resp_set_exception(ch_binary_response_t* resp, const chc_exception* ex) {
-    if (resp->error) {
-        return;
-    }
-    const char* msg = NULL;
-
-    if (ex) {
-        if (ex->display_text && ex->display_text[0]) {
-            msg = ex->display_text;
-        } else if (ex->name && ex->name[0]) {
-            msg = ex->name;
-        }
-    }
-    resp->error = pstrdup(msg ? msg : "server exception");
 }
 
 /*
@@ -79,17 +59,17 @@ pump_one(ch_binary_response_t* resp) {
     MemoryContext old = MemoryContextSwitchTo(resp->cxt);
     chc_packet pkt    = {};
     chc_err err       = {};
-    int rc            = chc_client_recv_packet(resp->client, &pkt, &err);
+    int rc            = chc_client_recv_packet(resp->conn->client, &pkt, &err);
 
     if (rc != CHC_OK) {
         resp_set_error(resp, err.msg);
-        resp->state->broken = true;
-        resp->eos           = true;
+        resp->conn->broken = true;
+        resp->eos          = true;
         MemoryContextSwitchTo(old);
         return;
     }
 
-    if (resp->check_cancel && resp->check_cancel()) {
+    if (resp->conn->check_cancel_fn && resp->conn->check_cancel_fn()) {
         resp_set_error(resp, "query was canceled");
     }
 
@@ -108,19 +88,19 @@ pump_one(ch_binary_response_t* resp) {
             }
             if (vrc != CHC_OK) {
                 resp_set_error(resp, verr.msg);
-                resp->state->broken = true;
-                resp->eos           = true;
+                resp->conn->broken = true;
+                resp->eos          = true;
             } else {
                 resp->staged = pkt.block;
                 pkt.block    = NULL;
             }
         }
-        chc_packet_clear(resp->client, &pkt);
+        chc_packet_clear(resp->conn->client, &pkt);
         break;
 
     case CHC_PKT_EXCEPTION:
-        resp_set_exception(resp, pkt.exception);
-        chc_packet_clear(resp->client, &pkt);
+        resp_set_error(resp, ch_binary_exception_message(pkt.exception));
+        chc_packet_clear(resp->conn->client, &pkt);
 
         /*
          * Older servers (and some protocol states) close the socket after
@@ -129,17 +109,17 @@ pump_one(ch_binary_response_t* resp) {
          * always called Client::ResetConnection) and treat the connection
          * as broken.
          */
-        resp->state->broken = true;
-        resp->eos           = true;
+        resp->conn->broken = true;
+        resp->eos          = true;
         break;
 
     case CHC_PKT_END_OF_STREAM:
-        chc_packet_clear(resp->client, &pkt);
+        chc_packet_clear(resp->conn->client, &pkt);
         resp->eos = true;
         break;
 
     default:
-        chc_packet_clear(resp->client, &pkt);
+        chc_packet_clear(resp->conn->client, &pkt);
         break;
     }
 
@@ -154,21 +134,12 @@ drain_now_us(void) {
     return (int64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 }
 
-static void
-drain_set_deadline(struct ch_binary_state* s, int64_t deadline_us) {
-    if (s->tls) {
-        chc_openssl_io_set_deadline(&s->openssl_state, deadline_us);
-    } else {
-        chc_posix_io_set_deadline(&s->posix_state, deadline_us);
-    }
-}
-
 /*
  * Best-effort drain of any unconsumed stream so the connection is left clean
  * for the next query. Disables cancel polling while draining so
  * QueryCancelPending doesn't short-circuit every refill, and caps total wait
  * with an IO deadline so a peer that ignores Cancel doesn't cause hang. Sets
- * state->broken on transport failure / timeout / send_cancel failure so the
+ * conn->broken on transport failure / timeout / send_cancel failure so the
  * cache drops the connection.
  */
 static void
@@ -180,39 +151,17 @@ drain_until_eos(ch_binary_response_t* resp) {
     MemoryContext old = MemoryContextSwitchTo(resp->cxt);
     chc_err ce        = {};
 
-    if (chc_client_send_cancel(resp->client, &ce) != CHC_OK) {
-        resp->state->broken = true;
-        resp->eos           = true;
+    resp->eos = true;
+    if (chc_client_send_cancel(resp->conn->client, &ce) != CHC_OK) {
+        resp->conn->broken = true;
         MemoryContextSwitchTo(old);
         return;
     }
-    resp->state->check_cancel_fn = NULL;
-    resp->check_cancel           = NULL;
+    resp->conn->check_cancel_fn = NULL;
 
-    drain_set_deadline(resp->state, drain_now_us() + DRAIN_DEADLINE_US);
-
-    for (;;) {
-        chc_packet pkt = {};
-        int rc;
-
-        ce = (chc_err){ 0 };
-        rc = chc_client_recv_packet(resp->client, &pkt, &ce);
-
-        if (rc != CHC_OK) {
-            resp->state->broken = true;
-            resp->eos           = true;
-            break;
-        }
-        bool stop = pkt.kind == CHC_PKT_END_OF_STREAM || pkt.kind == CHC_PKT_EXCEPTION;
-
-        chc_packet_clear(resp->client, &pkt);
-        if (stop) {
-            resp->eos = true;
-            break;
-        }
-    }
-
-    drain_set_deadline(resp->state, 0);
+    ch_binary_set_deadline(resp->conn, drain_now_us() + DRAIN_DEADLINE_US);
+    ch_binary_drain(resp->conn, NULL);
+    ch_binary_set_deadline(resp->conn, 0);
     MemoryContextSwitchTo(old);
 }
 
@@ -222,24 +171,21 @@ ch_binary_simple_query(
     const ch_query* query,
     bool (*check_cancel)(void)
 ) {
-    struct ch_binary_state* s = conn_state(conn);
-    MemoryContext cxt         = AllocSetContextCreate(
+    MemoryContext cxt = AllocSetContextCreate(
         CurrentMemoryContext, "pg_clickhouse binary response", ALLOCSET_DEFAULT_SIZES
     );
     MemoryContext old          = MemoryContextSwitchTo(cxt);
     ch_binary_response_t* resp = palloc0(sizeof(*resp));
 
-    resp->cxt          = cxt;
-    resp->state        = s;
-    resp->client       = s->client;
-    resp->check_cancel = check_cancel;
-    s->check_cancel_fn = check_cancel;
+    resp->cxt             = cxt;
+    resp->conn            = conn;
+    conn->check_cancel_fn = check_cancel;
 
     size_t n_user_settings = 0;
     size_t n_params        = (size_t)(query->num_params > 0 ? query->num_params : 0);
     chc_query_setting* settings = NULL;
     chc_query_param* params     = NULL;
-    bool want_json_as_string    = server_supports_json_as_string(s->client);
+    bool want_json_as_string    = server_supports_json_as_string(conn->client);
 
     {
         const kv_list* kv = query->settings;
@@ -348,14 +294,15 @@ ch_binary_simple_query(
     };
     chc_err err = {};
     int rc      = chc_client_send_query_ex(
-        s->client, query->sql, strlen(query->sql), &opts, &err
+        conn->client, query->sql, strlen(query->sql), &opts, &err
     );
 
     if (rc != CHC_OK) {
         resp_set_error(resp, err.msg);
-        s->broken = true;
-        resp->eos = true;
-        goto done;
+        conn->broken = true;
+        resp->eos    = true;
+        MemoryContextSwitchTo(old);
+        return resp;
     }
 
     /*
@@ -367,8 +314,6 @@ ch_binary_simple_query(
         pump_one(resp);
     }
 
-done:
-    resp->success = (resp->error == NULL);
     MemoryContextSwitchTo(old);
     return resp;
 }
@@ -385,22 +330,17 @@ ch_binary_response_free(ch_binary_response_t* resp) {
     PG_CATCH();
     {
         FlushErrorState();
-        resp->state->broken = true;
+        resp->conn->broken = true;
     }
     PG_END_TRY();
 
-    resp->state->check_cancel_fn = NULL;
+    resp->conn->check_cancel_fn = NULL;
     MemoryContextDelete(resp->cxt);
 }
 
 const char*
 ch_binary_response_error(const ch_binary_response_t* resp) {
     return resp ? resp->error : NULL;
-}
-
-bool
-ch_binary_response_success(const ch_binary_response_t* resp) {
-    return resp && resp->success;
 }
 
 /* Adapt TCP response to shared block source. */

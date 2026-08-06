@@ -1,10 +1,11 @@
 /*
  * binary.h
  *
- * API exposed by the binary driver. Allocates against caller's
- * CurrentMemoryContext at every public entry point and ereports on
- * error. Returned objects own a dedicated MemoryContext; explicit
- * *_free / *_close calls do MemoryContextDelete.
+ * This API provides native-protocol transport over TCP. pg-clickhouse-c
+ * encodes and decodes rows, while this layer moves blocks. Each public entry
+ * point allocates in the caller's CurrentMemoryContext and reports errors with
+ * ereport. Returned objects own a dedicated MemoryContext that their cleanup
+ * functions delete.
  */
 
 #ifndef CLICKHOUSE_BINARY_H
@@ -15,10 +16,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#include "access/tupdesc.h"
-#include "executor/tuptable.h"
-#include "utils/palloc.h"
 
 #include "clickhouse.h"
 #include "engine.h"
@@ -66,58 +63,46 @@ extern void
 ch_binary_response_free(ch_binary_response_t* resp);
 extern const char*
 ch_binary_response_error(const ch_binary_response_t* resp);
-extern bool
-ch_binary_response_success(const ch_binary_response_t* resp);
 
-/* INSERT. */
+/* The response must outlive the returned block source. */
+extern pgch_block_source
+ch_binary_response_block_source(ch_binary_response_t* resp);
 
 /*
- * Finish the insert: send final empty Data, drain the response, ereport
- * if the server raised. Idempotent; call exactly once from the FDW happy
- * path before tearing down the handle.
+ * Starts an INSERT and reads its column schema from the server's initial empty
+ * block. The caller appends rows through the handle's writer and calls
+ * ch_binary_flush_block to send each block.
+ */
+extern ch_binary_insert_handle*
+ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query);
+
+extern pgch_writer*
+ch_binary_insert_writer(ch_binary_insert_handle* h);
+
+extern size_t
+ch_binary_insert_ncols(const ch_binary_insert_handle* h);
+
+/* Returns the server's name for column i, or an empty string when unnamed. */
+extern const char*
+ch_binary_insert_column_name(const ch_binary_insert_handle* h, size_t i);
+
+/* Sends buffered rows as one block and clears the writer. */
+extern void
+ch_binary_flush_block(ch_binary_insert_handle* h);
+
+/*
+ * Finishes the INSERT by sending an empty Data packet and draining the
+ * response. Reports server errors with ereport. This function is idempotent.
  */
 extern void
 ch_binary_finalize_insert(ch_binary_insert_handle* h);
 
-/* PG-typed surface follows. Rows decode through pgch_reader from
- * pg-clickhouse-c; this layer only supplies the block stream. */
-
-/* resp must outlive returned source. */
-extern pgch_block_source
-ch_binary_response_block_source(ch_binary_response_t* resp);
-
-/* Slot attribute feeding one ClickHouse column, resolved on first tuple. */
-typedef struct {
-    AttrNumber attnum;
-    Oid atttypid;
-} ch_binary_insert_colmap;
-
-typedef struct {
-    MemoryContext memcxt; /* used for cleanup */
-    MemoryContextCallback callback;
-
-    ch_binary_insert_handle* insert_block;
-    size_t len;                      /* ClickHouse column count */
-    ch_binary_insert_colmap* colmap; /* len entries, NULL until first tuple */
-    Oid relid;                       /* foreign table relid, for column_name lookups */
-} ch_binary_insert_state;
-
-/* INSERT helpers (encode.c). */
+/*
+ * Releases the handle without contacting the server or reporting an error, so
+ * a MemoryContext reset callback can call it during transaction abort. Marks
+ * the connection as broken if finalization did not run.
+ */
 extern void
-ch_binary_prepare_insert(
-    void* conn,
-    const ch_query* query,
-    ch_binary_insert_state* state
-);
-extern void
-ch_binary_insert_columns(ch_binary_insert_state* state);
-
-/* Append one slot's worth of values, one per ClickHouse column. */
-extern void
-ch_binary_insert_tuple(ch_binary_insert_state* state, TupleTableSlot* slot);
-extern void
-ch_binary_insert_autoflush(ch_binary_insert_state* state);
-extern void
-ch_binary_insert_state_free(void* c);
+ch_binary_release_insert(ch_binary_insert_handle* h);
 
 #endif /* CLICKHOUSE_BINARY_H */

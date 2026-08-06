@@ -1,10 +1,9 @@
 /*
  * server_version.h
  *
- * The ClickHouse server version reported by an active connection. Kept in its
- * own dependency-free header so it can be shared between the low-level driver
- * state in internal.h (which pulls in no Postgres headers) and the FDW layer
- * in fdw.h, without coupling the two.
+ * This type represents the ClickHouse server version reported by an active
+ * connection. This header has no project dependencies, which allows low-level
+ * drivers and the FDW layer to share the type without sharing their state.
  */
 
 #ifndef CLICKHOUSE_SERVER_VERSION_H

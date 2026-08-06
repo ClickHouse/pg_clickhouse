@@ -28,8 +28,15 @@
 #include "mb/pg_wchar.h"
 
 #include "http.h"
-#include "internal.h"
 #include "kv_list.h"
+
+struct ch_http_connection_t {
+    char* dbname;
+    char* base_url;   /* Allocated by curl_url_get and freed by curl_free. */
+    long ssl_version; /* Minimum CURLOPT_SSLVERSION, or DEFAULT when unset. */
+    ch_server_version version;
+    bool version_fetched; /* True after a version lookup, including failure. */
+};
 
 #ifndef CURL_WRITEFUNC_ERROR
 #define CURL_WRITEFUNC_ERROR 0xFFFFFFFF
@@ -55,10 +62,6 @@ ch_http_init(int verbose) {
  * Connection
  * ----------------------------------------------------------------
  */
-
-#define CLICKHOUSE_PORT 8123
-#define CLICKHOUSE_TLS_PORT 8443
-#define HTTP_TLS_PORT 443
 
 /*
  * Map the min_tls_version option to a CURLOPT_SSLVERSION value, which libcurl
@@ -110,26 +113,7 @@ ch_http_connection(ch_connection_details* details, const char** error) {
 
     bool use_tls;
 
-    switch (details->tls) {
-    case CH_TLS_ON:
-        if (!port) {
-            port = CLICKHOUSE_TLS_PORT;
-        }
-        use_tls = true;
-        break;
-    case CH_TLS_OFF:
-        if (!port) {
-            port = CLICKHOUSE_PORT;
-        }
-        use_tls = false;
-        break;
-    default: /* CH_TLS_AUTO */
-        if (!port) {
-            port = ch_is_cloud_host(host) ? CLICKHOUSE_TLS_PORT : CLICKHOUSE_PORT;
-        }
-        use_tls = (port == CLICKHOUSE_TLS_PORT || port == HTTP_TLS_PORT);
-        break;
-    }
+    ch_resolve_endpoint(details, CH_PORTS_HTTP, &port, &use_tls);
 
     snprintf(port_buf, sizeof(port_buf), "%d", port);
 
