@@ -1217,11 +1217,12 @@ equivalents as follows:
 *   `extract(field FROM source)`: same mappings as `date_part`
 *   `date(timestamp)` & `date(timestamptz)`: [toDate](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#toDate)
     (deparsed as CH alias `date`)
-*   `array_position`: [indexOf](https://clickhouse.com/docs/sql-reference/functions/array-functions#indexOf) with
-    [nullIf](https://clickhouse.com/docs/reference/functions/regular-functions/functions-for-nulls#nullif)
-    to convert `0` to `NULL` and
-    [arraySlice](https://clickhouse.com/docs/sql-reference/functions/array-functions#arraySlice)
-    when there's a third argument for the search starting index; note that `nan` currently [does not match](https://github.com/ClickHouse/ClickHouse/issues/113169)
+*   `array_position` (two or three arguments): [indexOf](https://clickhouse.com/docs/sql-reference/functions/array-functions#indexOf)
+    wrapped in `nullIf(..., 0)` for non-floating-point arrays. Floating-point
+    arrays use [arrayFirstIndex](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayFirstIndex)
+    with explicit `NaN` matching; a positive constant start position is pushed
+    down with [arraySlice](https://clickhouse.com/docs/sql-reference/functions/array-functions#arraySlice),
+    while other start positions evaluate locally.
 *   `array_cat`: [arrayConcat](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayConcat)
 *   `array_append`: [arrayPushBack](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayPushBack)
 *   `array_prepend`: [arrayPushFront](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayPushFront)

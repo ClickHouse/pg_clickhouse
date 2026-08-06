@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### ⚡ Improvements
 
+*   Corrected `array_position` pushdown for floating-point arrays so `NaN`
+    matches PostgreSQL semantics while retaining remote filtering.
 *   Added the `clickhouse_server_version(server)` function, which reports the
     ClickHouse server version ("major.minor.patch") for a foreign server
     ([#293]).

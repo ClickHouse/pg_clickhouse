@@ -132,6 +132,13 @@ typedef struct deparse_expr_cxt {
     bool has_inlined_subplan;
 
     /*
+     * True when the statement contains a float array_position() expression.
+     * Its lambda may capture an outer column, so use relation aliases even
+     * for a single-table scan.
+     */
+    bool has_float_array_position;
+
+    /*
      * SubPlan scope. While deparsing the body of a pushed-down SubPlan,
      * subplan points at it and root points at the SubPlan's own PlannerInfo
      * (so planner_rt_fetch resolves varnos against the subquery's rtable).
@@ -247,6 +254,8 @@ static void
 deparseVar(Var* node, deparse_expr_cxt* context);
 static void
 deparseConst(Const* node, deparse_expr_cxt* context, int showtype);
+static bool
+has_float_array_position_walker(Node* node, void* context);
 static void
 deparseParam(Param* node, deparse_expr_cxt* context);
 static void
@@ -293,6 +302,8 @@ deparseSelectSql(
     List** retrieved_attrs,
     deparse_expr_cxt* context
 );
+static Expr*
+findPathKeyExpr(PathKey* pathkey, bool has_final_sort, deparse_expr_cxt* context);
 static void
 appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* context);
 static void
@@ -2116,8 +2127,9 @@ chfdw_deparse_select_stmt_for_rel(
     }
 
     /*
-     * Detect inlined SubPlans before emitting anything: their presence forces
-     * r{N} qualification throughout the statement (see has_inlined_subplan).
+     * Detect inlined SubPlans and float array_position() before emitting
+     * anything: both cases force r{N} qualification throughout the statement
+     * (see has_inlined_subplan and has_float_array_position).
      * Quals may carry RestrictInfo decoration, which expression_tree_walker
      * does not look through on all versions, so unwrap manually. remote_conds
      * is checked too: for upper relations it becomes the HAVING clause.
@@ -2134,6 +2146,9 @@ chfdw_deparse_select_stmt_for_rel(
             if (contain_subplans(clause)) {
                 context.has_inlined_subplan = true;
             }
+            if (has_float_array_position_walker(clause, NULL)) {
+                context.has_float_array_position = true;
+            }
         }
         foreach (lc, remote_conds) {
             Node* clause = (Node*)lfirst(lc);
@@ -2144,9 +2159,26 @@ chfdw_deparse_select_stmt_for_rel(
             if (contain_subplans(clause)) {
                 context.has_inlined_subplan = true;
             }
+            if (has_float_array_position_walker(clause, NULL)) {
+                context.has_float_array_position = true;
+            }
         }
         if (contain_subplans((Node*)tlist)) {
             context.has_inlined_subplan = true;
+        }
+        if (has_float_array_position_walker((Node*)tlist, NULL)) {
+            context.has_float_array_position = true;
+        }
+        if (pathkeys) {
+            foreach (lc, pathkeys) {
+                Expr* em_expr = findPathKeyExpr(lfirst(lc), has_final_sort, &context);
+
+                if (em_expr != NULL &&
+                    has_float_array_position_walker((Node*)em_expr, NULL)) {
+                    context.has_float_array_position = true;
+                    break;
+                }
+            }
         }
     }
 
@@ -2270,7 +2302,8 @@ deparseFromExpr(List* quals, deparse_expr_cxt* context) {
         buf,
         context->root,
         scanrel,
-        (bms_num_members(scanrel->relids) > 1 || context->has_inlined_subplan),
+        (bms_num_members(scanrel->relids) > 1 || context->has_inlined_subplan ||
+         context->has_float_array_position),
         (Index)0,
         NULL,
         context->params_list
@@ -2999,6 +3032,33 @@ deparseExpr(Expr* node, deparse_expr_cxt* context) {
     }
 }
 
+static bool
+has_float_array_position_walker(Node* node, void* context) {
+    (void)context;
+
+    if (node == NULL) {
+        return false;
+    }
+
+    if (IsA(node, FuncExpr)) {
+        FuncExpr* func        = (FuncExpr*)node;
+        CustomObjectDef* cdef = chfdw_check_for_custom_function(func->funcid);
+
+        if (cdef && cdef->cf_type == CF_ARRAY_POSITION && func->args != NIL) {
+            Oid element = get_base_element_type(exprType((Node*)linitial(func->args)));
+
+            if (OidIsValid(element)) {
+                element = getBaseType(element);
+            }
+            if (element == FLOAT4OID || element == FLOAT8OID) {
+                return true;
+            }
+        }
+    }
+
+    return expression_tree_walker(node, has_float_array_position_walker, context);
+}
+
 /*
  * Deparse given Var node into context->buf.
  *
@@ -3018,7 +3078,9 @@ deparseVar(Var* node, deparse_expr_cxt* context) {
      * is inlined anywhere in the statement (unqualified outer columns would
      * be captured by the subquery's scope).
      */
-    bool qualify_col = (bms_num_members(relids) > 1 || context->has_inlined_subplan);
+    bool qualify_col =
+        (bms_num_members(relids) > 1 || context->has_inlined_subplan ||
+         context->has_float_array_position);
 
     /*
      * SubPlan scope: the Var's varno indexes the subquery's own rtable
@@ -3483,11 +3545,21 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
     case FLOAT4OID:
     case FLOAT8OID:
     case NUMERICOID: {
-        /*
-         * No need to quote unless it's a special value such as 'NaN'.
-         * See comments in get_const_expr().
-         */
-        if (strspn(extval, "0123456789+-eE.") == strlen(extval)) {
+        if ((node->consttype == FLOAT4OID || node->consttype == FLOAT8OID) &&
+            pg_strcasecmp(extval, "NaN") == 0) {
+            appendStringInfoString(buf, "nan");
+        } else if (
+            (node->consttype == FLOAT4OID || node->consttype == FLOAT8OID) &&
+            (pg_strcasecmp(extval, "Infinity") == 0 ||
+             pg_strcasecmp(extval, "+Infinity") == 0)
+        ) {
+            appendStringInfoString(buf, "inf");
+        } else if (
+            (node->consttype == FLOAT4OID || node->consttype == FLOAT8OID) &&
+            pg_strcasecmp(extval, "-Infinity") == 0
+        ) {
+            appendStringInfoString(buf, "-inf");
+        } else if (strspn(extval, "0123456789+-eE.") == strlen(extval)) {
             if (extval[0] == '+' || extval[0] == '-') {
                 appendStringInfo(buf, "(%s)", extval);
             } else {
@@ -4612,23 +4684,48 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             deparseExpr((Expr*)linitial(node->args), context);
             appendStringInfoString(buf, "), 0))");
             return;
-        case CF_ARRAY_POSITION:
+        case CF_ARRAY_POSITION: {
+            Expr* array = (Expr*)linitial(node->args);
+            Oid element = get_base_element_type(exprType((Node*)array));
+            bool float_array;
+
+            if (OidIsValid(element)) {
+                element = getBaseType(element);
+            }
+            float_array = element == FLOAT4OID || element == FLOAT8OID;
+
             appendStringInfoChar(buf, '(');
-            /* Use nullIf() to Convert CH 0 return value to NULL. */
-            appendStringInfoString(buf, "nullIf(indexOf(");
+            if (float_array) {
+                appendStringInfoString(buf, "nullIf(arrayFirstIndex(x -> ");
+                appendStringInfoString(buf, "((isNull(x) AND isNull(");
+                deparseExpr((Expr*)list_nth(node->args, 1), context);
+                appendStringInfoString(buf, ")) OR (x = ");
+                deparseExpr((Expr*)list_nth(node->args, 1), context);
+                appendStringInfoString(buf, ") OR (isNaN(x) AND isNaN(");
+                deparseExpr((Expr*)list_nth(node->args, 1), context);
+                appendStringInfoString(buf, "))), ");
+            } else {
+                /* Use nullIf() to Convert CH 0 return value to NULL. */
+                appendStringInfoString(buf, "nullIf(indexOf(");
+            }
             if (list_length(node->args) == 3) {
                 /* Use arraySlice() to start search from the specified index. */
                 appendStringInfoString(buf, "arraySlice(");
-                deparseExpr((Expr*)linitial(node->args), context);
+                deparseExpr(array, context);
                 appendStringInfoString(buf, ", ");
                 deparseExpr((Expr*)list_nth(node->args, 2), context);
-                appendStringInfoString(buf, "), ");
+                appendStringInfoChar(buf, ')');
             } else {
-                deparseExpr((Expr*)linitial(node->args), context);
-                appendStringInfoString(buf, ", ");
+                deparseExpr(array, context);
             }
-            deparseExpr((Expr*)list_nth(node->args, 1), context);
+
+            if (!float_array) {
+                appendStringInfoString(buf, ", ");
+                deparseExpr((Expr*)list_nth(node->args, 1), context);
+            }
+
             appendStringInfoString(buf, "), 0)");
+
             if (list_length(node->args) == 3) {
                 /* Restore start index to index number. */
                 appendStringInfoString(buf, " + (");
@@ -4637,6 +4734,7 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             }
             appendStringInfoChar(buf, ')');
             return;
+        }
         case CF_TRIM_ARRAY:
             /* arrayResize(arr, length(arr) - n) */
             appendStringInfoChar(buf, '(');
@@ -6479,48 +6577,46 @@ appendGroupByClause(List* tlist, deparse_expr_cxt* context) {
  * relation. From given pathkeys expressions belonging entirely to the given
  * base relation are obtained and deparsed.
  */
+static Expr*
+findPathKeyExpr(PathKey* pathkey, bool has_final_sort, deparse_expr_cxt* context) {
+    RelOptInfo* baserel       = context->scanrel;
+    CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)context->foreignrel->fdw_private;
+
+    if (has_final_sort) {
+        PathTarget* target = context->foreignrel->reltarget;
+
+        if (target->exprs == NIL) {
+            target = context->root->upper_targets[fpinfo->stage];
+        }
+        return chfdw_find_em_expr_for_input_target(
+            context->root, pathkey->pk_eclass, target
+        );
+    }
+
+    if (IS_JOIN_REL(context->foreignrel) &&
+        (fpinfo->jointype == JOIN_SEMI || fpinfo->jointype == JOIN_ANTI)) {
+        Expr* em_expr =
+            chfdw_find_em_expr_for_rel(pathkey->pk_eclass, fpinfo->outerrel);
+
+        if (em_expr == NULL) {
+            em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
+        }
+        return em_expr;
+    }
+
+    return chfdw_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
+}
+
 static void
 appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* context) {
     ListCell* lcell;
-    char* delim               = " ";
-    RelOptInfo* baserel       = context->scanrel;
-    StringInfo buf            = context->buf;
-    CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)context->foreignrel->fdw_private;
+    char* delim    = " ";
+    StringInfo buf = context->buf;
 
     appendStringInfoString(buf, " ORDER BY");
     foreach (lcell, pathkeys) {
         PathKey* pathkey = lfirst(lcell);
-        Expr* em_expr;
-
-        if (has_final_sort) {
-            /*
-             * By construction, context->foreignrel is the input relation to
-             * the final sort.  Upper rels may have an empty reltarget; fall
-             * back to the planner's upper target for that stage.
-             */
-            PathTarget* target = context->foreignrel->reltarget;
-
-            if (target->exprs == NIL) {
-                target = context->root->upper_targets[fpinfo->stage];
-            }
-            em_expr = chfdw_find_em_expr_for_input_target(
-                context->root, pathkey->pk_eclass, target
-            );
-        } else if (
-            IS_JOIN_REL(context->foreignrel) &&
-            (fpinfo->jointype == JOIN_SEMI || fpinfo->jointype == JOIN_ANTI)
-        ) {
-            /*
-             * For SEMI/ANTI JOINs, prefer expressions from the outer relation
-             * since inner relation columns are not visible in the output.
-             */
-            em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass, fpinfo->outerrel);
-            if (em_expr == NULL) {
-                em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
-            }
-        } else {
-            em_expr = chfdw_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
-        }
+        Expr* em_expr    = findPathKeyExpr(pathkey, has_final_sort, context);
 
         Assert(em_expr != NULL);
 
