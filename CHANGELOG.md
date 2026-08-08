@@ -150,6 +150,9 @@ All notable changes to this project will be documented in this file. It uses the
 *   Taught `json_extract_path*()` and `jsonb_extract_path*()` not to push down
     when the path array contains any `NULL` elements. Thanks to Minh Vu for
     the PR ([#335])!
+*   Fixed loss of subsecond precision in `to_timestamp(float8)` by mapping it
+    to the ClickHouse `toDateTime64()` function instead of
+    `fromUnixTimestamp()`. Thanks to Minh Vu for the PR ([#338]).
 
 ### 📚 Documentation
 
@@ -222,6 +225,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#335 Reject JSON paths containing NULL elements"
   [#336]: https://github.com/ClickHouse/pg_clickhouse/pull/336
     "ClickHouse/pg_clickhouse#336 Preserve array_length semantics"
+  [#338]: https://github.com/ClickHouse/pg_clickhouse/pull/338
+    "ClickHouse/pg_clickhouse#338 Preserve fractional seconds in to_timestamp()"
 
 ## [v0.3.2] — 2026-06-16
 

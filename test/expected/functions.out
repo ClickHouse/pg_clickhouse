@@ -1538,11 +1538,11 @@ SELECT key1 FROM t3_map WHERE md5(val) LIKE 'a%' ORDER BY key1;
 
 -- Check to_timestamp(float8).
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(0);
-                                                       QUERY PLAN                                                       
-------------------------------------------------------------------------------------------------------------------------
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t6
    Output: i64, f64
-   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((fromUnixTimestamp(toInt64(i64)) = '1970-01-01 00:00:00'))
+   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(i64, 6, 'UTC') = '1970-01-01 00:00:00'))
 (3 rows)
 
 SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(0);
@@ -1552,11 +1552,11 @@ SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(0);
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(0);
-                                                       QUERY PLAN                                                       
-------------------------------------------------------------------------------------------------------------------------
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t6
    Output: i64, f64
-   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((fromUnixTimestamp(toInt64(f64)) = '1970-01-01 00:00:00'))
+   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(f64, 6, 'UTC') = '1970-01-01 00:00:00'))
 (3 rows)
 
 SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(0);
@@ -1566,11 +1566,11 @@ SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(0);
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(0);
-                                                       QUERY PLAN                                                       
-------------------------------------------------------------------------------------------------------------------------
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t6
    Output: i64, f64
-   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((fromUnixTimestamp(toInt64(i64)) = '1970-01-01 00:00:00'))
+   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(i64, 6, 'UTC') = '1970-01-01 00:00:00'))
 (3 rows)
 
 SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(2042323443);
@@ -1580,14 +1580,19 @@ SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(2042323443);
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(2042323443);
-                                                       QUERY PLAN                                                       
-------------------------------------------------------------------------------------------------------------------------
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t6
    Output: i64, f64
-   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((fromUnixTimestamp(toInt64(f64)) = '2034-09-20 00:04:03'))
+   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(f64, 6, 'UTC') = '2034-09-20 00:04:03'))
 (3 rows)
 
 SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(2042323443);
+ i64 | f64 
+-----+-----
+(0 rows)
+
+SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(2042323443.232);
     i64     |      f64       
 ------------+----------------
  2042323443 | 2042323443.232

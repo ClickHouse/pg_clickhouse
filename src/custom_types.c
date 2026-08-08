@@ -594,11 +594,9 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         return true;
         /* CH lacks "power", maps to pow */
     case F_TO_TIMESTAMP_FLOAT8:
-        def->ch_name     = "fromUnixTimestamp(toInt64";
-        def->paren_count = 2;
+        def->cf_type = CF_TO_TIMESTAMP;
+        def->ch_name = "\1";
         return true;
-        /* ClickHouse doesn't work with subsecond precision */
-        /* timestamps. */
     case F_TO_CHAR_TIMESTAMP_TEXT:
     case F_TO_CHAR_TIMESTAMPTZ_TEXT:
         def->cf_type = CF_TO_CHAR;

@@ -374,6 +374,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t6 WHERE to_timestamp(i64) = to_times
 SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(2042323443);
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(2042323443);
 SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(2042323443);
+SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(2042323443.232);
 
 -- Check current_*-type functions.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < NOW();

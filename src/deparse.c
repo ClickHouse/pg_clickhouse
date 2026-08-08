@@ -4406,6 +4406,12 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             appendStringInfo(buf, "nowInBlock64(6, %s)", QUOTED_TZ);
             return;
         }
+        case CF_TO_TIMESTAMP: {
+            appendStringInfoString(buf, "toDateTime64(");
+            deparseExpr((Expr*)linitial(node->args), context);
+            appendStringInfoString(buf, ", 6, 'UTC')");
+            return;
+        }
         case CF_DATE_TRUNC: {
             Const* arg      = (Const*)linitial(node->args);
             char* trunctype = TextDatumGetCString(arg->constvalue);
