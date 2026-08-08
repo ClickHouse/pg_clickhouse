@@ -388,6 +388,7 @@ typedef enum {
     CF_REGEX_ICASE_NO_MATCH,   /* !~* case-insensitive regex operator */
     CF_JSON_FETCHVAL,          /* -> operator on json & jsonb */
     CF_JSON_FETCHVAL_TEXT,     /* ->> operator on json & jsonb */
+    CF_JSON_EXISTS,            /* ? operator on jsonb */
     CF_JSON_EXTRACT_PATH_TEXT, /* jsonb?_extract_path_text() →
                                 * col."k1"."k2" */
     CF_JSON_EXTRACT_PATH,      /* json?_extract_path() →
