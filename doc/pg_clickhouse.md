@@ -1347,7 +1347,12 @@ equivalents as follows:
 *   `!~*` (case insensitive regexp not match): [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
 *   `->>` (JSON/JSONB extract element as text): [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
 *   `->` (JSON/JSONB extract): [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
-*   `?` (JSONB top-level key or array string existence): [JSONHas](https://clickhouse.com/docs/sql-reference/functions/json-functions#jsonhas) for objects and [JSONExtractArrayRaw](https://clickhouse.com/docs/sql-reference/functions/json-functions#jsonextractarrayraw) for arrays. This also supports compatibility views that parse a JSON document stored in a ClickHouse `String`.
+*   `?` (JSONB top-level key or array string existence):
+    [JSONHas](https://clickhouse.com/docs/sql-reference/functions/json-functions#jsonhas)
+    for native JSON objects on ClickHouse 24.8 and later, and
+    [JSONExtractArrayRaw](https://clickhouse.com/docs/sql-reference/functions/json-functions#jsonextractarrayraw)
+    for arrays parsed from ClickHouse `String` columns by compatibility views
+    on ClickHouse 23.8 and later.
 
 ### IN and NULL Semantics
 

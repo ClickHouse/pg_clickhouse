@@ -212,6 +212,10 @@ static bool
 foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx);
 static bool
 is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx);
+static UserMapping*
+foreign_expr_gate_user_mapping(
+    PlannerInfo* root, RelOptInfo* foreignrel, Oid serverid
+);
 static char*
 deparse_type_name(Oid type_oid, int32 typemod);
 
@@ -929,6 +933,12 @@ classifyJsonbDocument(Expr* expr, Expr** document) {
         return JSONB_DOCUMENT_NATIVE;
     }
 
+    /*
+     * Recognize the explicit jsonb_in() call used by compatibility views to
+     * expose a ClickHouse String column as PostgreSQL jsonb. Keep this special
+     * case scoped to jsonb_exists; general jsonb_in() pushdown can be added
+     * independently if other expressions need it.
+     */
     if (IsA(expr, FuncExpr)) {
         FuncExpr* func = (FuncExpr*)expr;
 
@@ -1156,6 +1166,42 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             Expr* document;
             JsonbDocumentKind document_kind =
                 classifyJsonbDocument((Expr*)linitial(oe->args), &document);
+
+            if (document_kind != JSONB_DOCUMENT_UNSUPPORTED) {
+                UserMapping* user;
+                ch_server_version version;
+
+                if (fpinfo == NULL || fpinfo->server == NULL) {
+                    return false;
+                }
+                user = foreign_expr_gate_user_mapping(
+                    glob_cxt->root, glob_cxt->foreignrel, fpinfo->server->serverid
+                );
+                if (user == NULL) {
+                    return false;
+                }
+                version = chfdw_get_server_version(user);
+
+                /*
+                 * Before 24.8, JSON was the experimental Object('json') type.
+                 * It materializes every discovered path with a default value,
+                 * so it cannot preserve top-level key existence.
+                 */
+                if (document_kind == JSONB_DOCUMENT_NATIVE &&
+                    !chfdw_version_ge(version, 24, 8)) {
+                    return false;
+                }
+
+                /*
+                 * Before 23.8, ClickHouse's JSON validation did not accept all
+                 * top-level scalar documents that PostgreSQL accepts. Evaluate
+                 * compatibility views locally on those releases.
+                 */
+                if (document_kind == JSONB_DOCUMENT_STRING &&
+                    !chfdw_version_ge(version, 23, 8)) {
+                    return false;
+                }
+            }
 
             if (document_kind == JSONB_DOCUMENT_UNSUPPORTED ||
                 !foreign_expr_walker(
@@ -1540,8 +1586,8 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
  * implemented.
  */
 /*
- * Resolve the user mapping the executor will use to scan foreignrel, for the
- * plan-time server-version probe below. Mirrors the executor's own lookup
+ * Resolve the user mapping the executor will use to scan foreignrel for a
+ * plan-time server-version gate. Mirrors the executor's own lookup
  * (see clickhouseBeginForeignScan): the RTE's checkAsUser — set when the rel
  * is accessed on behalf of another user, e.g. through a view — wins over the
  * invoking user. Returns NULL instead of erroring when no mapping exists, so
@@ -1549,7 +1595,9 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
  * (or a bare EXPLAIN) at plan time.
  */
 static UserMapping*
-subplan_gate_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel, Oid serverid) {
+foreign_expr_gate_user_mapping(
+    PlannerInfo* root, RelOptInfo* foreignrel, Oid serverid
+) {
     Oid userid  = InvalidOid;
     int rtindex = -1;
 
@@ -1813,7 +1861,7 @@ is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt, ExprTruthCtx 
      * no mapping exists it refuses the pushdown rather than erroring.
      */
     {
-        UserMapping* user = subplan_gate_user_mapping(
+        UserMapping* user = foreign_expr_gate_user_mapping(
             glob_cxt->root, glob_cxt->foreignrel, fpinfo->server->serverid
         );
 
@@ -5020,28 +5068,9 @@ findFunction(Oid typoid, char* name) {
 }
 
 static void
-deparseJsonbDocument(
-    Expr* document,
-    JsonbDocumentKind document_kind,
-    deparse_expr_cxt* context
-) {
-    if (document_kind == JSONB_DOCUMENT_NATIVE) {
-        appendStringInfoString(context->buf, "toJSONString(");
-    }
-    deparseExpr(document, context);
-    if (document_kind == JSONB_DOCUMENT_NATIVE) {
-        appendStringInfoChar(context->buf, ')');
-    }
-}
-
-static void
-deparseJsonbNonnullDocument(
-    Expr* document,
-    JsonbDocumentKind document_kind,
-    deparse_expr_cxt* context
-) {
+deparseJsonbNonnullDocument(Expr* document, deparse_expr_cxt* context) {
     appendStringInfoString(context->buf, "ifNull(");
-    deparseJsonbDocument(document, document_kind, context);
+    deparseExpr(document, context);
     appendStringInfoString(context->buf, ", 'null')");
 }
 
@@ -5055,43 +5084,70 @@ deparseJsonbExists(
     StringInfo buf = context->buf;
 
     appendStringInfoString(buf, "(if(isNull(");
-    deparseJsonbDocument(document, document_kind, context);
+    deparseExpr(document, context);
     appendStringInfoString(buf, ") OR isNull(");
     deparseExpr(key, context);
     appendStringInfoString(buf, "), NULL, ");
 
-    if (document_kind == JSONB_DOCUMENT_STRING) {
-        appendStringInfoString(buf, "if(NOT isValidJSON(");
-        deparseJsonbNonnullDocument(document, document_kind, context);
-        appendStringInfoString(
-            buf,
-            "), throwIf(1, 'invalid input syntax for type json'), "
-        );
+    if (document_kind == JSONB_DOCUMENT_NATIVE) {
+        appendStringInfoString(buf, "JSONHas(");
+        deparseExpr(document, context);
+        appendStringInfoString(buf, ", ");
+        deparseExpr(key, context);
+        appendStringInfoString(buf, ")))");
+        return;
     }
 
+    appendStringInfoString(buf, "if(NOT isValidJSON(");
+    deparseJsonbNonnullDocument(document, context);
+
+    /*
+     * throwIf() requires a constant message. Converting this prefixed value to
+     * UInt8 is guaranteed to fail while retaining the invalid document in the
+     * ClickHouse diagnostic.
+     */
+    appendStringInfoString(
+        buf,
+        "), toUInt8(concat('invalid input syntax for type json: ', "
+    );
+    deparseJsonbNonnullDocument(document, context);
+    appendStringInfoString(buf, ")), ");
+
     appendStringInfoString(buf, "multiIf(JSONType(");
-    deparseJsonbNonnullDocument(document, document_kind, context);
+    deparseJsonbNonnullDocument(document, context);
     appendStringInfoString(buf, ") = 'Object', JSONHas(");
-    deparseJsonbNonnullDocument(document, document_kind, context);
+    deparseJsonbNonnullDocument(document, context);
     appendStringInfoString(buf, ", ");
     deparseExpr(key, context);
     appendStringInfoString(buf, "), JSONType(");
-    deparseJsonbNonnullDocument(document, document_kind, context);
+    deparseJsonbNonnullDocument(document, context);
+
+    /*
+     * Keep the key expression outside the lambda body. A fixed lambda
+     * parameter could otherwise shadow a same-named column used as the key
+     * (for example, document ? jsonb_exists_element). Supply the key through
+     * a parallel, same-length array instead.
+     */
     appendStringInfoString(
         buf,
-        ") = 'Array', arrayExists(jsonb_exists_element -> "
-        "JSONType(jsonb_exists_element) = 'String' AND "
-        "JSONExtractString(jsonb_exists_element) = "
+        ") = 'Array', arrayExists((__jsonb_element, __jsonb_key) -> "
+        "JSONType(__jsonb_element) = 'String' AND "
+        "JSONExtractString(__jsonb_element) = __jsonb_key, "
+        "JSONExtractArrayRaw("
     );
+    deparseJsonbNonnullDocument(document, context);
+    appendStringInfoString(buf, "), arrayWithConstant(length(JSONExtractArrayRaw(");
+    deparseJsonbNonnullDocument(document, context);
+    appendStringInfoString(buf, ")), ");
     deparseExpr(key, context);
-    appendStringInfoString(buf, ", JSONExtractArrayRaw(");
-    deparseJsonbNonnullDocument(document, document_kind, context);
-    appendStringInfoString(buf, ")), 0)");
-
-    if (document_kind == JSONB_DOCUMENT_STRING) {
-        appendStringInfoChar(buf, ')');
-    }
-    appendStringInfoString(buf, "))");
+    appendStringInfoString(buf, ")), JSONType(");
+    deparseJsonbNonnullDocument(document, context);
+    appendStringInfoString(buf, ") = 'String', JSONExtractString(");
+    deparseJsonbNonnullDocument(document, context);
+    appendStringInfoString(buf, ") = ");
+    deparseExpr(key, context);
+    appendStringInfoString(buf, ", 0)");
+    appendStringInfoString(buf, ")))");
 }
 
 /*

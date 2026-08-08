@@ -92,6 +92,10 @@ All notable changes to this project will be documented in this file. It uses the
 *   Coerce array elements in binary driver. `Array(Int32)` to `bigint[]`, or
     `quantilesExactLow()` results into `double precision[]`, no longer fails
     with `could not cast value from integer[] to bigint[]` ([#326]).
+*   Added pushdown for the JSONB `?` existence operator on native ClickHouse
+    JSON columns (24.8 and later) and compatibility views over JSON documents
+    stored in String columns (23.8 and later). Thanks to Kostia R for the PR
+    ([#325])!
 *   Added support for the third argument to `array_position()` when it's a
     positive constant value, pushing it down to a call to `arraySlice()` to
     start the search from the specified index. Thanks to Minh Vu for the PR
@@ -207,6 +211,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#317 Push down the array IN family unconditionally"
   [#319]: https://github.com/ClickHouse/pg_clickhouse/pull/319
     "ClickHouse/pg_clickhouse#319 Fix foreign scan RTE selection"
+  [#325]: https://github.com/ClickHouse/pg_clickhouse/pull/325
+    "ClickHouse/pg_clickhouse#325 Push down JSONB existence predicates"
   [#326]: https://github.com/ClickHouse/pg_clickhouse/pull/326
     "ClickHouse/pg_clickhouse#326 pg-clickhouse-c"
   [#328]: https://github.com/ClickHouse/pg_clickhouse/pull/328

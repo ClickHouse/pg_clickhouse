@@ -72,19 +72,7 @@ FROM version \gset
 \if :ch_has_json_type
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_native WHERE document ? 'key' ORDER BY id;
-                                                                              QUERY PLAN                                                                               
------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on public.jsonb_exists_native
-   Output: id
-   Remote SQL: SELECT id FROM jsonb_exists.native_documents WHERE ((if(isNull(document) OR isNull('key'), NULL, JSONHas(document, 'key')))) ORDER BY id ASC NULLS LAST
-(3 rows)
-
 SELECT id FROM jsonb_exists_native WHERE document ? 'key' ORDER BY id;
- id 
-----
-  1
-(1 row)
-
 \endif
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_compatibility

@@ -1,25 +1,31 @@
 CREATE SERVER jsonb_exists_binary FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS (dbname 'jsonb_exists', driver 'binary');
+CREATE SERVER
 CREATE USER MAPPING FOR CURRENT_USER SERVER jsonb_exists_binary;
-
+CREATE USER MAPPING
 CREATE SERVER jsonb_exists_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE SERVER
 CREATE USER MAPPING FOR CURRENT_USER SERVER jsonb_exists_admin;
-
+CREATE USER MAPPING
 CALL clickhouse_perform('jsonb_exists_admin',
     'DROP DATABASE IF EXISTS jsonb_exists');
+CALL
 CALL clickhouse_perform('jsonb_exists_admin', 'CREATE DATABASE jsonb_exists');
+CALL
 CALL clickhouse_perform('jsonb_exists_admin', $$
     CREATE TABLE jsonb_exists.native_documents (
         id Int32,
         document JSON
     ) ENGINE = MergeTree ORDER BY id
 $$);
+CALL
 CALL clickhouse_perform('jsonb_exists_admin', $$
     INSERT INTO jsonb_exists.native_documents VALUES
         (1, '{"key":1,"first":true}'),
         (2, '{"other":2}'),
         (3, '{"other":null}')
 $$);
+CALL
 CALL clickhouse_perform('jsonb_exists_admin', $$
     CREATE TABLE jsonb_exists.string_documents (
         id Int32,
@@ -27,6 +33,7 @@ CALL clickhouse_perform('jsonb_exists_admin', $$
         jsonb_exists_element String
     ) ENGINE = MergeTree ORDER BY id
 $$);
+CALL
 CALL clickhouse_perform('jsonb_exists_admin', $$
     INSERT INTO jsonb_exists.string_documents VALUES
         (1, '{"key":1,"first":true}', 'key'),
@@ -36,23 +43,23 @@ CALL clickhouse_perform('jsonb_exists_admin', $$
         (5, NULL, 'key'),
         (6, '"key"', 'key')
 $$);
-
+CALL
 CREATE FOREIGN TABLE jsonb_exists_native (
     id integer,
     document jsonb
 ) SERVER jsonb_exists_binary OPTIONS (table_name 'native_documents');
-
+CREATE FOREIGN TABLE
 CREATE FOREIGN TABLE jsonb_exists_string (
     id integer,
     document text,
     jsonb_exists_element text
 ) SERVER jsonb_exists_binary OPTIONS (table_name 'string_documents');
-
+CREATE FOREIGN TABLE
 CREATE VIEW jsonb_exists_compatibility AS
 SELECT id, pg_catalog.jsonb_in(document::pg_catalog.cstring) AS document,
        jsonb_exists_element
 FROM jsonb_exists_string;
-
+CREATE VIEW
 WITH version AS (
     SELECT string_to_array(
         clickhouse_server_version('jsonb_exists_binary'), '.'
@@ -67,38 +74,93 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_native WHERE document ? 'key' ORDER BY id;
 SELECT id FROM jsonb_exists_native WHERE document ? 'key' ORDER BY id;
 \endif
-
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_compatibility
 WHERE document ? 'key'
 ORDER BY id;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Foreign Scan on public.jsonb_exists_string
+   Output: jsonb_exists_string.id
+   Filter: (jsonb_in((jsonb_exists_string.document)::cstring) ? 'key'::text)
+   Remote SQL: SELECT id, document FROM jsonb_exists.string_documents ORDER BY id ASC NULLS LAST
+(4 rows)
+
 SELECT id FROM jsonb_exists_compatibility
 WHERE document ? 'key'
 ORDER BY id;
+ id 
+----
+  1
+  2
+  6
+(3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_compatibility
 WHERE document ? 'first' OR document ? 'second'
 ORDER BY id;
+                                                                       QUERY PLAN                                                                        
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.jsonb_exists_string
+   Output: jsonb_exists_string.id
+   Filter: ((jsonb_in((jsonb_exists_string.document)::cstring) ? 'first'::text) OR (jsonb_in((jsonb_exists_string.document)::cstring) ? 'second'::text))
+   Remote SQL: SELECT id, document FROM jsonb_exists.string_documents ORDER BY id ASC NULLS LAST
+(4 rows)
+
 SELECT id FROM jsonb_exists_compatibility
 WHERE document ? 'first' OR document ? 'second'
 ORDER BY id;
+ id 
+----
+  1
+  2
+(2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_compatibility
 WHERE document ? jsonb_exists_element
 ORDER BY id;
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.jsonb_exists_string
+   Output: jsonb_exists_string.id
+   Filter: (jsonb_in((jsonb_exists_string.document)::cstring) ? jsonb_exists_string.jsonb_exists_element)
+   Remote SQL: SELECT id, document, jsonb_exists_element FROM jsonb_exists.string_documents ORDER BY id ASC NULLS LAST
+(4 rows)
+
 SELECT id FROM jsonb_exists_compatibility
 WHERE document ? jsonb_exists_element
 ORDER BY id;
+ id 
+----
+  1
+  2
+  4
+  6
+(4 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_compatibility
 WHERE (document || '{}'::jsonb) ? 'key'
 ORDER BY id;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Foreign Scan on public.jsonb_exists_string
+   Output: jsonb_exists_string.id
+   Filter: ((jsonb_in((jsonb_exists_string.document)::cstring) || '{}'::jsonb) ? 'key'::text)
+   Remote SQL: SELECT id, document FROM jsonb_exists.string_documents ORDER BY id ASC NULLS LAST
+(4 rows)
+
 SELECT id FROM jsonb_exists_compatibility
 WHERE (document || '{}'::jsonb) ? 'key'
 ORDER BY id;
+ id 
+----
+  1
+  2
+  6
+(3 rows)
 
 \if :ch_has_json_validation
 CALL clickhouse_perform('jsonb_exists_admin', $$
@@ -115,12 +177,19 @@ EXCEPTION WHEN OTHERS THEN
 END
 $$;
 \endif
-
 DROP VIEW jsonb_exists_compatibility;
+DROP VIEW
 DROP FOREIGN TABLE jsonb_exists_string;
+DROP FOREIGN TABLE
 DROP FOREIGN TABLE jsonb_exists_native;
+DROP FOREIGN TABLE
 DROP USER MAPPING FOR CURRENT_USER SERVER jsonb_exists_binary;
+DROP USER MAPPING
 CALL clickhouse_perform('jsonb_exists_admin', 'DROP DATABASE jsonb_exists');
+CALL
 DROP USER MAPPING FOR CURRENT_USER SERVER jsonb_exists_admin;
+DROP USER MAPPING
 DROP SERVER jsonb_exists_binary;
+DROP SERVER
 DROP SERVER jsonb_exists_admin;
+DROP SERVER
