@@ -255,6 +255,7 @@ adding DML features. Our road map:
 
 *   [David E. Wheeler](https://justatheory.com/)
 *   [serprex](https://github.com/serprex)
+*   [Josh Ventura](https://github.com/JoshDreamland)
 *   [Ildus Kurbangaliev](https://github.com/ildus)
 *   [Ibrar Ahmed](https://github.com/ibrarahmad)
 

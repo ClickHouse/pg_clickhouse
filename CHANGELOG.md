@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file. It uses the
   [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
     "Semantic Versioning 2.0.0"
 
-## [0.4.0] — Unreleased
+## [v0.10.0] — 2026-08-11
 
 ### ⚡ Improvements
 
@@ -16,12 +16,12 @@ All notable changes to this project will be documented in this file. It uses the
     ([#293]).
 *   Added pushdown for subqueries the planner cannot flatten into joins
     (SubPlans): correlated and uncorrelated scalar aggregate subqueries,
-    `EXISTS`, and single-column equality `IN`/`NOT IN`, in `WHERE` and `HAVING`.
-    Covers TPC-H Q2, Q11, Q15, Q17, Q20, and Q22 shapes. `NOT IN` preserves
-    PostgreSQL's NULL semantics under ClickHouse's two-valued `IN`, deparsing
-    with compensating guards when the columns involved are nullable ([#315]).
-    Requires ClickHouse 25.8 or later; older servers keep evaluating the
-    subquery locally ([#289]).
+    `EXISTS`, and single-column equality `IN`/`NOT IN`, in `WHERE` and
+    `HAVING`. Covers TPC-H Q2, Q11, Q15, Q17, Q20, and Q22 shapes. `NOT IN`
+    preserves PostgreSQL's NULL semantics under ClickHouse's two-valued `IN`,
+    deparsing with compensating guards when the columns involved are nullable
+    ([#315]). Requires ClickHouse 25.8 or later; older servers still evaluate
+    the subquery locally ([#289]).
 *   Added `transform_null_in 0` to the default value of the
     `pg_clickhouse.session_settings` parameter, so that a ClickHouse server
     profile cannot silently change the `IN` semantics the pushdown rules rely
@@ -56,9 +56,10 @@ All notable changes to this project will be documented in this file. It uses the
     day, and second component, replacing nested
     `addMonths`/`addDays`/`addSeconds` calls that mishandled day arithmetic on
     dates and drifted across DST boundaries ([#301]).
-*   Binary driver now flushes insert block once it buffers 64MiB,
-    bounding memory for large `COPY FROM` and `INSERT SELECT` ([#303]).
-*   Binary driver now supports inserting into `Array(Nullable(T))` columns ([#316]).
+*   The binary driver now flushes an insert block once it buffers 64MiB,
+    bounding memory for large `COPY FROM` and `INSERT SELECT` commands ([#303]).
+*   The binary driver now supports inserting into `Array(Nullable(T))` columns
+    ([#316]).
 *   Added pushdown for the three-argument forms of `ltrim`, `rtrim`, and
     `btrim` ([#307]).
 *   Added `clickhouse_query(server, sql)`, a set-returning function that runs a
@@ -66,14 +67,14 @@ All notable changes to this project will be documented in this file. It uses the
     caller's column definition list ([#309]).
 *   Added `clickhouse_perform(server, sql)`, a procedure that runs a statement
     against a configured foreign server and discards any result, for statements
-    such as DDL returning no results ([#329]).
+    such as DDL that return no results ([#329]).
 *   Deprecated `clickhouse_raw_query()`, which will be removed in next release.
     Use `clickhouse_query(server, sql)` or `CALL clickhouse_perform(server, sql)`,
     which use a foreign server rather than a connection string ([#329]).
 *   Any ClickHouse column now reads into `text` or another string type, rendered
     by the output function of the PostgreSQL type it maps to, rather than
     failing with `could not cast value` ([#329]).
-*   Added pushdown support for partial aggregates under partitionwise
+*   Added pushdown support for partial aggregates under partition-wise
     aggregation, so a query over a partitioned table mixing local and foreign
     partitions computes the foreign partition's aggregate on ClickHouse
     instead of fetching its rows. Covers decomposable aggregates (`count`,
@@ -89,58 +90,61 @@ All notable changes to this project will be documented in this file. It uses the
 *   Binary driver errors now name the column and type involved, for example
     `cannot encode integer into ClickHouse Array(Array(Int32)) (column "c2")`
     in place of `unexpected PG/CH type pair for column 0` ([#326]).
-*   Coerce array elements in binary driver. `Array(Int32)` to `bigint[]`, or
-    `quantilesExactLow()` results into `double precision[]`, no longer fails
-    with `could not cast value from integer[] to bigint[]` ([#326]).
+*   Improved array element coercion in the binary driver. Converting
+    `Array(Int32)` to `bigint[]`, or `quantilesExactLow()` results into
+    `double precision[]` no longer fails with `could not cast value from
+    integer[] to bigint[]` ([#326]).
 *   Added support for the third argument to `array_position()` when it's a
     positive constant value, pushing it down to a call to `arraySlice()` to
     start the search from the specified index. Thanks to Minh Vu for the PR
     ([#334])!
 *   The HTTP driver now uses ClickHouse's Native format, sharing encoding and
-    decoding with binary driver. Only `clickhouse_raw_query()` retains
-    `TabSeparated` behavior; it will likely be removed in favor of
-    `clickhouse_query() in a future release. ([#328])
-*   Deprecated the `fetch_size` setting, now ignored option. With the switch
-    go binary encoding, the HTTP driver always streams results the same as the
+    decoding with binary driver. Only the deprecated `clickhouse_raw_query()`
+    function retains `TabSeparated` behavior; it will likely be removed in
+    favor of `clickhouse_query()` and `clickhouse_perform()` in a future
+    release. ([#328])
+*   Deprecated the `fetch_size` setting, now ignored. With the switch to
+    binary encoding, the HTTP driver always streams results the same as the
     binary driver. Setting `fetch_size` triggers a warning and will be removed
     in a future release. ([#328])
 
 ### 🐞 Bug Fixes
 
 *   Fixed crashes when a single query ran more than one foreign scan on the
-    binary (native-protocol) driver at once, such as a correlated subquery or a
-    nested-loop join over foreign tables, colliding in the single connection.
-    Each concurrently active scan now gets its own connection
+    binary (native-protocol) driver at once, such as a correlated subquery or
+    a nested-loop join over foreign tables, colliding in the single
+    connection. Each concurrently active scan now gets its own connection
     ([#296]).
 *   Fixed a use-after-free of a foreign scan's batch memory context on rescan
     that could corrupt memory and hang ([#296]).
 *   Fixed subsecond precision lost inserting timestamps over HTTP ([#300]).
-*   Fixed binary driver to use `pg_clickhouse.session_settings` with inserts.
-*   Fixed `date_part('dow', ...)` and `EXTRACT(DOW FROM ...)` pushdown to use
-    PostgreSQL's Sunday (`0`) through Saturday (`6`) numbering, rather than
-    ClickHouse's default Monday through Sunday scheme. Thanks to Minh Vu for
-    the PR ([#331])!
-*   Fixed undefined behavior: out-of-bounds reads in key/value iteration, and
+*   Fixed the binary driver to use `pg_clickhouse.session_settings` with inserts.
+*   Fixed undefined behavior: out-of-bounds reads in key/value iteration, and the
     binary driver's simple query path; `CollapsingMergeTree` validation; missing
     rejection of non-`Const`/null units in `date_trunc`/`date_part` pushdown;
     NULL handling in record conversion; unchecked `curl_easy_escape` failures;
     and unbounded `DateTime64` scale lookups ([#313]).
-*   Fixed wrong results from pushed-down `= ANY`/`<> ALL` expressions and `IN`
-    expressions over constant lists and when a `NULL` could reach the
-    comparison, because ClickHouse evaluates `IN` under two-valued logic while
-    PostgreSQL evaluates three-value `NULL` logic ([#315], [#317]).
+*   Fixed incorrect results from pushed-down `= ANY`/`<> ALL` expressions and
+    `IN` expressions over constant lists and when a `NULL` could reach the
+    comparison, compensating for ClickHouse evaluating `IN` under two-valued
+    logic vs. PostgreSQL three-value `NULL` logic ([#315], [#317]).
 *   Fixed `<> ANY(array)` deparsing to ClickHouse SQL that computes `<> ALL`,
-    which is wrong even with no `NULL`s involved: In Postgres,
+    which was incorrect even with no `NULL`s involved: In Postgres,
     `1 <> ANY('{1,5}')` is `TRUE`. For now, do not push down ([#315]).
 *   Fixed the pushdown of a `CASE arg WHEN ..` expression without checking its
     branches when the tested expression was itself unshippable ([#315]).
-*   Fixed an error when incorrectly selecting an invalid relation OID when
+*   Fixed an error that incorrectly selected an invalid relation OID when
     selecting the user to execute the remote query. Thanks to Kostia R for the
     PR ([#319])!
-*   Fixed omission of typmod behavior in binary driver causing incorrect values.
-    For example, padding will be preserved in char(x) columns now ([#330]).
-*   Encode `bytea` array elements with the ClickHouse binary-literal
-    serializer previously for scalar values (now simplified), preventing
+*   Fixed the omission of typmod behavior in the binary driver causing
+    incorrect values. For example, padding will now be preserved in `char(x)`
+    columns ([#330]).
+*   Fixed `date_part('dow', ...)` and `EXTRACT(DOW FROM ...)` pushdown to use
+    PostgreSQL's Sunday (`0`) through Saturday (`6`) numbering, rather than
+    ClickHouse's default Monday through Sunday scheme. Thanks to Minh Vu for
+    the PR ([#331])!
+*   Fixed the encoding of `bytea` array elements to use the same ClickHouse
+    binary-literal serializer previously for scalar values, preventing
     PostgreSQL `IN` lists from producing invalid or mismatched `FixedString`
     comparisons. Thanks to @jxom for the PR (#333)!
 *   Fixed `array_position()` pushdown to return `NULL`, rather than zero, when
@@ -162,8 +166,21 @@ All notable changes to this project will be documented in this file. It uses the
     header, "Custom Ordered Set Aggregates".
 *   Fixed the links to the ClickHouse docs for the functions to which `ltrim`
     and `rtrim` push down.
+*   Documented that minimum required version of ClickHouse is 23.3, not 23.0.
+*   Added a section on managing mixed local and foreign partitions under the
+    new "Partitioned Tables" header, as well as the example script
+    `doc/offload-partition.sql` to demonstrate migrating data from a Postgres
+    table to a ClickHouse foreign table [#298].
+*   Updated discussion of `COPY` to document its efficient streaming behavior
+    via the same code path as `INSERT`.
+*   Noted the need to preserve certain settings in the
+    `pg_clickhouse.session_settings` GUC when overriding the default value.
+*   Documented that columns in Postgres that map to unexpected types in
+    ClickHouse are not converted to text and passed to the input function for
+    the Postgres type.
+*   Added "IN and NULL Semantics" section.
 
-  [v0.4.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.3.2...v0.4.0
+  [v0.10.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.3.2...v0.10.0
   [#290]: https://github.com/ClickHouse/pg_clickhouse/pull/290
     "ClickHouse/pg_clickhouse#290 Add pushdown for statistical aggregate functions"
   [corr]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/corr
@@ -173,6 +190,7 @@ All notable changes to this project will be documented in this file. It uses the
   [stddev_samp/stddev]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/stddevsamp
   [var_op]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varPop
   [var_samp/variance]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varSamp
+  [any_value]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/any
   [#291]: https://github.com/ClickHouse/pg_clickhouse/pull/291
     "ClickHouse/pg_clickhouse#291 Push down ordered set aggregate functions"
   [#293]: https://github.com/ClickHouse/pg_clickhouse/pull/293

@@ -3,7 +3,11 @@
   "description": "Provides a Foreign Data Wrapper and other interfaces for easy and efficient access to ClickHouse databases, including pushdown of WHERE, JOIN, and aggregates expressions as well as comprehensive EXPLAIN and ANALYZE support.",
   "generated_by": "David E. Wheeler",
   "license": "apache_2_0",
-  "maintainer": "David E. Wheeler <david@justatheory.com>",
+  "maintainer": [
+    "David E. Wheeler <david@justatheory.com>",
+    "serprex <philip.dube@clickhouse.com>",
+    "Josh Ventura <josh.ventura@clickhouse.com>"
+  ],
   "meta-spec": {
     "url": "http://pgxn.org/meta/spec.txt",
     "version": "1.0.0"
@@ -27,7 +31,7 @@
       "abstract": "Interfaces to query ClickHouse databases from Postgres",
       "docfile": "doc/pg_clickhouse.md",
       "file": "pg_clickhouse.control",
-      "version": "0.4.0"
+      "version": "0.10.0"
     }
   },
   "resources": {
@@ -49,5 +53,5 @@
     "pushdown",
     "aggregate"
   ],
-  "version": "0.4.0"
+  "version": "0.10.0"
 }
