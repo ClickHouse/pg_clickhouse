@@ -212,10 +212,6 @@ static bool
 foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx);
 static bool
 is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx);
-static UserMapping*
-foreign_expr_gate_user_mapping(
-    PlannerInfo* root, RelOptInfo* foreignrel, Oid serverid
-);
 static char*
 deparse_type_name(Oid type_oid, int32 typemod);
 
@@ -1167,42 +1163,6 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             JsonbDocumentKind document_kind =
                 classifyJsonbDocument((Expr*)linitial(oe->args), &document);
 
-            if (document_kind != JSONB_DOCUMENT_UNSUPPORTED) {
-                UserMapping* user;
-                ch_server_version version;
-
-                if (fpinfo == NULL || fpinfo->server == NULL) {
-                    return false;
-                }
-                user = foreign_expr_gate_user_mapping(
-                    glob_cxt->root, glob_cxt->foreignrel, fpinfo->server->serverid
-                );
-                if (user == NULL) {
-                    return false;
-                }
-                version = chfdw_get_server_version(user);
-
-                /*
-                 * Before 24.8, JSON was the experimental Object('json') type.
-                 * It materializes every discovered path with a default value,
-                 * so it cannot preserve top-level key existence.
-                 */
-                if (document_kind == JSONB_DOCUMENT_NATIVE &&
-                    !chfdw_version_ge(version, 24, 8)) {
-                    return false;
-                }
-
-                /*
-                 * Before 23.8, ClickHouse's JSON validation did not accept all
-                 * top-level scalar documents that PostgreSQL accepts. Evaluate
-                 * this String-backed form locally on those releases.
-                 */
-                if (document_kind == JSONB_DOCUMENT_STRING &&
-                    !chfdw_version_ge(version, 23, 8)) {
-                    return false;
-                }
-            }
-
             if (document_kind == JSONB_DOCUMENT_UNSUPPORTED ||
                 !foreign_expr_walker(
                     (Node*)document, glob_cxt, EXPR_CTX_EXACT
@@ -1586,8 +1546,8 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
  * implemented.
  */
 /*
- * Resolve the user mapping the executor will use to scan foreignrel for a
- * plan-time server-version gate. Mirrors the executor's own lookup
+ * Resolve the user mapping the executor will use to scan foreignrel, for the
+ * plan-time server-version probe below. Mirrors the executor's own lookup
  * (see clickhouseBeginForeignScan): the RTE's checkAsUser — set when the rel
  * is accessed on behalf of another user, e.g. through a view — wins over the
  * invoking user. Returns NULL instead of erroring when no mapping exists, so
@@ -1595,9 +1555,7 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
  * (or a bare EXPLAIN) at plan time.
  */
 static UserMapping*
-foreign_expr_gate_user_mapping(
-    PlannerInfo* root, RelOptInfo* foreignrel, Oid serverid
-) {
+subplan_gate_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel, Oid serverid) {
     Oid userid  = InvalidOid;
     int rtindex = -1;
 
@@ -1861,7 +1819,7 @@ is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt, ExprTruthCtx 
      * no mapping exists it refuses the pushdown rather than erroring.
      */
     {
-        UserMapping* user = foreign_expr_gate_user_mapping(
+        UserMapping* user = subplan_gate_user_mapping(
             glob_cxt->root, glob_cxt->foreignrel, fpinfo->server->serverid
         );
 
@@ -5123,16 +5081,15 @@ deparseJsonbExists(
     deparseJsonbNonnullDocument(document, context);
 
     /*
-     * Keep the key expression outside the lambda body. A fixed lambda
-     * parameter could otherwise shadow a same-named column used as the key
-     * (for example, document ? jsonb_exists_element). Supply the key through
-     * a parallel, same-length array instead.
+     * Keep table expressions outside the lambda body so its local parameter
+     * names cannot capture same-named columns. Supply the key through a
+     * parallel, same-length array instead.
      */
     appendStringInfoString(
         buf,
-        ") = 'Array', arrayExists((__jsonb_element, __jsonb_key) -> "
-        "JSONType(__jsonb_element) = 'String' AND "
-        "JSONExtractString(__jsonb_element) = __jsonb_key, "
+        ") = 'Array', arrayExists((element, candidate) -> "
+        "JSONType(element) = 'String' AND "
+        "JSONExtractString(element) = candidate, "
         "JSONExtractArrayRaw("
     );
     deparseJsonbNonnullDocument(document, context);

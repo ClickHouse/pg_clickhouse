@@ -231,8 +231,7 @@ jsonb_exists.sql
  ClickHouse | File
 ------------|--------------------
  24.8+      | jsonb_exists.out
- 23.8-24.3  | jsonb_exists_1.out
- 23.3       | jsonb_exists_2.out
+ 23.3-24.3  | jsonb_exists_1.out
 
 param.sql
 ---------

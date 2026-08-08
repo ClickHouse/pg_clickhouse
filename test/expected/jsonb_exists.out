@@ -30,7 +30,7 @@ CALL clickhouse_perform('jsonb_exists_admin', $$
     CREATE TABLE jsonb_exists.string_documents (
         id Int32,
         document Nullable(String),
-        jsonb_exists_element String
+        candidate String
     ) ENGINE = MergeTree ORDER BY id
 $$);
 CALL
@@ -52,24 +52,14 @@ CREATE FOREIGN TABLE
 CREATE FOREIGN TABLE jsonb_exists_string (
     id integer,
     document text,
-    jsonb_exists_element text
+    candidate text
 ) SERVER jsonb_exists_binary OPTIONS (table_name 'string_documents');
 CREATE FOREIGN TABLE
 CREATE VIEW jsonb_exists_compatibility AS
 SELECT id, pg_catalog.jsonb_in(document::pg_catalog.cstring) AS document,
-       jsonb_exists_element
+       candidate
 FROM jsonb_exists_string;
 CREATE VIEW
-WITH version AS (
-    SELECT string_to_array(
-        clickhouse_server_version('jsonb_exists_binary'), '.'
-    )::int[] AS parts
-)
-SELECT
-    (parts[1], parts[2]) >= (24, 8) AS ch_has_json_type,
-    (parts[1], parts[2]) >= (23, 8) AS ch_has_json_validation
-FROM version \gset
-\if :ch_has_json_type
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_native WHERE document ? 'key' ORDER BY id;
                                                                               QUERY PLAN                                                                               
@@ -85,16 +75,15 @@ SELECT id FROM jsonb_exists_native WHERE document ? 'key' ORDER BY id;
   1
 (1 row)
 
-\endif
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_compatibility
 WHERE document ? 'key'
 ORDER BY id;
-                                                                                                                                                                                                                                                                                                                                                                                                   QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                   
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                                                                                                                                                                                                                                     QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                     
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.jsonb_exists_string
    Output: jsonb_exists_string.id
-   Remote SQL: SELECT id FROM jsonb_exists.string_documents WHERE ((if(isNull(document) OR isNull('key'), NULL, if(NOT isValidJSON(ifNull(document, 'null')), toUInt8(concat('invalid input syntax for type json: ', ifNull(document, 'null'))), multiIf(JSONType(ifNull(document, 'null')) = 'Object', JSONHas(ifNull(document, 'null'), 'key'), JSONType(ifNull(document, 'null')) = 'Array', arrayExists((__jsonb_element, __jsonb_key) -> JSONType(__jsonb_element) = 'String' AND JSONExtractString(__jsonb_element) = __jsonb_key, JSONExtractArrayRaw(ifNull(document, 'null')), arrayWithConstant(length(JSONExtractArrayRaw(ifNull(document, 'null'))), 'key')), JSONType(ifNull(document, 'null')) = 'String', JSONExtractString(ifNull(document, 'null')) = 'key', 0))))) ORDER BY id ASC NULLS LAST
+   Remote SQL: SELECT id FROM jsonb_exists.string_documents WHERE ((if(isNull(document) OR isNull('key'), NULL, if(NOT isValidJSON(ifNull(document, 'null')), toUInt8(concat('invalid input syntax for type json: ', ifNull(document, 'null'))), multiIf(JSONType(ifNull(document, 'null')) = 'Object', JSONHas(ifNull(document, 'null'), 'key'), JSONType(ifNull(document, 'null')) = 'Array', arrayExists((element, candidate) -> JSONType(element) = 'String' AND JSONExtractString(element) = candidate, JSONExtractArrayRaw(ifNull(document, 'null')), arrayWithConstant(length(JSONExtractArrayRaw(ifNull(document, 'null'))), 'key')), JSONType(ifNull(document, 'null')) = 'String', JSONExtractString(ifNull(document, 'null')) = 'key', 0))))) ORDER BY id ASC NULLS LAST
 (3 rows)
 
 SELECT id FROM jsonb_exists_compatibility
@@ -111,11 +100,11 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_compatibility
 WHERE document ? 'first' OR document ? 'second'
 ORDER BY id;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.jsonb_exists_string
    Output: jsonb_exists_string.id
-   Remote SQL: SELECT id FROM jsonb_exists.string_documents WHERE (((if(isNull(document) OR isNull('first'), NULL, if(NOT isValidJSON(ifNull(document, 'null')), toUInt8(concat('invalid input syntax for type json: ', ifNull(document, 'null'))), multiIf(JSONType(ifNull(document, 'null')) = 'Object', JSONHas(ifNull(document, 'null'), 'first'), JSONType(ifNull(document, 'null')) = 'Array', arrayExists((__jsonb_element, __jsonb_key) -> JSONType(__jsonb_element) = 'String' AND JSONExtractString(__jsonb_element) = __jsonb_key, JSONExtractArrayRaw(ifNull(document, 'null')), arrayWithConstant(length(JSONExtractArrayRaw(ifNull(document, 'null'))), 'first')), JSONType(ifNull(document, 'null')) = 'String', JSONExtractString(ifNull(document, 'null')) = 'first', 0)))) OR (if(isNull(document) OR isNull('second'), NULL, if(NOT isValidJSON(ifNull(document, 'null')), toUInt8(concat('invalid input syntax for type json: ', ifNull(document, 'null'))), multiIf(JSONType(ifNull(document, 'null')) = 'Object', JSONHas(ifNull(document, 'null'), 'second'), JSONType(ifNull(document, 'null')) = 'Array', arrayExists((__jsonb_element, __jsonb_key) -> JSONType(__jsonb_element) = 'String' AND JSONExtractString(__jsonb_element) = __jsonb_key, JSONExtractArrayRaw(ifNull(document, 'null')), arrayWithConstant(length(JSONExtractArrayRaw(ifNull(document, 'null'))), 'second')), JSONType(ifNull(document, 'null')) = 'String', JSONExtractString(ifNull(document, 'null')) = 'second', 0)))))) ORDER BY id ASC NULLS LAST
+   Remote SQL: SELECT id FROM jsonb_exists.string_documents WHERE (((if(isNull(document) OR isNull('first'), NULL, if(NOT isValidJSON(ifNull(document, 'null')), toUInt8(concat('invalid input syntax for type json: ', ifNull(document, 'null'))), multiIf(JSONType(ifNull(document, 'null')) = 'Object', JSONHas(ifNull(document, 'null'), 'first'), JSONType(ifNull(document, 'null')) = 'Array', arrayExists((element, candidate) -> JSONType(element) = 'String' AND JSONExtractString(element) = candidate, JSONExtractArrayRaw(ifNull(document, 'null')), arrayWithConstant(length(JSONExtractArrayRaw(ifNull(document, 'null'))), 'first')), JSONType(ifNull(document, 'null')) = 'String', JSONExtractString(ifNull(document, 'null')) = 'first', 0)))) OR (if(isNull(document) OR isNull('second'), NULL, if(NOT isValidJSON(ifNull(document, 'null')), toUInt8(concat('invalid input syntax for type json: ', ifNull(document, 'null'))), multiIf(JSONType(ifNull(document, 'null')) = 'Object', JSONHas(ifNull(document, 'null'), 'second'), JSONType(ifNull(document, 'null')) = 'Array', arrayExists((element, candidate) -> JSONType(element) = 'String' AND JSONExtractString(element) = candidate, JSONExtractArrayRaw(ifNull(document, 'null')), arrayWithConstant(length(JSONExtractArrayRaw(ifNull(document, 'null'))), 'second')), JSONType(ifNull(document, 'null')) = 'String', JSONExtractString(ifNull(document, 'null')) = 'second', 0)))))) ORDER BY id ASC NULLS LAST
 (3 rows)
 
 SELECT id FROM jsonb_exists_compatibility
@@ -129,17 +118,17 @@ ORDER BY id;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_compatibility
-WHERE document ? jsonb_exists_element
+WHERE document ? candidate
 ORDER BY id;
-                                                                                                                                                                                                                                                                                                                                                                                                                                 QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                                                                                                                                                                                                                                             QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                             
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.jsonb_exists_string
    Output: jsonb_exists_string.id
-   Remote SQL: SELECT id FROM jsonb_exists.string_documents WHERE ((if(isNull(document) OR isNull(jsonb_exists_element), NULL, if(NOT isValidJSON(ifNull(document, 'null')), toUInt8(concat('invalid input syntax for type json: ', ifNull(document, 'null'))), multiIf(JSONType(ifNull(document, 'null')) = 'Object', JSONHas(ifNull(document, 'null'), jsonb_exists_element), JSONType(ifNull(document, 'null')) = 'Array', arrayExists((__jsonb_element, __jsonb_key) -> JSONType(__jsonb_element) = 'String' AND JSONExtractString(__jsonb_element) = __jsonb_key, JSONExtractArrayRaw(ifNull(document, 'null')), arrayWithConstant(length(JSONExtractArrayRaw(ifNull(document, 'null'))), jsonb_exists_element)), JSONType(ifNull(document, 'null')) = 'String', JSONExtractString(ifNull(document, 'null')) = jsonb_exists_element, 0))))) ORDER BY id ASC NULLS LAST
+   Remote SQL: SELECT id FROM jsonb_exists.string_documents WHERE ((if(isNull(document) OR isNull(candidate), NULL, if(NOT isValidJSON(ifNull(document, 'null')), toUInt8(concat('invalid input syntax for type json: ', ifNull(document, 'null'))), multiIf(JSONType(ifNull(document, 'null')) = 'Object', JSONHas(ifNull(document, 'null'), candidate), JSONType(ifNull(document, 'null')) = 'Array', arrayExists((element, candidate) -> JSONType(element) = 'String' AND JSONExtractString(element) = candidate, JSONExtractArrayRaw(ifNull(document, 'null')), arrayWithConstant(length(JSONExtractArrayRaw(ifNull(document, 'null'))), candidate)), JSONType(ifNull(document, 'null')) = 'String', JSONExtractString(ifNull(document, 'null')) = candidate, 0))))) ORDER BY id ASC NULLS LAST
 (3 rows)
 
 SELECT id FROM jsonb_exists_compatibility
-WHERE document ? jsonb_exists_element
+WHERE document ? candidate
 ORDER BY id;
  id 
 ----
@@ -171,7 +160,6 @@ ORDER BY id;
   6
 (3 rows)
 
-\if :ch_has_json_validation
 CALL clickhouse_perform('jsonb_exists_admin', $$
     INSERT INTO jsonb_exists.string_documents VALUES (7, 'not json', 'key')
 $$);
@@ -188,7 +176,6 @@ END
 $$;
 NOTICE:  invalid JSON error includes document: t
 DO
-\endif
 DROP VIEW jsonb_exists_compatibility;
 DROP VIEW
 DROP FOREIGN TABLE jsonb_exists_string;

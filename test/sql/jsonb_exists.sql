@@ -24,7 +24,7 @@ CALL clickhouse_perform('jsonb_exists_admin', $$
     CREATE TABLE jsonb_exists.string_documents (
         id Int32,
         document Nullable(String),
-        jsonb_exists_element String
+        candidate String
     ) ENGINE = MergeTree ORDER BY id
 $$);
 CALL clickhouse_perform('jsonb_exists_admin', $$
@@ -45,28 +45,17 @@ CREATE FOREIGN TABLE jsonb_exists_native (
 CREATE FOREIGN TABLE jsonb_exists_string (
     id integer,
     document text,
-    jsonb_exists_element text
+    candidate text
 ) SERVER jsonb_exists_binary OPTIONS (table_name 'string_documents');
 
 CREATE VIEW jsonb_exists_compatibility AS
 SELECT id, pg_catalog.jsonb_in(document::pg_catalog.cstring) AS document,
-       jsonb_exists_element
+       candidate
 FROM jsonb_exists_string;
 
-WITH version AS (
-    SELECT string_to_array(
-        clickhouse_server_version('jsonb_exists_binary'), '.'
-    )::int[] AS parts
-)
-SELECT
-    (parts[1], parts[2]) >= (24, 8) AS ch_has_json_type,
-    (parts[1], parts[2]) >= (23, 8) AS ch_has_json_validation
-FROM version \gset
-\if :ch_has_json_type
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_native WHERE document ? 'key' ORDER BY id;
 SELECT id FROM jsonb_exists_native WHERE document ? 'key' ORDER BY id;
-\endif
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_compatibility
@@ -86,10 +75,10 @@ ORDER BY id;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM jsonb_exists_compatibility
-WHERE document ? jsonb_exists_element
+WHERE document ? candidate
 ORDER BY id;
 SELECT id FROM jsonb_exists_compatibility
-WHERE document ? jsonb_exists_element
+WHERE document ? candidate
 ORDER BY id;
 
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -100,7 +89,6 @@ SELECT id FROM jsonb_exists_compatibility
 WHERE (document || '{}'::jsonb) ? 'key'
 ORDER BY id;
 
-\if :ch_has_json_validation
 CALL clickhouse_perform('jsonb_exists_admin', $$
     INSERT INTO jsonb_exists.string_documents VALUES (7, 'not json', 'key')
 $$);
@@ -114,7 +102,6 @@ EXCEPTION WHEN OTHERS THEN
         position('not json' IN SQLERRM) > 0;
 END
 $$;
-\endif
 
 DROP VIEW jsonb_exists_compatibility;
 DROP FOREIGN TABLE jsonb_exists_string;
