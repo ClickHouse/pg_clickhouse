@@ -915,7 +915,8 @@ classify_notin_subplan(SubPlan* subplan, PlannerInfo* root, Relids relids) {
 
 /*
  * Recognize either a native ClickHouse JSON column imported as jsonb or the
- * compatibility-view shape used for a String containing a JSON document:
+ * expression shape emitted by a PostgreSQL view that exposes a foreign text
+ * column backed by a ClickHouse String containing serialized JSON as jsonb:
  *
  *     jsonb_in(foreign_text_column::cstring)
  *
@@ -934,10 +935,9 @@ classifyJsonbDocument(Expr* expr, Expr** document) {
     }
 
     /*
-     * Recognize the explicit jsonb_in() call used by compatibility views to
-     * expose a ClickHouse String column as PostgreSQL jsonb. Keep this special
-     * case scoped to jsonb_exists; general jsonb_in() pushdown can be added
-     * independently if other expressions need it.
+     * Recognize the explicit jsonb_in() call used by such a PostgreSQL view.
+     * Keep this special case scoped to jsonb_exists; general jsonb_in()
+     * pushdown can be added independently if other expressions need it.
      */
     if (IsA(expr, FuncExpr)) {
         FuncExpr* func = (FuncExpr*)expr;
@@ -1195,7 +1195,7 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
                 /*
                  * Before 23.8, ClickHouse's JSON validation did not accept all
                  * top-level scalar documents that PostgreSQL accepts. Evaluate
-                 * compatibility views locally on those releases.
+                 * this String-backed form locally on those releases.
                  */
                 if (document_kind == JSONB_DOCUMENT_STRING &&
                     !chfdw_version_ge(version, 23, 8)) {

@@ -1349,10 +1349,12 @@ equivalents as follows:
 *   `->` (JSON/JSONB extract): [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
 *   `?` (JSONB top-level key or array string existence):
     [JSONHas](https://clickhouse.com/docs/sql-reference/functions/json-functions#jsonhas)
-    for native JSON objects on ClickHouse 24.8 and later, and
+    for native JSON objects on ClickHouse 24.8 and later. On ClickHouse 23.8
+    and later it also supports a PostgreSQL view that exposes a foreign `text`
+    column as `jsonb` with `jsonb_in(text_column::cstring)`, when that foreign
+    column maps to serialized JSON stored in a ClickHouse `String` column;
     [JSONExtractArrayRaw](https://clickhouse.com/docs/sql-reference/functions/json-functions#jsonextractarrayraw)
-    for arrays parsed from ClickHouse `String` columns by compatibility views
-    on ClickHouse 23.8 and later.
+    preserves array-string existence semantics for that form.
 
 ### IN and NULL Semantics
 
