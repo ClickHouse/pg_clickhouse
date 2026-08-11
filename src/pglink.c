@@ -59,8 +59,6 @@ typedef struct {
 
 static void
 http_disconnect(void* conn);
-static text*
-http_raw_query(void* conn, const ch_query* query);
 static void
 http_simple_insert(void* conn, const ch_query* query);
 static ch_cursor*
@@ -79,7 +77,6 @@ http_server_version(void* conn);
 static libclickhouse_methods http_methods = {
     .disconnect          = http_disconnect,
     .simple_query        = http_native_cursor,
-    .raw_query           = http_raw_query,
     .fetch_row           = chfdw_cursor_fetch_row,
     .prepare_insert      = http_prepare_insert,
     .insert_tuple        = http_insert_tuple,
@@ -92,8 +89,6 @@ static void
 binary_disconnect(void* conn);
 static ch_cursor*
 binary_simple_query(void* conn, const ch_query* query);
-static text*
-binary_raw_query(void* conn, const ch_query* query);
 static bool
 binary_is_broken(const void* conn);
 
@@ -124,7 +119,6 @@ binary_server_version(void* conn);
 static libclickhouse_methods binary_methods = {
     .disconnect          = binary_disconnect,
     .simple_query        = binary_simple_query,
-    .raw_query           = binary_raw_query,
     .fetch_row           = chfdw_cursor_fetch_row,
     .prepare_insert      = binary_prepare_insert,
     .insert_tuple        = binary_insert_tuple,
@@ -285,76 +279,6 @@ report_http_stream_query_failure(
     PG_FINALLY();
     { ch_http_stream_end(stream); }
     PG_END_TRY();
-}
-
-/*
- * Simple execution that returns the entire response body as one text value.
- * Used exclusively by clickhouse_raw_query().
- */
-static text*
-http_raw_query(void* conn, const ch_query* query) {
-    int attempts = 0;
-    ch_http_response_t* resp;
-    /* volatile: assigned inside PG_TRY, so longjmp may leave it in a register */
-    text* volatile result;
-
-again:
-    resp = ch_http_simple_query(conn, query, http_canceled);
-    if (resp == NULL) {
-        ereport(ERROR, errcode(ERRCODE_FDW_OUT_OF_MEMORY), errmsg("out of memory"));
-    }
-
-    attempts++;
-    if (resp->http_status == CH_HTTP_STATUS_TRANSPORT_ERROR) {
-        char error[CH_ERROR_MSG_LEN];
-
-        ch_http_copy_error(error, sizeof(error), resp->data, resp->datasize);
-        ch_http_response_free(resp);
-
-        if (attempts < 3) {
-            goto again;
-        }
-
-        ereport(
-            ERROR,
-            errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-            errmsg("pg_clickhouse: communication error: %s", error)
-        );
-    } else if (resp->http_status == CH_HTTP_STATUS_CANCELED) {
-        kill_query(conn, resp->query_id);
-        ch_http_response_free(resp);
-
-        ereport(
-            ERROR,
-            errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-            errmsg("pg_clickhouse: query was aborted")
-        );
-    } else if (!ch_http_status_ok(resp->http_status)) {
-        char error[CH_ERROR_MSG_LEN];
-        long status = resp->http_status;
-
-        ch_http_copy_error(error, sizeof(error), resp->data, resp->datasize);
-        ch_http_response_free(resp);
-
-        ereport(
-            ERROR,
-            errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-            errmsg("pg_clickhouse: %s", error),
-            status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query->sql),
-            errcontext("HTTP status code: %li", status)
-        );
-    }
-
-    PG_TRY();
-    {
-        result =
-            resp->data ? cstring_to_text_with_len(resp->data, resp->datasize) : NULL;
-    }
-    PG_FINALLY();
-    { ch_http_response_free(resp); }
-    PG_END_TRY();
-
-    return result;
 }
 
 static void
@@ -790,21 +714,6 @@ binary_simple_query(void* conn, const ch_query* query) {
     };
 
     return chfdw_cursor_open(conn, query, &src);
-}
-
-static text*
-binary_raw_query(void* conn, const ch_query* query) {
-    ch_cursor* cursor = binary_simple_query(conn, query);
-    /* volatile: assigned inside PG_TRY, so longjmp may leave it in a register */
-    text* volatile result;
-
-    PG_TRY();
-    { result = chfdw_cursor_render_tsv(cursor); }
-    PG_FINALLY();
-    { MemoryContextDelete(cursor->memcxt); }
-    PG_END_TRY();
-
-    return result;
 }
 
 /* Report a truncated response as cancellation when that is what caused it. */

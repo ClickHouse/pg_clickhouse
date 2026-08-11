@@ -12,18 +12,6 @@ RETURNS fdw_handler
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
--- Deprecated, removed in the next release: use clickhouse_query() or
--- clickhouse_perform(), which reuse a configured server rather than an ad-hoc
--- connection string. Emits a deprecation warning when called.
-CREATE FUNCTION clickhouse_raw_query(TEXT, TEXT DEFAULT 'host=localhost port=8123')
-RETURNS TEXT
-AS 'MODULE_PATHNAME'
-LANGUAGE C STRICT;
-
--- Make sure PUBLIC can't call clickhouse_raw_query(); roles must be granted
--- explicit access.
-REVOKE EXECUTE ON FUNCTION clickhouse_raw_query(text, text) FROM PUBLIC;
-
 -- Report the ClickHouse server version ("major.minor.patch") for a foreign
 -- server, connecting if necessary.
 CREATE FUNCTION clickhouse_server_version(server_name TEXT)

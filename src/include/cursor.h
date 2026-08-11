@@ -59,12 +59,4 @@ chfdw_cursor_open(void* conn, const ch_query* query, const ch_cursor_source* src
 extern Datum*
 chfdw_cursor_fetch_row(ChFdwScanRowContext* ctx);
 
-/*
- * Read remaining rows and return tab-separated text. Use \N for null values.
- * Return NULL if there are no rows. Output can differ from HTTP driver because
- * PostgreSQL, rather than ClickHouse, formats each value
- */
-extern text*
-chfdw_cursor_render_tsv(ch_cursor* cursor);
-
 #endif /* CLICKHOUSE_CURSOR_H */

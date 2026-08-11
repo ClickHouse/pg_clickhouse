@@ -56,7 +56,6 @@ typedef struct ChFdwScanRowContext {
 typedef void (*disconnect_method)(void* conn);
 typedef void (*check_conn_method)(const char* password, UserMapping* user);
 typedef ch_cursor* (*simple_query_method)(void* conn, const ch_query* query);
-typedef text* (*raw_query_method)(void* conn, const ch_query* query);
 typedef Datum* (*cursor_fetch_row_method)(ChFdwScanRowContext* ctx);
 typedef void* (*prepare_insert_method)(
     void* conn,
@@ -75,7 +74,6 @@ typedef ch_server_version (*server_version_method)(void* conn);
 typedef struct {
     disconnect_method disconnect;
     simple_query_method simple_query;
-    raw_query_method raw_query;
     cursor_fetch_row_method fetch_row;
     prepare_insert_method prepare_insert;
     insert_tuple_method insert_tuple;
@@ -92,8 +90,6 @@ typedef struct {
     void* conn;
 } ch_connection;
 
-ch_connection_details*
-connstring_parse(const char* connstring);
 ch_connection
 chfdw_http_connect(ch_connection_details* details);
 ch_connection
@@ -282,7 +278,7 @@ chfdw_extract_options(
     tls_version* min_tls_version
 );
 extern List*
-chfdw_parse_options(const char* options, bool with_comma, bool with_equal);
+chfdw_parse_options(const char* options);
 
 /* in deparse.c */
 extern void

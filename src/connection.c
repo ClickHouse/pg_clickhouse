@@ -23,7 +23,6 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/latch.h"
-#include "utils/builtins.h"
 #include "utils/hsearch.h"
 #include "utils/inval.h"
 #include "utils/memutils.h"
@@ -346,47 +345,4 @@ chfdw_xact_callback(XactEvent event, void* arg) {
             entry->busy = false;
         }
     }
-}
-
-ch_connection_details*
-connstring_parse(const char* connstring) {
-    ListCell* lc;
-    List* options                  = chfdw_parse_options(connstring, false, true);
-    ch_connection_details* details = palloc0(sizeof(ch_connection_details));
-
-    details->driver = "http";
-
-    if (options == NIL) {
-        return details;
-    }
-
-    foreach (lc, options) {
-        DefElem* elem = (DefElem*)lfirst(lc);
-        char* pname   = elem->defname;
-        char* pval    = strVal(elem->arg);
-
-        if (strcmp(pname, "driver") == 0) {
-            details->driver = pval;
-        } else if (strcmp(pname, "host") == 0) {
-            details->host = pval;
-        } else if (strcmp(pname, "port") == 0) {
-            details->port = pg_strtoint32(pval);
-        } else if (strcmp(pname, "username") == 0) {
-            details->username = pval;
-        } else if (strcmp(pname, "password") == 0) {
-            details->password = pval;
-        } else if (strcmp(pname, "dbname") == 0) {
-            details->dbname = pval;
-        } else if (strcmp(pname, "") != 0) {
-            ereport(
-                ERROR,
-                errcode(ERRCODE_SYNTAX_ERROR),
-                errmsg("pg_clickhouse: invalid connection option \"%s\"", pname)
-            );
-        }
-    }
-
-    list_free(options);
-
-    return details;
 }

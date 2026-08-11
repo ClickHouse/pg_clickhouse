@@ -177,7 +177,6 @@ typedef struct {
  * SQL functions
  */
 PG_FUNCTION_INFO_V1(clickhouse_fdw_handler);
-PG_FUNCTION_INFO_V1(clickhouse_raw_query);
 PG_FUNCTION_INFO_V1(clickhouse_query);
 PG_FUNCTION_INFO_V1(clickhouse_perform);
 PG_FUNCTION_INFO_V1(clickhouse_op_push_fail);
@@ -353,60 +352,6 @@ merge_fdw_options(
     const CHFdwRelationInfo* fpinfo_o,
     const CHFdwRelationInfo* fpinfo_i
 );
-
-/* Make one query and close the connection */
-Datum
-clickhouse_raw_query(PG_FUNCTION_ARGS) {
-    char* connstring = text_to_cstring(PG_GETARG_TEXT_P(1));
-    ch_query query =
-        new_query(text_to_cstring(PG_GETARG_TEXT_P(0)), 0, NULL, NULL, NULL);
-
-    ch_connection_details* details = connstring_parse(connstring);
-    ch_connection conn;
-    text* res;
-
-    ereport(
-        WARNING,
-        errcode(ERRCODE_WARNING_DEPRECATED_FEATURE),
-        errmsg("pg_clickhouse: clickhouse_raw_query() is deprecated"),
-        errhint(
-            "Use clickhouse_query() or clickhouse_perform(); "
-            "clickhouse_raw_query() will be removed in the next release."
-        )
-    );
-
-    if (strcmp(details->driver, "http") == 0) {
-        conn = chfdw_http_connect(details);
-    } else if (strcmp(details->driver, "binary") == 0) {
-        conn = chfdw_binary_connect(details);
-    } else {
-        ereport(
-            ERROR,
-            errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
-            errmsg(
-                "pg_clickhouse: invalid ClickHouse connection driver \"%s\"",
-                details->driver
-            )
-        );
-    }
-
-    PG_TRY();
-    { res = conn.methods->raw_query(conn.conn, &query); }
-    PG_CATCH();
-    {
-        conn.methods->disconnect(conn.conn);
-        PG_RE_THROW();
-    }
-    PG_END_TRY();
-
-    conn.methods->disconnect(conn.conn);
-
-    if (res) {
-        PG_RETURN_TEXT_P(res);
-    }
-
-    PG_RETURN_NULL();
-}
 
 /*
  * Report the ClickHouse server version for a foreign server as

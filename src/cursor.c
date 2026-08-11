@@ -11,7 +11,6 @@
 
 #include "catalog/pg_type_d.h"
 #include "miscadmin.h"
-#include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/portal.h"
 
@@ -254,85 +253,4 @@ chfdw_cursor_fetch_row(ChFdwScanRowContext* ctx) {
 
     error_context_stack = errcallback.previous;
     return result;
-}
-
-/*
- * Escape characters that would otherwise corrupt the tab/newline framing or
- * collide with the \N null marker. Matches CH's TabSeparated escaping; \0 is
- * unreachable since values arrive as cstrings, so it needs no case.
- */
-static void
-append_tsv_escaped(StringInfo buf, const char* s) {
-    for (; *s != '\0'; s++) {
-        switch (*s) {
-        case '\\':
-            appendStringInfoString(buf, "\\\\");
-            break;
-        case '\b':
-            appendStringInfoString(buf, "\\b");
-            break;
-        case '\f':
-            appendStringInfoString(buf, "\\f");
-            break;
-        case '\n':
-            appendStringInfoString(buf, "\\n");
-            break;
-        case '\r':
-            appendStringInfoString(buf, "\\r");
-            break;
-        case '\t':
-            appendStringInfoString(buf, "\\t");
-            break;
-        default:
-            appendStringInfoChar(buf, *s);
-        }
-    }
-}
-
-text*
-chfdw_cursor_render_tsv(ch_cursor* cursor) {
-    pgch_reader* reader = &cursor->reader;
-    size_t ncols        = pgch_reader_columns(reader);
-    StringInfoData buf;
-
-    if (ncols == 0) {
-        return NULL;
-    }
-
-    initStringInfo(&buf);
-
-    while (pgch_reader_next(reader)) {
-        for (size_t i = 0; i < ncols; i++) {
-            if (i > 0) {
-                appendStringInfoChar(&buf, '\t');
-            }
-
-            if (reader->nulls[i]) {
-                appendStringInfoString(&buf, "\\N");
-            } else {
-                char* val =
-                    pgch_value_to_cstring(reader->coltypes[i], reader->values[i]);
-
-                append_tsv_escaped(&buf, val);
-                pfree(val);
-            }
-        }
-        appendStringInfoChar(&buf, '\n');
-        CHECK_FOR_INTERRUPTS();
-    }
-
-    if (reader->error) {
-        ereport(
-            ERROR,
-            errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-            errmsg("pg_clickhouse: %s", reader->error)
-        );
-    }
-
-    if (buf.len == 0) {
-        pfree(buf.data);
-        return NULL;
-    }
-
-    return cstring_to_text_with_len(buf.data, buf.len);
 }

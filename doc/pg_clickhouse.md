@@ -1,4 +1,4 @@
-pg_clickhouse 0.10.0
+pg_clickhouse 0.11.0
 ====================
 
 ## Synopsis
@@ -1075,70 +1075,6 @@ But reading them as [BYTEA] will not:
 ### Functions
 
 These functions provide the interface to query a ClickHouse database.
-
-#### `clickhouse_raw_query`
-
-> [!WARNING]
-> Deprecated: `clickhouse_raw_query()` emits a deprecation warning and will be
-> removed in the next release. Use [`clickhouse_query`](#clickhouse_query) to
-> read rows and [`clickhouse_perform`](#clickhouse_perform) to run statements
-> that return none. Both reuse a configured server's driver, credentials,
-> database, and connection cache instead of an ad-hoc connection string.
-
-```sql
-SELECT clickhouse_raw_query(
-    'CREATE TABLE t1 (x String) ENGINE = Memory',
-    'host=localhost port=8123'
-);
-```
-
-Connect to a ClickHouse service, execute a single query, and disconnect. The
-optional second argument specifies a connection string that defaults to
-`host=localhost port=8123`. The supported connection parameters are:
-
-*   `driver`: The connection driver to use, either "http" or "binary"; defaults
-    to "http"
-*   `host`: The host to connect to; required.
-*   `port`: The port to connect to. Defaults to `8123` for the "http" driver or
-    `9000` for the "binary" driver, switching to `8443` or `9440` respectively
-    when `host` is a ClickHouse Cloud host
-*   `dbname`: The name of the database to connect to.
-*   `username`: The username to connect as; defaults to `default`
-*   `password`: The password to use to authenticate; defaults to no password
-
-Both drivers return tab-separated rows (nulls as `\N`), but their per-value
-representations differ: the "http" driver returns ClickHouse's own TSV
-formatting verbatim, whereas the "binary" driver passes each value through its
-PostgreSQL output function.
-
-By default, no role has `EXECUTE` access to this function; consider [GRANT]ing
-access only to roles that legitimately need to execute ad-hoc ClickHouse
-queries, e.g., a dedicated ClickHouse admin role:
-
-```sql
-GRANT EXECUTE ON FUNCTION clickhouse_raw_query(text, text) TO ch_admin;
-```
-
-Useful for queries that return no records, but queries that do return values
-will be returned as a single text value:
-
-```sql
-SELECT clickhouse_raw_query(
-    'SELECT schema_name, schema_owner from information_schema.schemata',
-    'host=localhost port=8123'
-);
-```
-```sql
-      clickhouse_raw_query
----------------------------------
- INFORMATION_SCHEMA      default+
- default default                +
- git     default                +
- information_schema      default+
- system  default                +
-
-(1 row)
-```
 
 #### `clickhouse_server_version`
 

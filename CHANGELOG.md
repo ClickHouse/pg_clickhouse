@@ -7,6 +7,19 @@ All notable changes to this project will be documented in this file. It uses the
   [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
     "Semantic Versioning 2.0.0"
 
+## [v0.11.0] — Unreleased
+
+### ⚡ Improvements
+
+*   Removed `clickhouse_raw_query()`, deprecated in v0.10.0. Use
+    `clickhouse_query(server, sql)` to read rows and
+    `CALL clickhouse_perform(server, sql)` to run statements that return none;
+    both take a foreign server rather than a connection string. ([#346])
+
+  [v0.11.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.10.0...v0.11.0
+  [#346]: https://github.com/ClickHouse/pg_clickhouse/pull/346
+    "ClickHouse/pg_clickhouse#346 remove clickhouse_raw_query"
+
 ## [v0.10.0] — 2026-08-11
 
 ### ⚡ Improvements

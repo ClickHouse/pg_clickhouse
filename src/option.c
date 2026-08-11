@@ -387,28 +387,12 @@ chfdw_extract_options(
 }
 
 /*
- * Parse options as key/value pairs. Used for connection parameters and
- * ClickHouse settings. Based on the Postgres conninfo_parse() function. The
- * formats:
- *
- * with_comma = false, with_equal = false:
- *
- *     key = value key 'value'...
- *
- * with_comma = false, with_equal = true:
- *
- *     key = value key = 'value'...
- *
- * with_comma = true, with_equal = false:
+ * Parse ClickHouse settings as key/value pairs. Based on the Postgres
+ * conninfo_parse() function. The format:
  *
  *     key value, key 'value',...
  *
- * with_comma = true, with_equal = true:
- *
- *     key = value, key = 'value',...
- *
- * Parameter names may not contain spaces or '=' (when with_equal is true),
- * and support no escapes.
+ * Parameter names may not contain spaces, and support no escapes.
  *
  * Values may contain backslash-escaped spaces, backslashes, and commas. Use
  * SQL single-quoted literals to remove the need to escape commas and spaces.
@@ -416,7 +400,7 @@ chfdw_extract_options(
  * Returns a PostgreSQL List containing DefElem cells.
  */
 List*
-chfdw_parse_options(const char* options_string, bool with_comma, bool with_equal) {
+chfdw_parse_options(const char* options_string) {
     char* pname;
     char* pval;
     char* buf;
@@ -438,9 +422,6 @@ chfdw_parse_options(const char* options_string, bool with_comma, bool with_equal
         /* Get the parameter name */
         pname = cp;
         while (*cp) {
-            if (with_equal && *cp == '=') {
-                break;
-            }
             if (isspace((unsigned char)*cp)) {
                 *cp++ = '\0';
                 while (*cp) {
@@ -454,26 +435,6 @@ chfdw_parse_options(const char* options_string, bool with_comma, bool with_equal
             cp++;
         }
 
-        if (with_equal) {
-            /* Check that there is a following '=' */
-            if (*cp != '=') {
-                ereport(
-                    ERROR,
-                    errcode(ERRCODE_SYNTAX_ERROR),
-                    errmsg(
-                        "pg_clickhouse: missing \"=\" after \"%s\" in options string",
-                        pname
-                    )
-                );
-            }
-            *cp++ = '\0';
-
-            /* Skip blanks after the '=' */
-            while (isspace((unsigned char)*cp)) {
-                cp++;
-            }
-        }
-
         /* Get the parameter value */
         pval = cp;
 
@@ -481,31 +442,24 @@ chfdw_parse_options(const char* options_string, bool with_comma, bool with_equal
             cp2 = pval;
             while (*cp) {
                 if (isspace((unsigned char)*cp)) {
-                    if (with_comma) {
-                        while (isspace((unsigned char)*cp)) {
-                            cp++;
-                        }
+                    while (isspace((unsigned char)*cp)) {
+                        cp++;
+                    }
 
-                        if (*cp != ',' && *cp != '\0') {
-                            ereport(
-                                ERROR,
-                                errcode(ERRCODE_SYNTAX_ERROR),
-                                errmsg(
-                                    "pg_clickhouse: missing comma after \"%s\" value "
-                                    "in options string",
-                                    pname
-                                )
-                            );
-                        }
-                        while (isspace((unsigned char)*cp)) {
-                            cp++;
-                        }
-                    } else {
-                        *cp++ = '\0';
+                    if (*cp != ',' && *cp != '\0') {
+                        ereport(
+                            ERROR,
+                            errcode(ERRCODE_SYNTAX_ERROR),
+                            errmsg(
+                                "pg_clickhouse: missing comma after \"%s\" value "
+                                "in options string",
+                                pname
+                            )
+                        );
                     }
                     break;
                 }
-                if (*cp == ',' && with_comma) {
+                if (*cp == ',') {
                     *cp++ = '\0';
                     break;
                 }
@@ -558,24 +512,23 @@ chfdw_parse_options(const char* options_string, bool with_comma, bool with_equal
                 }
                 *cp2++ = *cp++;
             }
-            if (with_comma) {
-                /* Make sure there's a trailing comma or end of the input. */
-                while (isspace((unsigned char)*cp)) {
-                    cp++;
-                }
-                if (*cp == ',') {
-                    cp++;
-                } else if (*cp != '\0') {
-                    ereport(
-                        ERROR,
-                        errcode(ERRCODE_SYNTAX_ERROR),
-                        errmsg(
-                            "pg_clickhouse: missing comma after \"%s\" value in "
-                            "options string",
-                            pname
-                        )
-                    );
-                }
+
+            /* Make sure there's a trailing comma or end of the input. */
+            while (isspace((unsigned char)*cp)) {
+                cp++;
+            }
+            if (*cp == ',') {
+                cp++;
+            } else if (*cp != '\0') {
+                ereport(
+                    ERROR,
+                    errcode(ERRCODE_SYNTAX_ERROR),
+                    errmsg(
+                        "pg_clickhouse: missing comma after \"%s\" value in "
+                        "options string",
+                        pname
+                    )
+                );
             }
         }
 
@@ -622,7 +575,7 @@ chfdw_check_settings_guc(char** newval, void** extra, GucSource source) {
     }
 
     /* Make sure we can parse the settings. */
-    List* list = chfdw_parse_options(*newval, true, false);
+    List* list = chfdw_parse_options(*newval);
 
     if (!list) {
         return false;
