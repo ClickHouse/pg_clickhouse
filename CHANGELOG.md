@@ -107,6 +107,10 @@ All notable changes to this project will be documented in this file. It uses the
     binary encoding, the HTTP driver always streams results the same as the
     binary driver. Setting `fetch_size` triggers a warning and will be removed
     in a future release. ([#328])
+*   Added pushdown for the JSONB `?` existence operator. Evaluates not only
+    ClickHouse JSON columns mapped to JSONB, but also ClickHouse String
+    columns that contain JSON, thus working on both JSON objects and JSON
+    arrays. Thanks to Kostia R for the PR ([#344])!
 
 ### 🐞 Bug Fixes
 
@@ -225,6 +229,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#317 Push down the array IN family unconditionally"
   [#319]: https://github.com/ClickHouse/pg_clickhouse/pull/319
     "ClickHouse/pg_clickhouse#319 Fix foreign scan RTE selection"
+  [#344]: https://github.com/ClickHouse/pg_clickhouse/pull/344
+    "ClickHouse/pg_clickhouse#344 Push down JSONB existence predicates"
   [#326]: https://github.com/ClickHouse/pg_clickhouse/pull/326
     "ClickHouse/pg_clickhouse#326 pg-clickhouse-c"
   [#328]: https://github.com/ClickHouse/pg_clickhouse/pull/328

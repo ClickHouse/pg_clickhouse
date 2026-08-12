@@ -1087,7 +1087,7 @@ These functions provide the interface to query a ClickHouse database.
 
 ```sql
 SELECT clickhouse_raw_query(
-    'CREATE TABLE t1 (x String) ENGINE = Memory',
+    'CREATE TABLE t1 (elem String) ENGINE = Memory',
     'host=localhost port=8123'
 );
 ```
@@ -1347,6 +1347,11 @@ equivalents as follows:
 *   `!~*` (case insensitive regexp not match): [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
 *   `->>` (JSON/JSONB extract element as text): [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
 *   `->` (JSON/JSONB extract): [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
+*   `?` (JSONB top-level key or array of keys):
+    [JSONHas](https://clickhouse.com/docs/sql-reference/functions/json-functions#jsonhas)
+    for objects and
+    [JSONExtractArrayRaw](https://clickhouse.com/docs/sql-reference/functions/json-functions#jsonextractarrayraw)
+    for arrays.
 
 ### IN and NULL Semantics
 

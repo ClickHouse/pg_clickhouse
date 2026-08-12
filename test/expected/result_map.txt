@@ -221,6 +221,19 @@ json.sql
  23.8       | json_5.out
  23.3       | json_6.out
 
+jsonb_exists.sql
+----------------
+
+ Postgres | File
+----------|------------------
+ 13+      | jsonb_exists.out
+
+ ClickHouse | File
+------------|--------------------
+ 24.8+      | jsonb_exists.out
+ 23.8-24.3  | jsonb_exists_1.out
+ 23.3       | jsonb_exists_2.out
+
 param.sql
 ---------
 
