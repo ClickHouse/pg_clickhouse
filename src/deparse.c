@@ -1457,16 +1457,13 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
  * implemented.
  */
 /*
- * Resolve the user mapping the executor will use to scan foreignrel, for the
- * plan-time server-version probe below. Mirrors the executor's own lookup
- * (see clickhouseBeginForeignScan): the RTE's checkAsUser — set when the rel
- * is accessed on behalf of another user, e.g. through a view — wins over the
- * invoking user. Returns NULL instead of erroring when no mapping exists, so
- * the version gate degrades to "no pushdown" rather than failing a query
- * (or a bare EXPLAIN) at plan time.
+ * Return the user mapping that the executor would use for foreignrel.
+ * checkAsUser takes precedence over the current user when, for example, a view
+ * accesses the relation. Return NULL if no mapping exists so the planner can
+ * disable pushdown without making the query or EXPLAIN fail.
  */
-static UserMapping*
-subplan_gate_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel, Oid serverid) {
+UserMapping*
+chfdw_gate_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel, Oid serverid) {
     Oid userid  = InvalidOid;
     int rtindex = -1;
 
@@ -1730,7 +1727,7 @@ is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt, ExprTruthCtx 
      * no mapping exists it refuses the pushdown rather than erroring.
      */
     {
-        UserMapping* user = subplan_gate_user_mapping(
+        UserMapping* user = chfdw_gate_user_mapping(
             glob_cxt->root, glob_cxt->foreignrel, fpinfo->server->serverid
         );
 

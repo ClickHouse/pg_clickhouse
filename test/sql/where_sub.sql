@@ -41,6 +41,29 @@ SELECT class, COUNT(*) AS order_count
  GROUP BY class
  ORDER BY class;
 
+-- Order 1's first matching line fails num <> id, but its second line passes.
+-- This catches plans that test only the arbitrary row exposed by a semi-join.
+CALL clickhouse_perform('where_sub_admin', $$
+    INSERT INTO where_sub_test.orders VALUES
+        (1, '2025-07-05', 'a'), (2, '2025-07-06', 'b')
+$$);
+CALL clickhouse_perform('where_sub_admin', $$
+    INSERT INTO where_sub_test.lines VALUES
+        (1, 1, '2025-07-01', '2025-07-02'),
+        (1, 9, '2025-07-01', '2025-07-02'),
+        (2, 2, '2025-07-01', '2025-07-02')
+$$);
+
+-- Check the result instead of the remote plan. ClickHouse 26.3 and later can
+-- run this join remotely; older versions run it locally. Both must return 1.
+SELECT id FROM where_sub.orders
+ WHERE EXISTS (SELECT * FROM where_sub.lines WHERE order_id = id AND num <> id)
+ ORDER BY id;
+
+SELECT id FROM where_sub.orders
+ WHERE NOT EXISTS (SELECT * FROM where_sub.lines WHERE order_id = id AND num <> id)
+ ORDER BY id;
+
 CALL clickhouse_perform('where_sub_admin', 'DROP DATABASE where_sub_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER where_sub_loopback;
 DROP SERVER where_sub_loopback CASCADE;

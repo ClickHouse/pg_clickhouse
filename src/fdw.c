@@ -1949,6 +1949,53 @@ extract_join_equals(List* conds, List** to) {
 }
 
 /*
+ * Move conditions that reference innerrelids from conds to *to. Return the
+ * remaining conditions.
+ *
+ * In a SEMI or ANTI join, every condition that references the inner relation
+ * is part of the ON match test. A WHERE condition can inspect only the one
+ * arbitrary row exposed by ClickHouse's LEFT SEMI JOIN; LEFT ANTI JOIN exposes
+ * no matching row. Do not rely on is_pushed_down: PostgreSQL sets it for
+ * semijoin conditions even when they belong in the remote ON clause.
+ */
+static List*
+extract_inner_conds(List* conds, Relids innerrelids, List** to) {
+    ListCell* lc;
+    List* res = NIL;
+
+    foreach (lc, conds) {
+        RestrictInfo* rinfo = lfirst_node(RestrictInfo, lc);
+
+        if (bms_overlap(rinfo->clause_relids, innerrelids)) {
+            *to = lappend(*to, rinfo);
+        } else {
+            res = lappend(res, rinfo);
+        }
+    }
+    return res;
+}
+
+static bool
+semi_join_needs_nonequi_on(
+    List* joinclauses,
+    RelOptInfo* outerrel,
+    RelOptInfo* innerrel
+) {
+    ListCell* lc;
+
+    foreach (lc, joinclauses) {
+        RestrictInfo* rinfo = lfirst_node(RestrictInfo, lc);
+
+        if (bms_overlap(rinfo->clause_relids, outerrel->relids) &&
+            bms_overlap(rinfo->clause_relids, innerrel->relids) &&
+            !is_simple_join_clause((Expr*)rinfo)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
  * Check if reltarget is safe for semi-join pushdown. Returns false if the
  * target references columns from the inner relation that aren't in outer
  * relation.
@@ -2208,17 +2255,13 @@ foreign_join_ok(
     case JOIN_SEMI:
     case JOIN_ANTI:
 
-        /*
-         * For semi/anti-join, inner's conditions go to joinclauses (ON),
-         * outer's conditions go to remote_conds (WHERE). Extract join key
-         * equalities to joinclauses for the ON clause.
-         */
         fpinfo->joinclauses =
             list_concat(fpinfo->joinclauses, list_copy(fpinfo_i->remote_conds));
         fpinfo->remote_conds =
             list_concat(fpinfo->remote_conds, list_copy(fpinfo_o->remote_conds));
-        fpinfo->remote_conds =
-            extract_join_equals(fpinfo->remote_conds, &fpinfo->joinclauses);
+        fpinfo->remote_conds = extract_inner_conds(
+            fpinfo->remote_conds, innerrel->relids, &fpinfo->joinclauses
+        );
 
         /*
          * Subquery-wrapping a join-typed input would require its
@@ -2231,6 +2274,23 @@ foreign_join_ok(
          */
         if (jointype == JOIN_ANTI && (IS_JOIN_REL(outerrel) || IS_JOIN_REL(innerrel))) {
             return false;
+        }
+
+        /*
+         * Before ClickHouse 26.3, the analyzer rejects a non-equality ON
+         * condition that spans both sides when join_use_nulls is enabled. The
+         * 23.x analyzer rejects it regardless of that setting. Keep these joins
+         * local on affected servers. Run this check last to avoid an
+         * unnecessary connection during planning.
+         */
+        if (semi_join_needs_nonequi_on(fpinfo->joinclauses, outerrel, innerrel)) {
+            UserMapping* user =
+                chfdw_gate_user_mapping(root, joinrel, fpinfo_o->server->serverid);
+
+            if (user == NULL ||
+                !chfdw_version_ge(chfdw_get_server_version(user), 26, 3)) {
+                return false;
+            }
         }
         break;
 

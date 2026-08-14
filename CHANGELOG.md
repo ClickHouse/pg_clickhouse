@@ -16,9 +16,25 @@ All notable changes to this project will be documented in this file. It uses the
     `CALL clickhouse_perform(server, sql)` to run statements that return none;
     both take a foreign server rather than a connection string. ([#346])
 
+### 🐞 Bug Fixes
+
+*   Fixed the pushdown of an `EXISTS` subquery whose correlation condition
+    references both the outer and the inner relation. Such a condition
+    deparsed into the `WHERE` clause, where ClickHouse's `LEFT SEMI JOIN`
+    applies it to the single arbitrary matching row it surfaces instead of
+    asking whether any matching row satisfies it, so the query silently
+    returned too few rows. Placing it in the `ON` clause, where it belongs,
+    requires ClickHouse 26.3 or later: earlier analyzers reject a condition
+    spanning both sides of a join once `join_use_nulls` is on, which
+    `pg_clickhouse.session_settings` enables by default. Against an older
+    server such a join is now evaluated locally rather than returning the
+    wrong answer ([#347]).
+
   [v0.11.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.10.0...v0.11.0
   [#346]: https://github.com/ClickHouse/pg_clickhouse/pull/346
     "ClickHouse/pg_clickhouse#346 remove clickhouse_raw_query"
+  [#347]: https://github.com/ClickHouse/pg_clickhouse/pull/347
+    "ClickHouse/pg_clickhouse#347 Place SEMI join inner conditions in the ON clause"
 
 ## [v0.10.0] — 2026-08-11
 
