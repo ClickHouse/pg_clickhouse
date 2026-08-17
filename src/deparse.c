@@ -1146,12 +1146,12 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
         /*
          * AND/OR preserve the NULL/FALSE equivalence of a truth context but
          * consume a NEGATED state (their children are not the NOT's direct
-         * operand). Under NOT the roles swap — a FALSE-for-NULL substitution
-         * below would surface as TRUE-for-NULL above — so the operand must be
-         * exact, except that one NOT directly over a truth context grants the
-         * operand EXPR_CTX_NEGATED, which a SubPlan consumes via the guarded
-         * NOT IN deparse. A second NOT above that degrades to exact (the
-         * planner collapses double negation anyway).
+         * operand). Under NOT the roles swap --- a FALSE-for-NULL
+         * substitution below would surface as TRUE-for-NULL above --- so the
+         * operand must be exact, except that one NOT directly over a truth
+         * context grants the operand EXPR_CTX_NEGATED, which a SubPlan
+         * consumes via the guarded NOT IN deparse. A second NOT above that
+         * degrades to exact (the planner collapses double negation anyway).
          */
         if (b->boolop == NOT_EXPR) {
             child_ctx = ctx == EXPR_CTX_TRUTH ? EXPR_CTX_NEGATED : EXPR_CTX_EXACT;
@@ -1447,23 +1447,23 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
  * Postgres substitutes NULL, but ClickHouse's scalar-subquery semantics
  * differ (it can raise or yield an empty result rather than NULL), so a naive
  * push would change query results. We sidestep this entirely by only pushing
- * EXPR subqueries whose top level is a bare aggregate with no GROUP BY: such a
- * query returns exactly one row on both systems by construction, so the
+ * EXPR subqueries whose top level is a bare aggregate with no GROUP BY: such
+ * a query returns exactly one row on both systems by construction, so the
  * zero-row divergence cannot arise. A non-aggregate or grouped scalar
- * subquery is left for local execution (see the guard below, and the
- * negative case in test/sql/subplan_pushdown.sql). This could be relaxed in
- * the future by wrapping the pushed subquery so an empty result yields NULL
- * (e.g. deparsing it under an any()/singleValueOrNull() aggregate); not yet
+ * subquery is left for local execution (see the guard below, and the negative
+ * case in test/sql/subplan_pushdown.sql). This could be relaxed in the future
+ * by wrapping the pushed subquery so an empty result yields NULL (e.g.
+ * deparsing it under an any()/singleValueOrNull() aggregate); not yet
  * implemented.
  */
 /*
  * Resolve the user mapping the executor will use to scan foreignrel, for the
  * plan-time server-version probe below. Mirrors the executor's own lookup
- * (see clickhouseBeginForeignScan): the RTE's checkAsUser — set when the rel
- * is accessed on behalf of another user, e.g. through a view — wins over the
- * invoking user. Returns NULL instead of erroring when no mapping exists, so
- * the version gate degrades to "no pushdown" rather than failing a query
- * (or a bare EXPLAIN) at plan time.
+ * (see clickhouseBeginForeignScan): the RTE's checkAsUser --- set when the
+ * rel is accessed on behalf of another user, e.g. through a view --- wins
+ * over the invoking user. Returns NULL instead of erroring when no mapping
+ * exists, so the version gate degrades to "no pushdown" rather than failing a
+ * query (or a bare EXPLAIN) at plan time.
  */
 static UserMapping*
 subplan_gate_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel, Oid serverid) {
@@ -3023,7 +3023,7 @@ deparseVar(Var* node, deparse_expr_cxt* context) {
     /*
      * SubPlan scope: the Var's varno indexes the subquery's own rtable
      * (context->root is the SubPlan's PlannerInfo here), and the alias
-     * namespace is q{plan_id}_{varno} — never the outer r{N}. Pass
+     * namespace is q{plan_id}_{varno}, never the outer r{N}. Pass
      * qualify_col=false to deparseColumnRef so it cannot add an r{N}
      * qualifier of its own.
      */
@@ -3540,8 +3540,8 @@ static void
 deparseParam(Param* node, deparse_expr_cxt* context) {
     /*
      * SubPlan scope: a PARAM_EXEC Param here is (usually) a correlation
-     * reference — the planner's replacement for an outer-query Var inside
-     * the subquery (SS_replace_correlation_vars). subplan->parParam and
+     * reference, the planner's replacement for an outer-query Var inside the
+     * subquery (SS_replace_correlation_vars). subplan->parParam and
      * subplan->args run in parallel: paramid -> the outer expression that
      * feeds it. Inline that expression, deparsed in the PARENT scope so it
      * picks up the outer query's aliases.
@@ -3770,9 +3770,9 @@ deparseSubPlanFrom(deparse_expr_cxt* context) {
  * deparseParam resolves back to outer-alias text via parent_ctx.
  *
  * Scope discipline: the sub-context's root is the SubPlan's own PlannerInfo,
- * so every varno resolves against the subquery's rtable, and every table
- * gets a q{plan_id}_{rtindex} alias — collision-free with the outer r{N}/
- * s{N} namespaces and with sibling SubPlans.
+ * so every varno resolves against the subquery's rtable, and every table gets
+ * a q{plan_id}_{rtindex} alias. Collision-free with the outer r{N}/ s{N}
+ * namespaces and with sibling SubPlans.
  */
 static void
 deparseSubPlanQuery(SubPlan* subplan, deparse_expr_cxt* context, SubPlanBodyForm form) {
@@ -3854,14 +3854,14 @@ deparseSubPlanQuery(SubPlan* subplan, deparse_expr_cxt* context, SubPlanBodyForm
 }
 
 /*
- * Deparse Postgres's `x NOT IN (SELECT ..)` — arriving as NOT over an ANY
- * SubPlan — when a NULL could reach the comparison. ClickHouse's native
+ * Deparse Postgres's `x NOT IN (SELECT ..)` when it arrives as NOT over an
+ * ANY SubPlan and a NULL could reach the comparison. ClickHouse's native
  * `NOT IN` computes the plain set complement, where Postgres's three-valued
- * answer can only be TRUE if the probe is non-NULL, the subquery output
- * holds no NULL, and the probe matches nothing — except that an empty
- * result is TRUE regardless of the probe. In a truth context (the only
- * place the walker admits this form, via EXPR_CTX_NEGATED) that TRUE-set
- * is all that matters, so emit it directly:
+ * answer can only be TRUE if the probe is non-NULL, the subquery output holds
+ * no NULL, and the probe matches nothing --- except that an empty result is
+ * TRUE regardless of the probe. In a truth context (the only place the walker
+ * admits this form, via EXPR_CTX_NEGATED) that TRUE-set is all that matters,
+ * so emit it directly:
  *
  *   CASE WHEN probe IS NULL
  *        THEN NOT EXISTS (SELECT ..)                            -- empty?
@@ -6250,7 +6250,7 @@ deparseWindowFunc(WindowFunc* node, deparse_expr_cxt* context) {
                 appendStringInfoString(buf, " FOLLOWING");
             }
         } else {
-            /* No BETWEEN — single start bound */
+            /* No BETWEEN - single start bound */
             if (wc->frameOptions & FRAMEOPTION_START_UNBOUNDED_PRECEDING) {
                 appendStringInfoString(buf, "UNBOUNDED PRECEDING");
             } else if (wc->frameOptions & FRAMEOPTION_START_CURRENT_ROW) {

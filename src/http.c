@@ -168,7 +168,7 @@ ch_http_close(ch_http_connection_t* conn) {
 }
 
 /* ----------------------------------------------------------------
- * HttpStream — opaque struct.
+ * HttpStream: opaque struct.
  * ----------------------------------------------------------------
  */
 struct HttpStream {
@@ -227,7 +227,7 @@ is_overridden(const ch_http_request* req, const char* name) {
 }
 
 /* ----------------------------------------------------------------
- * write_callback — CURL write callback. Appends data to the stream
+ * write_callback: CURL write callback. Appends data to the stream
  * buffer and, when streaming, pauses receipt so the caller drains it.
  * ----------------------------------------------------------------
  */
@@ -268,7 +268,7 @@ write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
 }
 
 /* ----------------------------------------------------------------
- * setup_curl — configure the CURL easy handle for this query.
+ * setup_curl: configure the CURL easy handle for this query.
  * ----------------------------------------------------------------
  */
 static void
@@ -453,7 +453,7 @@ ch_http_stream_next_chunk(void* ud, const void** data, size_t* len, char** error
 }
 
 /* ----------------------------------------------------------------
- * Public API — lifecycle
+ * Public API: lifecycle
  * ----------------------------------------------------------------
  */
 
@@ -469,7 +469,7 @@ error_status(long status) {
 }
 
 /*
- * ch_http_stream_end — clean up all owned resources.
+ * ch_http_stream_end: clean up all owned resources.
  */
 void
 ch_http_stream_end(HttpStream* stream) {
@@ -508,7 +508,7 @@ ch_http_stream_end(HttpStream* stream) {
 }
 
 /*
- * ch_http_stream_begin — allocate and initialize a streaming HTTP query.
+ * ch_http_stream_begin: allocate and initialize a streaming HTTP query.
  * Returns NULL only when an allocation or a libcurl handle init fails, other
  * failures come back on the stream as a status.
  */
@@ -571,7 +571,7 @@ fail:
 }
 
 /* ----------------------------------------------------------------
- * Public API — accessors
+ * Public API: accessors
  * ----------------------------------------------------------------
  */
 char*
@@ -605,7 +605,7 @@ ch_http_stream_request_time(HttpStream* stream) {
 }
 
 /*
- * take_body — transfer ownership of the response body.
+ * take_body: transfer ownership of the response body.
  *
  * On return, *out_data is a malloc()'d buffer the caller must free(). When
  * status is CH_HTTP_STATUS_TRANSPORT_ERROR the body is the strdup'd libcurl
@@ -636,7 +636,7 @@ take_body(HttpStream* stream, char** out_data, size_t* out_size) {
 }
 
 /*
- * ch_http_simple_query — buffer the full TabSeparated response in memory.
+ * ch_http_simple_query: buffer the full TabSeparated response in memory.
  *
  * Server default format is TabSeparated, so only its dialect needs pinning:
  * ISO timestamps, \N for NULL and LF line ends, as the text parsers expect.

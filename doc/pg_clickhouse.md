@@ -576,7 +576,7 @@ A PostgreSQL [partitioned table] can mix local partitions with foreign
 partitions backed by ClickHouse. A common layout offloads older data to
 ClickHouse while recent data stays in PostgreSQL:
 
-```pgsql
+```sql
 CREATE TABLE events (id int, ts date, val int, amt float8)
     PARTITION BY RANGE (ts);
 
@@ -649,8 +649,8 @@ aggregates also fall back.
 
 ### PREPARE, EXECUTE, DEALLOCATE
 
- As of v0.1.2, pg_clickhouse supports parameterized queries, mainly created
- by the [PREPARE] command:
+ As of v0.1.2, pg_clickhouse supports parameterized queries, mainly created by
+ the [PREPARE] command:
 
 ```pgsql
 try=# PREPARE avg_durations_between_dates(date, date) AS
@@ -676,15 +676,6 @@ try=# EXECUTE avg_durations_between_dates('2025-12-09', '2025-12-13');
 (5 rows)
 ```
 
-> [!WARNING]
-> Parameterized execution prevents the [http driver](#create-server) from
-> properly converting DateTime time zones on ClickHouse versions prior to
-> 25.8, when the [underlying bug] was [fixed]. Note that sometimes PostgreSQL
-> will use a parameterized query plan even without using `PREPARE`. For any
-> queries on that require accurate time zone conversion, and where upgrading
-> to 25.8 or later is not an option, use the [binary driver](#create-server),
-> instead.
-
 pg_clickhouse pushes down the aggregations, as usual, as seen in the
 [EXPLAIN](#explain) verbose output:
 
@@ -703,7 +694,6 @@ Note that it has sent the full date values, not the parameter placeholders.
 This holds for the first five requests, as described in the PostgreSQL
 [PREPARE notes]. On the sixth execution, it sends ClickHouse
 `{param:type}`-style [query parameters]:
-parameters:
 
 ```pgsql
                                                                                                          QUERY PLAN
@@ -788,12 +778,16 @@ settings] to be set on subsequent queries. Example:
 SET pg_clickhouse.session_settings = 'join_use_nulls 1, final 1';
 ```
 
-The default is `join_use_nulls 1, group_by_use_nulls 1, final 1,
-transform_null_in 0`. Set it to an empty string to fall back on the
-ClickHouse server's settings — but note that pushdown correctness depends on
-some of these defaults: `join_use_nulls` for outer joins and
-`transform_null_in` for the `IN` family (see [IN and NULL
-Semantics](#in-and-null-semantics)).
+The default is
+
+```
+join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0
+```
+
+Set it to an empty string to fall back on the ClickHouse server's settings ---
+but note that pushdown correctness depends on some of these defaults:
+`join_use_nulls` for outer joins and `transform_null_in` for the `IN` family
+(see [IN and NULL Semantics](#in-and-null-semantics)).
 
 ```sql
 SET pg_clickhouse.session_settings = '';
@@ -1107,16 +1101,16 @@ SELECT * FROM clickhouse_query(
 ```
 
 Execute a query against an already-configured foreign server and return its
-rows as a relation, mapping each ClickHouse result column to the PostgreSQL type
-named in the column definition list. It reuses the server's `driver`,
+rows as a relation, mapping each ClickHouse result column to the PostgreSQL
+type named in the column definition list. It reuses the server's `driver`,
 credentials, database, and the connection cache.
 
 The first argument is the name of a server created with [CREATE SERVER]. A
-column definition list (`AS name(col type, ...)`) is required: PostgreSQL needs
-the result shape before fetching rows, and it must match the columns the query
-returns. Values are converted from ClickHouse to the declared types the same way
-a foreign table column would be. Statements that return no results, such as DDL,
-have nothing to declare; run them with
+column definition list (`AS name(col type, ...)`) is required: PostgreSQL
+needs the result shape before fetching rows, and it must match the columns the
+query returns. Values are converted from ClickHouse to the declared types the
+same way a foreign table column would be. Statements that return no results,
+such as DDL, have nothing to declare; run them with
 [`clickhouse_perform`](#clickhouse_perform) instead.
 
 No role has `EXECUTE` access by default; `GRANT` to a role to allow it to use
@@ -1138,12 +1132,12 @@ CALL clickhouse_perform(
 Execute a statement against an already-configured foreign server and discard
 any result. Use it for statements that return no rows, such as DDL, where
 [`clickhouse_query`](#clickhouse_query) has no result shape to declare. It
-resolves the server the same way `clickhouse_query` does, reusing its `driver`,
-credentials, database, and the connection cache.
+resolves the server the same way `clickhouse_query` does, reusing its
+`driver`, credentials, database, and the connection cache.
 
 As a procedure it must be invoked with [CALL], not `SELECT`, and it returns no
-rows. No role has `EXECUTE` access by default; `GRANT` to a role to allow it to
-use the procedure.
+rows. No role has `EXECUTE` access by default; `GRANT` to a role to allow it
+to use the procedure.
 
 ```sql
 GRANT EXECUTE ON PROCEDURE clickhouse_perform(text, text) TO ch_admin;
@@ -1289,25 +1283,24 @@ equivalents as follows:
 ClickHouse evaluates `IN` under two-valued logic: when the probe finds no
 match it returns `0` even if a NULL is involved, where PostgreSQL computes
 NULL. To preserve PostgreSQL semantics, pg_clickhouse pushes down the `IN`
-family over a constant list or array (`IN`, `NOT IN`, `= ANY`, `= ALL`,
-`<> ANY`, `<> ALL`) unconditionally: the native or cheap form where it can
-prove neither the probe nor an array element can be NULL, or a guarded
-`CASE` form otherwise that checks for NULL values at runtime instead,
-computing PostgreSQL's exact three-valued answer (TRUE, FALSE, NULL) in
-every context, including value positions like a `SELECT` list or
-`GROUP BY`.
+family over a constant list or array (`IN`, `NOT IN`, `= ANY`, `= ALL`, `<>
+ANY`, `<> ALL`) unconditionally: the native or cheap form where it can prove
+neither the probe nor an array element can be NULL, or a guarded `CASE` form
+otherwise that checks for NULL values at runtime instead, computing
+PostgreSQL's exact three-valued answer (TRUE, FALSE, NULL) in every context,
+including value positions like a `SELECT` list or `GROUP BY`.
 
 A `NOT IN (SELECT ...)` filter over nullable columns also pushes down,
 deparsed with compensating guards that keep PostgreSQL's behavior: a set
-containing a NULL disqualifies every row, and a NULL probe passes only
-against an empty set. Each guard is omitted when a `NOT NULL` declaration
-proves it unnecessary. Unlike the array forms above, this guard only
-applies in a plain filter condition (or under `NOT`); we still do not push
-down `IN (SELECT ...)` (in a value position) nor grouped/aggregated subquery
-bodies. Declaring columns `NOT NULL` maximizes pushdown by letting the cheaper
-unguarded form ship instead; [IMPORT FOREIGN SCHEMA] does so automatically for
-non-`Nullable` ClickHouse columns. The proof follows non-NULL constants,
-`NOT NULL` columns, and basic arithmetic (`+`, `-`, `*`, unary `-`) over them.
+containing a NULL disqualifies every row, and a NULL probe passes only against
+an empty set. Each guard is omitted when a `NOT NULL` declaration proves it
+unnecessary. Unlike the array forms above, this guard only applies in a plain
+filter condition (or under `NOT`); we still do not push down `IN (SELECT ...)`
+(in a value position) nor grouped/aggregated subquery bodies. Declaring
+columns `NOT NULL` maximizes pushdown by letting the cheaper unguarded form
+ship instead; [IMPORT FOREIGN SCHEMA] does so automatically for non-`Nullable`
+ClickHouse columns. The proof follows non-NULL constants, `NOT NULL` columns,
+and basic arithmetic (`+`, `-`, `*`, unary `-`) over them.
 
 These rules assume ClickHouse's default `transform_null_in = 0`, which
 pg_clickhouse sets on every query through the default value of the
@@ -1325,8 +1318,8 @@ any of these functions cannot be pushed down they will raise an exception.
 
 ### Extension Pushdown
 
-pg_clickhouse recognizes functions from select core and third-party extensions,
-pushing them down to their ClickHouse equivalents.
+pg_clickhouse recognizes functions from select core and third-party
+extensions, pushing them down to their ClickHouse equivalents.
 
 #### re2
 
@@ -1454,9 +1447,9 @@ exception.
 
 ### Pushdown Window Functions
 
-These PostgreSQL [window functions] push down to ClickHouse with `OVER
-(PARTITION BY ... ORDER BY ...)` clauses, including frame specifications where
-applicable.
+These PostgreSQL [window functions] push down to ClickHouse with
+`OVER (PARTITION BY ... ORDER BY ...)` clauses, including frame specifications
+where applicable.
 
 *   [row_number](https://clickhouse.com/docs/sql-reference/window-functions/row_number)
 *   [rank](https://clickhouse.com/docs/sql-reference/window-functions/rank)
@@ -1575,17 +1568,17 @@ ClickHouse-compatible [RE2] regular expressions.
 
 ### `to_char()`
 
-PostgreSQL [`to_char()`] for `timestamp` and `timestamp with time zone`
-pushes down to ClickHouse [formatDateTime] only when the format argument
-is a non-NULL string constant whose every PostgreSQL keyword has a
-byte-for-byte identical ClickHouse equivalent. If the format is dynamic
-(not a `Const`), or contains any unsupported keyword or modifier, the
-call falls back to local evaluation in PostgreSQL — pushdown is never
-attempted with a partial translation, so output stays PG-compatible.
+PostgreSQL [`to_char()`] for `timestamp` and `timestamp with time zone` pushes
+down to ClickHouse [formatDateTime] only when the format argument is a
+non-NULL string constant whose every PostgreSQL keyword has a byte-for-byte
+identical ClickHouse equivalent. If the format is dynamic or contains any
+unsupported keyword or modifier, the call falls back to local evaluation in
+PostgreSQL. pg_clickhouse never pushes down a partial translation, so output
+remains compatible.
 
 Two-argument `to_char()` forms over `numeric`, `interval`, and other
-non-timestamp types never push down; ClickHouse [formatDateTime] only
-formats date-time values.
+non-timestamp types never push down; ClickHouse [formatDateTime] only formats
+date-time values.
 
 #### Translated keywords
 
@@ -1607,10 +1600,10 @@ formats date-time values.
 
 #### Quoted text and literals
 
-Text wrapped in `"..."` passes through verbatim, with any literal `%`
-doubled to `%%` to escape ClickHouse's specifier prefix. A `\"` outside
-quotes also passes through as a literal `"`. Inside `"..."`, backslash
-only escapes `"`; other backslash sequences are treated as literal text.
+Text wrapped in `"..."` passes through verbatim, with any literal `%` doubled
+to `%%` to escape ClickHouse's specifier prefix. A `\"` outside quotes also
+passes through as a literal `"`. Inside `"..."`, backslash only escapes `"`;
+other backslash sequences are treated as literal text.
 
 ## Authors
 

@@ -81,7 +81,7 @@ ch_http_stream_end(HttpStream* stream);
 bool
 ch_http_stream_next_chunk(void* stream, const void** data, size_t* len, char** error);
 
-/* accessors — let pglink.c read stream state without seeing the struct */
+/* accessors that let pglink.c read stream state without seeing the struct. */
 char*
 ch_http_stream_buffer(HttpStream* stream);
 size_t

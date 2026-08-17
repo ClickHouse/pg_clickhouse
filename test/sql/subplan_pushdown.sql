@@ -117,7 +117,7 @@ WHERE item_id IN (SELECT item_id FROM sales
 ORDER BY item_id;
 
 -- ============================================================
--- 5. NOT IN (TPC-H Q16 shape) — arrives as NOT(ANY-SubPlan)
+-- 5. NOT IN (TPC-H Q16 shape): arrives as NOT(ANY-SubPlan)
 -- ============================================================
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT item_id FROM items
@@ -158,7 +158,7 @@ ORDER BY item_id;
 
 -- ============================================================
 -- 8. Negative case: multi-row correlated scalar (no aggregate) must
---    NOT push down — zero-row semantics differ between PG and CH.
+--    NOT push down; zero-row semantics differ between PG and CH.
 -- ============================================================
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT s.sale_id FROM sales s
@@ -168,10 +168,10 @@ ORDER BY s.sale_id;
 
 -- ============================================================
 -- 9. Identity: the plan-time version probe must connect as the user the
---    executor will scan as — the view owner, via the RTE's checkAsUser —
---    not the invoker. regress_subplan_nomap has NO user mapping of its
---    own, so resolving the invoker instead would fail the EXPLAIN with
---    "user mapping not found".
+--    executor will scan as --- the view owner, via the RTE's checkAsUser ---
+--    not the invoker. regress_subplan_nomap has NO user mapping of its own,
+--    so resolving the invoker instead would fail the EXPLAIN with "user
+--    mapping not found".
 -- ============================================================
 CREATE ROLE regress_subplan_nomap;
 GRANT USAGE ON SCHEMA subplan_test TO regress_subplan_nomap;
@@ -202,8 +202,8 @@ DROP ROLE regress_subplan_nomap;
 --     dropped) where ClickHouse returns TRUE. Shape 5 above ships
 --     plain because both item_id columns import as NOT NULL; with a
 --     nullable column on either side the deparse compensates with
---     guards — a probe-NULL CASE (empty set is TRUE, else dropped)
---     and a NOT EXISTS poison check for NULLs in the set — each
+--     guards --- a probe-NULL CASE (empty set is TRUE, else dropped)
+--     and a NOT EXISTS poison check for NULLs in the set --- each
 --     emitted only when the corresponding proof fails.
 -- ============================================================
 CALL clickhouse_perform('subplan_admin', 'CREATE TABLE subplan_test.maybe_null
@@ -215,8 +215,8 @@ CREATE FOREIGN TABLE maybe_null (id int NOT NULL, val int)
     SERVER subplan_svr OPTIONS (table_name 'maybe_null');
 
 -- Nullable inner column, NOT NULL probe: ships as NOT IN plus the poison
--- guard (no CASE). Postgres returns no rows — the set holds a NULL — where
--- an unguarded pushdown would return items 4..6
+-- guard (no CASE). Postgres returns no rows because the set holds a NULL,
+-- whereas an unguarded pushdown would return items 4..6
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT item_id FROM items
 WHERE item_id NOT IN (SELECT val FROM maybe_null)
@@ -238,8 +238,8 @@ SELECT id FROM maybe_null
 WHERE val NOT IN (SELECT item_id FROM sales WHERE region = 'east')
 ORDER BY id;
 
--- Both sides nullable: the full form, CASE and poison guard together.
--- The set holds a NULL, so no probe — NULL included — can qualify
+-- Both sides nullable: the full form, CASE and poison guard together. The set
+-- holds a NULL, so no probe, NULL included, can qualify
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM maybe_null m
 WHERE m.val NOT IN (SELECT val FROM maybe_null)
