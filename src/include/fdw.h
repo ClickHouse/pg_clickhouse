@@ -101,6 +101,12 @@ chfdw_binary_connect(ch_connection_details* details);
  */
 ch_server_version
 chfdw_get_server_version(UserMapping* user);
+/*
+ * Return the user mapping that the executor would use for foreignrel. Return
+ * NULL if no mapping exists so the planner can disable pushdown.
+ */
+UserMapping*
+chfdw_gate_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel, Oid serverid);
 List*
 chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server);
 char*
