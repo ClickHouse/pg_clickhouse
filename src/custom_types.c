@@ -345,10 +345,8 @@ chfdw_check_for_ordered_aggregate(Aggref* agg) {
     }
 
     /* Accept all ordered aggregates defined by pg_clickhouse. */
-    Oid extoid    = getExtensionOfObject(ProcedureRelationId, agg->aggfnoid);
-    char* extname = get_extension_name(extoid);
-
-    return STR_EQUAL(extname, "pg_clickhouse");
+    Oid extoid = getExtensionOfObject(ProcedureRelationId, agg->aggfnoid);
+    return get_extension_oid("pg_clickhouse", true) == extoid;
 }
 
 /*

@@ -223,6 +223,25 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_disc(ARRAY[0.25, 0.5, 0.75]) WITH
 SELECT percentile_disc(ARRAY[0.25, 0.5, 0.75]) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
 SELECT percentile_disc(ARRAY[0.25, 0.5, 0.75]) WITHIN GROUP (ORDER BY a NULLS LAST) FROM t1;
 
+CREATE FUNCTION local_ordered_sfunc(integer, integer)
+RETURNS integer
+LANGUAGE SQL
+IMMUTABLE
+AS 'SELECT $1 + 1';
+
+CREATE AGGREGATE local_ordered_count(ORDER BY integer) (
+    SFUNC = local_ordered_sfunc,
+    STYPE = integer,
+    INITCOND = '0'
+);
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT local_ordered_count() WITHIN GROUP (ORDER BY a) FROM t1;
+SELECT local_ordered_count() WITHIN GROUP (ORDER BY a) FROM t1;
+
+DROP AGGREGATE local_ordered_count(integer);
+DROP FUNCTION local_ordered_sfunc(integer, integer);
+
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
 SELECT date_trunc('day', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
 

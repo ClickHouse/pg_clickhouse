@@ -703,6 +703,35 @@ SELECT percentile_disc(ARRAY[0.25, 0.5, 0.75]) WITHIN GROUP (ORDER BY a NULLS LA
  {2,2,2}
 (1 row)
 
+CREATE FUNCTION local_ordered_sfunc(integer, integer)
+RETURNS integer
+LANGUAGE SQL
+IMMUTABLE
+AS 'SELECT $1 + 1';
+CREATE AGGREGATE local_ordered_count(ORDER BY integer) (
+    SFUNC = local_ordered_sfunc,
+    STYPE = integer,
+    INITCOND = '0'
+);
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT local_ordered_count() WITHIN GROUP (ORDER BY a) FROM t1;
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Aggregate
+   Output: local_ordered_count() WITHIN GROUP (ORDER BY a)
+   ->  Foreign Scan on public.t1
+         Output: a, b, c
+         Remote SQL: SELECT a FROM functions_test.t1
+(5 rows)
+
+SELECT local_ordered_count() WITHIN GROUP (ORDER BY a) FROM t1;
+ local_ordered_count 
+---------------------
+                   4
+(1 row)
+
+DROP AGGREGATE local_ordered_count(integer);
+DROP FUNCTION local_ordered_sfunc(integer, integer);
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
                                                                                        QUERY PLAN                                                                                        
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
