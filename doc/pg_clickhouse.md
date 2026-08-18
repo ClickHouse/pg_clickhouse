@@ -1152,7 +1152,7 @@ equivalents as follows:
 *   `abs`: [abs](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#abs)
 *   `factorial`: [factorial](https://clickhouse.com/docs/sql-reference/functions/math-functions#factorial)
 *   `mod` (int2/int4/int8/numeric): [modulo](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#modulo)
-*   `pow` & `power` (float8/numeric): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
+*   `pow` & `power` (float8, not numeric): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
 *   `round`: [round](https://clickhouse.com/docs/sql-reference/functions/rounding-functions#round)
 *   `sin`, `cos`, `tan`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`,
     `degrees`, `radians`, `pi`: [ClickHouse math functions](https://clickhouse.com/docs/sql-reference/functions/math-functions)

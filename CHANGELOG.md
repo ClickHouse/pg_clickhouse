@@ -22,12 +22,17 @@ All notable changes to this project will be documented in this file. It uses the
     custom aggregates that were not part of an extension. It now properly
     keeps custom aggregate execution local. Thanks to Minh Vu for the PR
     ([#337])!
+*   Fixed precision loss when pushing down numeric `pow()` and `power()`
+    expressions; they now execute locally in PostgreSQL. Thanks to Minh Vu for
+    the PR ([#339])!
 
   [v0.11.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.10.0...v0.11.0
   [#346]: https://github.com/ClickHouse/pg_clickhouse/pull/346
     "ClickHouse/pg_clickhouse#346 remove clickhouse_raw_query"
   [#337]: https://github.com/ClickHouse/pg_clickhouse/pull/337
     "ClickHouse/pg_clickhouse#337 Avoid NULL dereference for ordered aggregates"
+  [#339]: https://github.com/ClickHouse/pg_clickhouse/pull/339
+    "ClickHouse/pg_clickhouse#339 Preserve precision for numeric power functions"
 
 ## [v0.10.0] — 2026-08-11
 

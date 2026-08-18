@@ -39,6 +39,7 @@ CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t5 (ts D
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t6 (i64 Int64, f64 Float64) engine=TinyLog();');
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t7(dt Date) engine=TinyLog();');
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t8 (ts DateTime) engine=TinyLog();');
+CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t9 (v Decimal128(18)) engine=TinyLog();');
 
 CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t5 VALUES
@@ -79,6 +80,11 @@ CALL clickhouse_perform('functions_admin', $$
 		(1774996811, 1774996811.8384),
 $$);
 
+CALL clickhouse_perform('functions_admin', $$
+	INSERT INTO functions_test.t9 VALUES
+		(toDecimal128('1.234567890123456789', 18))
+$$);
+
 CREATE FOREIGN TABLE t1 (a int, b int, c timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t2 (a int, b int, c timestamp with time zone) SERVER functions_loopback OPTIONS (table_name 't1');
 CREATE FOREIGN TABLE t3 (a int, b int) SERVER functions_loopback;
@@ -88,6 +94,7 @@ CREATE FOREIGN TABLE t5 (ts timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t6 (i64 BIGINT, f64 FLOAT8) SERVER functions_loopback;
 CREATE FOREIGN TABLE t7 (ts date) SERVER functions_loopback;
 CREATE FOREIGN TABLE t8 (ts timestamp) SERVER functions_loopback;
+CREATE FOREIGN TABLE t9 (v numeric) SERVER functions_loopback;
 
 CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t3
@@ -634,7 +641,8 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT i64 FROM t6 WHERE power(f64, 2::float8) < 1 ORDER BY i64;
 SELECT i64 FROM t6 WHERE power(f64, 2::float8) < 1 ORDER BY i64;
 
--- mod / pow / power on numeric push down too.
+--- mod / pow / power on numeric do not push down due to loss of precision.
+-- https://github.com/ClickHouse/ClickHouse/issues/115327
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
 SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
@@ -644,6 +652,12 @@ SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
 SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT v FROM t9 WHERE pow(v, 2::numeric) = 1.524157875323883675::numeric;
+SELECT v FROM t9 WHERE pow(v, 2::numeric) = 1.524157875323883675::numeric;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT v FROM t9 WHERE power(v, 2::numeric) = 1.5241578753238834::numeric;
+SELECT v FROM t9 WHERE power(v, 2::numeric) = 1.5241578753238834::numeric;
 
 -- abs() pushes down for int / float / numeric.
 EXPLAIN (VERBOSE, COSTS OFF)

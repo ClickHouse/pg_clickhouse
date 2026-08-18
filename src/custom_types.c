@@ -198,8 +198,6 @@
 #define F_MOD_NUMERIC_NUMERIC 1728
 #define F_POW_FLOAT8_FLOAT8 1346
 #define F_POWER_FLOAT8_FLOAT8 1368
-#define F_POW_NUMERIC_NUMERIC 1738
-#define F_POWER_NUMERIC_NUMERIC 2169
 #define F_ABS_INT2 1398
 #define F_ABS_INT4 1397
 #define F_ABS_INT8 1396
@@ -586,8 +584,6 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         return true;
     case F_POW_FLOAT8_FLOAT8:
     case F_POWER_FLOAT8_FLOAT8:
-    case F_POW_NUMERIC_NUMERIC:
-    case F_POWER_NUMERIC_NUMERIC:
         def->ch_name = "pow";
         return true;
         /* CH lacks "power", maps to pow */

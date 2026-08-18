@@ -138,18 +138,18 @@ functions.sql
  19       | functions.out
  18       | functions_1.out
  15-17    | functions_2.out
- 14       | functions_0.out
- 13       | functions_3.out
+ 14       | functions_3.out
+ 13       | functions_4.out
 
  ClickHouse | File
 ------------|-----------------
  26.3+      | functions.out
- 25.8       | functions_4.out
- 25.3       | functions_5.out
- 24.8       | functions_6.out
- 24.3       | functions_7.out
- 23.8       | functions_8.out
- 23.3       | functions_9.out
+ 25.8       | functions_5.out
+ 25.3       | functions_6.out
+ 24.8       | functions_7.out
+ 24.3       | functions_8.out
+ 23.8       | functions_9.out
+ 23.3       | functions_0.out
 
 http.sql
 --------

@@ -36,6 +36,7 @@ CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t5 (ts D
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t6 (i64 Int64, f64 Float64) engine=TinyLog();');
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t7(dt Date) engine=TinyLog();');
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t8 (ts DateTime) engine=TinyLog();');
+CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t9 (v Decimal128(18)) engine=TinyLog();');
 CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t5 VALUES
 		('2025-10-15T20:12:25'),
@@ -71,6 +72,10 @@ CALL clickhouse_perform('functions_admin', $$
 		(0, 0),
 		(1774996811, 1774996811.8384),
 $$);
+CALL clickhouse_perform('functions_admin', $$
+	INSERT INTO functions_test.t9 VALUES
+		(toDecimal128('1.234567890123456789', 18))
+$$);
 CREATE FOREIGN TABLE t1 (a int, b int, c timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t2 (a int, b int, c timestamp with time zone) SERVER functions_loopback OPTIONS (table_name 't1');
 CREATE FOREIGN TABLE t3 (a int, b int) SERVER functions_loopback;
@@ -80,6 +85,7 @@ CREATE FOREIGN TABLE t5 (ts timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t6 (i64 BIGINT, f64 FLOAT8) SERVER functions_loopback;
 CREATE FOREIGN TABLE t7 (ts date) SERVER functions_loopback;
 CREATE FOREIGN TABLE t8 (ts timestamp) SERVER functions_loopback;
+CREATE FOREIGN TABLE t9 (v numeric) SERVER functions_loopback;
 CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t3
 	SELECT number+1, number+2
@@ -736,7 +742,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d
                                                                                        QUERY PLAN                                                                                        
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
-   Output: (date_trunc('dAy'::text, timezone('UTC'::text, c)))
+   Output: (date_trunc('dAy'::text, (c AT TIME ZONE 'UTC'::text)))
    Relations: Aggregate on (t1)
    Remote SQL: SELECT toStartOfDay(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toStartOfDay(toTimeZone(c, 'UTC'))) ORDER BY toStartOfDay(toTimeZone(c, 'UTC')) ASC NULLS LAST
 (4 rows)
@@ -752,7 +758,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('day', c at time zone 'UTC') as d
                                                                                        QUERY PLAN                                                                                        
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
-   Output: (date_trunc('day'::text, timezone('UTC'::text, c)))
+   Output: (date_trunc('day'::text, (c AT TIME ZONE 'UTC'::text)))
    Relations: Aggregate on (t2)
    Remote SQL: SELECT toStartOfDay(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toStartOfDay(toTimeZone(c, 'UTC'))) ORDER BY toStartOfDay(toTimeZone(c, 'UTC')) ASC NULLS LAST
 (4 rows)
@@ -847,7 +853,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('SeCond', c at time zone 'UTC') a
                                                                                                                      QUERY PLAN                                                                                                                      
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
-   Output: (date_trunc('SeCond'::text, timezone('UTC'::text, c)))
+   Output: (date_trunc('SeCond'::text, (c AT TIME ZONE 'UTC'::text)))
    Relations: Aggregate on (t1)
    Remote SQL: SELECT toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1)) FROM functions_test.t1 GROUP BY (toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1))) ORDER BY toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1)) ASC NULLS LAST
 (4 rows)
@@ -1395,11 +1401,11 @@ SELECT ts FROM t5 WHERE EXTRACT(epoch FROM ts) > 1866158180;
 
 -- Check extract from date.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(year FROM ts::date) = 2027;
-                                                           QUERY PLAN                                                           
---------------------------------------------------------------------------------------------------------------------------------
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 2027))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(cast(ts, 'Nullable(Date)')) = 2027))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(year FROM ts::date) = 2027;
@@ -1409,11 +1415,11 @@ SELECT ts FROM t5 WHERE EXTRACT(year FROM ts::date) = 2027;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(month FROM ts::date) = 11;
-                                                          QUERY PLAN                                                           
--------------------------------------------------------------------------------------------------------------------------------
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 11))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(cast(ts, 'Nullable(Date)')) = 11))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(month FROM ts::date) = 11;
@@ -1423,11 +1429,11 @@ SELECT ts FROM t5 WHERE EXTRACT(month FROM ts::date) = 11;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(day FROM ts::date) = 18;
-                                                             QUERY PLAN                                                             
-------------------------------------------------------------------------------------------------------------------------------------
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 18))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(cast(ts, 'Nullable(Date)')) = 18))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(day FROM ts::date) = 18;
@@ -2117,7 +2123,19 @@ SELECT current_setting('server_version_num')::int >= 140000 AS pg14 \gset
 \if :pg14
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT val FROM t4 WHERE bit_count(val::bytea) = 21 ORDER BY val;
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((bitCount(CAST(val AS bytea(0))) = 21)) ORDER BY val ASC NULLS LAST
+(3 rows)
+
 SELECT val FROM t4 WHERE bit_count(val::bytea) = 21 ORDER BY val;
+  val  
+-------
+ hello
+(1 row)
+
 \endif
 -- mod(int, int) pushes down as modulo.
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -2168,7 +2186,8 @@ SELECT i64 FROM t6 WHERE power(f64, 2::float8) < 1 ORDER BY i64;
    0
 (1 row)
 
--- mod / pow / power on numeric push down too.
+--- mod / pow / power on numeric do not push down due to loss of precision.
+-- https://github.com/ClickHouse/ClickHouse/issues/115327
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
                                                           QUERY PLAN                                                           
@@ -2188,12 +2207,13 @@ SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
-                                            QUERY PLAN                                             
----------------------------------------------------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((pow(cast(a, 'Nullable(Decimal)'), 2) = 25))
-(3 rows)
+   Filter: (pow((t3.a)::numeric, '2'::numeric) = '25'::numeric)
+   Remote SQL: SELECT a FROM functions_test.t3
+(4 rows)
 
 SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
  a 
@@ -2203,18 +2223,50 @@ SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
-                                            QUERY PLAN                                             
----------------------------------------------------------------------------------------------------
+                            QUERY PLAN                            
+------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((pow(cast(a, 'Nullable(Decimal)'), 2) = 25))
-(3 rows)
+   Filter: (power((t3.a)::numeric, '2'::numeric) = '25'::numeric)
+   Remote SQL: SELECT a FROM functions_test.t3
+(4 rows)
 
 SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
  a 
 ---
  5
 (1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT v FROM t9 WHERE pow(v, 2::numeric) = 1.524157875323883675::numeric;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan on public.t9
+   Output: v
+   Filter: (pow(t9.v, '2'::numeric) = 1.524157875323883675)
+   Remote SQL: SELECT v FROM functions_test.t9
+(4 rows)
+
+SELECT v FROM t9 WHERE pow(v, 2::numeric) = 1.524157875323883675::numeric;
+          v           
+----------------------
+ 1.234567890123456789
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT v FROM t9 WHERE power(v, 2::numeric) = 1.5241578753238834::numeric;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan on public.t9
+   Output: v
+   Filter: (power(t9.v, '2'::numeric) = 1.5241578753238834)
+   Remote SQL: SELECT v FROM functions_test.t9
+(4 rows)
+
+SELECT v FROM t9 WHERE power(v, 2::numeric) = 1.5241578753238834::numeric;
+ v 
+---
+(0 rows)
 
 -- abs() pushes down for int / float / numeric.
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -2834,7 +2886,7 @@ WHERE encode(val::bytea, 'base64url') IN (
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 CALL clickhouse_perform('functions_admin', 'DROP DATABASE functions_test');
 DROP SERVER functions_loopback CASCADE;
-NOTICE:  drop cascades to 10 other objects
+NOTICE:  drop cascades to 11 other objects
 DETAIL:  drop cascades to foreign table t1
 drop cascades to foreign table t2
 drop cascades to foreign table t3
@@ -2844,4 +2896,5 @@ drop cascades to foreign table t5
 drop cascades to foreign table t6
 drop cascades to foreign table t7
 drop cascades to foreign table t8
+drop cascades to foreign table t9
 drop cascades to foreign table times

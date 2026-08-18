@@ -36,6 +36,7 @@ CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t5 (ts D
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t6 (i64 Int64, f64 Float64) engine=TinyLog();');
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t7(dt Date) engine=TinyLog();');
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t8 (ts DateTime) engine=TinyLog();');
+CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t9 (v Decimal128(18)) engine=TinyLog();');
 CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t5 VALUES
 		('2025-10-15T20:12:25'),
@@ -71,6 +72,10 @@ CALL clickhouse_perform('functions_admin', $$
 		(0, 0),
 		(1774996811, 1774996811.8384),
 $$);
+CALL clickhouse_perform('functions_admin', $$
+	INSERT INTO functions_test.t9 VALUES
+		(toDecimal128('1.234567890123456789', 18))
+$$);
 CREATE FOREIGN TABLE t1 (a int, b int, c timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t2 (a int, b int, c timestamp with time zone) SERVER functions_loopback OPTIONS (table_name 't1');
 CREATE FOREIGN TABLE t3 (a int, b int) SERVER functions_loopback;
@@ -80,6 +85,7 @@ CREATE FOREIGN TABLE t5 (ts timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t6 (i64 BIGINT, f64 FLOAT8) SERVER functions_loopback;
 CREATE FOREIGN TABLE t7 (ts date) SERVER functions_loopback;
 CREATE FOREIGN TABLE t8 (ts timestamp) SERVER functions_loopback;
+CREATE FOREIGN TABLE t9 (v numeric) SERVER functions_loopback;
 CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t3
 	SELECT number+1, number+2
@@ -925,7 +931,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT ltrim(val, 'av') AS a, btrim(val, '1l2') AS 
 (4 rows)
 
 SELECT ltrim(val, 'av') AS a, btrim(val, '1l2') AS b, rtrim(val, 'l1') AS c FROM t4 GROUP BY a,b,c ORDER BY a;
-ERROR:  pg_clickhouse: DB::Exception: Syntax error: failed at position 17 (','): , 'av'), trimBoth(val, '1l2'), rtrim(val, 'l1') FROM functions_test.t4 GROUP BY (ltrim(val, 'av')), (trimBoth(val, '1l2')), (rtrim(val, 'l1')) ORDER BY ltrim(va. Expected one of: token, Dot, ClosingRoundBracket, OR, AND, BETWEEN, NOT BETWEEN, LIKE, ILIKE, NOT LIKE, NOT ILIKE, REGEXP, IN, NOT IN, GLOBAL IN, GLOBAL NOT IN, MOD, DIV, IS NULL, IS NOT NULL, alias, AS, identifier
+ERROR:  pg_clickhouse: DB::Exception: Syntax error: failed at position 17 (','): , 'av'), trimBoth(val, '1l2'), rtrim(val, 'l1') FROM functions_test.t4 GROUP BY (ltrim(val, 'av')), (trimBoth(val, '1l2')), (rtrim(val, 'l1')) ORDER BY ltrim(va. Expected one of: token, Dot, ClosingRoundBracket, OR, AND, IS NOT DISTINCT FROM, IS NULL, IS NOT NULL, BETWEEN, NOT BETWEEN, LIKE, ILIKE, NOT LIKE, NOT ILIKE, REGEXP, IN, NOT IN, GLOBAL IN, GLOBAL NOT IN, MOD, DIV, alias, AS, identifier
 DETAIL:  Remote Query: SELECT ltrim(val, 'av'), trimBoth(val, '1l2'), rtrim(val, 'l1') FROM functions_test.t4 GROUP BY (ltrim(val, 'av')), (trimBoth(val, '1l2')), (rtrim(val, 'l1')) ORDER BY ltrim(val, 'av') ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF) SELECT strpos(val, 'val') AS a FROM t4 GROUP BY a ORDER BY a;
                                                                         QUERY PLAN                                                                         
@@ -1908,8 +1914,12 @@ SELECT * FROM t4 WHERE soundex(val) = 'V400';
 (3 rows)
 
 SELECT * FROM t4 WHERE soundex(val) = 'V400';
-ERROR:  pg_clickhouse: DB::Exception: Unknown function soundex. Maybe you meant: ['round','unhex']: While processing soundex(val) = 'V400'
-DETAIL:  Remote Query: SELECT val FROM functions_test.t4 WHERE ((soundex(val) = 'V400'))
+ val  
+------
+ val1
+ val2
+(2 rows)
+
 -- 2-arg levenshtein pushes down as editDistanceUTF8.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t4 WHERE levenshtein(val, 'val1') <= 1;
@@ -2098,8 +2108,11 @@ SELECT val FROM t4 WHERE bit_count(val::bytea) = 21 ORDER BY val;
 (3 rows)
 
 SELECT val FROM t4 WHERE bit_count(val::bytea) = 21 ORDER BY val;
-ERROR:  pg_clickhouse: DB::Exception: Illegal type String of argument of function bitCount: While processing bitCount(CAST(val, 'bytea(0)')) = 21
-DETAIL:  Remote Query: SELECT val FROM functions_test.t4 WHERE ((bitCount(CAST(val AS bytea(0))) = 21)) ORDER BY val ASC NULLS LAST
+  val  
+-------
+ hello
+(1 row)
+
 \endif
 -- mod(int, int) pushes down as modulo.
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -2150,7 +2163,8 @@ SELECT i64 FROM t6 WHERE power(f64, 2::float8) < 1 ORDER BY i64;
    0
 (1 row)
 
--- mod / pow / power on numeric push down too.
+--- mod / pow / power on numeric do not push down due to loss of precision.
+-- https://github.com/ClickHouse/ClickHouse/issues/115327
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
                                                           QUERY PLAN                                                           
@@ -2165,28 +2179,67 @@ ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly
 DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((modulo(cast(a, 'Nullable(Decimal)'), 3) = 0)) ORDER BY a ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
-                                            QUERY PLAN                                             
----------------------------------------------------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((pow(cast(a, 'Nullable(Decimal)'), 2) = 25))
-(3 rows)
+   Filter: (pow((t3.a)::numeric, '2'::numeric) = '25'::numeric)
+   Remote SQL: SELECT a FROM functions_test.t3
+(4 rows)
 
 SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing pow(CAST(a, 'Nullable(Decimal)'), 2) = 25
-DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((pow(cast(a, 'Nullable(Decimal)'), 2) = 25))
+ a 
+---
+ 5
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
-                                            QUERY PLAN                                             
----------------------------------------------------------------------------------------------------
+                            QUERY PLAN                            
+------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((pow(cast(a, 'Nullable(Decimal)'), 2) = 25))
-(3 rows)
+   Filter: (power((t3.a)::numeric, '2'::numeric) = '25'::numeric)
+   Remote SQL: SELECT a FROM functions_test.t3
+(4 rows)
 
 SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing pow(CAST(a, 'Nullable(Decimal)'), 2) = 25
-DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((pow(cast(a, 'Nullable(Decimal)'), 2) = 25))
+ a 
+---
+ 5
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT v FROM t9 WHERE pow(v, 2::numeric) = 1.524157875323883675::numeric;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan on public.t9
+   Output: v
+   Filter: (pow(t9.v, '2'::numeric) = 1.524157875323883675)
+   Remote SQL: SELECT v FROM functions_test.t9
+(4 rows)
+
+SELECT v FROM t9 WHERE pow(v, 2::numeric) = 1.524157875323883675::numeric;
+          v           
+----------------------
+ 1.234567890123456789
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT v FROM t9 WHERE power(v, 2::numeric) = 1.5241578753238834::numeric;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan on public.t9
+   Output: v
+   Filter: (power(t9.v, '2'::numeric) = 1.5241578753238834)
+   Remote SQL: SELECT v FROM functions_test.t9
+(4 rows)
+
+SELECT v FROM t9 WHERE power(v, 2::numeric) = 1.5241578753238834::numeric;
+ v 
+---
+(0 rows)
+
 -- abs() pushes down for int / float / numeric.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE abs(a - 5) = 2 ORDER BY a;
@@ -2821,7 +2874,7 @@ DETAIL:  Remote Query: SELECT val FROM functions_test.t4 WHERE ((base64URLEncode
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 CALL clickhouse_perform('functions_admin', 'DROP DATABASE functions_test');
 DROP SERVER functions_loopback CASCADE;
-NOTICE:  drop cascades to 9 other objects
+NOTICE:  drop cascades to 10 other objects
 DETAIL:  drop cascades to foreign table t1
 drop cascades to foreign table t2
 drop cascades to foreign table t3
@@ -2831,3 +2884,4 @@ drop cascades to foreign table t5
 drop cascades to foreign table t6
 drop cascades to foreign table t7
 drop cascades to foreign table t8
+drop cascades to foreign table t9

@@ -36,6 +36,7 @@ CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t5 (ts D
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t6 (i64 Int64, f64 Float64) engine=TinyLog();');
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t7(dt Date) engine=TinyLog();');
 CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t8 (ts DateTime) engine=TinyLog();');
+CALL clickhouse_perform('functions_admin', 'CREATE TABLE functions_test.t9 (v Decimal128(18)) engine=TinyLog();');
 CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t5 VALUES
 		('2025-10-15T20:12:25'),
@@ -71,6 +72,10 @@ CALL clickhouse_perform('functions_admin', $$
 		(0, 0),
 		(1774996811, 1774996811.8384),
 $$);
+CALL clickhouse_perform('functions_admin', $$
+	INSERT INTO functions_test.t9 VALUES
+		(toDecimal128('1.234567890123456789', 18))
+$$);
 CREATE FOREIGN TABLE t1 (a int, b int, c timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t2 (a int, b int, c timestamp with time zone) SERVER functions_loopback OPTIONS (table_name 't1');
 CREATE FOREIGN TABLE t3 (a int, b int) SERVER functions_loopback;
@@ -80,6 +85,7 @@ CREATE FOREIGN TABLE t5 (ts timestamp) SERVER functions_loopback;
 CREATE FOREIGN TABLE t6 (i64 BIGINT, f64 FLOAT8) SERVER functions_loopback;
 CREATE FOREIGN TABLE t7 (ts date) SERVER functions_loopback;
 CREATE FOREIGN TABLE t8 (ts timestamp) SERVER functions_loopback;
+CREATE FOREIGN TABLE t9 (v numeric) SERVER functions_loopback;
 CALL clickhouse_perform('functions_admin', $$
 	INSERT INTO functions_test.t3
 	SELECT number+1, number+2
@@ -2180,7 +2186,8 @@ SELECT i64 FROM t6 WHERE power(f64, 2::float8) < 1 ORDER BY i64;
    0
 (1 row)
 
--- mod / pow / power on numeric push down too.
+--- mod / pow / power on numeric do not push down due to loss of precision.
+-- https://github.com/ClickHouse/ClickHouse/issues/115327
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
                                                           QUERY PLAN                                                           
@@ -2200,12 +2207,13 @@ SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
-                                            QUERY PLAN                                             
----------------------------------------------------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((pow(cast(a, 'Nullable(Decimal)'), 2) = 25))
-(3 rows)
+   Filter: (pow((t3.a)::numeric, '2'::numeric) = '25'::numeric)
+   Remote SQL: SELECT a FROM functions_test.t3
+(4 rows)
 
 SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
  a 
@@ -2215,18 +2223,50 @@ SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
-                                            QUERY PLAN                                             
----------------------------------------------------------------------------------------------------
+                            QUERY PLAN                            
+------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((pow(cast(a, 'Nullable(Decimal)'), 2) = 25))
-(3 rows)
+   Filter: (power((t3.a)::numeric, '2'::numeric) = '25'::numeric)
+   Remote SQL: SELECT a FROM functions_test.t3
+(4 rows)
 
 SELECT a FROM t3 WHERE power(a::numeric, 2::numeric) = 25;
  a 
 ---
  5
 (1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT v FROM t9 WHERE pow(v, 2::numeric) = 1.524157875323883675::numeric;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan on public.t9
+   Output: v
+   Filter: (pow(t9.v, '2'::numeric) = 1.524157875323883675)
+   Remote SQL: SELECT v FROM functions_test.t9
+(4 rows)
+
+SELECT v FROM t9 WHERE pow(v, 2::numeric) = 1.524157875323883675::numeric;
+          v           
+----------------------
+ 1.234567890123456789
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT v FROM t9 WHERE power(v, 2::numeric) = 1.5241578753238834::numeric;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan on public.t9
+   Output: v
+   Filter: (power(t9.v, '2'::numeric) = 1.5241578753238834)
+   Remote SQL: SELECT v FROM functions_test.t9
+(4 rows)
+
+SELECT v FROM t9 WHERE power(v, 2::numeric) = 1.5241578753238834::numeric;
+ v 
+---
+(0 rows)
 
 -- abs() pushes down for int / float / numeric.
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -2884,7 +2924,7 @@ WHERE encode(val::bytea, 'base64url') IN (
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 CALL clickhouse_perform('functions_admin', 'DROP DATABASE functions_test');
 DROP SERVER functions_loopback CASCADE;
-NOTICE:  drop cascades to 10 other objects
+NOTICE:  drop cascades to 11 other objects
 DETAIL:  drop cascades to foreign table t1
 drop cascades to foreign table t2
 drop cascades to foreign table t3
@@ -2894,4 +2934,5 @@ drop cascades to foreign table t5
 drop cascades to foreign table t6
 drop cascades to foreign table t7
 drop cascades to foreign table t8
+drop cascades to foreign table t9
 drop cascades to foreign table times
