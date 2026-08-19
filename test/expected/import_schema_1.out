@@ -141,11 +141,11 @@ FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
  c1     | date                     |           | not null |         |             | plain    |              | 
  c2     | timestamp with time zone |           | not null |         |             | plain    |              | 
  c3     | text                     |           | not null |         |             | extended |              | 
- c4     | character varying(5)     |           | not null |         |             | extended |              | 
+ c4     | text                     |           | not null |         |             | extended |              | 
  c5     | uuid                     |           | not null |         |             | plain    |              | 
  c6     | text                     |           | not null |         |             | extended |              | 
  c7     | text                     |           | not null |         |             | extended |              | 
- c9     | character varying(50)    |           |          |         |             | extended |              | 
+ c9     | text                     |           |          |         |             | extended |              | 
  c8     | text                     |           | not null |         |             | extended |              | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
@@ -180,13 +180,13 @@ Server: import_loopback
 FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
 
 \d+ clickhouse.timezones;
-                                          Foreign table "clickhouse.timezones"
- Column |           Type           | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+--------------------------+-----------+----------+---------+-------------+---------+--------------+-------------
- t1     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t2     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t4     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t5     | timestamp with time zone |           | not null |         |             | plain   |              | 
+                                            Foreign table "clickhouse.timezones"
+ Column |            Type             | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
+--------+-----------------------------+-----------+----------+---------+-------------+---------+--------------+-------------
+ t1     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
+ t2     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
+ t4     | timestamp with time zone    |           | not null |         |             | plain   |              | 
+ t5     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'timezones', engine 'MergeTree')
 
@@ -277,11 +277,11 @@ FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
  c1     | date                     |           | not null |         |             | plain    |              | 
  c2     | timestamp with time zone |           | not null |         |             | plain    |              | 
  c3     | text                     |           | not null |         |             | extended |              | 
- c4     | character varying(5)     |           | not null |         |             | extended |              | 
+ c4     | text                     |           | not null |         |             | extended |              | 
  c5     | uuid                     |           | not null |         |             | plain    |              | 
  c6     | text                     |           | not null |         |             | extended |              | 
  c7     | text                     |           | not null |         |             | extended |              | 
- c9     | character varying(50)    |           |          |         |             | extended |              | 
+ c9     | text                     |           |          |         |             | extended |              | 
  c8     | text                     |           | not null |         |             | extended |              | 
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
@@ -316,13 +316,13 @@ Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
 
 \d+ clickhouse_bin.timezones;
-                                        Foreign table "clickhouse_bin.timezones"
- Column |           Type           | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+--------------------------+-----------+----------+---------+-------------+---------+--------------+-------------
- t1     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t2     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t4     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t5     | timestamp with time zone |           | not null |         |             | plain   |              | 
+                                          Foreign table "clickhouse_bin.timezones"
+ Column |            Type             | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
+--------+-----------------------------+-----------+----------+---------+-------------+---------+--------------+-------------
+ t1     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
+ t2     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
+ t4     | timestamp with time zone    |           | not null |         |             | plain   |              | 
+ t5     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'timezones', engine 'MergeTree')
 
@@ -412,11 +412,11 @@ FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
  c1     | date                     |           | not null |         |             | plain    |              | 
  c2     | timestamp with time zone |           | not null |         |             | plain    |              | 
  c3     | text                     |           | not null |         |             | extended |              | 
- c4     | character varying(5)     |           | not null |         |             | extended |              | 
+ c4     | text                     |           | not null |         |             | extended |              | 
  c5     | uuid                     |           | not null |         |             | plain    |              | 
  c6     | text                     |           | not null |         |             | extended |              | 
  c7     | text                     |           | not null |         |             | extended |              | 
- c9     | character varying(50)    |           |          |         |             | extended |              | 
+ c9     | text                     |           |          |         |             | extended |              | 
  c8     | text                     |           | not null |         |             | extended |              | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')

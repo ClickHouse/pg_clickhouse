@@ -35,7 +35,7 @@ recv_initial_block(ch_binary_connection_t* conn, ch_binary_insert_handle* h) {
 
         if (rc != CHC_OK) {
             conn->broken = true;
-            pgch_raise(&err, ERRCODE_FDW_ERROR, "could not prepare insert - ");
+            pgch_raise(&err, ERRCODE_FDW_ERROR, "could not prepare insert - ", NULL);
         }
         if (pkt.kind == CHC_PKT_EXCEPTION) {
             char* msg = pstrdup(ch_binary_exception_message(pkt.exception));
@@ -117,7 +117,7 @@ ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query) {
 
         if (rc != CHC_OK) {
             conn->broken = true;
-            pgch_raise(&err, ERRCODE_FDW_ERROR, "could not prepare insert - ");
+            pgch_raise(&err, ERRCODE_FDW_ERROR, "could not prepare insert - ", NULL);
         }
 
         recv_initial_block(conn, h);
@@ -182,7 +182,7 @@ ch_binary_flush_block(ch_binary_insert_handle* h) {
 
     if (rc != CHC_OK) {
         h->conn->broken = true;
-        pgch_raise(&err, ERRCODE_FDW_ERROR, "could not insert columns - ");
+        pgch_raise(&err, ERRCODE_FDW_ERROR, "could not insert columns - ", NULL);
     }
 
     pgch_writer_reset(h->w);

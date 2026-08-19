@@ -249,6 +249,15 @@ the foreign tables. Columns will be defined using the [supported data
 types](#data-types) and, were detectible, the options supported by [CREATE
 FOREIGN TABLE](#create-foreign-table).
 
+Imported columns keep the type modifier of the ClickHouse type, taking it from
+below every `Array` layer, so `Array(Decimal(12,6))` imports as
+`numeric(12,6)[]`. A `Nullable` column imports without `NOT NULL`; `Nullable`
+inside an `Array` does not, because PostgreSQL arrays always allow NULL
+elements. `Tuple` and `Map` columns import as `text` and `text[]` with a
+`NOTICE`, since PostgreSQL cannot hold their `record` types. The import rejects
+a column whose type has no PostgreSQL counterpart, including the legacy
+`Object('json')` type that predates ClickHouse `JSON`.
+
 > **⚠️ Imported Identifier Case Preservation**
 >
 > `IMPORT FOREIGN SCHEMA` runs `quote_identifier()` on the table and column
@@ -913,31 +922,49 @@ cluster to be restart when the library is updated.
 
 pg_clickhouse maps the following ClickHouse data types to PostgreSQL data
 types. [IMPORT FOREIGN SCHEMA](#import-foreign-schema) uses the first type in
-the PostgreSQL column when importing columns; additional types may be used in
-[CREATE FOREIGN TABLE](#create-foreign-table) statements:
+the PostgreSQL column when importing columns, carrying the type modifier and
+array dimensions shown; additional types may be used in [CREATE FOREIGN
+TABLE](#create-foreign-table) statements:
 
-| ClickHouse |    PostgreSQL    |             Notes             |
-|------------|------------------|-------------------------------|
-| Bool       | boolean          |                               |
-| Date       | date             |                               |
-| Date32     | date             |                               |
-| DateTime   | timestamptz      |                               |
-| Decimal    | numeric          |                               |
-| Float32    | real             |                               |
-| Float64    | double precision |                               |
-| IPv4       | inet             |                               |
-| IPv6       | inet             |                               |
-| Int16      | smallint         |                               |
-| Int32      | integer          |                               |
-| Int64      | bigint           |                               |
-| Int8       | smallint         |                               |
-| JSON       | jsonb, json      |                               |
-| String     | text, bytea      |                               |
-| UInt16     | integer          |                               |
-| UInt32     | bigint           |                               |
-| UInt64     | bigint           | Errors on values > BIGINT max |
-| UInt8      | smallint         |                               |
-| UUID       | uuid             |                               |
+|    ClickHouse     |    PostgreSQL    |              Notes               |
+|-------------------|------------------|----------------------------------|
+| Array(T)          | T[]              | One PG array type per depth      |
+| Bool              | boolean          |                                  |
+| Date              | date             |                                  |
+| Date32            | date             |                                  |
+| DateTime          | timestamptz      |                                  |
+| DateTime64(P)     | timestamptz(P)   | P over 6 caps at 6               |
+| Decimal(P,S)      | numeric(P,S)     |                                  |
+| Enum8             | text             |                                  |
+| Enum16            | text             |                                  |
+| FixedString(N)    | text, varchar(N) | N counts CH bytes, PG characters |
+| Float32           | real             |                                  |
+| Float64           | double precision |                                  |
+| IPv4              | inet             |                                  |
+| IPv6              | inet             |                                  |
+| Int8              | smallint         |                                  |
+| Int16             | smallint         |                                  |
+| Int32             | integer          |                                  |
+| Int64             | bigint           |                                  |
+| JSON              | jsonb, json      |                                  |
+| LineString        | path             |                                  |
+| LowCardinality(T) | T                |                                  |
+| Map(K,V)          | text[]           | Import renders its pairs as text |
+| MultiLineString   | path[]           |                                  |
+| MultiPolygon      | polygon[]        |                                  |
+| Nullable(T)       | T                | Column imports without NOT NULL  |
+| Point             | point            |                                  |
+| Polygon           | polygon[]        |                                  |
+| Ring              | polygon          |                                  |
+| String            | text, bytea      |                                  |
+| Time              | time             |                                  |
+| Time64(P)         | time(P)          | P over 6 caps at 6               |
+| Tuple(...)        | text             | Import renders it as text        |
+| UInt8             | smallint         |                                  |
+| UInt16            | integer          |                                  |
+| UInt32            | bigint           |                                  |
+| UInt64            | bigint           | Errors on values > BIGINT max    |
+| UUID              | uuid             |                                  |
 
 Any column also reads into `text`, `varchar`, or another string type. The value
 takes the PostgreSQL type above, then renders through that type's output

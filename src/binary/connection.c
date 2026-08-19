@@ -320,7 +320,10 @@ ch_binary_connect(ch_connection_details* details) {
 
         if (rc != CHC_OK) {
             pgch_raise(
-                &err, ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION, "connection error: "
+                &err,
+                ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION,
+                "connection error: ",
+                NULL
             );
         }
     }

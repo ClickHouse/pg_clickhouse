@@ -7,16 +7,16 @@
 Server: agg_bin_svr
 FDW options: (database 'agg_test', table_name 'agg_numbers', engine 'MergeTree')
 
-                            Foreign table "agg_bin.hits"
-  Column   |           Type           | Collation | Nullable | Default | FDW options 
------------+--------------------------+-----------+----------+---------+-------------
- id        | bigint                   |           | not null |         | 
- uuid      | uuid                     |           | not null |         | 
- timestamp | timestamp with time zone |           | not null |         | 
- datestamp | date                     |           | not null |         | 
- path      | text                     |           | not null |         | 
- duration  | bigint                   |           | not null |         | 
- cost      | numeric(10,2)            |           | not null |         | 
+                              Foreign table "agg_bin.hits"
+  Column   |            Type             | Collation | Nullable | Default | FDW options 
+-----------+-----------------------------+-----------+----------+---------+-------------
+ id        | bigint                      |           | not null |         | 
+ uuid      | uuid                        |           | not null |         | 
+ timestamp | timestamp(6) with time zone |           | not null |         | 
+ datestamp | date                        |           | not null |         | 
+ path      | text                        |           | not null |         | 
+ duration  | bigint                      |           | not null |         | 
+ cost      | numeric(10,2)               |           | not null |         | 
 Server: agg_bin_svr
 FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 
@@ -28,16 +28,16 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 Server: agg_http_svr
 FDW options: (database 'agg_test', table_name 'agg_numbers', engine 'MergeTree')
 
-                            Foreign table "agg_http.hits"
-  Column   |           Type           | Collation | Nullable | Default | FDW options 
------------+--------------------------+-----------+----------+---------+-------------
- id        | bigint                   |           | not null |         | 
- uuid      | uuid                     |           | not null |         | 
- timestamp | timestamp with time zone |           | not null |         | 
- datestamp | date                     |           | not null |         | 
- path      | text                     |           | not null |         | 
- duration  | bigint                   |           | not null |         | 
- cost      | numeric(10,2)            |           | not null |         | 
+                             Foreign table "agg_http.hits"
+  Column   |            Type             | Collation | Nullable | Default | FDW options 
+-----------+-----------------------------+-----------+----------+---------+-------------
+ id        | bigint                      |           | not null |         | 
+ uuid      | uuid                        |           | not null |         | 
+ timestamp | timestamp(6) with time zone |           | not null |         | 
+ datestamp | date                        |           | not null |         | 
+ path      | text                        |           | not null |         | 
+ duration  | bigint                      |           | not null |         | 
+ cost      | numeric(10,2)               |           | not null |         | 
 Server: agg_http_svr
 FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 

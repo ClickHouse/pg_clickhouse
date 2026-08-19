@@ -146,6 +146,9 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM bytes ORDER B
 
 CALL clickhouse_perform('http_inserts_admin', 'TRUNCATE http_inserts_test.bytes');
 
+-- Constrain the column, since FixedString imports as TEXT.
+ALTER FOREIGN TABLE bytes ALTER c3 TYPE varchar(16);
+
 -- Should fail.
 INSERT INTO bytes
 SELECT n, sha224(bytea('val'||n)), decode(md5('int'||n), 'hex')

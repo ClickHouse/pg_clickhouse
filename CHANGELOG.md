@@ -11,6 +11,19 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### ⚡ Improvements
 
+*   `IMPORT FOREIGN SCHEMA` now keeps the type modifier of the type below every
+    `Array`, so `Array(Decimal(12,6))` becomes `numeric(12,6)[]` and
+    `Array(DateTime64(3))` becomes `timestamp(3) with time zone[]`.
+    `DateTime64(P)` and `Time64(P)` columns now carry their fractional-second
+    precision, capped at the PostgreSQL maximum of 6. `Map`, `Time`, `Time64`,
+    and the geometric types import instead of failing. `FixedString(N)` imports
+    as `text` rather than `varchar(N)`, since N counts ClickHouse bytes while a
+    `varchar` modifier counts characters, so neither constrains the other.
+*   `IMPORT FOREIGN SCHEMA` now reads an aggregate state's function name past
+    the literal parameters ClickHouse prints ahead of it, so
+    `AggregateFunction(sumMap, Array(Int32), Array(Int32))` records
+    `AggregateFunction 'sumMap'` over `integer[]` instead of
+    `AggregateFunction '1'` over `integer`.
 *   Removed `clickhouse_raw_query()`, deprecated in v0.10.0. Use
     `clickhouse_query(server, sql)` to read rows and
     `CALL clickhouse_perform(server, sql)` to run statements that return none;
@@ -25,6 +38,9 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed precision loss when pushing down numeric `pow()` and `power()`
     expressions; they now execute locally in PostgreSQL. Thanks to Minh Vu for
     the PR ([#339])!
+*   `INSERT` with the binary driver now rejects a value wider than a
+    `FixedString(N)` column instead of silently truncating it, matching the
+    error the HTTP driver gets from ClickHouse.
 
   [v0.11.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.10.0...v0.11.0
   [#346]: https://github.com/ClickHouse/pg_clickhouse/pull/346
