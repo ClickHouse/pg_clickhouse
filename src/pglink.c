@@ -1253,7 +1253,7 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
                             }
                     } else {
                         appendStringInfoChar(&buf, ' ');
-                        appendStringInfoString(&buf, ch_quote_literal(strVal(val)));
+                        appendStringInfoString(&buf, quote_literal_cstr(strVal(val)));
                     }
                 }
                 appendStringInfoString(&buf, ")");
@@ -1269,8 +1269,8 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
             &buf,
             "\n) SERVER %s OPTIONS (database %s, table_name %s",
             quote_identifier(server->servername),
-            ch_quote_literal(stmt->remote_schema),
-            ch_quote_literal(table_name)
+            quote_literal_cstr(stmt->remote_schema),
+            quote_literal_cstr(table_name)
         );
 
         if (engine && engine_full && strcmp(engine, "CollapsingMergeTree") == 0) {
@@ -1278,10 +1278,10 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
 
             if (sub) {
                 sub[1] = '\0';
-                appendStringInfo(&buf, ", engine %s", ch_quote_literal(engine_full));
+                appendStringInfo(&buf, ", engine %s", quote_literal_cstr(engine_full));
             }
         } else if (engine) {
-            appendStringInfo(&buf, ", engine %s", ch_quote_literal(engine));
+            appendStringInfo(&buf, ", engine %s", quote_literal_cstr(engine));
         }
 
         appendStringInfoString(&buf, ");\n");

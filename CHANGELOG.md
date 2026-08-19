@@ -25,14 +25,19 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed precision loss when pushing down numeric `pow()` and `power()`
     expressions; they now execute locally in PostgreSQL. Thanks to Minh Vu for
     the PR ([#339])!
+*   `IMPORT FOREIGN SCHEMA` now quotes strings in foreign table DDL as
+    PostgreSQL literals rather than ClickHouse literals, so a ClickHouse name,
+    database, or engine no longer doubles backslashes ([#350]).
 
   [v0.11.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.10.0...v0.11.0
-  [#346]: https://github.com/ClickHouse/pg_clickhouse/pull/346
-    "ClickHouse/pg_clickhouse#346 remove clickhouse_raw_query"
   [#337]: https://github.com/ClickHouse/pg_clickhouse/pull/337
     "ClickHouse/pg_clickhouse#337 Avoid NULL dereference for ordered aggregates"
   [#339]: https://github.com/ClickHouse/pg_clickhouse/pull/339
     "ClickHouse/pg_clickhouse#339 Preserve precision for numeric power functions"
+  [#346]: https://github.com/ClickHouse/pg_clickhouse/pull/346
+    "ClickHouse/pg_clickhouse#346 remove clickhouse_raw_query"
+  [#350]: https://github.com/ClickHouse/pg_clickhouse/pull/350
+    "ClickHouse/pg_clickhouse#350 Fix quoting, don't quote PG literals with CH function"
 
 ## [v0.10.0] — 2026-08-11
 
