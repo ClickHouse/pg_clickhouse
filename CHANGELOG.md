@@ -11,6 +11,23 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### ⚡ Improvements
 
+*   `IMPORT FOREIGN SCHEMA` now preserves type modifiers through nested `Array`
+    layers, so `Array(Decimal(12,6))` imports as `numeric(12,6)[]`. It retains up
+    to six digits of `DateTime64(P)` and `Time64(P)` precision, imports `Time`,
+    `Time64`, and geometric types, and maps `FixedString(N)` to unconstrained
+    `text` because ClickHouse counts bytes while PostgreSQL character limits
+    count characters ([#349])
+*   `IMPORT FOREIGN SCHEMA` now maps `BFloat16` to `real` and `Interval` types
+    to `interval`. `IntervalNanosecond` truncates to microseconds ([#349])
+*   A `Tuple` or `Map` column read into a PostgreSQL array now fills the array
+    with each record's fields rather than a record literal, so `{'k': 'v'}`
+    reads as `{{k,v}}` rather than `{"(k,v)"}`. A composite or `text` column
+    still reads a record. `IMPORT FOREIGN SCHEMA` declares such columns `text[]`
+    and `text[][]`; the `binary` driver accepts those same types on `INSERT`,
+    parsing each item as the field it fills ([#349])
+*   `IMPORT FOREIGN SCHEMA` now correctly imports aggregate states with literal
+    parameters or multiple arguments, preserving aggregate function name and
+    first argument type ([#349])
 *   Removed `clickhouse_raw_query()`, deprecated in v0.10.0. Use
     `clickhouse_query(server, sql)` to read rows and
     `CALL clickhouse_perform(server, sql)` to run statements that return none;
@@ -28,6 +45,9 @@ All notable changes to this project will be documented in this file. It uses the
 *   `IMPORT FOREIGN SCHEMA` now quotes strings in foreign table DDL as
     PostgreSQL literals rather than ClickHouse literals, so a ClickHouse name,
     database, or engine no longer doubles backslashes ([#350]).
+*   `INSERT` with `binary` driver now rejects values wider than a
+    `FixedString(N)` column instead of silently truncating them, matching HTTP
+    driver errors ([#349])
 
   [v0.11.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.10.0...v0.11.0
   [#337]: https://github.com/ClickHouse/pg_clickhouse/pull/337
@@ -36,6 +56,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#339 Preserve precision for numeric power functions"
   [#346]: https://github.com/ClickHouse/pg_clickhouse/pull/346
     "ClickHouse/pg_clickhouse#346 remove clickhouse_raw_query"
+  [#349]: https://github.com/ClickHouse/pg_clickhouse/pull/349
+    "ClickHouse/pg_clickhouse#349 use pgch_pg_type_for in IMPORT SCHEMA"
   [#350]: https://github.com/ClickHouse/pg_clickhouse/pull/350
     "ClickHouse/pg_clickhouse#350 Fix quoting, don't quote PG literals with CH function"
 

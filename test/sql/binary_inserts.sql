@@ -153,6 +153,9 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM bytes ORDER B
 
 CALL clickhouse_perform('binary_inserts_admin', 'TRUNCATE binary_inserts_test.bytes');
 
+-- Constrain the column, since FixedString imports as TEXT.
+ALTER FOREIGN TABLE bytes ALTER c3 TYPE varchar(16);
+
 -- Should fail.
 INSERT INTO bytes
 SELECT n, sha224(bytea('val'||n)), decode(md5('int'||n), 'hex')
@@ -263,6 +266,18 @@ SELECT * FROM default_vals;
 -- LowCardinality(Nullable(String)) round-trips NULL and non-NULL.
 INSERT INTO not_nullable VALUES (1, 'x', 'x', NULL), (2, 'x', 'x', 'lc');
 SELECT * FROM not_nullable ORDER BY c1;
+
+-- Map columns take an array of pairs, each item parsing into its field.
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.maps (c1 Int32, c2 Map(String, Int64)) ENGINE = MergeTree ORDER BY (c1)');
+
+IMPORT FOREIGN SCHEMA binary_inserts_test LIMIT TO (maps)
+FROM SERVER binary_inserts_loopback INTO binary_inserts_test;
+
+INSERT INTO maps VALUES (1, ARRAY[['a', '1'], ['b', '2']]), (2, '{}'::text[]);
+SELECT * FROM clickhouse_query('binary_inserts_loopback', 'SELECT c1, toString(c2) FROM binary_inserts_test.maps ORDER BY c1') AS t(c1 int, c2 text);
+
+-- A pair taking other than a key and a value must error.
+INSERT INTO maps VALUES (3, ARRAY[['a', '1', 'x']]);
 
 /* COPY FROM bulk-loads rows into the remote table. */
 COPY ints (c1, c2, c3, c4) FROM stdin;

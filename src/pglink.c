@@ -917,193 +917,212 @@ binary_finalize_insert(void* istate) {
     }
 }
 
-/*
- * Query to generate table for doc/pg_clickhouse.md. Keep in sync with
- * str_types_map below. On change, re-run and paste the output into
- * doc/pg_clickhouse.md. Perl: https://stackoverflow.com/a/58443028/79202
-
-    psql --no-psqlrc --pset border=2 --pset footer=off -c "
-    SELECT * FROM ( VALUES
-        ('Bool',     'boolean',          ''),
-        ('Int8',     'smallint',         ''),
-        ('UInt8',    'smallint',         ''),
-        ('Int16',    'smallint',         ''),
-        ('UInt16',   'integer',          ''),
-        ('Int32',    'integer',          ''),
-        ('UInt32',   'bigint',           ''),
-        ('Int64',    'bigint',           ''),
-        ('UInt64',   'bigint',           'Errors on values > BIGINT max'),
-        ('Float32',  'real',             ''),
-        ('Float64',  'double precision', ''),
-        ('Decimal',  'numeric',          ''),
-        ('String',   'text, bytea',      ''),
-        ('DateTime', 'timestamptz',      ''),
-        ('Date',     'date',             ''),
-        ('Date32',   'date',             ''),
-        ('UUID',     'uuid',             ''),
-        ('IPv4',     'inet',             ''),
-        ('IPv6',     'inet',             ''),
-        ('JSON',     'jsonb, json',      '')
-    ) AS v(\"ClickHouse\", \"PostgreSQL\", \"Notes\")
-    ORDER BY \"ClickHouse\";
-    " | perl -ne 'my $m = $.%2; print $buf[$m] if defined $buf[$m]; $buf[$m] = s/\+/|/gr
- if $.>1' | pbcopy
-
-*/
-
-static char* str_types_map[][2] = {
-    { "Bool",     "BOOLEAN"          },
-    { "Int8",     "INT2"             },
-    { "UInt8",    "INT2"             },
-    { "Int16",    "INT2"             },
-    { "UInt16",   "INT4"             },
-    { "Int32",    "INT4"             },
-    { "UInt32",   "INT8"             },
-    { "Int64",    "INT8"             },
-    { "UInt64",   "INT8"             },
-    { "Float32",  "REAL"             },
-    { "Float64",  "DOUBLE PRECISION" },
-    { "Decimal",  "NUMERIC"          },
-    { "String",   "TEXT"             },
-    { "DateTime", "TIMESTAMPTZ"      },
-    { "Date",     "DATE"             }, /* must come after other Date types */
-    { "Date32",   "DATE"             },
-    { "UUID",     "UUID"             },
-    { "IPv4",     "inet"             },
-    { "IPv6",     "inet"             },
-    { "JSON",     "JSONB"            },
-    { NULL,       NULL               },
+/* ClickHouse aggregate-state wrappers, which import as FDW column options. */
+static const char* const aggregate_wrappers[] = {
+    "AggregateFunction",
+    "SimpleAggregateFunction",
 };
 
+/* Return aggregate-state wrapper named by `declaration`, NULL for other types. */
+static const char*
+aggregate_wrapper(const char* declaration) {
+    for (size_t i = 0; i < lengthof(aggregate_wrappers); i++) {
+        size_t len = strlen(aggregate_wrappers[i]);
+
+        if (strncmp(declaration, aggregate_wrappers[i], len) == 0 &&
+            declaration[len] == '(') {
+            return aggregate_wrappers[i];
+        }
+    }
+    return NULL;
+}
+
+/*
+ * Take one parameter off a ClickHouse parameter list, advancing `params` past it.
+ * Return NULL once the list is empty.
+ */
+static char*
+take_parameter(char** params) {
+    char* start  = *params;
+    char* end    = start;
+    int depth    = 0;
+    bool literal = false;
+
+    if (*start == '\0') {
+        return NULL;
+    }
+    for (; *end != '\0'; end++) {
+        if (*end == '\'') {
+            literal = !literal;
+        } else if (literal) {
+            continue;
+        } else if (*end == '(' || *end == '[') {
+            depth++;
+        } else if (*end == ')' || *end == ']') {
+            depth--;
+        } else if (*end == ',' && depth == 0) {
+            break;
+        }
+    }
+    *params = *end == ',' ? end + 1 : end;
+    while (**params == ' ') {
+        (*params)++;
+    }
+    return pnstrdup(start, end - start);
+}
+
+/*
+ * Split an aggregate-state parameter list, which ClickHouse renders as optional
+ * literal parameters, aggregate name, then one type per aggregate argument.
+ * Report name through `out_func` and return first argument type, NULL for a
+ * state that names none.
+ */
+static char*
+take_aggregate(char* params, char** out_func) {
+    char* param;
+
+    *out_func = NULL;
+    while ((param = take_parameter(&params)) != NULL) {
+        if (*out_func != NULL) {
+            /* Reading a multi-argument state merges over its first argument. */
+            return param;
+        }
+        /* Literals ahead of name parameterize aggregate. */
+        if (*param != '\'' && *param != '-' && *param != '.' &&
+            (*param < '0' || *param > '9')) {
+            *out_func = param;
+        }
+    }
+    return NULL;
+}
+
+/*
+ * Return PostgreSQL type declaration importing a ClickHouse column type.
+ * Report outer nullability through `is_nullable` and aggregate-state wrappers
+ * through `options`, as alternating FDW option names and values.
+ */
 static char*
 parse_type(
     char* table_name,
     char* colname,
-    char* part,
+    char* declaration,
     bool* is_nullable,
     List** options
 ) {
-    char* typepart = part;
-    char* pos      = strchr(typepart, '(');
+    char* what =
+        psprintf("%s.%s", quote_identifier(table_name), quote_identifier(colname));
+    const char* wrapper = aggregate_wrapper(declaration);
+    pgch_pg_type type;
+    chc_type* parsed;
+    chc_err err = {};
+    char* decl;
+    bool as_text;
 
-    if (pos != NULL) {
-        char* end = strrchr(typepart, ')');
-        char* insidebr;
+    if (wrapper != NULL) {
+        char* params = pstrdup(declaration + strlen(wrapper) + 1);
+        size_t len   = strlen(params);
+        char* func;
+        char* arg;
 
-        if (end == NULL || end < pos) {
+        if (len == 0 || params[len - 1] != ')') {
             ereport(
                 ERROR,
                 errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-                errmsg("pg_clickhouse: malformed ClickHouse type \"%s\"", typepart)
+                errmsg(
+                    "pg_clickhouse: malformed %s type <%s> for %s",
+                    wrapper,
+                    declaration,
+                    what
+                )
             );
         }
-        insidebr = pnstrdup(pos + 1, end - pos - 1);
+        params[len - 1] = '\0';
 
-        if (strncmp(typepart, "Decimal", strlen("Decimal")) == 0) {
-            if (strchr(insidebr, ',') == NULL) {
+        arg = take_aggregate(params, &func);
+        if (arg == NULL) {
+            /* count() state reads as its own result, so it needs no argument. */
+            if (func == NULL || strcmp(func, "count") != 0) {
                 ereport(
                     ERROR,
                     errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
                     errmsg(
-                        "pg_clickhouse: could not import Decimal field, "
-                        "should be two parameters on definition"
+                        "pg_clickhouse: expected an argument type in %s type <%s> "
+                        "for %s",
+                        wrapper,
+                        declaration,
+                        what
                     )
                 );
             }
-
-            return psprintf("NUMERIC(%s)", insidebr);
-        } else if (strncmp(typepart, "FixedString", strlen("FixedString")) == 0) {
-            return psprintf("VARCHAR(%s)", insidebr);
-        } else if (strncmp(typepart, "Enum8", strlen("Enum8")) == 0) {
-            return "TEXT";
-        } else if (strncmp(typepart, "Enum16", strlen("Enum16")) == 0) {
-            return "TEXT";
-        } else if (strncmp(typepart, "DateTime64", strlen("DateTime64")) == 0) {
-            return "TIMESTAMPTZ";
-        } else if (strncmp(typepart, "DateTime", strlen("DateTime")) == 0) {
-            return "TIMESTAMPTZ";
-        } else if (strncmp(typepart, "Tuple", strlen("Tuple")) == 0) {
-            elog(
-                NOTICE,
-                "pg_clickhouse: ClickHouse <Tuple> type was "
-                "translated to <TEXT> type for column \"%s\", please create composite "
-                "type and alter the column if needed",
-                colname
-            );
-            return "TEXT";
-        } else if (strncmp(typepart, "Array", strlen("Array")) == 0) {
-            /* PostgreSQL arrays always allow NULL elements */
-            bool elem_nullable = false;
-            return psprintf(
-                "%s[]",
-                parse_type(table_name, colname, insidebr, &elem_nullable, options)
-            );
-        } else if (strncmp(typepart, "Nullable", strlen("Nullable")) == 0) {
-            if (is_nullable == NULL) {
-                ereport(
-                    ERROR,
-                    errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-                    errmsg("pg_clickhouse: nested Nullable is not supported")
-                );
-            }
-
-            *is_nullable = true;
-            return parse_type(table_name, colname, insidebr, NULL, options);
-        } else if (strncmp(typepart, "LowCardinality", strlen("LowCardinality")) == 0) {
-            return parse_type(table_name, colname, insidebr, is_nullable, options);
-        } else if (
-            strncmp(typepart, "AggregateFunction", strlen("AggregateFunction")) == 0 ||
-            strncmp(
-                typepart, "SimpleAggregateFunction", strlen("SimpleAggregateFunction")
-            ) == 0
-        ) {
-            char* pos2 = strchr(pos, ',');
-
-            if (pos2 == NULL) {
-                /* Detect COUNT with no params. */
-                if (strncmp(insidebr, "count", strlen("count")) == 0) {
-                    return "BIGINT";
-                }
-                ereport(
-                    ERROR,
-                    errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-                    errmsg("pg_clickhouse: expected comma in AggregateFunction")
-                );
-            }
-
-            char* func = pnstrdup(pos + 1, strchr(pos + 1, ',') - pos - 1);
-
-            if (options != NULL) {
-                int val = typepart[0] == 'A' ? 1 : 2;
-
-                *options = lappend(*options, makeInteger(val));
-                *options = lappend(*options, makeString(func));
-            }
-
-            return parse_type(table_name, colname, pos2 + 2, is_nullable, options);
+            return "BIGINT";
         }
 
-        typepart = pos + 1;
+        *options    = lappend(*options, makeString(pstrdup(wrapper)));
+        *options    = lappend(*options, makeString(func));
+        declaration = arg;
     }
 
-    size_t i = 0;
-
-    while (str_types_map[i][0] != NULL) {
-        if (strncmp(str_types_map[i][0], typepart, strlen(str_types_map[i][0])) == 0) {
-            return pstrdup(str_types_map[i][1]);
-        }
-        i++;
+    /*
+     * Legacy Object('json') predates JSON and serializes as a materialized
+     * Tuple, which neither reader nor INSERT writer takes as jsonb.
+     */
+    if (strncmp(declaration, "Object(", strlen("Object(")) == 0) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
+            errmsg("pg_clickhouse: could not map %s type <%s>", what, declaration)
+        );
     }
 
-    ereport(
-        ERROR,
-        errmsg(
-            "pg_clickhouse: could not map %s.%s type <%s>",
-            quote_identifier(table_name),
-            quote_identifier(colname),
-            part
-        )
-    );
+    if (chc_type_parse(declaration, strlen(declaration), &pgch_alloc, &parsed, &err) !=
+        CHC_OK) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
+            errmsg("pg_clickhouse: could not map %s type <%s>", what, declaration),
+            errdetail_internal("%s", err.msg)
+        );
+    }
+
+    type         = pgch_pg_type_for(parsed, what);
+    *is_nullable = type.nullable;
+
+    /* Generic record pseudotypes cannot define columns, fall back to text arrays. */
+    as_text = !pgch_pg_type_is_column(type);
+    if (as_text) {
+        /* Tuple fields read back as array items, taking one more dimension. */
+        type.ndims++;
+    }
+    decl = as_text ? "TEXT[]" : format_type_with_typemod(type.typid, type.typmod);
+
+    for (int dim = 1; dim < type.ndims; dim++) {
+        decl = psprintf("%s[]", decl);
+    }
+
+    if (as_text) {
+        elog(
+            NOTICE,
+            "pg_clickhouse: ClickHouse <%.*s> type was translated to <%s> type for "
+            "column \"%s\", please create composite type and alter the column if "
+            "needed",
+            (int)strcspn(declaration, "("),
+            declaration,
+            decl,
+            colname
+        );
+    }
+
+    if (type.truncated) {
+        elog(
+            NOTICE,
+            "pg_clickhouse: ClickHouse <column \"%s\"> precision exceeds "
+            "microseconds (6), %s truncates it",
+            colname,
+            decl
+        );
+    }
+
+    return decl;
 }
 
 List*
@@ -1228,33 +1247,17 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
             appendStringInfoString(&buf, remote_type);
 
             if (options != NIL) {
-                bool first_opt = true;
-                ListCell* lc;
-
                 appendStringInfoString(&buf, " OPTIONS (");
-                foreach (lc, options) {
-                    Node* val = lfirst(lc);
-
-                    if (IsA(val, Integer)) {
-                        if (!first_opt) {
-                            appendStringInfoString(&buf, ", ");
-                        }
-                        first_opt = false;
-                        switch
-                            intVal(val) {
-                            case 1:
-                                appendStringInfoString(&buf, "AggregateFunction");
-                                break;
-                            case 2:
-                                appendStringInfoString(&buf, "SimpleAggregateFunction");
-                                break;
-                            default:
-                                elog(ERROR, "programming error");
-                            }
-                    } else {
-                        appendStringInfoChar(&buf, ' ');
-                        appendStringInfoString(&buf, quote_literal_cstr(strVal(val)));
+                for (int i = 0; i < list_length(options); i += 2) {
+                    if (i) {
+                        appendStringInfoString(&buf, ", ");
                     }
+                    appendStringInfo(
+                        &buf,
+                        "%s %s",
+                        strVal(list_nth(options, i)),
+                        quote_literal_cstr(strVal(list_nth(options, i + 1)))
+                    );
                 }
                 appendStringInfoString(&buf, ")");
                 list_free_deep(options);

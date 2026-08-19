@@ -12,6 +12,7 @@ development of pg_clickhouse.
 *   `README.md`: This file
 *   `runch`: [Run ClickHouse Server](#run-clickhouse-server)
 *   [`tpch`]: [TPC-H Benchmark Scripts](./tpch/README.md)
+*   `type_table.awk`: [Data Type Table](#data-type-table)
 
 ## Run Local ClickHouse Server
 
@@ -87,6 +88,15 @@ To run a single version, use:
 
 Run `(cd dev && docker compose config --services)` to get a list of service
 versions.
+
+## Data Type Table
+
+Run `make type-table` to regenerate the data type table in
+[doc/pg_clickhouse.md](../doc/pg_clickhouse.md):
+
+```sh
+make type-table
+```
 
 ## Bear Configuration
 

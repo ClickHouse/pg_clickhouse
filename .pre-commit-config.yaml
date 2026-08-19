@@ -1,3 +1,4 @@
+exclude: "^vendor/"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -30,7 +31,6 @@ repos:
       - id: clang-format
         name: format code
         types: [c]
-        exclude: "^vendor/"
   - repo: local
     hooks:
       - id: clang-tidy
@@ -38,7 +38,12 @@ repos:
         language: system
         entry: sh -c 'if [ -f compile_commands.json ]; then run-clang-tidy -p . "$@"; else echo "No compile_commands.json; skipping"; fi'
         types: [c]
-        exclude: "^vendor/"
+      - id: type-table
+        name: data type table is current
+        language: system
+        entry: make type-table
+        pass_filenames: false
+        always_run: true
       - id: shellcheck
         name: ShellCheck
         language: system

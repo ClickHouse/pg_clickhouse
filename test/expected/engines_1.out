@@ -81,24 +81,24 @@ Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't3', engine 'MergeTree')
 
 \d+ t3_aggr
-                                        Foreign table "engines_test.t3_aggr"
- Column |  Type   | Collation | Nullable | Default |       FDW options       | Storage | Stats target | Description 
---------+---------+-----------+----------+---------+-------------------------+---------+--------------+-------------
- a      | integer |           | not null |         |                         | plain   |              | 
- b      | integer |           | not null |         | (aggregatefunction '1') | plain   |              | 
+                                            Foreign table "engines_test.t3_aggr"
+ Column |   Type    | Collation | Nullable | Default |         FDW options          | Storage  | Stats target | Description 
+--------+-----------+-----------+----------+---------+------------------------------+----------+--------------+-------------
+ a      | integer   |           | not null |         |                              | plain    |              | 
+ b      | integer[] |           | not null |         | (aggregatefunction 'sumMap') | extended |              | 
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't3_aggr', engine 'MaterializedView')
 
 \d+ t4
-                                              Foreign table "engines_test.t4"
- Column |  Type   | Collation | Nullable | Default |           FDW options           | Storage | Stats target | Description 
---------+---------+-----------+----------+---------+---------------------------------+---------+--------------+-------------
- a      | integer |           | not null |         |                                 | plain   |              | 
- b      | integer |           | not null |         | (aggregatefunction 'sum')       | plain   |              | 
- c      | integer |           | not null |         | (aggregatefunction '1')         | plain   |              | 
- d      | bigint  |           | not null |         | (simpleaggregatefunction 'sum') | plain   |              | 
- e      | bigint  |           | not null |         |                                 | plain   |              | 
- f      | integer |           | not null |         | (aggregatefunction 'quantile')  | plain   |              | 
+                                                Foreign table "engines_test.t4"
+ Column |   Type    | Collation | Nullable | Default |           FDW options           | Storage  | Stats target | Description 
+--------+-----------+-----------+----------+---------+---------------------------------+----------+--------------+-------------
+ a      | integer   |           | not null |         |                                 | plain    |              | 
+ b      | integer   |           | not null |         | (aggregatefunction 'sum')       | plain    |              | 
+ c      | integer[] |           | not null |         | (aggregatefunction 'sumMap')    | extended |              | 
+ d      | bigint    |           | not null |         | (simpleaggregatefunction 'sum') | plain    |              | 
+ e      | bigint    |           | not null |         |                                 | plain    |              | 
+ f      | integer   |           | not null |         | (aggregatefunction 'quantile')  | plain    |              | 
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't4', engine 'AggregatingMergeTree')
 

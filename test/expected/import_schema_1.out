@@ -116,7 +116,7 @@ IMPORT FOREIGN SCHEMA "import_test' OR database = 'public" FROM SERVER import_lo
 
 -- Should succeed.
 IMPORT FOREIGN SCHEMA import_test FROM SERVER import_loopback INTO clickhouse;
-NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT> type for column "c2", please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "c2", please create composite type and alter the column if needed
 \d+ clickhouse.ints;
                                          Foreign table "clickhouse.ints"
  Column |       Type       | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
@@ -141,11 +141,11 @@ FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
  c1     | date                     |           | not null |         |             | plain    |              | 
  c2     | timestamp with time zone |           | not null |         |             | plain    |              | 
  c3     | text                     |           | not null |         |             | extended |              | 
- c4     | character varying(5)     |           | not null |         |             | extended |              | 
+ c4     | text                     |           | not null |         |             | extended |              | 
  c5     | uuid                     |           | not null |         |             | plain    |              | 
  c6     | text                     |           | not null |         |             | extended |              | 
  c7     | text                     |           | not null |         |             | extended |              | 
- c9     | character varying(50)    |           |          |         |             | extended |              | 
+ c9     | text                     |           |          |         |             | extended |              | 
  c8     | text                     |           | not null |         |             | extended |              | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
@@ -172,7 +172,7 @@ FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
  Column |   Type    | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
 --------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
  c1     | smallint  |           | not null |         |             | plain    |              | 
- c2     | text      |           | not null |         |             | extended |              | 
+ c2     | text[]    |           | not null |         |             | extended |              | 
  c3.a   | integer[] |           | not null |         |             | extended |              | 
  c3.b   | integer[] |           | not null |         |             | extended |              | 
  c4     | smallint  |           | not null |         |             | plain    |              | 
@@ -180,13 +180,13 @@ Server: import_loopback
 FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
 
 \d+ clickhouse.timezones;
-                                          Foreign table "clickhouse.timezones"
- Column |           Type           | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+--------------------------+-----------+----------+---------+-------------+---------+--------------+-------------
- t1     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t2     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t4     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t5     | timestamp with time zone |           | not null |         |             | plain   |              | 
+                                            Foreign table "clickhouse.timezones"
+ Column |            Type             | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
+--------+-----------------------------+-----------+----------+---------+-------------+---------+--------------+-------------
+ t1     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
+ t2     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
+ t4     | timestamp with time zone    |           | not null |         |             | plain   |              | 
+ t5     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'timezones', engine 'MergeTree')
 
@@ -232,8 +232,8 @@ SELECT * FROM clickhouse.arrays ORDER BY c1 LIMIT 2;
 SELECT * FROM clickhouse.tuples ORDER BY c1 LIMIT 2;
  c1 |   c2    |  c3.a   |  c3.b   | c4 
 ----+---------+---------+---------+----
-  0 | (0,0,1) | {0,1,1} | {0,2,2} |  0
-  1 | (1,1,2) | {1,1,1} | {1,2,2} |  1
+  0 | {0,0,1} | {0,1,1} | {0,2,2} |  0
+  1 | {1,1,2} | {1,1,1} | {1,2,2} |  1
 (2 rows)
 
 SELECT * FROM clickhouse.timezones ORDER BY t1 LIMIT 2;
@@ -252,7 +252,7 @@ SELECT * FROM clickhouse.ip ORDER BY c1;
 (3 rows)
 
 IMPORT FOREIGN SCHEMA "import_test" FROM SERVER import_loopback_bin INTO clickhouse_bin;
-NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT> type for column "c2", please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "c2", please create composite type and alter the column if needed
 \d+ clickhouse_bin.ints;
                                        Foreign table "clickhouse_bin.ints"
  Column |       Type       | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
@@ -277,11 +277,11 @@ FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
  c1     | date                     |           | not null |         |             | plain    |              | 
  c2     | timestamp with time zone |           | not null |         |             | plain    |              | 
  c3     | text                     |           | not null |         |             | extended |              | 
- c4     | character varying(5)     |           | not null |         |             | extended |              | 
+ c4     | text                     |           | not null |         |             | extended |              | 
  c5     | uuid                     |           | not null |         |             | plain    |              | 
  c6     | text                     |           | not null |         |             | extended |              | 
  c7     | text                     |           | not null |         |             | extended |              | 
- c9     | character varying(50)    |           |          |         |             | extended |              | 
+ c9     | text                     |           |          |         |             | extended |              | 
  c8     | text                     |           | not null |         |             | extended |              | 
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
@@ -308,7 +308,7 @@ FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
  Column |   Type    | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
 --------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
  c1     | smallint  |           | not null |         |             | plain    |              | 
- c2     | text      |           | not null |         |             | extended |              | 
+ c2     | text[]    |           | not null |         |             | extended |              | 
  c3.a   | integer[] |           | not null |         |             | extended |              | 
  c3.b   | integer[] |           | not null |         |             | extended |              | 
  c4     | smallint  |           | not null |         |             | plain    |              | 
@@ -316,13 +316,13 @@ Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
 
 \d+ clickhouse_bin.timezones;
-                                        Foreign table "clickhouse_bin.timezones"
- Column |           Type           | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+--------------------------+-----------+----------+---------+-------------+---------+--------------+-------------
- t1     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t2     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t4     | timestamp with time zone |           | not null |         |             | plain   |              | 
- t5     | timestamp with time zone |           | not null |         |             | plain   |              | 
+                                          Foreign table "clickhouse_bin.timezones"
+ Column |            Type             | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
+--------+-----------------------------+-----------+----------+---------+-------------+---------+--------------+-------------
+ t1     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
+ t2     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
+ t4     | timestamp with time zone    |           | not null |         |             | plain   |              | 
+ t5     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'timezones', engine 'MergeTree')
 
@@ -368,8 +368,8 @@ SELECT * FROM clickhouse_bin.arrays ORDER BY c1 LIMIT 2;
 SELECT * FROM clickhouse_bin.tuples ORDER BY c1 LIMIT 2;
  c1 |   c2    |  c3.a   |  c3.b   | c4 
 ----+---------+---------+---------+----
-  0 | (0,0,1) | {0,1,1} | {0,2,2} |  0
-  1 | (1,1,2) | {1,1,1} | {1,2,2} |  1
+  0 | {0,0,1} | {0,1,1} | {0,2,2} |  0
+  1 | {1,1,2} | {1,1,1} | {1,2,2} |  1
 (2 rows)
 
 SELECT * FROM clickhouse_bin.timezones ORDER BY t1 LIMIT 2;
@@ -412,11 +412,11 @@ FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
  c1     | date                     |           | not null |         |             | plain    |              | 
  c2     | timestamp with time zone |           | not null |         |             | plain    |              | 
  c3     | text                     |           | not null |         |             | extended |              | 
- c4     | character varying(5)     |           | not null |         |             | extended |              | 
+ c4     | text                     |           | not null |         |             | extended |              | 
  c5     | uuid                     |           | not null |         |             | plain    |              | 
  c6     | text                     |           | not null |         |             | extended |              | 
  c7     | text                     |           | not null |         |             | extended |              | 
- c9     | character varying(50)    |           |          |         |             | extended |              | 
+ c9     | text                     |           |          |         |             | extended |              | 
  c8     | text                     |           | not null |         |             | extended |              | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
@@ -424,7 +424,7 @@ FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
 \d+ clickhouse_limit.arrays;
 \d+ clickhouse_limit.tuples;
 IMPORT FOREIGN SCHEMA "import_test" EXCEPT (ints, types) FROM SERVER import_loopback INTO clickhouse_except;
-NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT> type for column "c2", please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "c2", please create composite type and alter the column if needed
 \d+ clickhouse_except.ints;
 \d+ clickhouse_except.types;
 \d+ clickhouse_except.arrays;
@@ -441,7 +441,7 @@ FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
  Column |   Type    | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
 --------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
  c1     | smallint  |           | not null |         |             | plain    |              | 
- c2     | text      |           | not null |         |             | extended |              | 
+ c2     | text[]    |           | not null |         |             | extended |              | 
  c3.a   | integer[] |           | not null |         |             | extended |              | 
  c3.b   | integer[] |           | not null |         |             | extended |              | 
  c4     | smallint  |           | not null |         |             | plain    |              | 

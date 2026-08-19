@@ -146,6 +146,10 @@ format: $(wildcard src/*.c src/*/*.c src/*/*.h)
 lint: .pre-commit-config.yaml
 	@pre-commit run --show-diff-on-failure --color=always --all-files
 
+.PHONY: type-table # Regenerate the data type table of doc/pg_clickhouse.md.
+type-table:
+	@(cd $(PGCH_DIR) && ./gen_type_table.awk) | dev/type_table.awk doc/pg_clickhouse.md
+
 .PHONY: clang-tidy # Run clang-tidy static analysis (requires compile_commands.json)
 clang-tidy: compile_commands.json
 	run-clang-tidy -p . $(wildcard src/*.c src/*/*.c src/*/*.h)
