@@ -3,11 +3,13 @@
 #include "access/htup_details.h"
 #include "access/tupdesc.h"
 #include "catalog/pg_type_d.h"
+#include "commands/defrem.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_type.h"
+#include "parser/scansup.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/fmgroids.h"
@@ -1164,15 +1166,126 @@ parse_type(
     return decl;
 }
 
+/* Report whether an import's LIMIT TO or EXCEPT list excludes a table */
+static bool
+import_skips_table(ImportForeignSchemaStmt* stmt, const char* table_name) {
+    ListCell* lc;
+    bool found = false;
+
+    foreach (lc, stmt->table_list) {
+        RangeVar* rv = (RangeVar*)lfirst(lc);
+
+        if (strcmp(rv->relname, table_name) == 0) {
+            found = true;
+            break;
+        }
+    }
+
+    if (stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT) {
+        return found;
+    }
+    if (stmt->list_type == FDW_IMPORT_SCHEMA_LIMIT_TO) {
+        return !found;
+    }
+    return false;
+}
+
+/*
+ * Map ClickHouse names to lowercase PostgreSQL names, which queries need not
+ * double-quote. ClickHouse names can differ by case alone, so a name folding
+ * onto a sibling keeps its ClickHouse spelling rather than collide
+ */
+static List*
+lowercase_names(List* names) {
+    int count      = list_length(names);
+    char** lowered = palloc(count * sizeof(char*));
+    List* result   = NIL;
+    ListCell* lc;
+    int i = 0;
+
+    foreach (lc, names) {
+        char* name = (char*)lfirst(lc);
+
+        lowered[i++] = downcase_truncate_identifier(name, strlen(name), false);
+    }
+
+    i = 0;
+    foreach (lc, names) {
+        bool collides = false;
+
+        for (int j = 0; j < count; j++) {
+            if (j != i && strcmp(lowered[i], lowered[j]) == 0) {
+                collides = true;
+                break;
+            }
+        }
+        result = lappend(result, collides ? lfirst(lc) : lowered[i]);
+        i++;
+    }
+
+    pfree(lowered);
+    return result;
+}
+
+/*
+ * Read IMPORT FOREIGN SCHEMA options, reporting through `lower_tables` and
+ * `lower_columns` whether they ask for lowercase names
+ */
+static void
+import_case_options(List* options, bool* lower_tables, bool* lower_columns) {
+    ListCell* lc;
+
+    *lower_tables  = false;
+    *lower_columns = false;
+
+    foreach (lc, options) {
+        DefElem* def = (DefElem*)lfirst(lc);
+        char* value  = defGetString(def);
+        bool* target;
+
+        if (strcmp(def->defname, "table_case") == 0) {
+            target = lower_tables;
+        } else if (strcmp(def->defname, "column_case") == 0) {
+            target = lower_columns;
+        } else {
+            ereport(
+                ERROR,
+                errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
+                errmsg("invalid option \"%s\"", def->defname),
+                errhint("Valid options in this context are: column_case, table_case")
+            );
+        }
+
+        if (strcmp(value, "lower") == 0) {
+            *target = true;
+        } else if (strcmp(value, "keep") == 0) {
+            *target = false;
+        } else {
+            ereport(
+                ERROR,
+                errcode(ERRCODE_FDW_INVALID_STRING_FORMAT),
+                errmsg("invalid value for option \"%s\": \"%s\"", def->defname, value),
+                errhint("Valid values are: keep, lower.")
+            );
+        }
+    }
+}
+
 List*
 chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server) {
-    Oid userid         = GetUserId();
-    UserMapping* user  = GetUserMapping(userid, server->serverid);
-    ch_connection conn = chfdw_get_connection(user);
+    bool lower_tables;
+    bool lower_columns;
+    UserMapping* user;
+    ch_connection conn;
     ch_cursor* cursor;
     ch_query query = new_query(NULL, 0, NULL, NULL, NULL);
     List* result   = NIL;
     Datum* row_values;
+
+    import_case_options(stmt->options, &lower_tables, &lower_columns);
+
+    user = GetUserMapping(GetUserId(), server->serverid);
+    conn = chfdw_get_connection(user);
 
     query.sql = psprintf(
         "SELECT name, engine, engine_full "
@@ -1197,52 +1310,54 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
      * column queries: both use the same connection, and binary streaming only
      * permits one in-flight response at a time.
      */
-    List* tables = NIL;
+    List* tables      = NIL;
+    List* table_names = NIL;
 
     while ((row_values = conn.methods->fetch_row(&tables_ctx)) != NULL) {
-        List* triple = list_make3(
-            pstrdup(TextDatumGetCString(row_values[0])),
-            pstrdup(TextDatumGetCString(row_values[1])),
-            pstrdup(TextDatumGetCString(row_values[2]))
-        );
+        char* table_name = pstrdup(TextDatumGetCString(row_values[0]));
 
         CHECK_FOR_INTERRUPTS();
-        tables = lappend(tables, triple);
+
+        tables = lappend(
+            tables,
+            list_make3(
+                table_name,
+                pstrdup(TextDatumGetCString(row_values[1])),
+                pstrdup(TextDatumGetCString(row_values[2]))
+            )
+        );
+        table_names = lappend(table_names, table_name);
     }
     MemoryContextDelete(cursor->memcxt);
 
-    ListCell* tlc;
+    /*
+     * Fold ahead of the LIMIT TO and EXCEPT lists: PostgreSQL matches those
+     * lists against the table names the returned statements create, dropping
+     * any statement that names a table they exclude
+     */
+    if (lower_tables) {
+        table_names = lowercase_names(table_names);
+    }
 
-    foreach (tlc, tables) {
+    ListCell* tlc;
+    ListCell* nlc;
+
+    forboth(tlc, tables, nlc, table_names) {
         List* triple      = (List*)lfirst(tlc);
         char* table_name  = (char*)linitial(triple);
         char* engine      = (char*)lsecond(triple);
         char* engine_full = (char*)lthird(triple);
+        char* local_table = (char*)lfirst(nlc);
         StringInfoData buf;
         Datum* dvalues;
-        bool first = true;
+        bool first     = true;
+        List* colnames = NIL;
+        List* coltypes = NIL;
+        List* local_cols;
+        ListCell *clc, *dlc, *llc;
 
-        if (table_name == NULL) {
+        if (import_skips_table(stmt, local_table)) {
             continue;
-        }
-
-        if (list_length(stmt->table_list)) {
-            ListCell* lc;
-            bool found = false;
-
-            foreach (lc, stmt->table_list) {
-                RangeVar* rv = (RangeVar*)lfirst(lc);
-
-                if (strcmp(rv->relname, table_name) == 0) {
-                    found = true;
-                }
-            }
-
-            if (stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT && found) {
-                continue;
-            } else if (stmt->list_type == FDW_IMPORT_SCHEMA_LIMIT_TO && !found) {
-                continue;
-            }
         }
 
         initStringInfo(&buf);
@@ -1250,7 +1365,7 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
             &buf,
             "CREATE FOREIGN TABLE IF NOT EXISTS %s.%s (\n",
             quote_identifier(stmt->local_schema),
-            quote_identifier(table_name)
+            quote_identifier(local_table)
         );
         query.sql = psprintf(
             "SELECT name, type "
@@ -1263,15 +1378,20 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
 
         cols_ctx.cursor = conn.methods->simple_query(conn.conn, &query);
         while ((dvalues = conn.methods->fetch_row(&cols_ctx)) != NULL) {
+            colnames = lappend(colnames, pstrdup(TextDatumGetCString(dvalues[0])));
+            coltypes = lappend(coltypes, pstrdup(TextDatumGetCString(dvalues[1])));
+        }
+        MemoryContextDelete(cols_ctx.cursor->memcxt);
+
+        local_cols = lower_columns ? lowercase_names(colnames) : colnames;
+
+        forthree(clc, colnames, dlc, coltypes, llc, local_cols) {
             List* options     = NIL;
             bool is_nullable  = false;
-            char* colname     = TextDatumGetCString(dvalues[0]);
+            char* colname     = (char*)lfirst(clc);
+            char* local_col   = (char*)lfirst(llc);
             char* remote_type = parse_type(
-                table_name,
-                colname,
-                TextDatumGetCString(dvalues[1]),
-                &is_nullable,
-                &options
+                table_name, colname, (char*)lfirst(dlc), &is_nullable, &options
             );
 
             if (!first) {
@@ -1280,10 +1400,16 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
             first = false;
 
             /* name */
-            appendStringInfo(&buf, "\t%s ", quote_identifier(colname));
+            appendStringInfo(&buf, "\t%s ", quote_identifier(local_col));
 
             /* type */
             appendStringInfoString(&buf, remote_type);
+
+            /* A folded name needs the ClickHouse spelling to query the column */
+            if (strcmp(local_col, colname) != 0) {
+                options = lappend(options, makeString("column_name"));
+                options = lappend(options, makeString(colname));
+            }
 
             if (options != NIL) {
                 appendStringInfoString(&buf, " OPTIONS (");
@@ -1295,7 +1421,7 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
                         &buf,
                         "%s %s",
                         strVal(list_nth(options, i)),
-                        ch_quote_literal(strVal(list_nth(options, i + 1)))
+                        quote_literal_cstr(strVal(list_nth(options, i + 1)))
                     );
                 }
                 appendStringInfoString(&buf, ")");
@@ -1311,8 +1437,8 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
             &buf,
             "\n) SERVER %s OPTIONS (database %s, table_name %s",
             quote_identifier(server->servername),
-            ch_quote_literal(stmt->remote_schema),
-            ch_quote_literal(table_name)
+            quote_literal_cstr(stmt->remote_schema),
+            quote_literal_cstr(table_name)
         );
 
         if (engine && engine_full && strcmp(engine, "CollapsingMergeTree") == 0) {
@@ -1320,15 +1446,14 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
 
             if (sub) {
                 sub[1] = '\0';
-                appendStringInfo(&buf, ", engine %s", ch_quote_literal(engine_full));
+                appendStringInfo(&buf, ", engine %s", quote_literal_cstr(engine_full));
             }
         } else if (engine) {
-            appendStringInfo(&buf, ", engine %s", ch_quote_literal(engine));
+            appendStringInfo(&buf, ", engine %s", quote_literal_cstr(engine));
         }
 
         appendStringInfoString(&buf, ");\n");
         result = lappend(result, buf.data);
-        MemoryContextDelete(cols_ctx.cursor->memcxt);
     }
 
     return result;

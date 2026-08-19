@@ -242,6 +242,34 @@ Use `EXCEPT` to exclude tables:
 IMPORT FOREIGN SCHEMA demo EXCEPT (users) FROM SERVER taxi_srv INTO taxi;
 ```
 
+Use the `table_case` and `column_case` options to import lowercase names,
+which need no double quotes in PostgreSQL queries:
+
+```sql
+IMPORT FOREIGN SCHEMA demo FROM SERVER taxi_srv INTO taxi
+    OPTIONS (table_case 'lower', column_case 'lower');
+```
+
+`table_case` applies to table names and `column_case` to column names. Both
+take these values:
+
+*   `keep`: Create each object under its ClickHouse name, so that a name with
+    uppercase characters or blank spaces requires double quotes in PostgreSQL
+    queries. The default.
+*   `lower`: Fold names to lowercase, recording the ClickHouse name in the
+    `table_name` or [`column_name`](#create-foreign-table) option, so queries
+    still reach the case-sensitive ClickHouse objects. Two ClickHouse names
+    that differ only by case cannot both fold onto one PostgreSQL name, so both
+    keep their ClickHouse spelling.
+
+PostgreSQL matches `LIMIT TO` and `EXCEPT` against the table names an import
+creates, so list lowercase names when `table_case` is `lower`:
+
+```sql
+IMPORT FOREIGN SCHEMA demo LIMIT TO (hits) FROM SERVER taxi_srv INTO taxi
+    OPTIONS (table_case 'lower');
+```
+
 pg_clickhouse will fetch a list of all the tables in the specified ClickHouse
 database ("demo" in the above examples), fetch column definitions for each,
 and execute [CREATE FOREIGN TABLE](#create-foreign-table) commands to create
@@ -296,8 +324,10 @@ a column whose type has no PostgreSQL counterpart, including the legacy
 > SELECT id, "Name", "updatedAt" FROM test;
 > ```
 >
-> To create objects with different names or all lowercase (and therefore
-> case-insensitive) names, use [CREATE FOREIGN TABLE](#create-foreign-table).
+> Pass `OPTIONS (table_case 'lower', column_case 'lower')` to import all
+> lowercase (and therefore case-insensitive) names instead. To create objects
+> with names of your own choosing, use
+> [CREATE FOREIGN TABLE](#create-foreign-table).
 
 ### CREATE FOREIGN TABLE
 

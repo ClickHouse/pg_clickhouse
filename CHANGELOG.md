@@ -24,6 +24,12 @@ All notable changes to this project will be documented in this file. It uses the
     `AggregateFunction(sumMap, Array(Int32), Array(Int32))` records
     `AggregateFunction 'sumMap'` over `integer[]` instead of
     `AggregateFunction '1'` over `integer`.
+*   `IMPORT FOREIGN SCHEMA` now takes `table_case` and `column_case` options.
+    Set either to `lower` to create lowercase names, which PostgreSQL queries
+    need not double-quote; each folded column records its ClickHouse name in a
+    `column_name` option, as each table already does in `table_name`. Two
+    ClickHouse names differing only by case both keep their ClickHouse
+    spelling, since they cannot share one PostgreSQL name ([#236]).
 *   Removed `clickhouse_raw_query()`, deprecated in v0.10.0. Use
     `clickhouse_query(server, sql)` to read rows and
     `CALL clickhouse_perform(server, sql)` to run statements that return none;
@@ -41,8 +47,14 @@ All notable changes to this project will be documented in this file. It uses the
 *   `INSERT` with the binary driver now rejects a value wider than a
     `FixedString(N)` column instead of silently truncating it, matching the
     error the HTTP driver gets from ClickHouse.
+*   `IMPORT FOREIGN SCHEMA` now quotes the strings of the foreign-table
+    statements it generates as PostgreSQL literals rather than ClickHouse
+    literals, so a ClickHouse name, database, or engine containing a backslash
+    no longer gains a second one.
 
   [v0.11.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.10.0...v0.11.0
+  [#236]: https://github.com/ClickHouse/pg_clickhouse/issues/236
+    "ClickHouse/pg_clickhouse#236 Add column case option to IMPORT FOREIGN SCHEMA"
   [#346]: https://github.com/ClickHouse/pg_clickhouse/pull/346
     "ClickHouse/pg_clickhouse#346 remove clickhouse_raw_query"
   [#337]: https://github.com/ClickHouse/pg_clickhouse/pull/337
