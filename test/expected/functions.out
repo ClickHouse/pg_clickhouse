@@ -2666,6 +2666,86 @@ SELECT val FROM t4 WHERE substr(val::bytea, 2) = 'al1'::bytea;
  val1
 (1 row)
 
+-- Nonpositive or dynamic substring bounds push down with PostgreSQL-compatible
+-- normalization. PostgreSQL clamps the start to 1, while ClickHouse counts
+-- negative starts from the end.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val FROM -1) = 'val1';
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((substringUTF8(val, if((-1) < 1, 1, (-1))) = 'val1'))
+(3 rows)
+
+SELECT val FROM t4 WHERE substring(val FROM -1) = 'val1';
+ val  
+------
+ val1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val FROM 0 FOR 2) = 'v';
+                                                                                                                                                                            QUERY PLAN                                                                                                                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((if(throwIf(isNotNull(val) AND isNotNull(0) AND isNotNull(2) AND 2 < 0, 'negative substring length not allowed'), NULL, substringUTF8(val, if(0 < 1, 1, 0), if(toInt64(0) + toInt64(2) > 2147483647, 2147483647, if(toInt64(0) + toInt64(2) < 1, 0, toInt64(0) + toInt64(2) - if(0 < 1, 1, 0))))) = 'v'))
+(3 rows)
+
+SELECT val FROM t4 WHERE substring(val FROM 0 FOR 2) = 'v';
+ val  
+------
+ val1
+ val2
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val::bytea FROM -1 FOR 3) = 'v'::bytea;
+                                                                                                                                                                                                        QUERY PLAN                                                                                                                                                                                                        
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((if(throwIf(isNotNull(CAST(val AS bytea(0))) AND isNotNull((-1)) AND isNotNull(3) AND 3 < 0, 'negative substring length not allowed'), NULL, substring(CAST(val AS bytea(0)), if((-1) < 1, 1, (-1)), if(toInt64((-1)) + toInt64(3) > 2147483647, 2147483647, if(toInt64((-1)) + toInt64(3) < 1, 0, toInt64((-1)) + toInt64(3) - if((-1) < 1, 1, (-1)))))) = 'v'))
+(3 rows)
+
+SELECT val FROM t4 WHERE substring(val::bytea FROM -1 FOR 3) = 'v'::bytea;
+ val  
+------
+ val1
+ val2
+(2 rows)
+
+-- PostgreSQL errors for negative lengths; preserve that behavior remotely.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val FROM 2 FOR -1) = 'never';
+                                                                                                                                                                                     QUERY PLAN                                                                                                                                                                                      
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((if(throwIf(isNotNull(val) AND isNotNull(2) AND isNotNull((-1)) AND (-1) < 0, 'negative substring length not allowed'), NULL, substringUTF8(val, if(2 < 1, 1, 2), if(toInt64(2) + toInt64((-1)) > 2147483647, 2147483647, if(toInt64(2) + toInt64((-1)) < 1, 0, toInt64(2) + toInt64((-1)) - if(2 < 1, 1, 2))))) = 'never'))
+(3 rows)
+
+-- A parameterized offset also uses the remote normalization.
+SET plan_cache_mode = force_generic_plan;
+PREPARE substring_offset(int) AS
+    SELECT val FROM t4 WHERE substring(val FROM $1) = 'al1';
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE substring_offset(2);
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((substringUTF8(val, if({p1:Int32} < 1, 1, {p1:Int32})) = 'al1'))
+(3 rows)
+
+EXECUTE substring_offset(2);
+ val  
+------
+ val1
+(1 row)
+
+DEALLOCATE substring_offset;
+RESET plan_cache_mode;
 -- length(text) pushes down as lengthUTF8 (counts code points).
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT val FROM t4 WHERE length(val) = 3;

@@ -485,14 +485,16 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     case F_SUBSTR_TEXT_INT4:
     case F_SUBSTRING_TEXT_INT4_INT4:
     case F_SUBSTRING_TEXT_INT4:
-        def->ch_name = "substringUTF8";
+        def->cf_type = CF_SUBSTRING;
+        def->ch_name = "\1";
         return true;
         /* PG substring(text, ...) counts code points */
     case F_SUBSTR_BYTEA_INT4_INT4:
     case F_SUBSTR_BYTEA_INT4:
     case F_SUBSTRING_BYTEA_INT4_INT4:
     case F_SUBSTRING_BYTEA_INT4:
-        def->ch_name = "substring";
+        def->cf_type = CF_SUBSTRING;
+        def->ch_name = "\1";
         return true;
         /* bytea variant is byte-based; CH substring matches */
     case F_REGEXP_LIKE_TEXT_TEXT:

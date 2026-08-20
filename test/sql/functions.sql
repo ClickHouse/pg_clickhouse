@@ -756,6 +756,32 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT val FROM t4 WHERE substr(val::bytea, 2) = 'al1'::bytea;
 SELECT val FROM t4 WHERE substr(val::bytea, 2) = 'al1'::bytea;
 
+-- Nonpositive or dynamic substring bounds push down with PostgreSQL-compatible
+-- normalization. PostgreSQL clamps the start to 1, while ClickHouse counts
+-- negative starts from the end.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val FROM -1) = 'val1';
+SELECT val FROM t4 WHERE substring(val FROM -1) = 'val1';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val FROM 0 FOR 2) = 'v';
+SELECT val FROM t4 WHERE substring(val FROM 0 FOR 2) = 'v';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val::bytea FROM -1 FOR 3) = 'v'::bytea;
+SELECT val FROM t4 WHERE substring(val::bytea FROM -1 FOR 3) = 'v'::bytea;
+
+-- PostgreSQL errors for negative lengths; preserve that behavior remotely.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE substring(val FROM 2 FOR -1) = 'never';
+
+-- A parameterized offset also uses the remote normalization.
+SET plan_cache_mode = force_generic_plan;
+PREPARE substring_offset(int) AS
+    SELECT val FROM t4 WHERE substring(val FROM $1) = 'al1';
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE substring_offset(2);
+EXECUTE substring_offset(2);
+DEALLOCATE substring_offset;
+RESET plan_cache_mode;
+
 -- length(text) pushes down as lengthUTF8 (counts code points).
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT val FROM t4 WHERE length(val) = 3;

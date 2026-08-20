@@ -414,6 +414,7 @@ typedef enum {
     CF_PARAM_LIST_AGG,         /* ordered set agg with array prams → parametric
                                 * list aggregate function */
     CF_ENCODE,                 /* encode(bytea, fmt) → hex/base64 family */
+    CF_SUBSTRING,              /* substring/substr with PostgreSQL-compatible bounds */
 } custom_object_type;
 
 typedef enum {
