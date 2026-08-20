@@ -29,7 +29,7 @@ cfg_file() {
     local version="$1"
     # Default config.
     fn=default
-    if [ "${version%%.*}" -lt 25 ]; then
+    if [[ "$version" =~ [.][0-9]+$ ]] && [ "${version%%.*}" -lt 25 ]; then
         fn=allow_object
         # Enable the JSON type in release prior to 2025.
         if [ "${version:0:4}" == "24.8" ]; then

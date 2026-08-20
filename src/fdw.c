@@ -448,7 +448,7 @@ clickhouse_query(PG_FUNCTION_ARGS) {
     cursor = sconn.gate.methods->simple_query(sconn.gate.conn, &query);
 
     values = palloc(tupdesc->natts * sizeof(Datum));
-    nulls  = palloc(tupdesc->natts * sizeof(bool));
+    nulls  = palloc0(tupdesc->natts * sizeof(bool));
 
     /* per-row values are copied into tuplestore; reset between rows */
     row_cxt = AllocSetContextCreate(
@@ -458,9 +458,6 @@ clickhouse_query(PG_FUNCTION_ARGS) {
     for (;;) {
         ChFdwScanRowContext ctx = { tupdesc, retrieved_attrs, attinmeta,
                                     cursor,  values,          nulls };
-
-        memset(values, 0, tupdesc->natts * sizeof(Datum));
-        memset(nulls, true, tupdesc->natts * sizeof(bool));
 
         oldcontext = MemoryContextSwitchTo(row_cxt);
         if (sconn.gate.methods->fetch_row(&ctx) == NULL) {
