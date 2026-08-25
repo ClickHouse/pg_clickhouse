@@ -215,6 +215,10 @@ typedef enum ExprTruthCtx {
  */
 static bool
 foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx);
+static Expr*
+serialized_json_document(Expr* expr);
+static bool
+serialized_json_path_is_shippable(Const* path);
 static bool
 is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx);
 static char*
@@ -906,6 +910,79 @@ classify_notin_subplan(SubPlan* subplan, PlannerInfo* root, Relids relids) {
 }
 
 /*
+ * Compatibility views commonly expose a ClickHouse String as json/jsonb
+ * with json[b]_in(remote_text::cstring).  Return the underlying text
+ * expression for exactly that shape.
+ */
+static Expr*
+serialized_json_document(Expr* expr) {
+    FuncExpr* input;
+    Expr* argument;
+
+    if (!IsA(expr, FuncExpr)) {
+        return NULL;
+    }
+    input = (FuncExpr*)expr;
+    if ((input->funcid != F_JSON_IN && input->funcid != F_JSONB_IN) ||
+        (input->funcresulttype != JSONOID && input->funcresulttype != JSONBOID) ||
+        list_length(input->args) != 1) {
+        return NULL;
+    }
+
+    argument = (Expr*)linitial(input->args);
+    if (!IsA(argument, CoerceViaIO) ||
+        ((CoerceViaIO*)argument)->resulttype != CSTRINGOID) {
+        return NULL;
+    }
+    argument = ((CoerceViaIO*)argument)->arg;
+    return exprType((Node*)argument) == TEXTOID ? argument : NULL;
+}
+
+static bool
+json_path_key_is_numeric(const char* key) {
+    const unsigned char* cursor = (const unsigned char*)key;
+
+    if (*cursor == '+' || *cursor == '-') {
+        cursor++;
+    }
+    if (*cursor == '\0') {
+        return false;
+    }
+    for (; *cursor != '\0'; cursor++) {
+        if (*cursor < '0' || *cursor > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool
+serialized_json_path_is_shippable(Const* path) {
+    ArrayType* array = DatumGetArrayTypeP(path->constvalue);
+    Datum* elements;
+    bool* nulls;
+    int element_count;
+    int i;
+
+    deconstruct_array(
+        array, TEXTOID, -1, false, TYPALIGN_INT, &elements, &nulls, &element_count
+    );
+    if (element_count == 0) {
+        return false;
+    }
+    for (i = 0; i < element_count; i++) {
+        char* key    = TextDatumGetCString(elements[i]);
+        bool numeric = json_path_key_is_numeric(key);
+
+        pfree(key);
+        if (numeric) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/*
  * Check if expression is safe to execute remotely, and return true if so.
  *
  * We must check that the expression contains only node types we can deparse,
@@ -1037,6 +1114,8 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
          */
         if (cdef && (cdef->cf_type == CF_JSON_EXTRACT_PATH_TEXT ||
                      cdef->cf_type == CF_JSON_EXTRACT_PATH)) {
+            Expr* document;
+
             if (list_length(fe->args) != 2 || !IsA(lsecond(fe->args), Const) ||
                 ((Const*)lsecond(fe->args))->constisnull) {
                 return false;
@@ -1045,6 +1124,16 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             Const* path = (Const*)lsecond(fe->args);
             if (array_contains_nulls(DatumGetArrayTypeP(path->constvalue))) {
                 return false;
+            }
+
+            document = serialized_json_document((Expr*)linitial(fe->args));
+            if (document != NULL) {
+                if (cdef->cf_type != CF_JSON_EXTRACT_PATH_TEXT ||
+                    !serialized_json_path_is_shippable(path) ||
+                    !foreign_expr_walker((Node*)document, glob_cxt, EXPR_CTX_EXACT)) {
+                    return false;
+                }
+                break;
             }
 
             /* Only recurse on the column expression. */
@@ -4008,9 +4097,88 @@ deparseSubscriptingRef(SubscriptingRef* node, deparse_expr_cxt* context) {
     }
 }
 
+static void
+append_serialized_json_function(
+    const char* function_name,
+    Expr* document,
+    Datum* path_elements,
+    int path_element_count,
+    deparse_expr_cxt* context
+) {
+    StringInfo buf = context->buf;
+    int i;
+
+    appendStringInfo(buf, "%s(assumeNotNull(", function_name);
+    deparseExpr(document, context);
+    appendStringInfoChar(buf, ')');
+    for (i = 0; i < path_element_count; i++) {
+        char* key    = TextDatumGetCString(path_elements[i]);
+        char* quoted = ch_quote_literal(key);
+
+        appendStringInfo(buf, ", %s", quoted);
+        pfree(key);
+        pfree(quoted);
+    }
+    appendStringInfoChar(buf, ')');
+}
+
+static void
+deparse_serialized_json_extract_path_text(
+    Expr* document,
+    ArrayType* path,
+    deparse_expr_cxt* context
+) {
+    StringInfo buf = context->buf;
+    Datum* path_elements;
+    bool* path_nulls;
+    int path_element_count;
+
+    deconstruct_array(
+        path,
+        TEXTOID,
+        -1,
+        false,
+        TYPALIGN_INT,
+        &path_elements,
+        &path_nulls,
+        &path_element_count
+    );
+
+    appendStringInfoString(buf, "if(isNull(");
+    deparseExpr(document, context);
+    appendStringInfoString(buf, "), NULL, if(isValidJSON(assumeNotNull(");
+    deparseExpr(document, context);
+    appendStringInfoString(buf, ")), if(");
+    append_serialized_json_function(
+        "JSONHas", document, path_elements, path_element_count, context
+    );
+    appendStringInfoString(buf, ", multiIf(");
+    append_serialized_json_function(
+        "JSONType", document, path_elements, path_element_count, context
+    );
+    appendStringInfoString(buf, " = 'Null', NULL, ");
+    append_serialized_json_function(
+        "JSONType", document, path_elements, path_element_count, context
+    );
+    appendStringInfoString(buf, " = 'String', ");
+    append_serialized_json_function(
+        "JSONExtractString", document, path_elements, path_element_count, context
+    );
+    appendStringInfoString(buf, ", ");
+    append_serialized_json_function(
+        "JSONExtractRaw", document, path_elements, path_element_count, context
+    );
+    appendStringInfoString(
+        buf,
+        "), NULL), CAST(throwIf(1, 'invalid serialized JSON') AS "
+        "Nullable(String))))"
+    );
+}
+
 /*
  * Deparse jsonb_extract_path_text() / jsonb_extract_path() into ClickHouse
- * JSON dot notation.
+ * JSON dot notation. String-backed compatibility casts use JSON extraction
+ * functions instead.
  *
  *   jsonb_extract_path_text(col, 'k1', 'k2') → col."k1"."k2"
  *   jsonb_extract_path(col, 'k1')            → toJSONString(col."k1")
@@ -4022,10 +4190,18 @@ static void
 deparseJsonbExtractPath(FuncExpr* node, deparse_expr_cxt* context, bool wrap_json) {
     StringInfo buf = context->buf;
     Const* arr     = (Const*)lsecond(node->args);
+    Expr* document = serialized_json_document((Expr*)linitial(node->args));
     ArrayType* array;
     Datum* elems;
     bool* nulls;
     int nelems;
+
+    array = DatumGetArrayTypeP(arr->constvalue);
+    if (document != NULL) {
+        Assert(!wrap_json);
+        deparse_serialized_json_extract_path_text(document, array, context);
+        return;
+    }
 
     if (wrap_json) {
         appendStringInfoString(buf, "toJSONString(");
@@ -4035,7 +4211,6 @@ deparseJsonbExtractPath(FuncExpr* node, deparse_expr_cxt* context, bool wrap_jso
     deparseExpr((Expr*)linitial(node->args), context);
 
     /* Second arg is text[] with path keys → dot notation. */
-    array = DatumGetArrayTypeP(arr->constvalue);
     deconstruct_array(array, TEXTOID, -1, false, TYPALIGN_INT, &elems, &nulls, &nelems);
 
     for (int i = 0; i < nelems; i++) {
