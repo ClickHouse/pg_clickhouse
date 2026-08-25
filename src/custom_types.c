@@ -952,6 +952,8 @@ chfdw_check_for_custom_type(Oid typeoid) {
 #define OID_TIMESTAMPTZ_MI_INTERVAL_OP 1329
 #define OID_TIMESTAMP_PL_INTERVAL_OP 2066
 #define OID_TIMESTAMP_MI_INTERVAL_OP 2068
+#define OID_TSVECTOR_MATCH_TSQUERY_OP 3636
+#define OID_TSQUERY_MATCH_TSVECTOR_OP 3637
 
 /*
  * Map a builtin operator OID to its custom_object_type. Returns CF_USUAL
@@ -974,6 +976,9 @@ classify_builtin_operator(Oid opoid) {
     case OID_JSONB_FETCHVAL_TEXT_OP:
     case OID_JSON_FETCHVAL_TEXT_OP:
         return CF_JSON_FETCHVAL_TEXT;
+    case OID_TSVECTOR_MATCH_TSQUERY_OP:
+    case OID_TSQUERY_MATCH_TSVECTOR_OP:
+        return CF_TSVECTOR_MATCH;
     case OID_ARRAY_CONTAINS_OP:
         return CF_ARRAY_CONTAINS;
     case OID_ARRAY_CONTAINED_OP:
