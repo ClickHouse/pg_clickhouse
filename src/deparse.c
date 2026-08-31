@@ -35,6 +35,7 @@
 #include "parser/parse_relation.h"
 #include "parser/parsetree.h"
 #include "regex/regex.h"
+#include "tsearch/ts_type.h"
 #include "utils/array.h"
 #include "utils/arrayaccess.h"
 #include "utils/builtins.h"
@@ -215,6 +216,12 @@ typedef enum ExprTruthCtx {
  */
 static bool
 foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx);
+static bool
+tsvector_match_parts(OpExpr* node, Expr** document, Const** query);
+static bool
+tsquery_is_shippable(Const* query);
+static void
+deparseTSVectorMatch(Expr* document, Const* query, deparse_expr_cxt* context);
 static bool
 is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx);
 static char*
@@ -499,6 +506,108 @@ chfdw_is_equal_op(Oid opno) {
 
     ReleaseSysCache(opertup);
     return res;
+}
+
+/*
+ * Compatibility views commonly expose a ClickHouse String as tsvector with
+ * tsvectorin(remote_text::cstring).  Return the underlying text expression
+ * for exactly that shape; arbitrary local tsvector expressions remain local.
+ */
+static Expr*
+serialized_tsvector_document(Expr* expr) {
+    FuncExpr* input;
+    Expr* argument;
+
+    if (!IsA(expr, FuncExpr)) {
+        return NULL;
+    }
+    input = (FuncExpr*)expr;
+    if (input->funcid != F_TSVECTORIN || input->funcresulttype != TSVECTOROID ||
+        list_length(input->args) != 1) {
+        return NULL;
+    }
+
+    argument = (Expr*)linitial(input->args);
+    if (!IsA(argument, CoerceViaIO) ||
+        ((CoerceViaIO*)argument)->resulttype != CSTRINGOID) {
+        return NULL;
+    }
+    argument = ((CoerceViaIO*)argument)->arg;
+    return exprType((Node*)argument) == TEXTOID ? argument : NULL;
+}
+
+static bool
+tsvector_match_parts(OpExpr* node, Expr** document, Const** query) {
+    Expr* first;
+    Expr* second;
+
+    if (list_length(node->args) != 2) {
+        return false;
+    }
+    first  = (Expr*)linitial(node->args);
+    second = (Expr*)lsecond(node->args);
+
+    if (exprType((Node*)first) == TSVECTOROID && IsA(second, Const) &&
+        ((Const*)second)->consttype == TSQUERYOID) {
+        *document = serialized_tsvector_document(first);
+        *query    = (Const*)second;
+    } else if (
+        IsA(first, Const) && ((Const*)first)->consttype == TSQUERYOID &&
+        exprType((Node*)second) == TSVECTOROID
+    ) {
+        *document = serialized_tsvector_document(second);
+        *query    = (Const*)first;
+    } else {
+        return false;
+    }
+
+    return *document != NULL && !(*query)->constisnull;
+}
+
+static bool
+tsquery_phrase_is_shippable(QueryItem* item) {
+    if (item->type == QI_VAL) {
+        return item->qoperand.weight == 0 && !item->qoperand.prefix;
+    }
+    if (item->type != QI_OPR || item->qoperator.oper != OP_PHRASE) {
+        return false;
+    }
+    return tsquery_phrase_is_shippable(item + item->qoperator.left) &&
+           tsquery_phrase_is_shippable(item + 1);
+}
+
+static bool
+tsquery_item_is_shippable(QueryItem* item) {
+    if (item->type == QI_VAL) {
+        return item->qoperand.weight == 0;
+    }
+    if (item->type != QI_OPR) {
+        return false;
+    }
+
+    switch (item->qoperator.oper) {
+    case OP_NOT:
+        return tsquery_item_is_shippable(item + 1);
+    case OP_AND:
+    case OP_OR:
+        return tsquery_item_is_shippable(item + item->qoperator.left) &&
+               tsquery_item_is_shippable(item + 1);
+    case OP_PHRASE:
+        return tsquery_phrase_is_shippable(item);
+    default:
+        return false;
+    }
+}
+
+static bool
+tsquery_is_shippable(Const* query_const) {
+    TSQuery query;
+
+    if (query_const->constisnull || query_const->consttype != TSQUERYOID) {
+        return false;
+    }
+    query = DatumGetTSQuery(query_const->constvalue);
+    return query->size == 0 || tsquery_item_is_shippable(GETQUERY(query));
 }
 
 /*
@@ -1086,7 +1195,20 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
     case T_NullIfExpr:
     case T_DistinctExpr: /* struct-equivalent to OpExpr */
     {
-        OpExpr* oe = (OpExpr*)node;
+        OpExpr* oe            = (OpExpr*)node;
+        CustomObjectDef* cdef = chfdw_check_for_custom_operator(oe->opno, NULL);
+
+        if (cdef && cdef->cf_type == CF_TSVECTOR_MATCH) {
+            Expr* document;
+            Const* query;
+
+            if (!tsvector_match_parts(oe, &document, &query) ||
+                !tsquery_is_shippable(query) ||
+                !foreign_expr_walker((Node*)document, glob_cxt, EXPR_CTX_EXACT)) {
+                return false;
+            }
+            break;
+        }
 
         /*
          * Similarly, only shippable operators can be sent to remote.
@@ -4981,6 +5103,217 @@ findFunction(Oid typoid, char* name) {
     return result;
 }
 
+typedef struct TSPhraseTerm {
+    QueryOperand* operand;
+    int offset;
+} TSPhraseTerm;
+
+static void
+append_regex_quoted(StringInfo buf, const char* value) {
+    const char* cursor;
+
+    for (cursor = value; *cursor != '\0'; cursor++) {
+        if (strchr("\\.^$|?*+()[]{}", *cursor) != NULL) {
+            appendStringInfoChar(buf, '\\');
+        }
+        appendStringInfoChar(buf, *cursor);
+    }
+}
+
+static char*
+tsvector_lexeme_regex(QueryOperand* operand, const char* operand_data, bool positions) {
+    StringInfoData serialized;
+    StringInfoData pattern;
+    const char* value = operand_data + operand->distance;
+    uint32 i;
+
+    initStringInfo(&serialized);
+    for (i = 0; i < operand->length; i++) {
+        if (value[i] == '\\') {
+            appendStringInfoString(&serialized, "\\\\");
+        } else if (value[i] == '\'') {
+            appendStringInfoString(&serialized, "''");
+        } else {
+            appendStringInfoChar(&serialized, value[i]);
+        }
+    }
+
+    initStringInfo(&pattern);
+    appendStringInfoString(&pattern, "(?:^| )'");
+    append_regex_quoted(&pattern, serialized.data);
+    if (positions) {
+        appendStringInfoString(&pattern, "':([0-9]+[A-D]?(?:,[0-9]+[A-D]?)*)(?: |$)");
+    } else if (!operand->prefix) {
+        appendStringInfoString(&pattern, "'(?::| |$)");
+    }
+
+    pfree(serialized.data);
+    return pattern.data;
+}
+
+static int
+tsquery_phrase_width(QueryItem* item) {
+    int left_width;
+    int right_width;
+
+    if (item->type == QI_VAL) {
+        return 0;
+    }
+    left_width  = tsquery_phrase_width(item + item->qoperator.left);
+    right_width = tsquery_phrase_width(item + 1);
+    return left_width + item->qoperator.distance + right_width;
+}
+
+static int
+tsquery_phrase_term_count(QueryItem* item) {
+    if (item->type == QI_VAL) {
+        return 1;
+    }
+    return tsquery_phrase_term_count(item + item->qoperator.left) +
+           tsquery_phrase_term_count(item + 1);
+}
+
+static void
+collect_tsquery_phrase_terms(
+    QueryItem* item,
+    int base_offset,
+    TSPhraseTerm* terms,
+    int* term_count
+) {
+    int left_width;
+
+    if (item->type == QI_VAL) {
+        terms[*term_count].operand = &item->qoperand;
+        terms[*term_count].offset  = base_offset;
+        (*term_count)++;
+        return;
+    }
+
+    left_width = tsquery_phrase_width(item + item->qoperator.left);
+    collect_tsquery_phrase_terms(
+        item + item->qoperator.left, base_offset, terms, term_count
+    );
+    collect_tsquery_phrase_terms(
+        item + 1, base_offset + left_width + item->qoperator.distance, terms, term_count
+    );
+}
+
+static void
+deparse_tsvector_positions(
+    Expr* document,
+    QueryOperand* operand,
+    const char* operand_data,
+    deparse_expr_cxt* context
+) {
+    StringInfo buf = context->buf;
+    char* pattern  = tsvector_lexeme_regex(operand, operand_data, true);
+    char* quoted   = ch_quote_literal(pattern);
+
+    appendStringInfoString(
+        buf,
+        "arrayFilter(_pgch_position -> _pgch_position > 0, "
+        "arrayMap(_pgch_text_position -> "
+        "toUInt32OrZero(replaceRegexpOne(_pgch_text_position, "
+        "'[A-D]$', '')), splitByChar(',', extract("
+    );
+    appendStringInfoString(buf, "assumeNotNull(");
+    deparseExpr(document, context);
+    appendStringInfoChar(buf, ')');
+    appendStringInfo(buf, ", %s))))", quoted);
+
+    pfree(pattern);
+    pfree(quoted);
+}
+
+static void
+deparse_tsquery_phrase(
+    QueryItem* item,
+    const char* operand_data,
+    Expr* document,
+    deparse_expr_cxt* context
+) {
+    StringInfo buf = context->buf;
+    TSPhraseTerm* terms;
+    int term_count = 0;
+    int i;
+
+    terms = palloc0(sizeof(TSPhraseTerm) * tsquery_phrase_term_count(item));
+    collect_tsquery_phrase_terms(item, 0, terms, &term_count);
+    Assert(term_count >= 2);
+
+    appendStringInfoString(buf, "if(isNull(");
+    deparseExpr(document, context);
+    appendStringInfoString(buf, "), NULL, arrayExists(_pgch_position -> (");
+    for (i = 1; i < term_count; i++) {
+        if (i > 1) {
+            appendStringInfoString(buf, " AND ");
+        }
+        appendStringInfoString(buf, "has(");
+        deparse_tsvector_positions(document, terms[i].operand, operand_data, context);
+        appendStringInfo(
+            buf, ", _pgch_position + %d)", terms[i].offset - terms[0].offset
+        );
+    }
+    appendStringInfoString(buf, "), ");
+    deparse_tsvector_positions(document, terms[0].operand, operand_data, context);
+    appendStringInfoString(buf, "))");
+    pfree(terms);
+}
+
+static void
+deparse_tsquery_item(
+    QueryItem* item,
+    const char* operand_data,
+    Expr* document,
+    deparse_expr_cxt* context
+) {
+    StringInfo buf = context->buf;
+
+    if (item->type == QI_VAL) {
+        char* pattern = tsvector_lexeme_regex(&item->qoperand, operand_data, false);
+        char* quoted  = ch_quote_literal(pattern);
+
+        appendStringInfoString(buf, "match(");
+        deparseExpr(document, context);
+        appendStringInfo(buf, ", %s)", quoted);
+        pfree(pattern);
+        pfree(quoted);
+        return;
+    }
+
+    if (item->qoperator.oper == OP_PHRASE) {
+        deparse_tsquery_phrase(item, operand_data, document, context);
+        return;
+    }
+
+    appendStringInfoChar(buf, '(');
+    if (item->qoperator.oper == OP_NOT) {
+        appendStringInfoString(buf, "NOT ");
+        deparse_tsquery_item(item + 1, operand_data, document, context);
+    } else {
+        deparse_tsquery_item(
+            item + item->qoperator.left, operand_data, document, context
+        );
+        appendStringInfoString(buf, item->qoperator.oper == OP_AND ? " AND " : " OR ");
+        deparse_tsquery_item(item + 1, operand_data, document, context);
+    }
+    appendStringInfoChar(buf, ')');
+}
+
+static void
+deparseTSVectorMatch(Expr* document, Const* query_const, deparse_expr_cxt* context) {
+    TSQuery query = DatumGetTSQuery(query_const->constvalue);
+
+    if (query->size == 0) {
+        appendStringInfoString(context->buf, "if(isNull(");
+        deparseExpr(document, context);
+        appendStringInfoString(context->buf, "), NULL, false)");
+        return;
+    }
+
+    deparse_tsquery_item(GETQUERY(query), GETOPERAND(query), document, context);
+}
+
 /*
  * Deparse given operator expression. To avoid problems around priority of
  * operations, we always parenthesize the arguments.
@@ -5013,6 +5346,16 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
     cdef = chfdw_check_for_custom_operator(node->opno, form);
     if (cdef) {
         switch (cdef->cf_type) {
+        case CF_TSVECTOR_MATCH: {
+            Expr* document;
+            Const* query;
+
+            if (!tsvector_match_parts(node, &document, &query)) {
+                elog(ERROR, "unexpected tsvector match expression");
+            }
+            deparseTSVectorMatch(document, query, context);
+            goto cleanup;
+        } break;
         case CF_REGEX_MATCH:
         case CF_REGEX_NO_MATCH:
         case CF_REGEX_ICASE_MATCH:

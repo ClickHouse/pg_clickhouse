@@ -388,6 +388,7 @@ typedef enum {
                                 * col."k1"."k2" */
     CF_JSON_EXTRACT_PATH,      /* json?_extract_path() →
                                 * toJSONString(col."k1"."k2") */
+    CF_TSVECTOR_MATCH,         /* serialized tsvector @@ constant tsquery */
     CF_STRING_AGG,             /* string_agg → groupConcat(delim)(expr) */
     CF_CURRENT_DATABASE,       /* CURRENT_DATABASE → string literal */
     CF_CURRENT_SCHEMA,         /* CF_CURRENT_SCHEMA → string literal */
