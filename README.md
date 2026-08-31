@@ -271,7 +271,7 @@ adding DML features. Our road map:
   [Postgres]:   https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml/badge.svg
   [🐘]:         https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml "Tested with PostgreSQL 13-19"
   [ClickHouse]: https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml/badge.svg
-  [🏠]:          https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml "Tested with ClickHouse v23–26"
+  [🏠]:          https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml "Tested with ClickHouse v23.3–26.8"
   [Docker]:     https://img.shields.io/github/v/release/ClickHouse/pg_clickhouse?label=%F0%9F%90%B3%20Docker&color=44cc11
   [🐳]:          https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "Latest Docker release"
   [GitHub]:     https://img.shields.io/github/v/release/ClickHouse/pg_clickhouse?label=%F0%9F%90%99%20GitHub&color=44cc11

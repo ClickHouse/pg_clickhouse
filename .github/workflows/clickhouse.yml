@@ -18,9 +18,9 @@ jobs:
         # Keep in sync with dev/docker-compose.yml.
         # .github/ubuntu/ch-versions --lts --latest-stable --earliest 23  --prefix '          - ' | pbcopy
         ch:
-          - 26.7.1.1315-stable
-          - 26.3.17.56-lts
-          - 25.8.28.1-lts
+          - 26.8.1.2041-lts
+          - 26.3.27.3-lts
+          - 25.8.33.6-lts
           - 25.3.14.14-lts
           - 24.8.14.39-lts
           - 24.3.18.7-lts
