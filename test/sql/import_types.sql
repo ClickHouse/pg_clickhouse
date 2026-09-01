@@ -51,14 +51,28 @@ SELECT attname, format_type(atttypid, atttypmod) AS type, attndims, attnotnull
 
 SELECT * FROM import_types.mapped;
 
--- Reject a ClickHouse type PostgreSQL cannot hold
+-- Integers wider than bigint import as numeric
 CALL clickhouse_perform('import_types_admin', 'CREATE TABLE import_types_test.wide (
-    id Int32, big Int128
+    id Int32, i128 Int128, u128 UInt128, i256 Int256, u256 UInt256
 ) ENGINE = MergeTree ORDER BY (id);
 ');
+CALL clickhouse_perform('import_types_admin', 'INSERT INTO import_types_test.wide VALUES (
+    1,
+    toInt128(''-170141183460469231731687303715884105728''),
+    toUInt128(''340282366920938463463374607431768211455''),
+    toInt256(''-57896044618658097711785492504343953926634992332820282019728792003956564819968''),
+    toUInt256(''115792089237316195423570985008687907853269984665640564039457584007913129639935'')
+)');
 CREATE SCHEMA import_types_wide;
 IMPORT FOREIGN SCHEMA import_types_test LIMIT TO (wide)
     FROM SERVER import_types_loopback INTO import_types_wide;
+
+SELECT attname, format_type(atttypid, atttypmod) AS type
+  FROM pg_attribute
+ WHERE attrelid = 'import_types_wide.wide'::regclass AND attnum > 0
+ ORDER BY attnum;
+
+SELECT * FROM import_types_wide.wide;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER import_types_loopback;
 CALL clickhouse_perform('import_types_admin', 'DROP DATABASE import_types_test');

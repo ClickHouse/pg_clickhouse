@@ -20,22 +20,26 @@ All notable changes to this project will be documented in this file. It uses the
     to six digits of `DateTime64(P)` and `Time64(P)` precision, imports `Time`,
     `Time64`, and geometric types, and maps `FixedString(N)` to unconstrained
     `text` because ClickHouse counts bytes while PostgreSQL character limits
-    count characters ([#349])
+    count characters ([#349]).
 *   `IMPORT FOREIGN SCHEMA` now maps `BFloat16` to `real` and `Interval` types
     to `interval`. `IntervalNanosecond` truncates to microseconds ([#349])
+*   `Int128`, `Int256`, `UInt128`, and `UInt256` columns now read as `numeric`
+    rather than erroring, and `UInt64` reads as `numeric` rather than erroring
+    above the `bigint` maximum. `IMPORT FOREIGN SCHEMA` declares the fewest
+    digits, so `UInt64` becomes `numeric(20,0)` ([#354]).
 *   A `Tuple` or `Map` column read into a PostgreSQL array now fills the array
     with each record's fields rather than a record literal, so `{'k': 'v'}`
     reads as `{{k,v}}` rather than `{"(k,v)"}`. A composite or `text` column
     still reads a record. `IMPORT FOREIGN SCHEMA` declares such columns `text[]`
     and `text[][]`; the `binary` driver accepts those same types on `INSERT`,
-    parsing each item as the field it fills ([#349])
+    parsing each item as the field it fills ([#349]).
 *   `IMPORT FOREIGN SCHEMA` now correctly imports aggregate states with literal
     parameters or multiple arguments, preserving aggregate function name and
-    first argument type ([#349])
+    first argument type ([#349]).
 *   Removed `clickhouse_raw_query()`, deprecated in v0.10.0. Use
     `clickhouse_query(server, sql)` to read rows and
     `CALL clickhouse_perform(server, sql)` to run statements that return none;
-    both take a foreign server rather than a connection string. ([#346])
+    both take a foreign server rather than a connection string ([#346]).
 
 ### 🐞 Bug Fixes
 
@@ -51,7 +55,7 @@ All notable changes to this project will be documented in this file. It uses the
     database, or engine no longer doubles backslashes ([#350]).
 *   `INSERT` with `binary` driver now rejects values wider than a
     `FixedString(N)` column instead of silently truncating them, matching HTTP
-    driver errors ([#349])
+    driver errors ([#349]).
 
   [v0.11.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.10.0...v0.11.0
   [#337]: https://github.com/ClickHouse/pg_clickhouse/pull/337
@@ -64,6 +68,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#349 use pgch_pg_type_for in IMPORT SCHEMA"
   [#350]: https://github.com/ClickHouse/pg_clickhouse/pull/350
     "ClickHouse/pg_clickhouse#350 Fix quoting, don't quote PG literals with CH function"
+  [#354]: https://github.com/ClickHouse/pg_clickhouse/pull/354
+    "ClickHouse/pg_clickhouse#354 Map UInt64 & Int128/UInt128/Int256/UInt256 to numeric"
 
 ## [v0.10.0] — 2026-08-11
 

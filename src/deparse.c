@@ -1875,6 +1875,12 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
         buf = pstrdup("Int64");
         break;
 
+#if PG_VERSION_NUM >= 190000
+    case OID8OID:
+        buf = pstrdup("UInt64");
+        break;
+#endif
+
     case NUMERICOID:
         if (with_typemod) {
             /*

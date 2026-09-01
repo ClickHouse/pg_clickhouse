@@ -68,16 +68,43 @@ SELECT * FROM import_types.mapped;
   1 | 1.500000 |          | {1.2500,-2.5000} | {{1.2500},{2.5000}} | 2026-08-19 03:04:05.678+00 | {"2026-08-19 03:04:05.678901+00"} | 2026-08-19 03:04:05.678901+00 | abcde | {xy,z}    | two   | card | {{k,42}} | {7,seven}
 (1 row)
 
--- Reject a ClickHouse type PostgreSQL cannot hold
+-- Integers wider than bigint import as numeric
 CALL clickhouse_perform('import_types_admin', 'CREATE TABLE import_types_test.wide (
-    id Int32, big Int128
+    id Int32, i128 Int128, u128 UInt128, i256 Int256, u256 UInt256
 ) ENGINE = MergeTree ORDER BY (id);
 ');
+CALL clickhouse_perform('import_types_admin', 'INSERT INTO import_types_test.wide VALUES (
+    1,
+    toInt128(''-170141183460469231731687303715884105728''),
+    toUInt128(''340282366920938463463374607431768211455''),
+    toInt256(''-57896044618658097711785492504343953926634992332820282019728792003956564819968''),
+    toUInt256(''115792089237316195423570985008687907853269984665640564039457584007913129639935'')
+)');
 CREATE SCHEMA import_types_wide;
 IMPORT FOREIGN SCHEMA import_types_test LIMIT TO (wide)
     FROM SERVER import_types_loopback INTO import_types_wide;
-ERROR:  pg_clickhouse: unsupported column type "Int128" (wide.big)
+SELECT attname, format_type(atttypid, atttypmod) AS type
+  FROM pg_attribute
+ WHERE attrelid = 'import_types_wide.wide'::regclass AND attnum > 0
+ ORDER BY attnum;
+ attname |     type      
+---------+---------------
+ id      | integer
+ i128    | numeric(39,0)
+ u128    | numeric(39,0)
+ i256    | numeric(77,0)
+ u256    | numeric(78,0)
+(5 rows)
+
+SELECT * FROM import_types_wide.wide;
+ id |                   i128                   |                  u128                   |                                      i256                                      |                                      u256                                      
+----+------------------------------------------+-----------------------------------------+--------------------------------------------------------------------------------+--------------------------------------------------------------------------------
+  1 | -170141183460469231731687303715884105728 | 340282366920938463463374607431768211455 | -57896044618658097711785492504343953926634992332820282019728792003956564819968 | 115792089237316195423570985008687907853269984665640564039457584007913129639935
+(1 row)
+
 DROP USER MAPPING FOR CURRENT_USER SERVER import_types_loopback;
 CALL clickhouse_perform('import_types_admin', 'DROP DATABASE import_types_test');
 DROP SERVER import_types_loopback CASCADE;
-NOTICE:  drop cascades to foreign table import_types.mapped
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table import_types.mapped
+drop cascades to foreign table import_types_wide.wide

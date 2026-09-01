@@ -315,10 +315,23 @@ ch_binary_connect(ch_connection_details* details) {
             .codec       = comp != CHC_COMP_NONE ? &conn->codec : NULL,
             .compression = comp,
         };
-        chc_err err = {};
-        int rc = chc_client_init(&conn->client, &opts, &pgch_alloc, &conn->io, &err);
+        chc_err err        = {};
+        chc_exception* exc = NULL;
+        int rc =
+            chc_client_init(&conn->client, &opts, &pgch_alloc, &conn->io, &exc, &err);
 
         if (rc != CHC_OK) {
+            if (exc) {
+                /* Handshake rejection */
+                char* msg = pstrdup(ch_binary_exception_message(exc));
+
+                chc_exception_free(exc, &pgch_alloc);
+                ereport(
+                    ERROR,
+                    errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
+                    errmsg("pg_clickhouse: connection error: %s", msg)
+                );
+            }
             pgch_raise(
                 &err,
                 ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION,

@@ -128,7 +128,7 @@ NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type 
  c5     | smallint         |           | not null |         |             | plain   |              | 
  c6     | integer          |           | not null |         |             | plain   |              | 
  c7     | bigint           |           | not null |         |             | plain   |              | 
- c8     | bigint           |           | not null |         |             | plain   |              | 
+ c8     | numeric(20,0)    |           | not null |         |             | main    |              | 
  c9     | real             |           | not null |         |             | plain   |              | 
  c10    | double precision |           |          |         |             | plain   |              | 
 Not-null constraints:
@@ -300,7 +300,7 @@ NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type 
  c5     | smallint         |           | not null |         |             | plain   |              | 
  c6     | integer          |           | not null |         |             | plain   |              | 
  c7     | bigint           |           | not null |         |             | plain   |              | 
- c8     | bigint           |           | not null |         |             | plain   |              | 
+ c8     | numeric(20,0)    |           | not null |         |             | main    |              | 
  c9     | real             |           | not null |         |             | plain   |              | 
  c10    | double precision |           |          |         |             | plain   |              | 
 Not-null constraints:
@@ -471,7 +471,7 @@ IMPORT FOREIGN SCHEMA "import_test" LIMIT TO (ints, types) FROM SERVER import_lo
  c5     | smallint         |           | not null |         |             | plain   |              | 
  c6     | integer          |           | not null |         |             | plain   |              | 
  c7     | bigint           |           | not null |         |             | plain   |              | 
- c8     | bigint           |           | not null |         |             | plain   |              | 
+ c8     | numeric(20,0)    |           | not null |         |             | main    |              | 
  c9     | real             |           | not null |         |             | plain   |              | 
  c10    | double precision |           |          |         |             | plain   |              | 
 Not-null constraints:
@@ -597,17 +597,25 @@ $$) AS t(c1 text, c2 text, c3 text, c4 text, c5 text,
  127  | 32767  | 2147483647  | 9223372036854775807  | 255 | 65535 | 4294967295 | 3.4028235e+38 | 1.7976931348623157e+308
 (2 rows)
 
--- Error on 18446744073709551615.
+-- Read 18446744073709551615.
 SELECT * FROM clickhouse_bin.ints
 WHERE c1 IN (127, -128)
 ORDER BY c1;
-ERROR:  pg_clickhouse: value 18446744073709551615 is out of range of bigint
-DETAIL:  Remote Query: SELECT c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 FROM import_test.ints WHERE ((c1 IN (127,(-128)))) ORDER BY c1 ASC NULLS LAST
+  c1  |   c2   |     c3      |          c4          | c5  |  c6   |     c7     |          c8          |      c9       |           c10           
+------+--------+-------------+----------------------+-----+-------+------------+----------------------+---------------+-------------------------
+ -128 | -32768 | -2147483648 | -9223372036854775808 |   0 |     0 |          0 |                    0 | 1.1754944e-38 | 2.2250738585072014e-308
+  127 |  32767 |  2147483647 |  9223372036854775807 | 255 | 65535 | 4294967295 | 18446744073709551615 | 3.4028235e+38 | 1.7976931348623157e+308
+(2 rows)
+
 SELECT * FROM clickhouse.ints
 WHERE c1 IN (127, -128)
 ORDER BY c1;
-ERROR:  pg_clickhouse: value 18446744073709551615 is out of range of bigint
-DETAIL:  Remote Query: SELECT c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 FROM import_test.ints WHERE ((c1 IN (127,(-128)))) ORDER BY c1 ASC NULLS LAST
+  c1  |   c2   |     c3      |          c4          | c5  |  c6   |     c7     |          c8          |      c9       |           c10           
+------+--------+-------------+----------------------+-----+-------+------------+----------------------+---------------+-------------------------
+ -128 | -32768 | -2147483648 | -9223372036854775808 |   0 |     0 |          0 |                    0 | 1.1754944e-38 | 2.2250738585072014e-308
+  127 |  32767 |  2147483647 |  9223372036854775807 | 255 | 65535 | 4294967295 | 18446744073709551615 | 3.4028235e+38 | 1.7976931348623157e+308
+(2 rows)
+
 -- Ignore 18446744073709551615
 SELECT * FROM clickhouse_bin.ints WHERE c1 = -128
 UNION

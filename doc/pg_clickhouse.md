@@ -283,7 +283,7 @@ Some details to keep in mind:
 > ```sql
 > CREATE OR REPLACE TABLE test
 > (
->     id UInt64,
+>     id Int64,
 >     Name TEXT,
 >     updatedAt DateTime DEFAULT now()
 > )
@@ -963,6 +963,8 @@ FOREIGN TABLE](#create-foreign-table) to declare alternate PostgreSQL types.
 | Int16               | smallint                    |                                  |
 | Int32               | integer                     |                                  |
 | Int64               | bigint                      |                                  |
+| Int128              | numeric(39,0)               |                                  |
+| Int256              | numeric(77,0)               |                                  |
 | IntervalDay         | interval                    |                                  |
 | IntervalHour        | interval                    |                                  |
 | IntervalMicrosecond | interval                    |                                  |
@@ -991,14 +993,15 @@ FOREIGN TABLE](#create-foreign-table) to declare alternate PostgreSQL types.
 | UInt8               | smallint                    |                                  |
 | UInt16              | integer                     |                                  |
 | UInt32              | bigint                      |                                  |
-| UInt64              | bigint                      | Errors on values > BIGINT max    |
+| UInt64              | numeric(20,0)               |                                  |
+| UInt128             | numeric(39,0)               |                                  |
+| UInt256             | numeric(78,0)               |                                  |
 | UUID                | uuid                        |                                  |
 <!-- TYPE-TABLE-END -->
 
 Any column also reads into `text`, `varchar`, or another string type. The value
 takes the PostgreSQL type above, then renders through that type's output
-function. UInt64 values above the bigint maximum still error, so render those
-with the ClickHouse `toString()` function.
+function.
 
 Additional notes and details follow.
 

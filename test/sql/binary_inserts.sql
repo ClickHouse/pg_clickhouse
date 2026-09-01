@@ -294,6 +294,24 @@ COPY null_ints (c1, c2) FROM stdin;
 \.
 SELECT * FROM null_ints WHERE c1 >= 20 ORDER BY c1;
 
+/* Postgres unsigned 64 bit types round-trip through UInt64 */
+\set ECHO errors
+\set oid8 OID8
+SELECT current_setting('server_version_num')::int < 190000 AS pg18 \gset
+\if :pg18
+-- Postgres 19 added oid8; xid8 stands in for it before then.
+\set oid8 XID8
+\endif
+\set ECHO all
+
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.u64s (
+	c1 UInt64, c2 UInt64
+) ENGINE = MergeTree ORDER BY (c1);');
+
+CREATE FOREIGN TABLE u64s (c1 xid8, c2 :oid8) SERVER binary_inserts_loopback;
+INSERT INTO u64s VALUES ('0', '0'), ('18446744073709551615', '18446744073709551615');
+SELECT * FROM u64s ORDER BY c1;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 CALL clickhouse_perform('binary_inserts_admin', 'DROP DATABASE binary_inserts_test');
 DROP SERVER binary_inserts_loopback CASCADE;

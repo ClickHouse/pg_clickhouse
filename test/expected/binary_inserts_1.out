@@ -454,10 +454,24 @@ SELECT * FROM null_ints WHERE c1 >= 20 ORDER BY c1;
  22 | 220
 (3 rows)
 
+/* Postgres unsigned 64 bit types round-trip through UInt64 */
+\set ECHO errors
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.u64s (
+	c1 UInt64, c2 UInt64
+) ENGINE = MergeTree ORDER BY (c1);');
+CREATE FOREIGN TABLE u64s (c1 xid8, c2 :oid8) SERVER binary_inserts_loopback;
+INSERT INTO u64s VALUES ('0', '0'), ('18446744073709551615', '18446744073709551615');
+SELECT * FROM u64s ORDER BY c1;
+          c1          |          c2          
+----------------------+----------------------
+                    0 |                    0
+ 18446744073709551615 | 18446744073709551615
+(2 rows)
+
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 CALL clickhouse_perform('binary_inserts_admin', 'DROP DATABASE binary_inserts_test');
 DROP SERVER binary_inserts_loopback CASCADE;
-NOTICE:  drop cascades to 14 other objects
+NOTICE:  drop cascades to 15 other objects
 DETAIL:  drop cascades to foreign table addr
 drop cascades to foreign table arrays
 drop cascades to foreign table bytes
@@ -472,3 +486,4 @@ drop cascades to foreign table bbytes
 drop cascades to foreign table null_vals
 drop cascades to foreign table default_vals
 drop cascades to foreign table maps
+drop cascades to foreign table u64s

@@ -206,7 +206,7 @@ SELECT * FROM clickhouse_query('import_admin', $$
 $$) AS t(c1 text, c2 text, c3 text, c4 text, c5 text,
          c6 text, c7 text, c9 text, c10 text);
 
--- Error on 18446744073709551615.
+-- Read 18446744073709551615.
 SELECT * FROM clickhouse_bin.ints
 WHERE c1 IN (127, -128)
 ORDER BY c1;
