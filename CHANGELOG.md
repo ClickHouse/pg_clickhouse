@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file. It uses the
 
 ## [v0.11.0] — Unreleased
 
+### ⬆️ Dependencies
+
+*   Dropped support for PostgreSQL 13.
+
 ### ⚡ Improvements
 
 *   `IMPORT FOREIGN SCHEMA` now preserves type modifiers through nested `Array`

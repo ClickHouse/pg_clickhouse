@@ -1497,11 +1497,7 @@ clickhouseBeginForeignModify(
         rte,
         resultRelInfo,
         mtstate->operation,
-#if PG_VERSION_NUM < 140000
-        mtstate->mt_plans[subplan_index]->plan,
-#else
         outerPlanState(mtstate)->plan,
-#endif
         query,
         target_attrs,
         table_name
@@ -2943,20 +2939,6 @@ add_foreign_grouping_paths(
     fpinfo->total_cost   = total_cost;
 
     /* Create and add foreign path to the grouping relation. */
-#if (PG_VERSION_NUM < 120000)
-    grouppath = create_foreignscan_path(
-        root,
-        grouped_rel,
-        grouped_rel->reltarget,
-        rows,
-        startup_cost,
-        total_cost,
-        NIL,  /* no pathkeys */
-        NULL, /* no required_outer */
-        NULL,
-        NIL
-    ); /* no fdw_private */
-#else
     grouppath = create_foreign_upper_path(
         root,
         grouped_rel,
@@ -2974,7 +2956,6 @@ add_foreign_grouping_paths(
 #endif
         NIL
     ); /* no fdw_private */
-#endif
 
     /*
      * For simple min/max queries Postgres adds MinMaxAggPath that rewrites as
@@ -3125,20 +3106,6 @@ add_foreign_window_paths(
     fpinfo->total_cost   = total_cost;
 
     /* Create and add foreign path to the window relation. */
-#if (PG_VERSION_NUM < 120000)
-    window_path = create_foreignscan_path(
-        root,
-        window_rel,
-        root->upper_targets[UPPERREL_WINDOW],
-        rows,
-        startup_cost,
-        total_cost,
-        NIL,  /* no pathkeys */
-        NULL, /* no required_outer */
-        NULL,
-        NIL
-    ); /* no fdw_private */
-#else
     window_path = create_foreign_upper_path(
         root,
         window_rel,
@@ -3156,7 +3123,6 @@ add_foreign_window_paths(
 #endif
         NIL
     ); /* no fdw_private */
-#endif
 
     /* Add generated path into window_rel by add_path(). */
     add_path(window_rel, (Path*)window_path);
@@ -3286,20 +3252,6 @@ add_foreign_ordered_paths(
     fdw_private = list_make2(makeInteger(true), makeInteger(false));
 
     /* Create foreign ordering path */
-#if (PG_VERSION_NUM < 120000)
-    ordered_path = create_foreignscan_path(
-        root,
-        input_rel,
-        root->upper_targets[UPPERREL_ORDERED],
-        rows,
-        startup_cost,
-        total_cost,
-        root->sort_pathkeys,
-        NULL, /* no required_outer */
-        NULL,
-        fdw_private
-    );
-#else
     ordered_path = create_foreign_upper_path(
         root,
         input_rel,
@@ -3317,7 +3269,6 @@ add_foreign_ordered_paths(
 #endif
         fdw_private
     );
-#endif
 
     /* and add it to the ordered_rel */
     add_path(ordered_rel, (Path*)ordered_path);
@@ -3337,10 +3288,6 @@ add_foreign_final_paths(
     RelOptInfo* final_rel,
     void* fextra
 ) {
-#if (PG_VERSION_NUM < 120000)
-    /* final paths supported only on pg >= v12 */
-    return;
-#else
     Query* parse               = root->parse;
     CHFdwRelationInfo* ifpinfo = (CHFdwRelationInfo*)input_rel->fdw_private;
     CHFdwRelationInfo* fpinfo  = (CHFdwRelationInfo*)final_rel->fdw_private;
@@ -3480,7 +3427,6 @@ add_foreign_final_paths(
 
     /* and add it to the final_rel */
     add_path(final_rel, (Path*)final_path);
-#endif
 }
 
 /*

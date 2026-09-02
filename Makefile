@@ -123,7 +123,7 @@ print-%	: ; $(info $* is $(flavor $*) variable set to "$($*)") @true
 REGISTRY ?= localhost:5001
 REVISION := $(shell git rev-parse --short HEAD)
 PLATFORMS ?= linux/amd64,linux/arm64
-PG_VERSIONS ?= 18,17,16,15,14,13
+PG_VERSIONS ?= 18,17,16,15,14
 .PHONY: image # Build the linux/amd64 OCI image.
 image:
 	registry=$(REGISTRY) version=$(DISTVERSION) revision=$(REVISION) pg_versions=$(PG_VERSIONS) \

@@ -5,7 +5,7 @@ pg_clickhouse Postgres Extension
 
 This library contains `pg_clickhouse`, a PostgreSQL extension that runs
 analytics queries on ClickHouse right from PostgreSQL without rewriting any
-SQL. It supports PostgreSQL 13 and later and ClickHouse v23 and later.
+SQL. It supports PostgreSQL 14 and later and ClickHouse v23 and later.
 
 ## Getting Started
 
@@ -228,7 +228,7 @@ CREATE EXTENSION pg_clickhouse SCHEMA env;
 
 ## Dependencies
 
-The `pg_clickhouse` extension requires [PostgreSQL] 13 or higher, [libcurl],
+The `pg_clickhouse` extension requires [PostgreSQL] 14 or higher, [libcurl],
 [libuuid], [liblz4], and [libzstd]. Building the extension requires a C
 compiler, [libSSL], and [GNU make].
 
@@ -269,7 +269,7 @@ adding DML features. Our road map:
   [PGXN]:       https://badge.fury.io/pg/pg_clickhouse.svg
   [⚙️]:         https://pgxn.org/dist/pg_clickhouse "Latest version on PGXN"
   [Postgres]:   https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml/badge.svg
-  [🐘]:         https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml "Tested with PostgreSQL 13-19"
+  [🐘]:         https://github.com/clickhouse/pg_clickhouse/actions/workflows/postgres.yml "Tested with PostgreSQL 14-19"
   [ClickHouse]: https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml/badge.svg
   [🏠]:          https://github.com/clickhouse/pg_clickhouse/actions/workflows/clickhouse.yml "Tested with ClickHouse v23.3–26.8"
   [Docker]:     https://img.shields.io/github/v/release/ClickHouse/pg_clickhouse?label=%F0%9F%90%B3%20Docker&color=44cc11

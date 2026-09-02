@@ -480,29 +480,10 @@ extern bool
 chfdw_translate_to_char_format(const char* pgfmt, StringInfo out);
 
 /* compat */
-#if PG_VERSION_NUM < 120000
-
-#define CreateTemplateTupleDescCompat(natts) CreateTemplateTupleDesc(natts, false)
-#define ExecStoreHeapTuple(tup, slot, free)                                            \
-    ExecStoreTuple(tup, slot, InvalidBuffer, free)
-
-#define execute_attr_map_tuple do_convert_tuple
-#define create_foreign_join_path create_foreignscan_path
-
-#define T_SubscriptingRef T_ArrayRef
-#define SubscriptingRef ArrayRef
-#else
 #define CreateTemplateTupleDescCompat(natts) CreateTemplateTupleDesc(natts)
-#endif
 
-#if PG_VERSION_NUM < 130000
-#define table_open_compat(i, l) heap_open(i, l)
-#define table_close_compat(r, l) heap_close(r, l)
-#define lnext_compat(l, i) lnext(i)
-#else
 #define table_open_compat(i, l) table_open(i, l)
 #define table_close_compat(r, l) table_close(r, l)
 #define lnext_compat(l, i) lnext(l, i)
-#endif
 
 #endif /* CLICKHOUSE_FDW_H */

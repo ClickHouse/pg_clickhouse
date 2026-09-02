@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pg: [19, 18, 17, 16, 15, 14, 13]
+        pg: [19, 18, 17, 16, 15, 14]
         os:
           - { icon: 🐧, arch: amd64, on: ubuntu-latest }
           # - { icon: 🐧, arch: arm64, on: ubuntu-24.04-arm } # XXX

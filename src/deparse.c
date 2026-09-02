@@ -49,34 +49,6 @@
 
 #include "fdw.h"
 
-/*
- * Prior to PostgreSQL 14 these fmgroids had different names or were
- * not generated.  Window functions used F_WINDOW_ prefix; aggregate
- * OIDs were not emitted at all so must use raw values.
- */
-#if PG_VERSION_NUM < 140000
-#define F_ROW_NUMBER F_WINDOW_ROW_NUMBER
-#define F_RANK_ F_WINDOW_RANK
-#define F_DENSE_RANK_ F_WINDOW_DENSE_RANK
-#define F_PERCENT_RANK_ F_WINDOW_PERCENT_RANK
-#define F_CUME_DIST_ F_WINDOW_CUME_DIST
-#define F_NTILE F_WINDOW_NTILE
-#define F_BOOL_AND 2517
-#define F_BOOL_OR 2518
-#define F_EVERY 2519
-#define F_STRING_AGG_TEXT_TEXT 3538
-#define F_STRING_AGG_BYTEA_BYTEA 3545
-#define F_REGR_COUNT 2818
-#define F_REGR_SXX 2819
-#define F_REGR_SYY 2820
-#define F_REGR_SXY 2821
-#define F_REGR_AVGX 2822
-#define F_REGR_AVGY 2823
-#define F_REGR_R2 2824
-#define F_REGR_SLOPE 2825
-#define F_REGR_INTERCEPT 2826
-#endif
-
 #ifndef MAXINT8LEN
 #define MAXINT8LEN 25
 #endif
@@ -582,7 +554,7 @@ op_expr_never_null(OpExpr* op, foreign_glob_cxt* glob_cxt);
  *
  * PG 17+ precomputes the catalog half of this as
  * RelOptInfo->notnullattnums; the syscache lookup below keeps one code path
- * across PG 13-19, so switch when PG 16 support drops. Postgres exports no
+ * across PG 14-19, so switch when PG 16 support drops. Postgres exports no
  * expression-level equivalent on any version.
  */
 static bool
@@ -4968,12 +4940,9 @@ findFunction(Oid typoid, char* name) {
     for (i = 0; i < catlist->n_members; i++) {
         proctup  = &catlist->members[i]->tuple;
         procform = (Form_pg_proc)GETSTRUCT(proctup);
-        if (procform->proargtypes.values[0] == typoid)
-#if PG_VERSION_NUM < 120000
-            result = HeapTupleGetOid(proctup);
-#else
+        if (procform->proargtypes.values[0] == typoid) {
             result = procform->oid;
-#endif
+        }
     }
 
     ReleaseSysCacheList(catlist);

@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pgv: [18, 17, 16, 15, 14, 13]
+        pgv: [18, 17, 16, 15, 14]
     steps:
       - name: Checkout the Repository
         uses: actions/checkout@v6

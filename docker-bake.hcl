@@ -17,7 +17,7 @@ variable "revision" {
 # Postgres versions to build. Pass comma-delimited list: pg_versions=18,16.
 variable "pg_versions" {
     type    = list(number)
-    default = [19, 18, 17, 16, 15, 14, 13]
+    default = [19, 18, 17, 16, 15, 14]
 }
 
 # Values to use in the targets.
