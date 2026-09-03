@@ -27,9 +27,6 @@
 #include "utils/palloc.h"
 #include "utils/rel.h"
 #include "utils/tuplestore.h"
-#if PG_VERSION_NUM >= 140000
-#include "optimizer/appendinfo.h"
-#endif
 #if PG_VERSION_NUM >= 160000
 #include "varatt.h"
 #endif
@@ -1399,7 +1396,7 @@ clickhousePlanForeignModify(
      * Core code already has some lock on each rel being planned, so we can
      * use NoLock here.
      */
-    rel = table_open_compat(rte->relid, NoLock);
+    rel = table_open(rte->relid, NoLock);
     if (operation == CMD_INSERT) {
         TupleDesc tupdesc = RelationGetDescr(rel);
         int attnum;
@@ -1447,7 +1444,7 @@ clickhousePlanForeignModify(
         break;
     }
 
-    table_close_compat(rel, NoLock);
+    table_close(rel, NoLock);
 
     /*
      * Build the fdw_private list that will be available to the executor.
@@ -2169,9 +2166,9 @@ foreign_join_ok(
     switch (jointype) {
     case JOIN_INNER:
         fpinfo->remote_conds =
-            list_concat(fpinfo->remote_conds, list_copy(fpinfo_i->remote_conds));
+            list_concat(fpinfo->remote_conds, fpinfo_i->remote_conds);
         fpinfo->remote_conds =
-            list_concat(fpinfo->remote_conds, list_copy(fpinfo_o->remote_conds));
+            list_concat(fpinfo->remote_conds, fpinfo_o->remote_conds);
 
         /*
          * For an inner join, some restrictions can be treated alike.
@@ -2185,17 +2182,15 @@ foreign_join_ok(
         break;
 
     case JOIN_LEFT:
-        fpinfo->joinclauses =
-            list_concat(fpinfo->joinclauses, list_copy(fpinfo_i->remote_conds));
+        fpinfo->joinclauses = list_concat(fpinfo->joinclauses, fpinfo_i->remote_conds);
         fpinfo->remote_conds =
-            list_concat(fpinfo->remote_conds, list_copy(fpinfo_o->remote_conds));
+            list_concat(fpinfo->remote_conds, fpinfo_o->remote_conds);
         break;
 
     case JOIN_RIGHT:
-        fpinfo->joinclauses =
-            list_concat(fpinfo->joinclauses, list_copy(fpinfo_o->remote_conds));
+        fpinfo->joinclauses = list_concat(fpinfo->joinclauses, fpinfo_o->remote_conds);
         fpinfo->remote_conds =
-            list_concat(fpinfo->remote_conds, list_copy(fpinfo_i->remote_conds));
+            list_concat(fpinfo->remote_conds, fpinfo_i->remote_conds);
         break;
 
     case JOIN_SEMI:
@@ -2206,10 +2201,9 @@ foreign_join_ok(
          * outer's conditions go to remote_conds (WHERE). Extract join key
          * equalities to joinclauses for the ON clause.
          */
-        fpinfo->joinclauses =
-            list_concat(fpinfo->joinclauses, list_copy(fpinfo_i->remote_conds));
+        fpinfo->joinclauses = list_concat(fpinfo->joinclauses, fpinfo_i->remote_conds);
         fpinfo->remote_conds =
-            list_concat(fpinfo->remote_conds, list_copy(fpinfo_o->remote_conds));
+            list_concat(fpinfo->remote_conds, fpinfo_o->remote_conds);
         fpinfo->remote_conds =
             extract_join_equals(fpinfo->remote_conds, &fpinfo->joinclauses);
 
@@ -2713,9 +2707,7 @@ foreign_grouping_ok(PlannerInfo* root, RelOptInfo* grouped_rel, Node* havingQual
              */
             Assert(!IsA(expr, RestrictInfo));
             rinfo = make_restrictinfo(
-#if PG_VERSION_NUM >= 140000
                 root,
-#endif
                 expr,
                 true,
                 false,

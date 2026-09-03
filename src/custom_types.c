@@ -898,7 +898,7 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo* fpinfo, Oid relid) {
         custom_columns_cache = create_custom_columns_cache();
     }
 
-    rel     = table_open_compat(relid, NoLock);
+    rel     = table_open(relid, NoLock);
     tupdesc = RelationGetDescr(rel);
 
     for (attnum = 1; attnum <= tupdesc->natts; attnum++) {
@@ -920,7 +920,7 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo* fpinfo, Oid relid) {
             entry, relid, attnum, NameStr(attr->attname), fpinfo->ch_table_engine
         );
     }
-    table_close_compat(rel, NoLock);
+    table_close(rel, NoLock);
 }
 
 /*
@@ -985,7 +985,7 @@ chfdw_get_custom_column_info(Oid relid, uint16 varattno) {
         Relation rel;
         TupleDesc tupdesc;
 
-        rel     = table_open_compat(relid, NoLock);
+        rel     = table_open(relid, NoLock);
         tupdesc = RelationGetDescr(rel);
 
         if (varattno > 0 && varattno <= tupdesc->natts) {
@@ -1007,7 +1007,7 @@ chfdw_get_custom_column_info(Oid relid, uint16 varattno) {
             );
             entry = NULL;
         }
-        table_close_compat(rel, NoLock);
+        table_close(rel, NoLock);
     }
 
     return entry;

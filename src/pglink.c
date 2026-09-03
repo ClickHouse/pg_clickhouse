@@ -137,7 +137,6 @@ http_canceled(void) {
 
 static bool
 is_canceled(void) {
-    /* this variable is bool on pg < 12, but sig_atomic_t on above versions */
     if (QueryCancelPending) {
         return true;
     }

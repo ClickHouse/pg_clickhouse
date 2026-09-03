@@ -49,10 +49,6 @@
 
 #include "fdw.h"
 
-#ifndef MAXINT8LEN
-#define MAXINT8LEN 25
-#endif
-
 /* Aggregate OIDs absent from fmgroids.h on all PG versions. */
 #define F_STRING_AGG_TEXT_TEXT 3538
 
@@ -961,13 +957,7 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
 
-        /*
-         * The jsonb subscript syntax column['key'] is not supported
-         * on ClickHouse JSON (it requires dot notation). Refuse to
-         * push down jsonb subscript expressions for now, so they are
-         * evaluated locally instead.
-         */
-        if (ar->refcontainertype == JSONBOID) {
+        if (!type_is_array(ar->refcontainertype)) {
             return false;
         }
 
@@ -1813,16 +1803,10 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
 
     typeform = (Form_pg_type)GETSTRUCT(tuple);
 
-    /*
-     * Check if it's a regular (variable length) array type. Fixed-length
-     * array types such as "name" shouldn't get deconstructed. As of Postgres
-     * 8.1, rather than checking typlen we check the toast property, and don't
-     * deconstruct "plain storage" array types --- this is because we don't
-     * want to show oidvector as oid[].
-     */
+    /* Avoid deconstructing plain-storage arrays such as oidvector. */
     array_base_type = typeform->typelem;
 
-    if (array_base_type != InvalidOid && typeform->typstorage != 'p') {
+    if (IsTrueArrayType(typeform) && typeform->typstorage != TYPSTORAGE_PLAIN) {
         /* Switch our attention to the array element type */
         ReleaseSysCache(tuple);
         tuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(array_base_type));
@@ -2219,12 +2203,12 @@ deparseSelectSql(
          * Core code already has some lock on each rel being planned, so we
          * can use NoLock here.
          */
-        Relation rel = table_open_compat(rte->relid, NoLock);
+        Relation rel = table_open(rte->relid, NoLock);
 
         deparseTargetList(
             buf, rte, foreignrel->relid, rel, fpinfo->attrs_used, false, retrieved_attrs
         );
-        table_close_compat(rel, NoLock);
+        table_close(rel, NoLock);
     }
     elog(DEBUG2, "< %s:%d", __FUNCTION__, __LINE__);
 }
@@ -2531,8 +2515,7 @@ deparseFromExprForRel(
              * clause by doing this recursively.
              */
             if (fpinfo->jointype == JOIN_INNER) {
-                *ignore_conds =
-                    list_concat(*ignore_conds, list_copy(fpinfo->joinclauses));
+                *ignore_conds       = list_concat(*ignore_conds, fpinfo->joinclauses);
                 fpinfo->joinclauses = NIL;
             }
 
@@ -2658,7 +2641,7 @@ deparseFromExprForRel(
          * Core code already has some lock on each rel being planned, so we
          * can use NoLock here.
          */
-        Relation rel = table_open_compat(rte->relid, NoLock);
+        Relation rel = table_open(rte->relid, NoLock);
 
         deparseRelation(buf, rel);
 
@@ -2671,7 +2654,7 @@ deparseFromExprForRel(
             appendStringInfo(buf, " %s%d", REL_ALIAS_PREFIX, foreignrel->relid);
         }
 
-        table_close_compat(rel, NoLock);
+        table_close(rel, NoLock);
     }
 }
 
@@ -3763,7 +3746,7 @@ deparseSubPlanFrom(deparse_expr_cxt* context) {
     foreach (lc, query->jointree->fromlist) {
         RangeTblRef* rtr   = lfirst_node(RangeTblRef, lc);
         RangeTblEntry* rte = rt_fetch(rtr->rtindex, query->rtable);
-        Relation rel       = table_open_compat(rte->relid, NoLock);
+        Relation rel       = table_open(rte->relid, NoLock);
 
         if (!first) {
             appendStringInfoString(buf, ", ");
@@ -3773,7 +3756,7 @@ deparseSubPlanFrom(deparse_expr_cxt* context) {
         appendStringInfo(
             buf, " %s%d_%d", SUBPLAN_REL_ALIAS_PREFIX, subplan->plan_id, rtr->rtindex
         );
-        table_close_compat(rel, NoLock);
+        table_close(rel, NoLock);
     }
 }
 

@@ -479,11 +479,4 @@ time_diff(struct timeval* prior, struct timeval* latter);
 extern bool
 chfdw_translate_to_char_format(const char* pgfmt, StringInfo out);
 
-/* compat */
-#define CreateTemplateTupleDescCompat(natts) CreateTemplateTupleDesc(natts)
-
-#define table_open_compat(i, l) table_open(i, l)
-#define table_close_compat(r, l) table_close(r, l)
-#define lnext_compat(l, i) lnext(l, i)
-
 #endif /* CLICKHOUSE_FDW_H */
