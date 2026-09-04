@@ -976,7 +976,7 @@ FOREIGN TABLE](#create-foreign-table) to declare alternate PostgreSQL types.
 | IntervalSecond      | interval                    |                                  |
 | IntervalWeek        | interval                    |                                  |
 | IntervalYear        | interval                    |                                  |
-| JSON                | jsonb                       | Also reads into json             |
+| JSON                | jsonb                       |                                  |
 | LineString          | path                        |                                  |
 | LowCardinality(T)   | T                           |                                  |
 | Map(K,V)            | text[][]                    | One row of text items per pair   |
@@ -986,7 +986,7 @@ FOREIGN TABLE](#create-foreign-table) to declare alternate PostgreSQL types.
 | Point               | point                       |                                  |
 | Polygon             | polygon[]                   |                                  |
 | Ring                | polygon                     |                                  |
-| String              | text                        | Also reads into bytea            |
+| String              | text                        |                                  |
 | Time                | time without time zone      |                                  |
 | Time64(P)           | time(P) without time zone   | P over 6 caps at 6               |
 | Tuple(...)          | text[]                      | Fields become text items         |
@@ -1001,7 +1001,10 @@ FOREIGN TABLE](#create-foreign-table) to declare alternate PostgreSQL types.
 
 Any column also reads into `text`, `varchar`, or another string type. The value
 takes the PostgreSQL type above, then renders through that type's output
-function.
+function. A ClickHouse string read into a text type is validated against the
+database encoding, so bytes PostgreSQL cannot read raise an error. Declare a
+`String`, `FixedString`, `Enum`, or `JSON` column [BYTEA] to read its bytes as
+ClickHouse wrote them.
 
 Additional notes and details follow.
 
@@ -1048,8 +1051,9 @@ That final `SELECT` query will output:
 (4 rows)
 ```
 
-Note that if there are any nul bytes in the ClickHouse columns, a foreign
-table using [TEXT] columns will not output the proper values:
+A foreign table using [TEXT] columns generally cannot read these values into
+text, because pg_clickhouse validates ClickHouse bytes against the database
+encoding:
 
 ```sql
 -- Create foreign table with TEXT columns.
@@ -1066,18 +1070,11 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER B
 Will output:
 
 ```pgsql
- c1 |                          encode                          |              encode
-----+----------------------------------------------------------+----------------------------------
-  1 | 1bf7f0cc821d31178616a55a8e0c52677735397cdde6f4153a9fd3d7 | ae3b28cde02542f81acce8783245430d
-  2 | 5f6e9e12cd8592712e638016f4b1a2e73230ee40db498c0f0b1dc841 | 23e7c6cacb8383f878ad093b
-  3 | 53ac2c1fa83c8f64603fe9568d883331                         | 7e969132fc656148b97b6a2ee8bc83c1
-  4 | 4e3c2e4cb7542a45173a8dac939ddc4bc75202e342ebc769b0f5da2f | 8ef30f44c65480d12b650ab6b2b04245
-(4 rows)
+ERROR:  invalid byte sequence for encoding "UTF8": 0xf7 0xf0 0xcc 0x82
 ```
 
-Note that rows two and three contain truncated values. This is because
-PostgreSQL relies on nul-terminated strings and does not support nuls in its
-strings.
+A digest holds arbitrary bytes, which seldom form valid text. PostgreSQL also
+reserves nul, so a [TEXT] column never reads a ClickHouse string holding one.
 
 Attempting to insert binary values into [TEXT] columns will succeed and work
 as expected:
@@ -1118,6 +1115,9 @@ But reading them as [BYTEA] will not:
   4 | \x5c783465336332653463623735343261343531373361386461633933396464633462633735323032653334326562633736396230663564613266 | \x5c783865663330663434633635343830643132623635306162366232623034323435
 (4 rows)
 ```
+
+A `FixedString(N)` column pads short values with nul bytes. A text column
+drops that trailing padding, where a [BYTEA] column keeps every byte.
 
 > [!TIP]
 > As a rule, only use [TEXT] columns for encoded strings and use [BYTEA]

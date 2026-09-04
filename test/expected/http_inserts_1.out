@@ -268,16 +268,10 @@ SELECT * FROM bbytes ORDER BY c1;
   4 | \x4e3c2e4cb7542a45173a8dac939ddc4bc75202e342ebc769b0f5da2f | \x8ef30f44c65480d12b650ab6b2b04245
 (4 rows)
 
--- Nul bytes should truncate TEXT columns.
+-- TEXT columns reject bytes outside database encoding.
 SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM bytes ORDER BY c1;
- c1 |                          encode                          |              encode              
-----+----------------------------------------------------------+----------------------------------
-  1 | 1bf7f0cc821d31178616a55a8e0c52677735397cdde6f4153a9fd3d7 | ae3b28cde02542f81acce8783245430d
-  2 | 5f6e9e12cd8592712e638016f4b1a2e73230ee40db498c0f0b1dc841 | 23e7c6cacb8383f878ad093b
-  3 | 53ac2c1fa83c8f64603fe9568d883331                         | 7e969132fc656148b97b6a2ee8bc83c1
-  4 | 4e3c2e4cb7542a45173a8dac939ddc4bc75202e342ebc769b0f5da2f | 8ef30f44c65480d12b650ab6b2b04245
-(4 rows)
-
+ERROR:  invalid byte sequence for encoding "UTF8": 0xf7 0xf0 0xcc 0x82
+DETAIL:  Remote Query: SELECT c1, c2, c3 FROM http_inserts_test.bytes ORDER BY c1 ASC NULLS LAST
 CALL clickhouse_perform('http_inserts_admin', 'TRUNCATE http_inserts_test.bytes');
 -- Constrain the column, since FixedString imports as TEXT.
 ALTER FOREIGN TABLE bytes ALTER c3 TYPE varchar(16);

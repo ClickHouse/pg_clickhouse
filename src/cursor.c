@@ -45,8 +45,6 @@ raise_reader_error(ch_cursor* cursor) {
 /* Match the returned columns against the destination the query asked for. */
 static void
 configure_columns(ch_cursor* cursor, const ch_query* query) {
-    pgch_reader* reader = &cursor->reader;
-
     if (query->tupdesc && query->attr_nums && cursor->columns_count > 0 &&
         (size_t)list_length(query->attr_nums) != cursor->columns_count) {
         ereport(
@@ -59,22 +57,6 @@ configure_columns(ch_cursor* cursor, const ch_query* query) {
             ),
             errdetail_internal("Remote Query: %.64000s", query->sql)
         );
-    }
-
-    /* Preserve JSON text when PostgreSQL destination uses json, not jsonb. */
-    if (query->tupdesc && reader->coltypes) {
-        ListCell* lc;
-        size_t j = 0;
-
-        foreach (lc, query->attr_nums) {
-            int i = lfirst_int(lc);
-
-            if (reader->coltypes[j] == JSONBOID &&
-                TupleDescAttr(query->tupdesc, i - 1)->atttypid == JSONOID) {
-                reader->coltypes[j] = JSONOID;
-            }
-            j++;
-        }
     }
 }
 

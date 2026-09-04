@@ -26,7 +26,7 @@ All notable changes to this project will be documented in this file. It uses the
 *   `Int128`, `Int256`, `UInt128`, and `UInt256` columns now read as `numeric`
     rather than erroring, and `UInt64` reads as `numeric` rather than erroring
     above the `bigint` maximum. `IMPORT FOREIGN SCHEMA` declares the fewest
-    digits, so `UInt64` becomes `numeric(20,0)` ([#354]).
+    digits, so `UInt64` becomes `numeric(20,0)` ([#355]).
 *   A `Tuple` or `Map` column read into a PostgreSQL array now fills the array
     with each record's fields rather than a record literal, so `{'k': 'v'}`
     reads as `{{k,v}}` rather than `{"(k,v)"}`. A composite or `text` column
@@ -56,6 +56,9 @@ All notable changes to this project will be documented in this file. It uses the
 *   `INSERT` with `binary` driver now rejects values wider than a
     `FixedString(N)` column instead of silently truncating them, matching HTTP
     driver errors ([#349]).
+*   Reading a ClickHouse string into a text column validates its bytes against
+    the database encoding, raising an error rather than returning invalid text.
+    Declare the column `bytea` to keep raw bytes ([#359]).
 
   [v0.11.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.10.0...v0.11.0
   [#337]: https://github.com/ClickHouse/pg_clickhouse/pull/337
@@ -68,8 +71,10 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#349 use pgch_pg_type_for in IMPORT SCHEMA"
   [#350]: https://github.com/ClickHouse/pg_clickhouse/pull/350
     "ClickHouse/pg_clickhouse#350 Fix quoting, don't quote PG literals with CH function"
-  [#354]: https://github.com/ClickHouse/pg_clickhouse/pull/354
-    "ClickHouse/pg_clickhouse#354 Map UInt64 & Int128/UInt128/Int256/UInt256 to numeric"
+  [#355]: https://github.com/ClickHouse/pg_clickhouse/pull/355
+    "ClickHouse/pg_clickhouse#355 Map UInt64 & Int128/UInt128/Int256/UInt256 to numeric"
+  [#359]: https://github.com/ClickHouse/pg_clickhouse/pull/359
+    "ClickHouse/pg_clickhouse#359 update pg-clickhouse-c for text encoding verification"
 
 ## [v0.10.0] — 2026-08-11
 

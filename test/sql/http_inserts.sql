@@ -141,7 +141,7 @@ SELECT n, sha224(bytea('val'||n)), decode(md5('int'||n), 'hex')
 -- Should have full binary values, including nul bytes, from BYTEA columns.
 SELECT * FROM bbytes ORDER BY c1;
 
--- Nul bytes should truncate TEXT columns.
+-- TEXT columns reject bytes outside database encoding.
 SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM bytes ORDER BY c1;
 
 CALL clickhouse_perform('http_inserts_admin', 'TRUNCATE http_inserts_test.bytes');
