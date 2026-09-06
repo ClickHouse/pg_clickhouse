@@ -192,6 +192,28 @@ ch_func_name(char* proname) {
     return proname;
 }
 
+/* Map pgcrypto digest algorithms to ClickHouse function names. */
+static const char* const digest_func_map[][2] = {
+    { "md5",    "MD5"    },
+    { "sha1",   "SHA1"   },
+    { "sha224", "SHA224" },
+    { "sha256", "SHA256" },
+    { "sha384", "SHA384" },
+    { "sha512", "SHA512" },
+    { NULL,      NULL      },
+};
+
+const char*
+chfdw_digest_func_name(const char* algorithm) {
+    for (size_t i = 0; digest_func_map[i][0] != NULL; i++) {
+        if (pg_strcasecmp(algorithm, digest_func_map[i][0]) == 0) {
+            return digest_func_map[i][1];
+        }
+    }
+
+    return NULL;
+}
+
 /*
  * Describes how a recognized builtin maps to ClickHouse.
  *   ch_name = literal: deparse emits ch_name
@@ -313,6 +335,18 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         def->paren_count = 3;
         return true;
         /* Special hashing function returns lowercase hex. */
+    case F_SHA224:
+        def->ch_name = "SHA224";
+        return true;
+    case F_SHA256:
+        def->ch_name = "SHA256";
+        return true;
+    case F_SHA384:
+        def->ch_name = "SHA384";
+        return true;
+    case F_SHA512:
+        def->ch_name = "SHA512";
+        return true;
     case F_ENCODE:
         def->cf_type = CF_ENCODE;
         def->ch_name = "\1";
@@ -671,6 +705,22 @@ chfdw_check_for_custom_function(Oid funcid) {
                 if (STR_EQUAL(proname, "levenshtein") && procform->pronargs == 2) {
                     strcpy(entry->custom_name, "editDistanceUTF8");
                 } else if (!(STR_EQUAL(proname, "soundex"))) {
+                    ReleaseSysCache(proctup);
+                    pfree(extname);
+                    hash_search(
+                        custom_objects_cache, (void*)&funcid, HASH_REMOVE, NULL
+                    );
+                    return NULL;
+                }
+            } else if (STR_EQUAL(extname, "pgcrypto")) {
+                if (STR_EQUAL(proname, "digest") && procform->pronargs == 2 &&
+                    (procform->proargtypes.values[0] == TEXTOID ||
+                     procform->proargtypes.values[0] == BYTEAOID) &&
+                    procform->proargtypes.values[1] == TEXTOID &&
+                    procform->prorettype == BYTEAOID) {
+                    entry->cf_type = CF_DIGEST;
+                    strcpy(entry->custom_name, "\1");
+                } else {
                     ReleaseSysCache(proctup);
                     pfree(extname);
                     hash_search(

@@ -188,6 +188,7 @@ chfdw_is_shippable(
 ) {
     ShippableCacheKey key;
     ShippableCacheEntry* entry;
+    CustomObjectDef* cdef = NULL;
 
     /*
      * For operators, check for custom overrides before the builtin shortcut,
@@ -195,7 +196,7 @@ chfdw_is_shippable(
      * handling.
      */
     if (classId == OperatorRelationId) {
-        CustomObjectDef* cdef = chfdw_check_for_custom_operator(objectId, NULL);
+        cdef = chfdw_check_for_custom_operator(objectId, NULL);
 
         if (cdef) {
             switch (cdef->cf_type) {
@@ -213,10 +214,11 @@ chfdw_is_shippable(
 
     /*
      * For procedures, check for custom overrides before the builtin shortcut
-     * so the caller gets the CustomObjectDef it needs for deparse.
+     * so the caller gets the CustomObjectDef it needs for deparse. Extension
+     * functions such as pgcrypto's digest() also need argument validation here.
      */
-    if (classId == ProcedureRelationId && chfdw_is_builtin(objectId)) {
-        CustomObjectDef* cdef = chfdw_check_for_custom_function(objectId);
+    if (classId == ProcedureRelationId) {
+        cdef = chfdw_check_for_custom_function(objectId);
 
         if (cdef) {
             if (outcdef != NULL) {
@@ -310,6 +312,25 @@ chfdw_is_shippable(
                     return false;
                 }
             } break;
+            case CF_DIGEST: {
+                Expr* algorithm = (Expr*)list_nth(((FuncExpr*)node)->args, 1);
+
+                if (!IsA(algorithm, Const)) {
+                    return false;
+                }
+
+                Const* algorithm_const = (Const*)algorithm;
+                if (algorithm_const->constisnull) {
+                    return false;
+                }
+
+                char* name = TextDatumGetCString(algorithm_const->constvalue);
+                bool ok    = chfdw_digest_func_name(name) != NULL;
+                pfree(name);
+                if (!ok) {
+                    return false;
+                }
+            } break;
             case CF_MATCH:
             case CF_SPLIT_BY_REGEX:
             case CF_REPLACE_REGEX:
@@ -396,8 +417,6 @@ chfdw_is_shippable(
     }
 
     if (classId == ProcedureRelationId) {
-        CustomObjectDef* cdef = chfdw_check_for_custom_function(objectId);
-
         if (outcdef != NULL) {
             *outcdef = cdef;
         }
