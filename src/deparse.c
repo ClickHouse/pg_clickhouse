@@ -4751,6 +4751,26 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             pfree(format);
             return;
         }
+        case CF_DIGEST: {
+            Const* algorithm          = (Const*)list_nth(node->args, 1);
+            char* name                = TextDatumGetCString(algorithm->constvalue);
+            const char* function_name = chfdw_digest_func_name(name);
+
+            if (function_name == NULL) {
+                elog(
+                    ERROR,
+                    "digest algorithm unexpectedly rejected during deparse: %s",
+                    name
+                );
+            }
+
+            appendStringInfo(buf, "%s(", function_name);
+            deparseExpr((Expr*)linitial(node->args), context);
+            appendStringInfoChar(buf, ')');
+
+            pfree(name);
+            return;
+        }
         default:
             break;
         }

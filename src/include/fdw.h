@@ -414,6 +414,7 @@ typedef enum {
     CF_PARAM_LIST_AGG,         /* ordered set agg with array prams → parametric
                                 * list aggregate function */
     CF_ENCODE,                 /* encode(bytea, fmt) → hex/base64 family */
+    CF_DIGEST,                 /* pgcrypto digest(data, algorithm) → hash function */
 } custom_object_type;
 
 typedef enum {
@@ -445,6 +446,8 @@ extern bool
 chfdw_check_for_ordered_aggregate(Aggref* agg);
 extern CustomObjectDef*
 chfdw_check_for_custom_function(Oid funcid);
+extern const char*
+chfdw_digest_func_name(const char* algorithm);
 extern CustomObjectDef*
 chfdw_check_for_custom_type(Oid typeoid);
 extern void
