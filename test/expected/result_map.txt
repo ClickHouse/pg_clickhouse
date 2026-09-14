@@ -149,6 +149,14 @@ functions.sql
  23.8       | functions_9.out
  23.3       | functions_0.out
 
+hashing.sql
+-----------
+
+ Postgres | File
+----------|---------------
+ 19       | hashing.out
+ 14-18    | hashing_1.out
+
 http.sql
 --------
 

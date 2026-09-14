@@ -1,0 +1,319 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE SERVER hashing_loopback FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'hashing_test', driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER hashing_loopback;
+CREATE SERVER hashing_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER hashing_admin;
+CALL clickhouse_perform('hashing_admin', 'DROP DATABASE IF EXISTS hashing_test');
+CALL clickhouse_perform('hashing_admin', 'CREATE DATABASE hashing_test');
+CALL clickhouse_perform('hashing_admin', $$
+    CREATE TABLE hashing_test.inputs (
+        id UInt8,
+        text_data String,
+        binary_data String,
+        algorithm String
+    ) ENGINE = TinyLog
+$$);
+CALL clickhouse_perform('hashing_admin', $$
+    INSERT INTO hashing_test.inputs VALUES
+        (1, 'abc', 'abc', 'sha256'),
+        (2, 'hello', unhex('00FF8041424300'), 'sha512')
+$$);
+CREATE FOREIGN TABLE hash_inputs (
+    id int,
+    text_data text,
+    binary_data bytea,
+    algorithm text
+) SERVER hashing_loopback OPTIONS (table_name 'inputs');
+-- Core SHA functions are calculated in ClickHouse.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sha224(binary_data) AS h FROM hash_inputs GROUP BY h;
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sha224(binary_data))
+   Relations: Aggregate on (hash_inputs)
+   Remote SQL: SELECT SHA224(binary_data) FROM hashing_test.inputs GROUP BY (SHA224(binary_data))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sha256(binary_data) AS h FROM hash_inputs GROUP BY h;
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sha256(binary_data))
+   Relations: Aggregate on (hash_inputs)
+   Remote SQL: SELECT SHA256(binary_data) FROM hashing_test.inputs GROUP BY (SHA256(binary_data))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sha384(binary_data) AS h FROM hash_inputs GROUP BY h;
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sha384(binary_data))
+   Relations: Aggregate on (hash_inputs)
+   Remote SQL: SELECT SHA384(binary_data) FROM hashing_test.inputs GROUP BY (SHA384(binary_data))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sha512(binary_data) AS h FROM hash_inputs GROUP BY h;
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sha512(binary_data))
+   Relations: Aggregate on (hash_inputs)
+   Remote SQL: SELECT SHA512(binary_data) FROM hashing_test.inputs GROUP BY (SHA512(binary_data))
+(4 rows)
+
+-- Both digest() overloads and all recognized constant algorithms are pushed
+-- down. Uppercase SHA256 exercises case-insensitive algorithm matching.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT digest(binary_data, 'md5') AS h FROM hash_inputs GROUP BY h;
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (digest(binary_data, 'md5'::text))
+   Relations: Aggregate on (hash_inputs)
+   Remote SQL: SELECT MD5(binary_data) FROM hashing_test.inputs GROUP BY (MD5(binary_data))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT digest(binary_data, 'sha1') AS h FROM hash_inputs GROUP BY h;
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (digest(binary_data, 'sha1'::text))
+   Relations: Aggregate on (hash_inputs)
+   Remote SQL: SELECT SHA1(binary_data) FROM hashing_test.inputs GROUP BY (SHA1(binary_data))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT digest(binary_data, 'sha224') AS h FROM hash_inputs GROUP BY h;
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (digest(binary_data, 'sha224'::text))
+   Relations: Aggregate on (hash_inputs)
+   Remote SQL: SELECT SHA224(binary_data) FROM hashing_test.inputs GROUP BY (SHA224(binary_data))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT digest(binary_data, 'sha256') AS h FROM hash_inputs GROUP BY h;
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (digest(binary_data, 'sha256'::text))
+   Relations: Aggregate on (hash_inputs)
+   Remote SQL: SELECT SHA256(binary_data) FROM hashing_test.inputs GROUP BY (SHA256(binary_data))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT digest(binary_data, 'sha384') AS h FROM hash_inputs GROUP BY h;
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (digest(binary_data, 'sha384'::text))
+   Relations: Aggregate on (hash_inputs)
+   Remote SQL: SELECT SHA384(binary_data) FROM hashing_test.inputs GROUP BY (SHA384(binary_data))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT digest(binary_data, 'sha512') AS h FROM hash_inputs GROUP BY h;
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (digest(binary_data, 'sha512'::text))
+   Relations: Aggregate on (hash_inputs)
+   Remote SQL: SELECT SHA512(binary_data) FROM hashing_test.inputs GROUP BY (SHA512(binary_data))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT digest(text_data, 'SHA256') AS h FROM hash_inputs GROUP BY h;
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (digest(text_data, 'SHA256'::text))
+   Relations: Aggregate on (hash_inputs)
+   Remote SQL: SELECT SHA256(text_data) FROM hashing_test.inputs GROUP BY (SHA256(text_data))
+(4 rows)
+
+-- Dynamic and unsupported algorithms remain local to PostgreSQL.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM hash_inputs
+WHERE digest(binary_data, algorithm) IS NOT NULL;
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Foreign Scan on public.hash_inputs
+   Output: id
+   Filter: (digest(hash_inputs.binary_data, hash_inputs.algorithm) IS NOT NULL)
+   Remote SQL: SELECT id, binary_data, algorithm FROM hashing_test.inputs
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM hash_inputs
+WHERE digest(binary_data, 'unsupported') IS NOT NULL;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.hash_inputs
+   Output: id
+   Filter: (digest(hash_inputs.binary_data, 'unsupported'::text) IS NOT NULL)
+   Remote SQL: SELECT id, binary_data FROM hashing_test.inputs
+(4 rows)
+
+-- A NULL algorithm is folded away locally because digest() is strict.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM hash_inputs
+WHERE digest(binary_data, NULL::text) IS NOT NULL;
+           QUERY PLAN            
+---------------------------------
+ Result
+   Output: id
+   Replaces: Scan on hash_inputs
+   One-Time Filter: false
+(4 rows)
+
+-- Force the expressions into the remote target and verify raw bytea results,
+-- including a value containing NUL and non-UTF-8 bytes.
+SELECT id, sha256(binary_data) AS hash
+FROM hash_inputs
+GROUP BY id, hash
+ORDER BY id;
+ id |                                hash                                
+----+--------------------------------------------------------------------
+  1 | \xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+  2 | \xcc65b137552920d8ebd6807355fb8a95468c19c7d42f0b01acaf0102426f213e
+(2 rows)
+
+SELECT id, digest(binary_data, 'sha512') AS hash
+FROM hash_inputs
+GROUP BY id, hash
+ORDER BY id;
+ id |                                                                hash                                                                
+----+------------------------------------------------------------------------------------------------------------------------------------
+  1 | \xddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f
+  2 | \x70d45851adc14da72957405d33eac3d11ba18c9473f87354aad1cf434f2c6d1d03ea9fbe127eb412b2b2d92f3d3df08a57e6b89cb6c20455bb7f7f48831e22ad
+(2 rows)
+
+SELECT id, digest(text_data, 'sha1') AS hash
+FROM hash_inputs
+GROUP BY id, hash
+ORDER BY id;
+ id |                    hash                    
+----+--------------------------------------------
+  1 | \xa9993e364706816aba3e25717850c26c9cd0d89d
+  2 | \xaaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d
+(2 rows)
+
+-- Verify the identical hashed values between Postgres and ClickHouse.
+CREATE TABLE pg_hash_inputs AS SELECT * FROM hash_inputs;
+SELECT digest(binary_data, 'md5') AS md5 FROM hash_inputs
+UNION ALL
+SELECT digest(binary_data, 'md5') FROM pg_hash_inputs
+ORDER BY 1;
+                md5                 
+------------------------------------
+ \x1b1f496074f89ac1dd2eb5a1c2c032e1
+ \x1b1f496074f89ac1dd2eb5a1c2c032e1
+ \x900150983cd24fb0d6963f7d28e17f72
+ \x900150983cd24fb0d6963f7d28e17f72
+(4 rows)
+
+SELECT digest(binary_data, 'sha1') AS sha1 FROM hash_inputs
+UNION ALL
+SELECT digest(binary_data, 'sha1') FROM pg_hash_inputs
+ORDER BY 1;
+                    sha1                    
+--------------------------------------------
+ \x8858d57042a20dfbebbeb1c6526d6595a04b3f7a
+ \x8858d57042a20dfbebbeb1c6526d6595a04b3f7a
+ \xa9993e364706816aba3e25717850c26c9cd0d89d
+ \xa9993e364706816aba3e25717850c26c9cd0d89d
+(4 rows)
+
+SELECT digest(binary_data, 'sha224') AS sha224 FROM hash_inputs
+UNION ALL
+SELECT digest(binary_data, 'sha224') FROM pg_hash_inputs
+UNION ALL
+SELECT sha224(binary_data) FROM hash_inputs
+UNION ALL
+SELECT sha224(binary_data) FROM pg_hash_inputs
+ORDER BY 1;
+                           sha224                           
+------------------------------------------------------------
+ \x23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7
+ \x23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7
+ \x23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7
+ \x23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7
+ \xedfd49f159bd8c78c825e9767c01b39649d993657cdd5c1653f97c79
+ \xedfd49f159bd8c78c825e9767c01b39649d993657cdd5c1653f97c79
+ \xedfd49f159bd8c78c825e9767c01b39649d993657cdd5c1653f97c79
+ \xedfd49f159bd8c78c825e9767c01b39649d993657cdd5c1653f97c79
+(8 rows)
+
+SELECT digest(binary_data, 'sha256') AS sha256 FROM hash_inputs
+UNION ALL
+SELECT digest(binary_data, 'sha256') FROM pg_hash_inputs
+UNION ALL
+SELECT sha256(binary_data) FROM hash_inputs
+UNION ALL
+SELECT sha256(binary_data) FROM pg_hash_inputs
+ORDER BY 1;
+                               sha256                               
+--------------------------------------------------------------------
+ \xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+ \xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+ \xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+ \xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+ \xcc65b137552920d8ebd6807355fb8a95468c19c7d42f0b01acaf0102426f213e
+ \xcc65b137552920d8ebd6807355fb8a95468c19c7d42f0b01acaf0102426f213e
+ \xcc65b137552920d8ebd6807355fb8a95468c19c7d42f0b01acaf0102426f213e
+ \xcc65b137552920d8ebd6807355fb8a95468c19c7d42f0b01acaf0102426f213e
+(8 rows)
+
+SELECT digest(binary_data, 'sha384') AS sha384 FROM hash_inputs
+UNION ALL
+SELECT digest(binary_data, 'sha384') FROM pg_hash_inputs
+UNION ALL
+SELECT sha384(binary_data) FROM hash_inputs
+UNION ALL
+SELECT sha384(binary_data) FROM pg_hash_inputs
+ORDER BY 1;
+                                               sha384                                               
+----------------------------------------------------------------------------------------------------
+ \x34cd9badeaae61f6fef6a31dbcce910beab8227e1fd653f9709e21afe4bdf70b5b6d45ea77d6f6195ca92ef0c7d40d40
+ \x34cd9badeaae61f6fef6a31dbcce910beab8227e1fd653f9709e21afe4bdf70b5b6d45ea77d6f6195ca92ef0c7d40d40
+ \x34cd9badeaae61f6fef6a31dbcce910beab8227e1fd653f9709e21afe4bdf70b5b6d45ea77d6f6195ca92ef0c7d40d40
+ \x34cd9badeaae61f6fef6a31dbcce910beab8227e1fd653f9709e21afe4bdf70b5b6d45ea77d6f6195ca92ef0c7d40d40
+ \xcb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7
+ \xcb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7
+ \xcb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7
+ \xcb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7
+(8 rows)
+
+SELECT digest(binary_data, 'sha512') AS sha512 FROM hash_inputs
+UNION ALL
+SELECT digest(binary_data, 'sha512') FROM pg_hash_inputs
+UNION ALL
+SELECT sha512(binary_data) FROM hash_inputs
+UNION ALL
+SELECT sha512(binary_data) FROM pg_hash_inputs
+ORDER BY 1;
+                                                               sha512                                                               
+------------------------------------------------------------------------------------------------------------------------------------
+ \x70d45851adc14da72957405d33eac3d11ba18c9473f87354aad1cf434f2c6d1d03ea9fbe127eb412b2b2d92f3d3df08a57e6b89cb6c20455bb7f7f48831e22ad
+ \x70d45851adc14da72957405d33eac3d11ba18c9473f87354aad1cf434f2c6d1d03ea9fbe127eb412b2b2d92f3d3df08a57e6b89cb6c20455bb7f7f48831e22ad
+ \x70d45851adc14da72957405d33eac3d11ba18c9473f87354aad1cf434f2c6d1d03ea9fbe127eb412b2b2d92f3d3df08a57e6b89cb6c20455bb7f7f48831e22ad
+ \x70d45851adc14da72957405d33eac3d11ba18c9473f87354aad1cf434f2c6d1d03ea9fbe127eb412b2b2d92f3d3df08a57e6b89cb6c20455bb7f7f48831e22ad
+ \xddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f
+ \xddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f
+ \xddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f
+ \xddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f
+(8 rows)
+
+CALL clickhouse_perform('hashing_admin', 'DROP DATABASE hashing_test');
+DROP FOREIGN TABLE hash_inputs;
+DROP USER MAPPING FOR CURRENT_USER SERVER hashing_loopback;
+DROP USER MAPPING FOR CURRENT_USER SERVER hashing_admin;
+DROP SERVER hashing_loopback;
+DROP SERVER hashing_admin;

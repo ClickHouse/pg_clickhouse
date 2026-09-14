@@ -1334,6 +1334,8 @@ equivalents as follows:
 *   `regexp_replace`: [replaceRegexpOne](https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpOne) or [replaceRegexpOne](https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpAll) when the `g` flag is present
 *   `regexp_split_to_array`: [splitByRegexp](https://clickhouse.com/docs/sql-reference/functions/splitting-merging-functions#splitByRegexp)
 *   `md5`: [MD5](https://clickhouse.com/docs/sql-reference/functions/hash-functions#MD5)
+*   `sha224`, `sha256`, `sha384`, and `sha512`: Corresponding ClickHouse
+    [SHA functions](https://clickhouse.com/docs/sql-reference/functions/hash-functions#sha224)
 *   `encode(bytea, fmt)` when `fmt` is a string constant (case-insensitive):
     *   `encode(bytea, 'hex')`: [hex](https://clickhouse.com/docs/sql-reference/functions/encoding-functions#hex)
         wrapped in [lower](https://clickhouse.com/docs/sql-reference/functions/string-functions#lower),
@@ -1461,6 +1463,13 @@ Two [fuzzystrmatch] functions push down to ClickHouse:
 
 *   `soundex`: [soundex](https://clickhouse.com/docs/sql-reference/functions/string-functions#soundex)
 *   `levenshtein` (2-arg): [editDistanceUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#editDistanceUTF8)
+
+#### pgcyrpto
+
+*   `digest(text, text)` and `digest(bytea, text)`: Corresponding ClickHouse
+    [hash function](https://clickhouse.com/docs/sql-reference/functions/hash-functions)
+    when the algorithm is a constant `md5`, `sha1`, `sha224`,
+    `sha256`, `sha384`, or `sha512` (matched case-insensitively).
 
 ### Pushdown Casts
 

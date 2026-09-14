@@ -54,6 +54,10 @@ All notable changes to this project will be documented in this file. It uses the
     `clickhouse_query(server, sql)` to read rows and
     `CALL clickhouse_perform(server, sql)` to run statements that return none;
     both take a foreign server rather than a connection string ([#346]).
+*   Added pushdown for PostgreSQL `sha224()`, `sha256()`, `sha384()`, and
+    `sha512()` functions, along with supported constant-algorithm calls to the
+    pgcrypto extension's `digest()` function. Thanks to Siva Girish Ramesh for
+    the PR ([#360]).
 
 ### 🐞 Bug Fixes
 
@@ -90,6 +94,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#355 Map UInt64 & Int128/UInt128/Int256/UInt256 to numeric"
   [#359]: https://github.com/ClickHouse/pg_clickhouse/pull/359
     "ClickHouse/pg_clickhouse#359 update pg-clickhouse-c for text encoding verification"
+  [#360]: https://github.com/ClickHouse/pg_clickhouse/pull/360
+    "ClickHouse/pg_clickhouse#360 Add pgcrypto digest and SHA function pushdown"
 
 ## [v0.10.0] — 2026-08-11
 
