@@ -440,7 +440,8 @@ clickhouse_query(PG_FUNCTION_ARGS) {
     user   = GetUserMapping(GetUserId(), server->serverid);
     sconn  = chfdw_get_scan_connection(user);
 
-    ch_query query = new_query(sql, 0, NULL, tupdesc, retrieved_attrs);
+    ch_query query =
+        new_query(sql, 0, NULL, tupdesc, retrieved_attrs, sconn.gate.encoding_check);
 
     cursor = sconn.gate.methods->simple_query(sconn.gate.conn, &query);
 
@@ -453,8 +454,14 @@ clickhouse_query(PG_FUNCTION_ARGS) {
     );
 
     for (;;) {
-        ChFdwScanRowContext ctx = { tupdesc, retrieved_attrs, attinmeta,
-                                    cursor,  values,          nulls };
+        ChFdwScanRowContext ctx = {
+            .tupdesc         = tupdesc,
+            .retrieved_attrs = retrieved_attrs,
+            .attinmeta       = attinmeta,
+            .cursor          = cursor,
+            .values          = values,
+            .nulls           = nulls,
+        };
 
         oldcontext = MemoryContextSwitchTo(row_cxt);
         if (sconn.gate.methods->fetch_row(&ctx) == NULL) {
@@ -504,7 +511,7 @@ clickhouse_perform(PG_FUNCTION_ARGS) {
     user        = GetUserMapping(GetUserId(), server->serverid);
     sconn       = chfdw_get_scan_connection(user);
 
-    ch_query query = new_query(sql, 0, NULL, NULL, NULL);
+    ch_query query = new_query(sql, 0, NULL, NULL, NULL, sconn.gate.encoding_check);
 
     /* deleting the cursor context drains the connection so it stays reusable */
     cursor = sconn.gate.methods->simple_query(sconn.gate.conn, &query);
@@ -1183,12 +1190,14 @@ fetch_tuple(ChFdwScanState* fsstate, TupleDesc tupdesc) {
 
     /* Initialize to nulls for any columns not present in result */
     memset(nulls, true, tupdesc->natts * sizeof(bool));
-    ChFdwScanRowContext ctx = { tupdesc,
-                                fsstate->retrieved_attrs,
-                                fsstate->attinmeta,
-                                fsstate->ch_cursor,
-                                values,
-                                nulls };
+    ChFdwScanRowContext ctx = {
+        .tupdesc         = tupdesc,
+        .retrieved_attrs = fsstate->retrieved_attrs,
+        .attinmeta       = fsstate->attinmeta,
+        .cursor          = fsstate->ch_cursor,
+        .values          = values,
+        .nulls           = nulls,
+    };
 
     /* In both cases (binary and non binary), NULL means end of tuples. */
     {
@@ -1262,7 +1271,8 @@ clickhouseIterateForeignScan(ForeignScanState* node) {
             fsstate->numParams,
             fsstate->param_values,
             fsstate->tupdesc,
-            fsstate->retrieved_attrs
+            fsstate->retrieved_attrs,
+            fsstate->scan_conn.gate.encoding_check
         );
 
         /*
@@ -1742,7 +1752,6 @@ create_foreign_modify(
     UserMapping* user;
     MemoryContext old_mcxt;
     Relation rel = rri->ri_RelationDesc;
-    ch_query q   = new_query(query, 0, NULL, RelationGetDescr(rel), target_attrs);
 
     /* Begin constructing CHFdwModifyState. */
     fmstate      = (CHFdwModifyState*)palloc0(sizeof(CHFdwModifyState));
@@ -1764,6 +1773,14 @@ create_foreign_modify(
 
     /* make a connection and prepare an insertion state */
     fmstate->conn = chfdw_get_connection(user);
+    ch_query q    = new_query(
+        query,
+        0,
+        NULL,
+        RelationGetDescr(rel),
+        target_attrs,
+        fmstate->conn.encoding_check
+    );
 
     old_mcxt       = MemoryContextSwitchTo(PortalContext);
     fmstate->state = fmstate->conn.methods->prepare_insert(

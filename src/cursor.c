@@ -91,7 +91,8 @@ chfdw_cursor_open(void* conn, const ch_query* query, const ch_cursor_source* src
 
         /* Blocks decode into cxt, outliving the per-row context. */
         src->init_reader(&cursor->reader, cursor->response);
-        cursor->columns_count = pgch_reader_columns(&cursor->reader);
+        cursor->columns_count         = pgch_reader_columns(&cursor->reader);
+        cursor->reader.encoding_check = query->encoding_check;
 
         if (cursor->reader.error) {
             raise_reader_error(cursor);

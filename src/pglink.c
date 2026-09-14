@@ -186,8 +186,9 @@ chfdw_http_connect(ch_connection_details* details) {
         );
     }
 
-    res.conn    = conn;
-    res.methods = &http_methods;
+    res.conn           = conn;
+    res.methods        = &http_methods;
+    res.encoding_check = details->encoding_check;
     return res;
 }
 
@@ -214,7 +215,8 @@ kill_query(void* conn, const char* query_id) {
         0,
         NULL,
         NULL,
-        NULL
+        NULL,
+        CHC_ENC_FAIL
     );
 
     /* Not cancellable: it's the cleanup for an already cancelled query. */
@@ -640,8 +642,9 @@ ch_connection
 chfdw_binary_connect(ch_connection_details* details) {
     ch_connection res;
 
-    res.conn    = ch_binary_connect(details);
-    res.methods = &binary_methods;
+    res.conn           = ch_binary_connect(details);
+    res.methods        = &binary_methods;
+    res.encoding_check = details->encoding_check;
     return res;
 }
 
@@ -1130,7 +1133,7 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
     UserMapping* user  = GetUserMapping(userid, server->serverid);
     ch_connection conn = chfdw_get_connection(user);
     ch_cursor* cursor;
-    ch_query query = new_query(NULL, 0, NULL, NULL, NULL);
+    ch_query query = new_query(NULL, 0, NULL, NULL, NULL, conn.encoding_check);
     List* result   = NIL;
     Datum* row_values;
 
@@ -1148,9 +1151,10 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
         NULL, list_make2_int(1, 2), NULL, NULL, NULL, NULL
     };
 
-    ChFdwScanRowContext tables_ctx = { NULL, list_make3_int(1, 2, 3),
-                                       NULL, cursor,
-                                       NULL, NULL };
+    ChFdwScanRowContext tables_ctx = {
+        .retrieved_attrs = list_make3_int(1, 2, 3),
+        .cursor          = cursor,
+    };
 
     /*
      * Drain the outer query into private strings before opening the per-table

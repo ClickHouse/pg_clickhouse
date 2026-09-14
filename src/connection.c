@@ -51,9 +51,12 @@ chfdw_xact_callback(XactEvent event, void* arg);
 static ch_connection
 clickhouse_connect(ForeignServer* server, UserMapping* user) {
     /* default settings */
-    ch_connection_details details = { .driver = "http",
-                                      .host   = "127.0.0.1",
-                                      .dbname = "default" };
+    ch_connection_details details = {
+        .driver         = "http",
+        .host           = "127.0.0.1",
+        .dbname         = "default",
+        .encoding_check = CHC_ENC_FAIL,
+    };
 
     chfdw_extract_options(
         server->options,
@@ -65,7 +68,8 @@ clickhouse_connect(ForeignServer* server, UserMapping* user) {
         &details.password,
         &details.compression,
         &details.tls,
-        &details.min_tls_version
+        &details.min_tls_version,
+        &details.encoding_check
     );
     chfdw_extract_options(
         user->options,
@@ -77,7 +81,8 @@ clickhouse_connect(ForeignServer* server, UserMapping* user) {
         &details.password,
         &details.compression,
         &details.tls,
-        &details.min_tls_version
+        &details.min_tls_version,
+        &details.encoding_check
     );
 
     if (strcmp(details.driver, "http") == 0) {

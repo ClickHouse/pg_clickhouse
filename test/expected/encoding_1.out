@@ -1,0 +1,163 @@
+\unset ECHO
+-- Create servers for each engine.
+CREATE SERVER encoding_bin_svr FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER encoding_bin_svr;
+CREATE SERVER encoding_http_svr FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER encoding_http_svr;
+-- Create the schema in ClickHouse.
+CREATE SERVER encoding_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER encoding_admin;
+CALL clickhouse_perform('encoding_admin', 'DROP DATABASE IF EXISTS encoding_test');
+CALL clickhouse_perform('encoding_admin', 'CREATE DATABASE encoding_test');
+CALL clickhouse_perform('encoding_admin', $$
+    CREATE TABLE encoding_test.things (
+        id    Int,
+        name  String,
+        value String
+    ) ENGINE = MergeTree
+    PRIMARY KEY id
+$$);
+-- Insert some data.
+CALL clickhouse_perform('encoding_admin', $$
+    INSERT INTO encoding_test.things
+    VALUES (1, 'valid', 'acn'),
+           (2, 'nul byte', 'a\x00n')
+           (3, 'nul & invalid octet', 'a\x00c\x80n'),
+           (4, 'invalid octet & nul', 'a\x80n\x00e'),
+           (5, 'valid 2-octet sequence', 'a\x\xc3\xb1b'),
+           (6, 'invalid 2-octet sequence', 'a\xc\x28b')
+$$);
+-- ===================================================================
+-- Create Foreign tables.
+-- ===================================================================
+CREATE SCHEMA encoding_bin;
+CREATE SCHEMA encoding_http;
+IMPORT FOREIGN SCHEMA encoding_test FROM SERVER encoding_bin_svr INTO encoding_bin;
+\d encoding_bin.*
+               Foreign table "encoding_bin.things"
+ Column |  Type   | Collation | Nullable | Default | FDW options 
+--------+---------+-----------+----------+---------+-------------
+ id     | integer |           | not null |         | 
+ name   | text    |           | not null |         | 
+ value  | text    |           | not null |         | 
+Server: encoding_bin_svr
+FDW options: (database 'encoding_test', table_name 'things', engine 'MergeTree')
+
+IMPORT FOREIGN SCHEMA encoding_test FROM SERVER encoding_http_svr INTO encoding_http;
+\d encoding_http.*
+              Foreign table "encoding_http.things"
+ Column |  Type   | Collation | Nullable | Default | FDW options 
+--------+---------+-----------+----------+---------+-------------
+ id     | integer |           | not null |         | 
+ name   | text    |           | not null |         | 
+ value  | text    |           | not null |         | 
+Server: encoding_http_svr
+FDW options: (database 'encoding_test', table_name 'things', engine 'MergeTree')
+
+-- Should fail on invalid bytes (tests assume UTF-8 encoding).
+SELECT * FROM encoding_bin.things ORDER BY id;
+ERROR:  invalid byte sequence for encoding "SQL_ASCII": 0x00
+DETAIL:  Remote Query: SELECT id, name, value FROM encoding_test.things ORDER BY id ASC NULLS LAST
+SELECT * FROM encoding_http.things ORDER BY id;
+ERROR:  invalid byte sequence for encoding "SQL_ASCII": 0x00
+DETAIL:  Remote Query: SELECT id, name, value FROM encoding_test.things ORDER BY id ASC NULLS LAST
+-- Explicit fail.
+ALTER SERVER encoding_bin_svr OPTIONS (ADD encoding_check 'fail');
+ALTER SERVER encoding_http_svr OPTIONS (ADD encoding_check 'FAIL');
+SELECT * FROM encoding_bin.things ORDER BY id;
+ERROR:  invalid byte sequence for encoding "SQL_ASCII": 0x00
+DETAIL:  Remote Query: SELECT id, name, value FROM encoding_test.things ORDER BY id ASC NULLS LAST
+SELECT * FROM encoding_http.things ORDER BY id;
+ERROR:  invalid byte sequence for encoding "SQL_ASCII": 0x00
+DETAIL:  Remote Query: SELECT id, name, value FROM encoding_test.things ORDER BY id ASC NULLS LAST
+-- Truncate.
+ALTER SERVER encoding_bin_svr OPTIONS (SET encoding_check 'truncate');
+ALTER SERVER encoding_http_svr OPTIONS (SET encoding_check 'TRUNCATE');
+SELECT * FROM encoding_bin.things ORDER BY id;
+ id |           name           | value  
+----+--------------------------+--------
+  1 | valid                    | acn
+  2 | nul byte                 | a
+  3 | nul & invalid octet      | a
+  4 | invalid octet & nul      | a€n
+  5 | valid 2-octet sequence   | aïc3±b
+  6 | invalid 2-octet sequence | a¿x28b
+(6 rows)
+
+SELECT * FROM encoding_http.things ORDER BY id;
+ id |           name           | value  
+----+--------------------------+--------
+  1 | valid                    | acn
+  2 | nul byte                 | a
+  3 | nul & invalid octet      | a
+  4 | invalid octet & nul      | a€n
+  5 | valid 2-octet sequence   | aïc3±b
+  6 | invalid 2-octet sequence | a¿x28b
+(6 rows)
+
+-- Replace.
+ALTER SERVER encoding_bin_svr OPTIONS (SET encoding_check 'replace');
+ALTER SERVER encoding_http_svr OPTIONS (SET encoding_check 'Replace');
+SELECT * FROM encoding_bin.things ORDER BY id;
+ id |           name           | value  
+----+--------------------------+--------
+  1 | valid                    | acn
+  2 | nul byte                 | an
+  3 | nul & invalid octet      | ac€n
+  4 | invalid octet & nul      | a€ne
+  5 | valid 2-octet sequence   | aïc3±b
+  6 | invalid 2-octet sequence | a¿x28b
+(6 rows)
+
+SELECT * FROM encoding_http.things ORDER BY id;
+ id |           name           | value  
+----+--------------------------+--------
+  1 | valid                    | acn
+  2 | nul byte                 | an
+  3 | nul & invalid octet      | ac€n
+  4 | invalid octet & nul      | a€ne
+  5 | valid 2-octet sequence   | aïc3±b
+  6 | invalid 2-octet sequence | a¿x28b
+(6 rows)
+
+-- Remove.
+ALTER SERVER encoding_bin_svr OPTIONS (SET encoding_check 'remove');
+ALTER SERVER encoding_http_svr OPTIONS (SET encoding_check 'reMove');
+SELECT * FROM encoding_bin.things ORDER BY id;
+ id |           name           | value  
+----+--------------------------+--------
+  1 | valid                    | acn
+  2 | nul byte                 | an
+  3 | nul & invalid octet      | ac€n
+  4 | invalid octet & nul      | a€ne
+  5 | valid 2-octet sequence   | aïc3±b
+  6 | invalid 2-octet sequence | a¿x28b
+(6 rows)
+
+SELECT * FROM encoding_http.things ORDER BY id;
+ id |           name           | value  
+----+--------------------------+--------
+  1 | valid                    | acn
+  2 | nul byte                 | an
+  3 | nul & invalid octet      | ac€n
+  4 | invalid octet & nul      | a€ne
+  5 | valid 2-octet sequence   | aïc3±b
+  6 | invalid 2-octet sequence | a¿x28b
+(6 rows)
+
+-- Invalid encoding_check.
+ALTER SERVER encoding_bin_svr OPTIONS (SET encoding_check 'nonesuch');
+ERROR:  invalid value for option "encoding_check": "nonesuch"
+HINT:  Valid values are: fail, truncate, remove, replace
+ALTER SERVER encoding_http_svr OPTIONS (SET encoding_check 'nonesuch');
+ERROR:  invalid value for option "encoding_check": "nonesuch"
+HINT:  Valid values are: fail, truncate, remove, replace
+-- Clean up.
+DROP USER MAPPING FOR CURRENT_USER SERVER encoding_bin_svr;
+DROP SERVER encoding_bin_svr CASCADE;
+NOTICE:  drop cascades to foreign table encoding_bin.things
+DROP USER MAPPING FOR CURRENT_USER SERVER encoding_http_svr;
+DROP SERVER encoding_http_svr CASCADE;
+NOTICE:  drop cascades to foreign table encoding_http.things

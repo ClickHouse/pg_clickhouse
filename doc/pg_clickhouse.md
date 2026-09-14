@@ -159,6 +159,15 @@ The supported options are:
         ("http") or 9440 ("binary").
     *   `off` (or `false`/`no`/`0`): never use TLS. Defaults `port` to 8123
         ("http") or 9000 ("binary").
+*   `encoding_check`: Defines how to to handle invalid characters under the
+    [database encoding] when converting ClickHouse String and JSON values. One
+    of:
+    *   `fail` (default): raise an error
+    *   `remove` removes invalid bytes
+    *   `replace`: under the UTF-8 encoding, replaces invalid bytes with the
+        Unicode replacement character (`�`); same as `remove` for other
+        encodings
+    *   `truncate` truncates the text at the first invalid byte
 
 ### ALTER SERVER
 
@@ -1733,8 +1742,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: DROP EXTENSION"
   [CREATE SERVER]: https://www.postgresql.org/docs/current/sql-createserver.html
     "PostgreSQL Docs: CREATE SERVER"
-  [CALL]: https://www.postgresql.org/docs/current/sql-call.html
-    "PostgreSQL Docs: CALL"
+  [database encoding]: https://www.postgresql.org/docs/current/multibyte.html
+    "PostgreSQL Docs: Character Set Support"
   [ALTER SERVER]: https://www.postgresql.org/docs/current/sql-alterserver.html
     "PostgreSQL Docs: ALTER SERVER"
   [DROP SERVER]: https://www.postgresql.org/docs/current/sql-dropserver.html
@@ -1809,6 +1818,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: GRANT"
   [composite type]: https://www.postgresql.org/docs/current/rowtypes.html#ROWTYPES-DECLARING
     "PostgreSQL Docs: Declaring Composite Types"
+  [CALL]: https://www.postgresql.org/docs/current/sql-call.html
+    "PostgreSQL Docs: CALL"
   [Map]: https://clickhouse.com/docs/sql-reference/data-types/map
     "ClickHouse Docs: Map"
   [String]: https://clickhouse.com/docs/sql-reference/data-types/string

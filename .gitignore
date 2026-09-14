@@ -9,6 +9,8 @@ regression.diffs
 regression.out
 /pg_clickhouse-*
 .vscode/
+.gram/
+.zed/
 _build/
 /release-notes.md
 src/include/version.h
@@ -20,3 +22,4 @@ compile_commands.json
 .cache/
 log/
 /test/schedule
+.DS_Store

@@ -9,12 +9,14 @@ DATA         = $(sort $(wildcard sql/$(EXTENSION)--*.sql) sql/$(EXTENSION)--$(EX
 DOCS         = $(wildcard doc/*.md)
 TESTS        ?= $(wildcard test/sql/*.sql)
 REGRESS      = --schedule test/schedule
-REGRESS_OPTS = --inputdir=test --load-extension=$(EXTENSION)
 PG_CONFIG   ?= pg_config
 MODULE_big   = $(EXTENSION)
 CURL_CONFIG ?= curl-config
 OS 	        ?= $(shell uname -s | tr A-Z a-z)
 ARCH         = $(shell uname -m)
+
+# Append to user-provided options (used for testing alternate encodeings).
+override REGRESS_OPTS += --inputdir=test --load-extension=$(EXTENSION) --dbname=contrib_regression
 
 # Collect all the C files to compile into MODULE_big.
 OBJS = $(subst .c,.o, $(wildcard src/*.c src/*/*.c))

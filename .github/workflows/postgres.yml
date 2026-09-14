@@ -32,3 +32,8 @@ jobs:
         run: .github/ubuntu/clickhouse.sh
       - name: Test
         run: pg-build-test
+      - name: Test SQL_ASCII
+        env:
+          REGRESS_OPTS: --no-locale --encoding=SQL_ASCII
+          TESTS: test/sql/encoding.sql
+        run: pg-build-test

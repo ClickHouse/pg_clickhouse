@@ -22,9 +22,10 @@ repos:
       - id: trailing-whitespace
         exclude: "[.](?:sql|out)$"
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
+    rev: v2.4.3
     hooks:
       - id: codespell
+        exclude: "[.]out$"
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: v22.1.5
     hooks:

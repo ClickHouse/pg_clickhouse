@@ -3,6 +3,7 @@
 
 #include "access/tupdesc.h"
 #include "kv_list.h"
+#include "pg-clickhouse-decode.h"
 
 /*
  * ch_connection_details defines the details for connecting to ClickHouse.
@@ -34,6 +35,7 @@ typedef struct {
     tls_mode tls;                /* TLS mode; CH_TLS_AUTO when not specified */
     tls_version min_tls_version; /* minimum TLS version; CH_TLS_DEFAULT
                                   * when not specified */
+    pgch_encoding_check encoding_check;
 } ch_connection_details;
 
 /* Identifies the protocol family used to choose default ports. */
@@ -80,14 +82,16 @@ typedef struct {
     const List* attr_nums;
     /* List of settings to pass to ClickHouse upon execution. */
     const kv_list* settings;
+    /* How to handle character encoding issues. */
+    const pgch_encoding_check encoding_check;
     /* Posted verbatim, already prefixed with sql; sql stays set for errors. */
     const void* body;
     const size_t body_len;
 } ch_query;
 
-#define new_query(sql, num, vals, tupdesc, attrs)                                      \
-    { sql, num, vals, tupdesc, attrs, chfdw_get_session_settings() }
+#define new_query(sql, num, vals, tupdesc, attrs, check)                               \
+    { sql, num, vals, tupdesc, attrs, chfdw_get_session_settings(), check }
 #define new_body_query(sql, body, len)                                                 \
-    { sql, 0, NULL, NULL, NULL, chfdw_get_session_settings(), body, len }
+    { sql, 0, NULL, NULL, NULL, chfdw_get_session_settings(), CHC_ENC_FAIL, body, len }
 
 #endif /* CLICKHOUSE_ENGINE_H */

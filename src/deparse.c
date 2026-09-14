@@ -2848,7 +2848,7 @@ deparseRelation(StringInfo buf, Relation rel) {
     ListCell* lc;
 
     chfdw_extract_options(
-        server->options, NULL, NULL, NULL, &dbname, NULL, NULL, NULL, NULL, NULL
+        server->options, NULL, NULL, NULL, &dbname, NULL, NULL, NULL, NULL, NULL, NULL
     );
 
     /* obtain additional catalog information. */

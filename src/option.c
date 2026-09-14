@@ -85,6 +85,8 @@ static bool
 is_ch_option(const char* keyword);
 static bool
 parse_min_tls_version(const char* val, tls_version* out);
+static bool
+parse_encoding_check(const char* val, pgch_encoding_check* out);
 
 /*
  * Validate the generic options given to a FOREIGN DATA WRAPPER, SERVER,
@@ -176,6 +178,20 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
                 );
             }
         }
+
+        if (strcmp(def->defname, "encoding_check") == 0) {
+            const char* val = defGetString(def);
+            pgch_encoding_check v;
+
+            if (!parse_encoding_check(val, &v)) {
+                ereport(
+                    ERROR,
+                    errcode(ERRCODE_FDW_INVALID_STRING_FORMAT),
+                    errmsg("invalid value for option \"encoding_check\": \"%s\"", val),
+                    errhint("Valid values are: fail, truncate, remove, replace")
+                );
+            }
+        }
     }
 
     PG_RETURN_VOID();
@@ -198,6 +214,7 @@ InitChFdwOptions(void) {
         { "driver",                  ForeignServerRelationId, false },
         { "fetch_size",              ForeignServerRelationId, false },
         { "fetch_size",              ForeignTableRelationId,  false },
+        { "encoding_check",          ForeignServerRelationId, true  },
         { "aggregatefunction",       AttributeRelationId,     false },
         { "simpleaggregatefunction", AttributeRelationId,     false },
         { "column_name",             AttributeRelationId,     false },
@@ -274,6 +291,23 @@ parse_min_tls_version(const char* val, tls_version* out) {
     return true;
 }
 
+/* Map an encoding_check option value to pgch_encoding_check. */
+static bool
+parse_encoding_check(const char* val, pgch_encoding_check* out) {
+    if (pg_strcasecmp(val, "replace") == 0) {
+        *out = CHC_ENC_REPLACE;
+    } else if (pg_strcasecmp(val, "remove") == 0) {
+        *out = CHC_ENC_REMOVE;
+    } else if (pg_strcasecmp(val, "truncate") == 0) {
+        *out = CHC_ENC_TRUNCATE;
+    } else if (pg_strcasecmp(val, "fail") == 0) {
+        *out = CHC_ENC_FAIL;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 /*
  * Check whether the given option is one of the valid clickhouse_fdw options.
  * context is the Oid of the catalog holding the object the option is for.
@@ -327,7 +361,8 @@ chfdw_extract_options(
     char** password,
     char** compression,
     tls_mode* tls,
-    tls_version* min_tls_version
+    tls_version* min_tls_version,
+    pgch_encoding_check* encoding_check
 ) {
     ListCell* lc;
 
@@ -339,6 +374,9 @@ chfdw_extract_options(
 
         if (driver && strcmp(def->defname, "driver") == 0) {
             *driver = defGetString(def);
+        } else if (encoding_check && strcmp(def->defname, "encoding_check") == 0) {
+            /* invalid values rejected by the validator; ignore here */
+            parse_encoding_check(defGetString(def), encoding_check);
         }
 
         if (is_ch_option(def->defname)) {

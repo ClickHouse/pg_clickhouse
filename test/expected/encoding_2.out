@@ -1,0 +1,2 @@
+\unset ECHO
+SKIP: can only test UTF8 or SQL_ASCII encodings

@@ -7,7 +7,21 @@ All notable changes to this project will be documented in this file. It uses the
   [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
     "Semantic Versioning 2.0.0"
 
-## [v0.11.0] — Unreleased
+## [v0.11.0] — Unreleased
+
+### 🚨 Compatibility
+
+*   This release enforces the character encoding of text and JSON data fetched
+    from ClickHouse, raising an error for violations of the Postgres database
+    encoding. Add the new `encoding_check` option to any servers that return
+    invalidly-encoded data to eliminate the errors:
+
+    ```sql
+    ALTER SERVER server_name OPTIONS (ADD encoding_check 'replace');
+    ```
+
+    Valid values are `fail`, `replace`, `remove`, and `truncate`. See the
+    [CREATE SERVER docs] for details.
 
 ### ⬆️ Dependencies
 
@@ -61,6 +75,7 @@ All notable changes to this project will be documented in this file. It uses the
     Declare the column `bytea` to keep raw bytes ([#359]).
 
   [v0.11.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.10.0...v0.11.0
+  [CREATE SERVER docs]: doc/pg_clickhouse#create-sever "pg_clickhouse Docs: CREATE SERVER"
   [#337]: https://github.com/ClickHouse/pg_clickhouse/pull/337
     "ClickHouse/pg_clickhouse#337 Avoid NULL dereference for ordered aggregates"
   [#339]: https://github.com/ClickHouse/pg_clickhouse/pull/339
@@ -76,7 +91,7 @@ All notable changes to this project will be documented in this file. It uses the
   [#359]: https://github.com/ClickHouse/pg_clickhouse/pull/359
     "ClickHouse/pg_clickhouse#359 update pg-clickhouse-c for text encoding verification"
 
-## [v0.10.0] — 2026-08-11
+## [v0.10.0] — 2026-08-11
 
 ### ⚡ Improvements
 

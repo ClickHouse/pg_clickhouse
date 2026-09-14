@@ -87,6 +87,7 @@ typedef struct {
 
 typedef struct {
     libclickhouse_methods* methods;
+    pgch_encoding_check encoding_check;
     void* conn;
 } ch_connection;
 
@@ -275,7 +276,8 @@ chfdw_extract_options(
     char** password,
     char** compression,
     tls_mode* tls,
-    tls_version* min_tls_version
+    tls_version* min_tls_version,
+    pgch_encoding_check* encoding_check
 );
 extern List*
 chfdw_parse_options(const char* options);
