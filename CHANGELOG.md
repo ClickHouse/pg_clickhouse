@@ -54,6 +54,14 @@ All notable changes to this project will be documented in this file. It uses the
     `clickhouse_query(server, sql)` to read rows and
     `CALL clickhouse_perform(server, sql)` to run statements that return none;
     both take a foreign server rather than a connection string ([#346]).
+*   Added support for JSON " compatibility views", in a Postgres view converts
+    text columns in a foreign table to json or jsonb using their input
+    functions, `json_in()` and `jsonb_in()`. When querying such view columns,
+    pg_clickhouse pushes down `json_extract_path()`,
+    `json_extract_path_text()`, `jsonb_extract_path()`, and
+    `jsonb_extract_path_text()` to the ClickHouse columns using [sub-column
+    syntax] when the path segments are all string constants. Thanks to Kostia R for the
+    PR ([#353])!
 
 ### 🐞 Bug Fixes
 
@@ -90,6 +98,10 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#355 Map UInt64 & Int128/UInt128/Int256/UInt256 to numeric"
   [#359]: https://github.com/ClickHouse/pg_clickhouse/pull/359
     "ClickHouse/pg_clickhouse#359 update pg-clickhouse-c for text encoding verification"
+  [sub-column syntax]: https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns
+    "ClickHouse Docs: Reading JSON paths as sub-columns"
+  [#353]: https://github.com/ClickHouse/pg_clickhouse/pull/353
+    "ClickHouse/pg_clickhouse#353 Add string-backed JSON path pushdown"
 
 ## [v0.10.0] — 2026-08-11
 
