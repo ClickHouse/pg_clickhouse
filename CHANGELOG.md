@@ -9,9 +9,23 @@ All notable changes to this project will be documented in this file. It uses the
 
 ## [v0.11.0] — Unreleased
 
+This release makes binary-compatible changes to the v0.10 releases. Once
+installed, any existing use of pg_clickhouse v0.10 will benefit from its
+improvements on reload. The one exception is `clickhouse_raw_query()`, which
+has been dropped in this version and will no longer work. We recommend running
+this command to drop this function:
+
+```sql
+ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
+```
+
 ### 🚨 Compatibility
 
-*   This release enforces the character encoding of text and JSON data fetched
+*   Removed `clickhouse_raw_query()`, deprecated in v0.10.0. Use
+    `clickhouse_query(server, sql)` to read rows and `CALL
+    clickhouse_perform(server, sql)` to run statements that return none; both
+    take a foreign server rather than a connection string ([#346]).
+*   This release validates the character encoding of text and JSON data fetched
     from ClickHouse, raising an error for violations of the Postgres database
     encoding. Add the new `encoding_check` option to any servers that return
     invalidly-encoded data to eliminate the errors:
@@ -21,7 +35,7 @@ All notable changes to this project will be documented in this file. It uses the
     ```
 
     Valid values are `fail`, `replace`, `remove`, and `truncate`. See the
-    [CREATE SERVER docs] for details.
+    [CREATE SERVER docs] for details ([#361])
 
 ### ⬆️ Dependencies
 
@@ -30,30 +44,26 @@ All notable changes to this project will be documented in this file. It uses the
 ### ⚡ Improvements
 
 *   `IMPORT FOREIGN SCHEMA` now preserves type modifiers through nested `Array`
-    layers, so `Array(Decimal(12,6))` imports as `numeric(12,6)[]`. It retains up
-    to six digits of `DateTime64(P)` and `Time64(P)` precision, imports `Time`,
-    `Time64`, and geometric types, and maps `FixedString(N)` to unconstrained
-    `text` because ClickHouse counts bytes while PostgreSQL character limits
-    count characters ([#349]).
+    layers, so `Array(Decimal(12,6))` imports as `numeric(12,6)[]`. It retains
+    up to six digits of `DateTime64(P)` and `Time64(P)` precision, imports
+    `Time`, `Time64`, and geometric types, and maps `FixedString(N)` to
+    unconstrained `text` because ClickHouse counts bytes while PostgreSQL
+    character limits count characters ([#349]).
 *   `IMPORT FOREIGN SCHEMA` now maps `BFloat16` to `real` and `Interval` types
     to `interval`. `IntervalNanosecond` truncates to microseconds ([#349])
-*   `Int128`, `Int256`, `UInt128`, and `UInt256` columns now read as `numeric`
-    rather than erroring, and `UInt64` reads as `numeric` rather than erroring
-    above the `bigint` maximum. `IMPORT FOREIGN SCHEMA` declares the fewest
-    digits, so `UInt64` becomes `numeric(20,0)` ([#355]).
+*   `IMPORT FOREIGN SCHEMA` now maps `Int128`, `Int256`, `UInt128`, and
+    `UInt256` columns to `numeric` rather than erroring, and `UInt64` to
+    `numeric` rather than erroring above the `bigint` maximum. It declares the
+    fewest digits, so `UInt64` becomes `numeric(20,0)` ([#355]).
 *   A `Tuple` or `Map` column read into a PostgreSQL array now fills the array
     with each record's fields rather than a record literal, so `{'k': 'v'}`
-    reads as `{{k,v}}` rather than `{"(k,v)"}`. A composite or `text` column
-    still reads a record. `IMPORT FOREIGN SCHEMA` declares such columns `text[]`
-    and `text[][]`; the `binary` driver accepts those same types on `INSERT`,
-    parsing each item as the field it fills ([#349]).
+    becomes as `{{k,v}}` rather than `{"(k,v)"}`. `IMPORT FOREIGN SCHEMA`
+    declares such columns `text[]` and `text[][]`; the `binary` driver accepts
+    those same types on `INSERT`, parsing each item as the field it fills. A
+    composite or `text` column can still be mapped to a record ([#349]).
 *   `IMPORT FOREIGN SCHEMA` now correctly imports aggregate states with literal
-    parameters or multiple arguments, preserving aggregate function name and
-    first argument type ([#349]).
-*   Removed `clickhouse_raw_query()`, deprecated in v0.10.0. Use
-    `clickhouse_query(server, sql)` to read rows and
-    `CALL clickhouse_perform(server, sql)` to run statements that return none;
-    both take a foreign server rather than a connection string ([#346]).
+    parameters or multiple arguments, preserving the aggregate function name
+    and first argument type ([#349]).
 *   Added pushdown for PostgreSQL `sha224()`, `sha256()`, `sha384()`, and
     `sha512()` functions, along with supported constant-algorithm calls to the
     pgcrypto extension's `digest()` function. Thanks to Siva Girish Ramesh for
@@ -71,9 +81,9 @@ All notable changes to this project will be documented in this file. It uses the
 *   `IMPORT FOREIGN SCHEMA` now quotes strings in foreign table DDL as
     PostgreSQL literals rather than ClickHouse literals, so a ClickHouse name,
     database, or engine no longer doubles backslashes ([#350]).
-*   `INSERT` with `binary` driver now rejects values wider than a
-    `FixedString(N)` column instead of silently truncating them, matching HTTP
-    driver errors ([#349]).
+*   `INSERT` with the `binary` driver now rejects values wider than a
+    `FixedString(N)` column rather than silently truncating them, matching
+    HTTP driver errors ([#349]).
 *   Reading a ClickHouse string into a text column validates its bytes against
     the database encoding, raising an error rather than returning invalid text.
     Declare the column `bytea` to keep raw bytes ([#359]).
@@ -94,11 +104,21 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#355 Map UInt64 & Int128/UInt128/Int256/UInt256 to numeric"
   [#359]: https://github.com/ClickHouse/pg_clickhouse/pull/359
     "ClickHouse/pg_clickhouse#359 update pg-clickhouse-c for text encoding verification"
-  [#360]: https://github.com/ClickHouse/pg_clickhouse/pull/360
-    "ClickHouse/pg_clickhouse#360 Add pgcrypto digest and SHA function pushdown"
+  [pg_clickhouse#361]: https://github.com/ClickHouse/pg_clickhouse/pull/361
+    "ClickHouse/pg_clickhouse#361 Add the `encoding_check` server option"
 
 ## [v0.10.0] — 2026-08-11
 
+This release makes binary-compatible changes to the v0.3 releases. Once
+installed, any existing use of pg_clickhouse v0.3 will benefit from its
+improvements on reload. The only changes that require an upgrade are the
+additions of the `clickhouse_server_version()`, `clickhouse_query()` functions
+and the `clickhouse_perform()` procedure. We recommend running this command
+add these features:
+
+```sql
+ALTER EXTENSION pg_clickhouse UPDATE TO '0.10';
+```
 ### ⚡ Improvements
 
 *   Added the `clickhouse_server_version(server)` function, which reports the
