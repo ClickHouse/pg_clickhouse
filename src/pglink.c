@@ -919,85 +919,6 @@ binary_finalize_insert(void* istate) {
     }
 }
 
-/* ClickHouse aggregate-state wrappers, which import as FDW column options. */
-static const char* const aggregate_wrappers[] = {
-    "AggregateFunction",
-    "SimpleAggregateFunction",
-};
-
-/* Return aggregate-state wrapper named by `declaration`, NULL for other types. */
-static const char*
-aggregate_wrapper(const char* declaration) {
-    for (size_t i = 0; i < lengthof(aggregate_wrappers); i++) {
-        size_t len = strlen(aggregate_wrappers[i]);
-
-        if (strncmp(declaration, aggregate_wrappers[i], len) == 0 &&
-            declaration[len] == '(') {
-            return aggregate_wrappers[i];
-        }
-    }
-    return NULL;
-}
-
-/*
- * Take one parameter off a ClickHouse parameter list, advancing `params` past it.
- * Return NULL once the list is empty.
- */
-static char*
-take_parameter(char** params) {
-    char* start  = *params;
-    char* end    = start;
-    int depth    = 0;
-    bool literal = false;
-
-    if (*start == '\0') {
-        return NULL;
-    }
-    for (; *end != '\0'; end++) {
-        if (*end == '\'') {
-            literal = !literal;
-        } else if (literal) {
-            continue;
-        } else if (*end == '(' || *end == '[') {
-            depth++;
-        } else if (*end == ')' || *end == ']') {
-            depth--;
-        } else if (*end == ',' && depth == 0) {
-            break;
-        }
-    }
-    *params = *end == ',' ? end + 1 : end;
-    while (**params == ' ') {
-        (*params)++;
-    }
-    return pnstrdup(start, end - start);
-}
-
-/*
- * Split an aggregate-state parameter list, which ClickHouse renders as optional
- * literal parameters, aggregate name, then one type per aggregate argument.
- * Report name through `out_func` and return first argument type, NULL for a
- * state that names none.
- */
-static char*
-take_aggregate(char* params, char** out_func) {
-    char* param;
-
-    *out_func = NULL;
-    while ((param = take_parameter(&params)) != NULL) {
-        if (*out_func != NULL) {
-            /* Reading a multi-argument state merges over its first argument. */
-            return param;
-        }
-        /* Literals ahead of name parameterize aggregate. */
-        if (*param != '\'' && *param != '-' && *param != '.' &&
-            (*param < '0' || *param > '9')) {
-            *out_func = param;
-        }
-    }
-    return NULL;
-}
-
 /*
  * Return PostgreSQL type declaration importing a ClickHouse column type.
  * Report outer nullability through `is_nullable` and aggregate-state wrappers
@@ -1013,56 +934,14 @@ parse_type(
 ) {
     char* what =
         psprintf("%s.%s", quote_identifier(table_name), quote_identifier(colname));
-    const char* wrapper = aggregate_wrapper(declaration);
     pgch_pg_type type;
     chc_type* parsed;
+    const chc_type* column;
     chc_err err = {};
+    const char* func;
+    size_t func_len;
     char* decl;
     bool as_text;
-
-    if (wrapper != NULL) {
-        char* params = pstrdup(declaration + strlen(wrapper) + 1);
-        size_t len   = strlen(params);
-        char* func;
-        char* arg;
-
-        if (len == 0 || params[len - 1] != ')') {
-            ereport(
-                ERROR,
-                errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-                errmsg(
-                    "pg_clickhouse: malformed %s type <%s> for %s",
-                    wrapper,
-                    declaration,
-                    what
-                )
-            );
-        }
-        params[len - 1] = '\0';
-
-        arg = take_aggregate(params, &func);
-        if (arg == NULL) {
-            /* count() state reads as its own result, so it needs no argument. */
-            if (func == NULL || strcmp(func, "count") != 0) {
-                ereport(
-                    ERROR,
-                    errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
-                    errmsg(
-                        "pg_clickhouse: expected an argument type in %s type <%s> "
-                        "for %s",
-                        wrapper,
-                        declaration,
-                        what
-                    )
-                );
-            }
-            return "BIGINT";
-        }
-
-        *options    = lappend(*options, makeString(pstrdup(wrapper)));
-        *options    = lappend(*options, makeString(func));
-        declaration = arg;
-    }
 
     /*
      * Legacy Object('json') predates JSON and serializes as a materialized
@@ -1076,6 +955,14 @@ parse_type(
         );
     }
 
+    /* count() omits argument type, but countMerge() always returns UInt64 */
+    if (strcmp(declaration, "AggregateFunction(count)") == 0) {
+        *options     = lappend(*options, makeString(pstrdup("AggregateFunction")));
+        *options     = lappend(*options, makeString(pstrdup("count")));
+        *is_nullable = true;
+        return "BIGINT";
+    }
+
     if (chc_type_parse(declaration, strlen(declaration), &pgch_alloc, &parsed, &err) !=
         CHC_OK) {
         ereport(
@@ -1086,8 +973,27 @@ parse_type(
         );
     }
 
-    type         = pgch_pg_type_for(parsed, what);
-    *is_nullable = type.nullable;
+    /* Import state using first argument type, record merge function for reads */
+    column = parsed;
+    func   = chc_type_agg_function(column, &func_len);
+    if (func != NULL) {
+        const char* wrapper = "AggregateFunction";
+
+        if (chc_type_kind(column) == CHC_SIMPLE_AGGREGATE_FUNCTION) {
+            wrapper = "SimpleAggregateFunction";
+        }
+        *options = lappend(*options, makeString(pstrdup(wrapper)));
+        *options = lappend(*options, makeString(pnstrdup(func, func_len)));
+        column   = chc_type_child(column, 0);
+    }
+
+    type = pgch_pg_type_for(column, what);
+
+    /*
+     * States read as merge results, so leave them nullable; otherwise, NOT NULL
+     * lets PostgreSQL 19 fold count(state) into count(*), losing the merge.
+     */
+    *is_nullable = type.nullable || func != NULL;
 
     /* Generic record pseudotypes cannot define columns, fall back to text arrays. */
     as_text = !pgch_pg_type_is_column(type);
@@ -1105,7 +1011,7 @@ parse_type(
         elog(
             NOTICE,
             "pg_clickhouse: ClickHouse <%.*s> type was translated to <%s> type for "
-            "column \"%s\", please create composite type and alter the column if "
+            "column \"%s\"; please create composite type and alter the column if "
             "needed",
             (int)strcspn(declaration, "("),
             declaration,

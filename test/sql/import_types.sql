@@ -74,6 +74,118 @@ SELECT attname, format_type(atttypid, atttypmod) AS type
 
 SELECT * FROM import_types_wide.wide;
 
+-- ClickHouse flattens Nested at creation, even when import disables flattening
+BEGIN;
+DO $$
+BEGIN
+    PERFORM set_config(
+        'pg_clickhouse.session_settings',
+        concat_ws(', ', nullif(current_setting('pg_clickhouse.session_settings'), ''),
+                  'flatten_nested 1'),
+        true
+    );
+END
+$$;
+CALL clickhouse_perform('import_types_admin', 'CREATE TABLE import_types_test.flattened (
+    id Int32, items Nested(a Int32, b Decimal(9,4))
+) ENGINE = MergeTree ORDER BY (id)');
+CALL clickhouse_perform('import_types_admin', 'INSERT INTO import_types_test.flattened
+    VALUES (1, [10, 20], [1.5, -2.25])');
+COMMIT;
+
+-- Keep Nested fields together for import
+BEGIN;
+DO $$
+BEGIN
+    PERFORM set_config(
+        'pg_clickhouse.session_settings',
+        concat_ws(', ', nullif(current_setting('pg_clickhouse.session_settings'), ''),
+                  'flatten_nested 0'),
+        true
+    );
+END
+$$;
+CALL clickhouse_perform('import_types_admin', 'CREATE TABLE import_types_test.opened (
+    id      Int32,
+    items   Nested(a Int32, b Decimal(9,4)),
+    pairs   Array(Nested(k String, v Int64)),
+    total   SimpleAggregateFunction(sum, Int64),
+    latest  SimpleAggregateFunction(max, Nullable(DateTime64(9))),
+    seen    AggregateFunction(count),
+    spread  AggregateFunction(quantiles(0.5, 0.9), Int32)
+) ENGINE = MergeTree ORDER BY (id);
+');
+CREATE SCHEMA import_types_opened;
+IMPORT FOREIGN SCHEMA import_types_test LIMIT TO (flattened)
+    FROM SERVER import_types_loopback INTO import_types_opened;
+IMPORT FOREIGN SCHEMA import_types_test LIMIT TO (opened)
+    FROM SERVER import_types_loopback INTO import_types_opened;
+COMMIT;
+
+SELECT attname, format_type(atttypid, atttypmod) AS type, attndims
+  FROM pg_attribute
+ WHERE attrelid = 'import_types_opened.flattened'::regclass AND attnum > 0
+ ORDER BY attnum;
+
+SELECT id, "items.a", "items.b" FROM import_types_opened.flattened;
+
+SELECT attname, format_type(atttypid, atttypmod) AS type, attndims, attnotnull,
+       attfdwoptions
+  FROM pg_attribute
+ WHERE attrelid = 'import_types_opened.opened'::regclass AND attnum > 0
+ ORDER BY attnum;
+
+CALL clickhouse_perform('import_types_admin', 'INSERT INTO import_types_test.opened
+    (id, items, pairs, total, latest) VALUES (
+    1, [(10, 1.5), (20, -2.25)], [[(''k'', 42)]], 7,
+    ''2026-08-19 03:04:05.678901234''
+)');
+SELECT id, items, pairs, total, latest FROM import_types_opened.opened;
+
+CREATE TYPE import_types_item AS (a integer, b numeric(9,4));
+CREATE TYPE import_types_label AS ENUM ('one', 'two');
+CREATE TYPE import_types_map_pair AS (key text, value bigint);
+CREATE TYPE import_types_tuple AS (number integer, name text);
+CREATE FOREIGN TABLE import_types_opened.records (
+    id    integer,
+    items import_types_item[]
+) SERVER import_types_loopback OPTIONS (table_name 'opened');
+CREATE FOREIGN TABLE import_types_opened.mapped_records (
+    id    integer,
+    label import_types_label,
+    pairs import_types_map_pair[],
+    pair  import_types_tuple
+) SERVER import_types_loopback OPTIONS (table_name 'mapped');
+SELECT * FROM import_types_opened.records;
+SELECT label, pairs, pair FROM import_types_opened.mapped_records;
+
+-- JSON parameters require ClickHouse 25.1 or newer
+\set ECHO errors
+SELECT split_part(clickhouse_server_version('import_types_loopback'), '.', 1)::int >= 25
+    AS json_params \gset
+\if :json_params
+CALL clickhouse_perform('import_types_admin', 'CREATE TABLE import_types_test.doc (
+    id Int32,
+    doc JSON(
+        data Array(Tuple(field String, value String)),
+        fallback String,
+        filters Array(Tuple(field String, type String, value String)),
+        pricing_plan_subscription_id UInt32,
+        rules Array(Tuple(field String, type String))
+    )
+) ENGINE = MergeTree ORDER BY (id);
+');
+IMPORT FOREIGN SCHEMA import_types_test LIMIT TO (doc)
+    FROM SERVER import_types_loopback INTO import_types_opened;
+SELECT format_type(atttypid, atttypmod) AS doc_type
+  FROM pg_attribute
+ WHERE attrelid = 'import_types_opened.doc'::regclass AND attname = 'doc';
+DROP FOREIGN TABLE import_types_opened.doc;
+\else
+SELECT 'jsonb' AS doc_type;
+\endif
+\set ECHO all
+
 DROP USER MAPPING FOR CURRENT_USER SERVER import_types_loopback;
 CALL clickhouse_perform('import_types_admin', 'DROP DATABASE import_types_test');
 DROP SERVER import_types_loopback CASCADE;

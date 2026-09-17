@@ -40,6 +40,8 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
 ### ⬆️ Dependencies
 
 *   Dropped support for PostgreSQL 13.
+*   Updated the vendored pg-clickhouse-c, which now parses `Nested`,
+    `SimpleAggregateFunction`, and parameterized `JSON` types ([#363]).
 
 ### ⚡ Improvements
 
@@ -62,8 +64,15 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     those same types on `INSERT`, parsing each item as the field it fills. A
     composite or `text` column can still be mapped to a record ([#349]).
 *   `IMPORT FOREIGN SCHEMA` now correctly imports aggregate states with literal
-    parameters or multiple arguments, preserving the aggregate function name
-    and first argument type ([#349]).
+    parameters or multiple arguments. It uses the first argument as the column
+    type and stores the aggregate function name, without parameters, in a
+    column option. Because `AggregateFunction(count)` has no argument type, it
+    imports as `bigint` ([#349], [#363]).
+*   `IMPORT FOREIGN SCHEMA` now imports `Nested` as `text[][]`, with one array
+    per nested row. It also imports parameterized `JSON` as `jsonb` by default,
+    which can be mapped manually to `json` or `text`, and reads
+    `SimpleAggregateFunction` columns. These types previously caused errors
+    ([#363]).
 *   Added pushdown for PostgreSQL `sha224()`, `sha256()`, `sha384()`, and
     `sha512()` functions, along with supported constant-algorithm calls to the
     pgcrypto extension's `digest()` function. Thanks to Siva Girish Ramesh for
@@ -106,6 +115,8 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     "ClickHouse/pg_clickhouse#359 update pg-clickhouse-c for text encoding verification"
   [pg_clickhouse#361]: https://github.com/ClickHouse/pg_clickhouse/pull/361
     "ClickHouse/pg_clickhouse#361 Add the `encoding_check` server option"
+  [#363]: https://github.com/ClickHouse/pg_clickhouse/pull/363
+    "ClickHouse/pg_clickhouse#363 update pg-clickhouse-c"
 
 ## [v0.10.0] — 2026-08-11
 

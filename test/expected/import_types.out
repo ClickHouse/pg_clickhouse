@@ -37,8 +37,8 @@ CREATE SCHEMA import_types;
 IMPORT FOREIGN SCHEMA import_types_test FROM SERVER import_types_loopback
     INTO import_types;
 NOTICE:  pg_clickhouse: ClickHouse <column "stamp_cap"> precision exceeds microseconds (6), timestamp(6) with time zone truncates it
-NOTICE:  pg_clickhouse: ClickHouse <Map> type was translated to <TEXT[][]> type for column "pairs", please create composite type and alter the column if needed
-NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "pair", please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Map> type was translated to <TEXT[][]> type for column "pairs"; please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "pair"; please create composite type and alter the column if needed
 -- Leaf modifiers survive Array nesting, and attndims keeps ClickHouse depth
 SELECT attname, format_type(atttypid, atttypmod) AS type, attndims, attnotnull
   FROM pg_attribute
@@ -102,9 +102,139 @@ SELECT * FROM import_types_wide.wide;
   1 | -170141183460469231731687303715884105728 | 340282366920938463463374607431768211455 | -57896044618658097711785492504343953926634992332820282019728792003956564819968 | 115792089237316195423570985008687907853269984665640564039457584007913129639935
 (1 row)
 
+-- ClickHouse flattens Nested at creation, even when import disables flattening
+BEGIN;
+DO $$
+BEGIN
+    PERFORM set_config(
+        'pg_clickhouse.session_settings',
+        concat_ws(', ', nullif(current_setting('pg_clickhouse.session_settings'), ''),
+                  'flatten_nested 1'),
+        true
+    );
+END
+$$;
+CALL clickhouse_perform('import_types_admin', 'CREATE TABLE import_types_test.flattened (
+    id Int32, items Nested(a Int32, b Decimal(9,4))
+) ENGINE = MergeTree ORDER BY (id)');
+CALL clickhouse_perform('import_types_admin', 'INSERT INTO import_types_test.flattened
+    VALUES (1, [10, 20], [1.5, -2.25])');
+COMMIT;
+-- Keep Nested fields together for import
+BEGIN;
+DO $$
+BEGIN
+    PERFORM set_config(
+        'pg_clickhouse.session_settings',
+        concat_ws(', ', nullif(current_setting('pg_clickhouse.session_settings'), ''),
+                  'flatten_nested 0'),
+        true
+    );
+END
+$$;
+CALL clickhouse_perform('import_types_admin', 'CREATE TABLE import_types_test.opened (
+    id      Int32,
+    items   Nested(a Int32, b Decimal(9,4)),
+    pairs   Array(Nested(k String, v Int64)),
+    total   SimpleAggregateFunction(sum, Int64),
+    latest  SimpleAggregateFunction(max, Nullable(DateTime64(9))),
+    seen    AggregateFunction(count),
+    spread  AggregateFunction(quantiles(0.5, 0.9), Int32)
+) ENGINE = MergeTree ORDER BY (id);
+');
+CREATE SCHEMA import_types_opened;
+IMPORT FOREIGN SCHEMA import_types_test LIMIT TO (flattened)
+    FROM SERVER import_types_loopback INTO import_types_opened;
+IMPORT FOREIGN SCHEMA import_types_test LIMIT TO (opened)
+    FROM SERVER import_types_loopback INTO import_types_opened;
+NOTICE:  pg_clickhouse: ClickHouse <Nested> type was translated to <TEXT[][]> type for column "items"; please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Array> type was translated to <TEXT[][][]> type for column "pairs"; please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <column "latest"> precision exceeds microseconds (6), timestamp(6) with time zone truncates it
+COMMIT;
+SELECT attname, format_type(atttypid, atttypmod) AS type, attndims
+  FROM pg_attribute
+ WHERE attrelid = 'import_types_opened.flattened'::regclass AND attnum > 0
+ ORDER BY attnum;
+ attname |      type      | attndims 
+---------+----------------+----------
+ id      | integer        |        0
+ items.a | integer[]      |        1
+ items.b | numeric(9,4)[] |        1
+(3 rows)
+
+SELECT id, "items.a", "items.b" FROM import_types_opened.flattened;
+ id | items.a |     items.b      
+----+---------+------------------
+  1 | {10,20} | {1.5000,-2.2500}
+(1 row)
+
+SELECT attname, format_type(atttypid, atttypmod) AS type, attndims, attnotnull,
+       attfdwoptions
+  FROM pg_attribute
+ WHERE attrelid = 'import_types_opened.opened'::regclass AND attnum > 0
+ ORDER BY attnum;
+ attname |            type             | attndims | attnotnull |         attfdwoptions         
+---------+-----------------------------+----------+------------+-------------------------------
+ id      | integer                     |        0 | t          | 
+ items   | text[]                      |        2 | t          | 
+ pairs   | text[]                      |        3 | t          | 
+ total   | bigint                      |        0 | f          | {simpleaggregatefunction=sum}
+ latest  | timestamp(6) with time zone |        0 | f          | {simpleaggregatefunction=max}
+ seen    | bigint                      |        0 | f          | {aggregatefunction=count}
+ spread  | integer                     |        0 | f          | {aggregatefunction=quantiles}
+(7 rows)
+
+CALL clickhouse_perform('import_types_admin', 'INSERT INTO import_types_test.opened
+    (id, items, pairs, total, latest) VALUES (
+    1, [(10, 1.5), (20, -2.25)], [[(''k'', 42)]], 7,
+    ''2026-08-19 03:04:05.678901234''
+)');
+SELECT id, items, pairs, total, latest FROM import_types_opened.opened;
+ id |           items            |   pairs    | total |            latest             
+----+----------------------------+------------+-------+-------------------------------
+  1 | {{10,1.5000},{20,-2.2500}} | {{{k,42}}} |     7 | 2026-08-19 03:04:05.678901+00
+(1 row)
+
+CREATE TYPE import_types_item AS (a integer, b numeric(9,4));
+CREATE TYPE import_types_label AS ENUM ('one', 'two');
+CREATE TYPE import_types_map_pair AS (key text, value bigint);
+CREATE TYPE import_types_tuple AS (number integer, name text);
+CREATE FOREIGN TABLE import_types_opened.records (
+    id    integer,
+    items import_types_item[]
+) SERVER import_types_loopback OPTIONS (table_name 'opened');
+CREATE FOREIGN TABLE import_types_opened.mapped_records (
+    id    integer,
+    label import_types_label,
+    pairs import_types_map_pair[],
+    pair  import_types_tuple
+) SERVER import_types_loopback OPTIONS (table_name 'mapped');
+SELECT * FROM import_types_opened.records;
+ id |             items              
+----+--------------------------------
+  1 | {"(10,1.5000)","(20,-2.2500)"}
+(1 row)
+
+SELECT label, pairs, pair FROM import_types_opened.mapped_records;
+ label |   pairs    |   pair    
+-------+------------+-----------
+ two   | {"(k,42)"} | (7,seven)
+(1 row)
+
+-- JSON parameters require ClickHouse 25.1 or newer
+\set ECHO errors
+ doc_type 
+----------
+ jsonb
+(1 row)
+
 DROP USER MAPPING FOR CURRENT_USER SERVER import_types_loopback;
 CALL clickhouse_perform('import_types_admin', 'DROP DATABASE import_types_test');
 DROP SERVER import_types_loopback CASCADE;
-NOTICE:  drop cascades to 2 other objects
+NOTICE:  drop cascades to 6 other objects
 DETAIL:  drop cascades to foreign table import_types.mapped
 drop cascades to foreign table import_types_wide.wide
+drop cascades to foreign table import_types_opened.flattened
+drop cascades to foreign table import_types_opened.opened
+drop cascades to foreign table import_types_opened.records
+drop cascades to foreign table import_types_opened.mapped_records

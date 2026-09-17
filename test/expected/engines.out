@@ -60,10 +60,9 @@ FDW options: (database 'engines_test', table_name 't1', engine 'MergeTree')
  Column |  Type   | Collation | Nullable | Default |        FDW options        | Storage | Stats target | Description 
 --------+---------+-----------+----------+---------+---------------------------+---------+--------------+-------------
  a      | integer |           | not null |         |                           | plain   |              | 
- b      | integer |           | not null |         | (aggregatefunction 'sum') | plain   |              | 
+ b      | integer |           |          |         | (aggregatefunction 'sum') | plain   |              | 
 Not-null constraints:
     "t1_aggr_a_not_null" NOT NULL "a"
-    "t1_aggr_b_not_null" NOT NULL "b"
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't1_aggr', engine 'MaterializedView')
 
@@ -72,10 +71,9 @@ FDW options: (database 'engines_test', table_name 't1_aggr', engine 'Materialize
  Column |  Type   | Collation | Nullable | Default |        FDW options        | Storage | Stats target | Description 
 --------+---------+-----------+----------+---------+---------------------------+---------+--------------+-------------
  a      | integer |           | not null |         |                           | plain   |              | 
- b      | integer |           | not null |         | (aggregatefunction 'sum') | plain   |              | 
+ b      | integer |           |          |         | (aggregatefunction 'sum') | plain   |              | 
 Not-null constraints:
     "t2_a_not_null" NOT NULL "a"
-    "t2_b_not_null" NOT NULL "b"
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't2', engine 'AggregatingMergeTree')
 
@@ -98,10 +96,9 @@ FDW options: (database 'engines_test', table_name 't3', engine 'MergeTree')
  Column |   Type    | Collation | Nullable | Default |         FDW options          | Storage  | Stats target | Description 
 --------+-----------+-----------+----------+---------+------------------------------+----------+--------------+-------------
  a      | integer   |           | not null |         |                              | plain    |              | 
- b      | integer[] |           | not null |         | (aggregatefunction 'sumMap') | extended |              | 
+ b      | integer[] |           |          |         | (aggregatefunction 'sumMap') | extended |              | 
 Not-null constraints:
     "t3_aggr_a_not_null" NOT NULL "a"
-    "t3_aggr_b_not_null" NOT NULL "b"
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't3_aggr', engine 'MaterializedView')
 
@@ -110,18 +107,13 @@ FDW options: (database 'engines_test', table_name 't3_aggr', engine 'Materialize
  Column |   Type    | Collation | Nullable | Default |           FDW options           | Storage  | Stats target | Description 
 --------+-----------+-----------+----------+---------+---------------------------------+----------+--------------+-------------
  a      | integer   |           | not null |         |                                 | plain    |              | 
- b      | integer   |           | not null |         | (aggregatefunction 'sum')       | plain    |              | 
- c      | integer[] |           | not null |         | (aggregatefunction 'sumMap')    | extended |              | 
- d      | bigint    |           | not null |         | (simpleaggregatefunction 'sum') | plain    |              | 
- e      | bigint    |           | not null |         |                                 | plain    |              | 
- f      | integer   |           | not null |         | (aggregatefunction 'quantile')  | plain    |              | 
+ b      | integer   |           |          |         | (aggregatefunction 'sum')       | plain    |              | 
+ c      | integer[] |           |          |         | (aggregatefunction 'sumMap')    | extended |              | 
+ d      | bigint    |           |          |         | (simpleaggregatefunction 'sum') | plain    |              | 
+ e      | bigint    |           |          |         | (aggregatefunction 'count')     | plain    |              | 
+ f      | integer   |           |          |         | (aggregatefunction 'quantile')  | plain    |              | 
 Not-null constraints:
     "t4_a_not_null" NOT NULL "a"
-    "t4_b_not_null" NOT NULL "b"
-    "t4_c_not_null" NOT NULL "c"
-    "t4_d_not_null" NOT NULL "d"
-    "t4_e_not_null" NOT NULL "e"
-    "t4_f_not_null" NOT NULL "f"
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't4', engine 'AggregatingMergeTree')
 
@@ -241,6 +233,15 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT a, percentile_disc(0.75) WITHIN GROUP (ORDER
    Output: a, (((percentile_disc('0.75'::double precision) WITHIN GROUP (ORDER BY f))::numeric / sum(d)))
    Relations: Aggregate on (t4)
    Remote SQL: SELECT a, (quantileExactLowMerge(0.75)(f) / sum(d)) FROM engines_test.t4 GROUP BY a
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a, count(e) FROM t4 GROUP BY a;
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan
+   Output: a, (count(e))
+   Relations: Aggregate on (t4)
+   Remote SQL: SELECT a, countMerge(e) FROM engines_test.t4 GROUP BY a
 (4 rows)
 
 DROP USER MAPPING FOR CURRENT_USER SERVER engines_loopback;

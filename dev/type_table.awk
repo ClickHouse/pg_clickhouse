@@ -57,6 +57,8 @@ BEGIN {
 
     upstream["Map(K,V)"] = "record[]|One record per pair"
     ours["Map(K,V)"] = "text[][]|One row of text items per pair"
+    upstream["Nested(...)"] = "record[]|One record per nested row"
+    ours["Nested(...)"] = "text[][]|One row of text items per nested row"
     upstream["Nullable(T)"] = "T|Sets nullable on the column"
     ours["Nullable(T)"] = "T|Column imports without NOT NULL"
     upstream["Tuple(...)"] = "record|Pseudo type, no column takes it"

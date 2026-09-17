@@ -426,7 +426,7 @@ SELECT * FROM not_nullable ORDER BY c1;
 CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.maps (c1 Int32, c2 Map(String, Int64)) ENGINE = MergeTree ORDER BY (c1)');
 IMPORT FOREIGN SCHEMA binary_inserts_test LIMIT TO (maps)
 FROM SERVER binary_inserts_loopback INTO binary_inserts_test;
-NOTICE:  pg_clickhouse: ClickHouse <Map> type was translated to <TEXT[][]> type for column "c2", please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Map> type was translated to <TEXT[][]> type for column "c2"; please create composite type and alter the column if needed
 INSERT INTO maps VALUES (1, ARRAY[['a', '1'], ['b', '2']]), (2, '{}'::text[]);
 SELECT * FROM clickhouse_query('binary_inserts_loopback', 'SELECT c1, toString(c2) FROM binary_inserts_test.maps ORDER BY c1') AS t(c1 int, c2 text);
  c1 |      c2       
