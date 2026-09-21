@@ -25,10 +25,10 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     `clickhouse_query(server, sql)` to read rows and `CALL
     clickhouse_perform(server, sql)` to run statements that return none; both
     take a foreign server rather than a connection string ([#346]).
-*   This release validates the character encoding of text and JSON data fetched
-    from ClickHouse, raising an error for violations of the Postgres database
-    encoding. Add the new `encoding_check` option to any servers that return
-    invalidly-encoded data to eliminate the errors:
+*   This release validates the character encoding of text and JSON data
+    fetched from ClickHouse, raising an error for violations of the Postgres
+    database encoding. Add the new `encoding_check` option to any servers that
+    return invalidly-encoded data to eliminate the errors:
 
     ```sql
     ALTER SERVER server_name OPTIONS (ADD encoding_check 'replace');
@@ -45,11 +45,11 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
 
 ### ⚡ Improvements
 
-*   `IMPORT FOREIGN SCHEMA` now preserves type modifiers through nested `Array`
-    layers, so `Array(Decimal(12,6))` imports as `numeric(12,6)[]`. It retains
-    up to six digits of `DateTime64(P)` and `Time64(P)` precision, imports
-    `Time`, `Time64`, and geometric types, and maps `FixedString(N)` to
-    unconstrained `text` because ClickHouse counts bytes while PostgreSQL
+*   `IMPORT FOREIGN SCHEMA` now preserves type modifiers through nested
+    `Array` layers, so `Array(Decimal(12,6))` imports as `numeric(12,6)[]`. It
+    retains up to six digits of `DateTime64(P)` and `Time64(P)` precision,
+    imports `Time`, `Time64`, and geometric types, and maps `FixedString(N)`
+    to unconstrained `text` because ClickHouse counts bytes while PostgreSQL
     character limits count characters ([#349]).
 *   `IMPORT FOREIGN SCHEMA` now maps `BFloat16` to `real` and `Interval` types
     to `interval`. `IntervalNanosecond` truncates to microseconds ([#349])
@@ -63,14 +63,14 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     declares such columns `text[]` and `text[][]`; the `binary` driver accepts
     those same types on `INSERT`, parsing each item as the field it fills. A
     composite or `text` column can still be mapped to a record ([#349]).
-*   `IMPORT FOREIGN SCHEMA` now correctly imports aggregate states with literal
-    parameters or multiple arguments. It uses the first argument as the column
-    type and stores the aggregate function name, without parameters, in a
-    column option. Because `AggregateFunction(count)` has no argument type, it
-    imports as `bigint` ([#349], [#363]).
+*   `IMPORT FOREIGN SCHEMA` now correctly imports aggregate states with
+    literal parameters or multiple arguments. It uses the first argument as
+    the column type and stores the aggregate function name, without
+    parameters, in a column option. Because `AggregateFunction(count)` has no
+    argument type, it imports as `bigint` ([#349], [#363]).
 *   `IMPORT FOREIGN SCHEMA` now imports `Nested` as `text[][]`, with one array
-    per nested row. It also imports parameterized `JSON` as `jsonb` by default,
-    which can be mapped manually to `json` or `text`, and reads
+    per nested row. It also imports parameterized `JSON` as `jsonb` by
+    default, which can be mapped manually to `json` or `text`, and reads
     `SimpleAggregateFunction` columns. These types previously caused errors
     ([#363]).
 *   Added pushdown for PostgreSQL `sha224()`, `sha256()`, `sha384()`, and
@@ -94,8 +94,9 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     `FixedString(N)` column rather than silently truncating them, matching
     HTTP driver errors ([#349]).
 *   Reading a ClickHouse string into a text column validates its bytes against
-    the database encoding, raising an error rather than returning invalid text.
-    Declare the column `bytea` to keep raw bytes ([#359]).
+    the database encoding, raising an error rather than returning invalid
+    text. Use the new `encoding_check` server option to remove or replace
+    invalid bytes, or declare the column `bytea` to keep raw bytes ([#359]).
 
   [v0.11.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.10.0...v0.11.0
   [CREATE SERVER docs]: doc/pg_clickhouse#create-sever "pg_clickhouse Docs: CREATE SERVER"
