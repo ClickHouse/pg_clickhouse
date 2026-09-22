@@ -77,6 +77,10 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     `sha512()` functions, along with supported constant-algorithm calls to the
     pgcrypto extension's `digest()` function. Thanks to Siva Girish Ramesh for
     the PR ([#360]).
+*   On ClickHouse 26.9+, pushed-down `cardinality` now maps to
+    [arrayFlattenedLength], which counts every element across nested arrays as
+    PostgreSQL does. Earlier ClickHouse versions still use `length`, which
+    counts only the outer array ([#367]).
 
 ### 🐞 Bug Fixes
 
@@ -118,6 +122,10 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     "ClickHouse/pg_clickhouse#361 Add the `encoding_check` server option"
   [#363]: https://github.com/ClickHouse/pg_clickhouse/pull/363
     "ClickHouse/pg_clickhouse#363 update pg-clickhouse-c"
+  [#367]: https://github.com/ClickHouse/pg_clickhouse/pull/367
+    "ClickHouse/pg_clickhouse#367 CH 26.9 map cardinality to arrayFlattenedLength"
+  [arrayFlattenedLength]: https://clickhouse.com/docs/reference/functions/regular-functions/array-functions#arrayFlattenedLength
+    "ClickHouse Docs: arrayFlattenedLength"
 
 ## [v0.10.0] — 2026-08-11
 

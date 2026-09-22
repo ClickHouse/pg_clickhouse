@@ -1430,18 +1430,18 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
  * implemented.
  */
 /*
- * Resolve the user mapping the executor will use to scan foreignrel, for the
- * plan-time server-version probe below. Mirrors the executor's own lookup
- * (see clickhouseBeginForeignScan): the RTE's checkAsUser --- set when the
- * rel is accessed on behalf of another user, e.g. through a view --- wins
- * over the invoking user. Returns NULL instead of erroring when no mapping
- * exists, so the version gate degrades to "no pushdown" rather than failing a
- * query (or a bare EXPLAIN) at plan time.
+ * True when the server that scans foreignrel is at least major.minor. Probes
+ * with the user mapping that clickhouseBeginForeignScan() sets up for the
+ * executor. Returns false instead of erroring when no mapping exists, so the
+ * gate degrades to "no pushdown" rather than failing a query (or a bare
+ * EXPLAIN) at plan time.
  */
-static UserMapping*
-subplan_gate_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel, Oid serverid) {
-    Oid userid  = InvalidOid;
-    int rtindex = -1;
+static bool
+server_version_ge(PlannerInfo* root, RelOptInfo* foreignrel, int major, int minor) {
+    CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)foreignrel->fdw_private;
+    Oid serverid              = fpinfo->server->serverid;
+    Oid userid                = InvalidOid;
+    int rtindex               = -1;
 
     /*
      * Find a representative base-rel RTE; any member gives the same answer
@@ -1449,12 +1449,8 @@ subplan_gate_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel, Oid serveri
      * relids, so descend to its input rel first. On PG16+ relids may also
      * carry outer-join indexes whose RTEs are not relations; skip those.
      */
-    if (bms_is_empty(foreignrel->relids)) {
-        CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)foreignrel->fdw_private;
-
-        if (fpinfo != NULL && fpinfo->outerrel != NULL) {
-            foreignrel = fpinfo->outerrel;
-        }
+    if (bms_is_empty(foreignrel->relids) && fpinfo->outerrel != NULL) {
+        foreignrel = fpinfo->outerrel;
     }
     while ((rtindex = bms_next_member(foreignrel->relids, rtindex)) >= 0) {
         RangeTblEntry* rte;
@@ -1491,9 +1487,11 @@ subplan_gate_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel, Oid serveri
             ObjectIdGetDatum(InvalidOid),
             ObjectIdGetDatum(serverid)
         )) {
-        return NULL;
+        return false;
     }
-    return GetUserMapping(userid, serverid);
+    return chfdw_version_ge(
+        chfdw_get_server_version(GetUserMapping(userid, serverid)), major, minor
+    );
 }
 
 static bool
@@ -1702,17 +1700,7 @@ is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt, ExprTruthCtx 
      * its RTE's checkAsUser, e.g. a view's owner, when that is set), and when
      * no mapping exists it refuses the pushdown rather than erroring.
      */
-    {
-        UserMapping* user = subplan_gate_user_mapping(
-            glob_cxt->root, glob_cxt->foreignrel, fpinfo->server->serverid
-        );
-
-        if (user == NULL || !chfdw_version_ge(chfdw_get_server_version(user), 25, 8)) {
-            return false;
-        }
-    }
-
-    return true;
+    return server_version_ge(glob_cxt->root, glob_cxt->foreignrel, 25, 8);
 }
 
 /*
@@ -6631,6 +6619,12 @@ appendFunctionName(Oid funcid, deparse_expr_cxt* context) {
     CHFdwRelationInfo* fpinfo = context->scanrel->fdw_private;
 
     cdef = chfdw_check_for_custom_function(funcid);
+    /* cardinality counts every element; length stops at the outer array */
+    if (funcid == F_CARDINALITY &&
+        server_version_ge(context->root, context->scanrel, 26, 9)) {
+        appendStringInfoString(buf, "arrayFlattenedLength");
+        return cdef;
+    }
     if (cdef && cdef->custom_name[0] != '\0') {
         if (cdef->custom_name[0] != '\1') {
             appendStringInfoString(buf, cdef->custom_name);

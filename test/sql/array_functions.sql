@@ -70,10 +70,29 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t1 WHERE array_to_string(tags, ',') = 'a,b,c';
 SELECT * FROM t1 WHERE array_to_string(tags, ',') = 'a,b,c';
 
--- cardinality → length
-EXPLAIN (VERBOSE, COSTS OFF)
+-- cardinality → arrayFlattenedLength on CH 26.9+, length on older versions
+\unset ECHO
+DO $$
+DECLARE
+    chv int[] := regexp_matches(clickhouse_server_version('arr_svr'), '^(\d+)\.(\d+)')::int[];
+    flattened bool := (chv[1], chv[2]) >= (26, 9);
+    func text := CASE WHEN flattened THEN 'arrayFlattenedLength' ELSE 'length' END;
+    output jsonb;
+BEGIN
+    EXPLAIN (VERBOSE, FORMAT JSON)
+    SELECT id FROM t1 WHERE cardinality(ARRAY[vals, vals]) = 6 INTO output;
+    RAISE NOTICE 'cardinality PUSHED DOWN: %',
+        output->0->'Plan'->>'Remote SQL' = format(
+            'SELECT id FROM arr_test.t1 WHERE ((%s([vals, vals]) = 6))', func);
+
+    -- length only counts the outer array, so below 26.9 nothing matches
+    PERFORM id FROM t1 WHERE cardinality(ARRAY[vals, vals]) = 6;
+    RAISE NOTICE 'nested cardinality: %', FOUND = flattened;
+END;
+$$;
+\set ECHO all
 SELECT * FROM t1 WHERE cardinality(vals) = 3;
-SELECT * FROM t1 WHERE cardinality(vals) = 3;
+SELECT count(*) FROM empty_arrays WHERE cardinality(vals) = 0;
 
 -- array_position → nullIf(indexOf, 0)
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -264,15 +283,15 @@ $$;
 \set ECHO all
 
 -- array_shuffle / array_sample added in PG16; output is non-deterministic
--- so put them in WHERE with cardinality predicates that always hold.
+-- so put them in WHERE with array_length predicates that always hold.
 SELECT current_setting('server_version_num')::int >= 160000 AS pg16 \gset
 \if :pg16
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT id FROM t1 WHERE cardinality(array_shuffle(vals)) = cardinality(vals) ORDER BY id;
-SELECT id FROM t1 WHERE cardinality(array_shuffle(vals)) = cardinality(vals) ORDER BY id;
+SELECT id FROM t1 WHERE array_length(array_shuffle(vals), 1) = array_length(vals, 1) ORDER BY id;
+SELECT id FROM t1 WHERE array_length(array_shuffle(vals), 1) = array_length(vals, 1) ORDER BY id;
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT id FROM t1 WHERE cardinality(array_sample(vals, 1)) = 1 ORDER BY id;
-SELECT id FROM t1 WHERE cardinality(array_sample(vals, 1)) = 1 ORDER BY id;
+SELECT id FROM t1 WHERE array_length(array_sample(vals, 1), 1) = 1 ORDER BY id;
+SELECT id FROM t1 WHERE array_length(array_sample(vals, 1), 1) = 1 ORDER BY id;
 \endif
 
 -- Operators: @> → hasAll
