@@ -5,6 +5,7 @@ CREATE USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;
 CREATE SERVER json_admin FOREIGN DATA WRAPPER clickhouse_fdw;
 CREATE USER MAPPING FOR CURRENT_USER SERVER json_admin;
+\set ECHO errors
 CALL clickhouse_perform('json_admin', 'DROP DATABASE IF EXISTS json_test');
 CALL clickhouse_perform('json_admin', 'CREATE DATABASE json_test');
 CALL clickhouse_perform('json_admin', $$
@@ -16,33 +17,51 @@ $$);
 CREATE SCHEMA json_bin;
 CREATE SCHEMA json_http;
 IMPORT FOREIGN SCHEMA "json_test" FROM SERVER binary_json_loopback INTO json_bin;
-ERROR:  pg_clickhouse: could not map things.data type <Object('json')>
 \d json_bin.things
+                 Foreign table "json_bin.things"
+ Column |  Type   | Collation | Nullable | Default | FDW options 
+--------+---------+-----------+----------+---------+-------------
+ id     | integer |           | not null |         | 
+ data   | jsonb   |           | not null |         | 
+Server: binary_json_loopback
+FDW options: (database 'json_test', table_name 'things', engine 'MergeTree')
+
 IMPORT FOREIGN SCHEMA "json_test" FROM SERVER http_json_loopback INTO json_http;
-ERROR:  pg_clickhouse: could not map things.data type <Object('json')>
 \d json_http.things
+                Foreign table "json_http.things"
+ Column |  Type   | Collation | Nullable | Default | FDW options 
+--------+---------+-----------+----------+---------+-------------
+ id     | integer |           | not null |         | 
+ data   | jsonb   |           | not null |         | 
+Server: http_json_loopback
+FDW options: (database 'json_test', table_name 'things', engine 'MergeTree')
+
 INSERT INTO json_bin.things VALUES
     (1, '{"id": 1, "name": "widget", "size": "large", "stocked": true}'),
     (2, '{"id": 2, "name": "sprocket", "size": "small", "stocked": true}')
 ;
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: INSERT INTO json_bin.things VALUES
-                    ^
 INSERT INTO json_http.things VALUES
     (3, '{"id": 3, "name": "gizmo", "size": "medium", "stocked": true}'),
     (4, '{"id": 4, "name": "doodad", "size": "large", "stocked": false}')
 ;
-ERROR:  relation "json_http.things" does not exist
-LINE 1: INSERT INTO json_http.things VALUES
-                    ^
 SELECT * FROM json_bin.things ORDER BY id;
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things ORDER BY id;
-                      ^
+ id |                               data                                
+----+-------------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+  2 | {"id": "2", "name": "sprocket", "size": "small", "stocked": true}
+  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
+  4 | {"id": "4", "name": "doodad", "size": "large", "stocked": false}
+(4 rows)
+
 SELECT * FROM json_http.things ORDER BY id;
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT * FROM json_http.things ORDER BY id;
-                      ^
+ id |                               data                                
+----+-------------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+  2 | {"id": "2", "name": "sprocket", "size": "small", "stocked": true}
+  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
+  4 | {"id": "4", "name": "doodad", "size": "large", "stocked": false}
+(4 rows)
+
 -- Should also support JSON mapping.
 CREATE FOREIGN TABLE json_bin.json_things (
     id   integer NOT NULL,
@@ -54,94 +73,197 @@ CREATE FOREIGN TABLE json_http.json_things (
 ) SERVER http_json_loopback OPTIONS (table_name 'things');
 INSERT INTO json_bin.json_things
 VALUES (5, '{"id": 5, "name": "bauble", "size": "small", "stocked": true}');
-ERROR:  pg_clickhouse: unsupported column type: Object('json')
 INSERT INTO json_http.json_things
 VALUES (6, '{"id": 6, "name": "curio", "size": "medium", "stocked": false}');
 SELECT * FROM json_bin.json_things ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(id Int8, name String, size String, stocked UInt8) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
+ id |                            data                            
+----+------------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+  2 | {"id":"2","name":"sprocket","size":"small","stocked":true}
+  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
+  4 | {"id":"4","name":"doodad","size":"large","stocked":false}
+  5 | {"id":"5","name":"bauble","size":"small","stocked":true}
+  6 | {"id":"6","name":"curio","size":"medium","stocked":false}
+(6 rows)
+
 SELECT * FROM json_http.json_things ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(id Int8, name String, size String, stocked UInt8) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
+ id |                            data                            
+----+------------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+  2 | {"id":"2","name":"sprocket","size":"small","stocked":true}
+  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
+  4 | {"id":"4","name":"doodad","size":"large","stocked":false}
+  5 | {"id":"5","name":"bauble","size":"small","stocked":true}
+  6 | {"id":"6","name":"curio","size":"medium","stocked":false}
+(6 rows)
+
 -- Subscript access on JSON columns must not be pushed down to ClickHouse.
 -- ClickHouse JSON does not support the jsonb `column['key']` syntax (it
 -- requires dot notation), so subscripts must be evaluated locally by
 -- PostgreSQL.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data['name'] FROM json_http.things;
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT data['name'] FROM json_http.things;
-                                 ^
+                   QUERY PLAN                    
+-------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: data['name'::text]
+   Remote SQL: SELECT data FROM json_test.things
+(3 rows)
+
 SELECT data['name'] FROM json_http.things ORDER BY id;
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT data['name'] FROM json_http.things ORDER BY id;
-                                 ^
+    data    
+------------
+ "widget"
+ "sprocket"
+ "gizmo"
+ "doodad"
+ "bauble"
+ "curio"
+(6 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data['name'] FROM json_bin.things;
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT data['name'] FROM json_bin.things;
-                                 ^
+                   QUERY PLAN                    
+-------------------------------------------------
+ Foreign Scan on json_bin.things
+   Output: data['name'::text]
+   Remote SQL: SELECT data FROM json_test.things
+(3 rows)
+
 SELECT data['name'] FROM json_bin.things ORDER BY id;
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT data['name'] FROM json_bin.things ORDER BY id;
-                                 ^
+    data    
+------------
+ "widget"
+ "sprocket"
+ "gizmo"
+ "doodad"
+ "bauble"
+ "curio"
+(6 rows)
+
 -- DISTINCT forces an ORDER BY or HashAgg; the subscript must stay local.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT DISTINCT data['size'] FROM json_http.things;
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT DISTINCT data['size'] FROM json_http.things;
-                                          ^
+                      QUERY PLAN                       
+-------------------------------------------------------
+ HashAggregate
+   Output: (data['size'::text])
+   Group Key: things.data['size'::text]
+   ->  Foreign Scan on json_http.things
+         Output: data['size'::text]
+         Remote SQL: SELECT data FROM json_test.things
+(6 rows)
+
 SELECT DISTINCT data['size'] FROM json_http.things;
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT DISTINCT data['size'] FROM json_http.things;
-                                          ^
+   data   
+----------
+ "medium"
+ "small"
+ "large"
+(3 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT DISTINCT data['size'] FROM json_bin.things;
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT DISTINCT data['size'] FROM json_bin.things;
-                                          ^
+                      QUERY PLAN                       
+-------------------------------------------------------
+ HashAggregate
+   Output: (data['size'::text])
+   Group Key: things.data['size'::text]
+   ->  Foreign Scan on json_bin.things
+         Output: data['size'::text]
+         Remote SQL: SELECT data FROM json_test.things
+(6 rows)
+
 SELECT DISTINCT data['size'] FROM json_bin.things;
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT DISTINCT data['size'] FROM json_bin.things;
-                                          ^
+   data   
+----------
+ "medium"
+ "small"
+ "large"
+(3 rows)
+
 -- GROUP BY with a JSON subscript expression.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'];
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT data['size'], count(*) FROM json_http.things GROUP BY...
-                                           ^
+                      QUERY PLAN                       
+-------------------------------------------------------
+ HashAggregate
+   Output: (data['size'::text]), count(*)
+   Group Key: things.data['size'::text]
+   ->  Foreign Scan on json_http.things
+         Output: data['size'::text]
+         Remote SQL: SELECT data FROM json_test.things
+(6 rows)
+
 SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'];
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT data['size'], count(*) FROM json_http.things GROUP BY...
-                                           ^
+   data   | count 
+----------+-------
+ "medium" |     2
+ "small"  |     2
+ "large"  |     2
+(3 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data['size'], count(*) FROM json_bin.things GROUP BY data['size'];
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT data['size'], count(*) FROM json_bin.things GROUP BY ...
-                                           ^
+                      QUERY PLAN                       
+-------------------------------------------------------
+ HashAggregate
+   Output: (data['size'::text]), count(*)
+   Group Key: things.data['size'::text]
+   ->  Foreign Scan on json_bin.things
+         Output: data['size'::text]
+         Remote SQL: SELECT data FROM json_test.things
+(6 rows)
+
 SELECT data['size'], count(*) FROM json_bin.things GROUP BY data['size'];
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT data['size'], count(*) FROM json_bin.things GROUP BY ...
-                                           ^
+   data   | count 
+----------+-------
+ "medium" |     2
+ "small"  |     2
+ "large"  |     2
+(3 rows)
+
 -- The jsonb ->> operator runs locally when used in SELECT target lists.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data ->> 'name' FROM json_http.things;
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT data ->> 'name' FROM json_http.things;
-                                    ^
+                   QUERY PLAN                    
+-------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: (data ->> 'name'::text)
+   Remote SQL: SELECT data FROM json_test.things
+(3 rows)
+
 SELECT data ->> 'name' FROM json_http.things ORDER BY id;
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT data ->> 'name' FROM json_http.things ORDER BY id;
-                                    ^
+ ?column? 
+----------
+ widget
+ sprocket
+ gizmo
+ doodad
+ bauble
+ curio
+(6 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data ->> 'name' FROM json_bin.things;
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT data ->> 'name' FROM json_bin.things;
-                                    ^
+                   QUERY PLAN                    
+-------------------------------------------------
+ Foreign Scan on json_bin.things
+   Output: (data ->> 'name'::text)
+   Remote SQL: SELECT data FROM json_test.things
+(3 rows)
+
 SELECT data ->> 'name' FROM json_bin.things ORDER BY id;
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT data ->> 'name' FROM json_bin.things ORDER BY id;
-                                    ^
+ ?column? 
+----------
+ widget
+ sprocket
+ gizmo
+ doodad
+ bauble
+ curio
+(6 rows)
+
 -- The json ->> operator runs locally when used in SELECT target lists.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data ->> 'name' FROM json_http.json_things;
@@ -153,8 +275,16 @@ SELECT data ->> 'name' FROM json_http.json_things;
 (3 rows)
 
 SELECT data ->> 'name' FROM json_http.json_things ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(id Int8, name String, size String, stocked UInt8) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
+ ?column? 
+----------
+ widget
+ sprocket
+ gizmo
+ doodad
+ bauble
+ curio
+(6 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data ->> 'name' FROM json_bin.json_things;
                    QUERY PLAN                    
@@ -165,27 +295,47 @@ SELECT data ->> 'name' FROM json_bin.json_things;
 (3 rows)
 
 SELECT data ->> 'name' FROM json_bin.json_things ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(id Int8, name String, size String, stocked UInt8) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
+ ?column? 
+----------
+ widget
+ sprocket
+ gizmo
+ doodad
+ bauble
+ curio
+(6 rows)
+
 -- WHERE clause with jsonb ->> equality must be pushed down.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.things WHERE data ->> 'name' = 'widget';
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT * FROM json_http.things WHERE data ->> 'name' = 'widg...
-                      ^
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((data.name = 'widget'))
+(3 rows)
+
 SELECT * FROM json_http.things WHERE data ->> 'name' = 'widget';
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT * FROM json_http.things WHERE data ->> 'name' = 'widg...
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.things WHERE data ->> 'name' = 'widget';
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT * FROM json_bin.things WHERE data ->> 'name' = 'widge...
-                      ^
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((data.name = 'widget'))
+(3 rows)
+
 SELECT * FROM json_bin.things WHERE data ->> 'name' = 'widget';
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things WHERE data ->> 'name' = 'widge...
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 -- WHERE clause with json ->> equality must be pushed down.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_things WHERE data ->> 'name' = 'widget';
@@ -197,9 +347,10 @@ SELECT * FROM json_http.json_things WHERE data ->> 'name' = 'widget';
 (3 rows)
 
 SELECT * FROM json_http.json_things WHERE data ->> 'name' = 'widget';
- id | data 
-----+------
-(0 rows)
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+(1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_things WHERE data ->> 'name' = 'widget';
@@ -211,29 +362,42 @@ SELECT * FROM json_bin.json_things WHERE data ->> 'name' = 'widget';
 (3 rows)
 
 SELECT * FROM json_bin.json_things WHERE data ->> 'name' = 'widget';
- id | data 
-----+------
-(0 rows)
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+(1 row)
 
 -- WHERE clause with jsonb ->> and LIKE.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.things WHERE data ->> 'name' LIKE 'wid%';
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT * FROM json_http.things WHERE data ->> 'name' LIKE 'w...
-                      ^
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((data.name LIKE 'wid%'))
+(3 rows)
+
 SELECT * FROM json_http.things WHERE data ->> 'name' LIKE 'wid%';
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT * FROM json_http.things WHERE data ->> 'name' LIKE 'w...
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.things WHERE data ->> 'name' LIKE 'wid%';
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT * FROM json_bin.things WHERE data ->> 'name' LIKE 'wi...
-                      ^
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((data.name LIKE 'wid%'))
+(3 rows)
+
 SELECT * FROM json_bin.things WHERE data ->> 'name' LIKE 'wid%';
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things WHERE data ->> 'name' LIKE 'wi...
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 -- WHERE clause with json ->> and LIKE.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_things WHERE data ->> 'name' LIKE 'wid%';
@@ -245,9 +409,10 @@ SELECT * FROM json_http.json_things WHERE data ->> 'name' LIKE 'wid%';
 (3 rows)
 
 SELECT * FROM json_http.json_things WHERE data ->> 'name' LIKE 'wid%';
- id | data 
-----+------
-(0 rows)
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+(1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_things WHERE data ->> 'name' LIKE 'wid%';
@@ -259,33 +424,46 @@ SELECT * FROM json_bin.json_things WHERE data ->> 'name' LIKE 'wid%';
 (3 rows)
 
 SELECT * FROM json_bin.json_things WHERE data ->> 'name' LIKE 'wid%';
- id | data 
-----+------
-(0 rows)
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+(1 row)
 
 -- WHERE with multiple jsonb ->> conditions (AND).
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.things
   WHERE data ->> 'size' = 'large' AND data ->> 'stocked' = 'true';
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT * FROM json_http.things
-                      ^
+                                                   QUERY PLAN                                                    
+-----------------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((data.size = 'large')) AND ((data.stocked = 'true'))
+(3 rows)
+
 SELECT * FROM json_http.things
   WHERE data ->> 'size' = 'large' AND data ->> 'stocked' = 'true';
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT * FROM json_http.things
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.things
   WHERE data ->> 'size' = 'large' AND data ->> 'stocked' = 'true';
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT * FROM json_bin.things
-                      ^
+                                                   QUERY PLAN                                                    
+-----------------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((data.size = 'large')) AND ((data.stocked = 'true'))
+(3 rows)
+
 SELECT * FROM json_bin.things
   WHERE data ->> 'size' = 'large' AND data ->> 'stocked' = 'true';
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 -- WHERE with multiple json ->> conditions (AND).
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_things
@@ -299,8 +477,11 @@ SELECT * FROM json_http.json_things
 
 SELECT * FROM json_http.json_things
   WHERE data ->> 'size' = 'large' AND data ->> 'stocked' = 'true';
-ERROR:  pg_clickhouse: Code: 53. DB::Exception: Cannot convert string true to type UInt8. (TYPE_MISMATCH)
-CONTEXT:  HTTP status code: 400
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_things
   WHERE data ->> 'size' = 'large' AND data ->> 'stocked' = 'true';
@@ -313,34 +494,50 @@ SELECT * FROM json_bin.json_things
 
 SELECT * FROM json_bin.json_things
   WHERE data ->> 'size' = 'large' AND data ->> 'stocked' = 'true';
-ERROR:  pg_clickhouse: DB::Exception: Cannot convert string true to type UInt8
-DETAIL:  Remote Query: SELECT id, data FROM json_test.things WHERE ((data.size = 'large')) AND ((data.stocked = 'true'))
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+(1 row)
+
 -- WHERE with jsonb ->> in an OR condition.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
   ORDER BY id;
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT * FROM json_http.things
-                      ^
+                                                                QUERY PLAN                                                                
+------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE (((data.name = 'widget') OR (data.name = 'gizmo'))) ORDER BY id ASC NULLS LAST
+(3 rows)
+
 SELECT * FROM json_http.things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
   ORDER BY id;
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT * FROM json_http.things
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
+(2 rows)
+
 SELECT * FROM json_bin.things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
   ORDER BY id;
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
+(2 rows)
+
 SELECT * FROM json_bin.things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
   ORDER BY id;
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
+(2 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
@@ -355,52 +552,70 @@ SELECT * FROM json_http.json_things
 SELECT * FROM json_http.json_things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
   ORDER BY id;
- id | data 
-----+------
-(0 rows)
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
+(2 rows)
 
 SELECT * FROM json_bin.json_things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
   ORDER BY id;
- id | data 
-----+------
-(0 rows)
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
+(2 rows)
 
 SELECT * FROM json_bin.json_things
   WHERE data ->> 'name' = 'widget' OR data ->> 'name' = 'gizmo'
   ORDER BY id;
- id | data 
-----+------
-(0 rows)
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
+(2 rows)
 
 -- ORDER BY with jsonb ->> pushdown.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.things ORDER BY data ->> 'name';
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT * FROM json_http.things ORDER BY data ->> 'name';
-                      ^
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: id, data, (data ->> 'name'::text)
+   Remote SQL: SELECT id, data FROM json_test.things ORDER BY data.name ASC NULLS LAST
+(3 rows)
+
 SELECT * FROM json_http.things ORDER BY data ->> 'name';
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT * FROM json_http.things ORDER BY data ->> 'name';
-                      ^
+ERROR:  pg_clickhouse: Code: 44. DB::Exception: Data types Variant/Dynamic are not allowed in ORDER BY keys, because it can lead to unexpected results. Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn) or casting this column to a specific data type. Set setting allow_suspicious_types_in_order_by = 1 in order to allow it. (ILLEGAL_COLUMN)
+CONTEXT:  HTTP status code: 400
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.things ORDER BY data ->> 'name';
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT * FROM json_bin.things ORDER BY data ->> 'name';
-                      ^
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.things
+   Output: id, data, (data ->> 'name'::text)
+   Remote SQL: SELECT id, data FROM json_test.things ORDER BY data.name ASC NULLS LAST
+(3 rows)
+
 SELECT * FROM json_bin.things ORDER BY data ->> 'name';
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things ORDER BY data ->> 'name';
-                      ^
+ERROR:  pg_clickhouse: DB::Exception: Data types Variant/Dynamic are not allowed in ORDER BY keys, because it can lead to unexpected results. Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn) or casting this column to a specific data type. Set setting allow_suspicious_types_in_order_by = 1 in order to allow it
+DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY data.name ASC NULLS LAST
 SET pg_clickhouse.session_settings TO 'allow_suspicious_types_in_order_by 1';
 SELECT * FROM json_http.things ORDER BY data ->> 'name' LIMIT 2;
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT * FROM json_http.things ORDER BY data ->> 'name' LIMI...
-                      ^
+ id |                               data                               
+----+------------------------------------------------------------------
+  5 | {"id": "5", "name": "bauble", "size": "small", "stocked": true}
+  6 | {"id": "6", "name": "curio", "size": "medium", "stocked": false}
+(2 rows)
+
 SELECT * FROM json_bin.things ORDER BY data ->> 'name' LIMIT 2;
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things ORDER BY data ->> 'name' LIMIT...
-                      ^
+ id |                               data                               
+----+------------------------------------------------------------------
+  5 | {"id": "5", "name": "bauble", "size": "small", "stocked": true}
+  6 | {"id": "6", "name": "curio", "size": "medium", "stocked": false}
+(2 rows)
+
 SET pg_clickhouse.session_settings TO '';
 -- ORDER BY with json ->> pushdown.
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -413,8 +628,8 @@ SELECT * FROM json_http.json_things ORDER BY data ->> 'name';
 (3 rows)
 
 SELECT * FROM json_http.json_things ORDER BY data ->> 'name';
-ERROR:  pg_clickhouse: cannot return Tuple(id Int8, name String, size String, stocked UInt8) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY data.name ASC NULLS LAST
+ERROR:  pg_clickhouse: Code: 44. DB::Exception: Data types Variant/Dynamic are not allowed in ORDER BY keys, because it can lead to unexpected results. Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn) or casting this column to a specific data type. Set setting allow_suspicious_types_in_order_by = 1 in order to allow it. (ILLEGAL_COLUMN)
+CONTEXT:  HTTP status code: 400
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_things ORDER BY data ->> 'name';
                                       QUERY PLAN                                       
@@ -425,36 +640,65 @@ SELECT * FROM json_bin.json_things ORDER BY data ->> 'name';
 (3 rows)
 
 SELECT * FROM json_bin.json_things ORDER BY data ->> 'name';
-ERROR:  pg_clickhouse: cannot return Tuple(id Int8, name String, size String, stocked UInt8) as json
+ERROR:  pg_clickhouse: DB::Exception: Data types Variant/Dynamic are not allowed in ORDER BY keys, because it can lead to unexpected results. Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn) or casting this column to a specific data type. Set setting allow_suspicious_types_in_order_by = 1 in order to allow it
 DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY data.name ASC NULLS LAST
 SET pg_clickhouse.session_settings TO 'allow_suspicious_types_in_order_by 1';
 SELECT * FROM json_http.json_things ORDER BY data ->> 'name' LIMIT 2;
-ERROR:  pg_clickhouse: Code: 115. DB::Exception: Setting allow_suspicious_types_in_order_by is neither a builtin setting nor started with the prefix 'SQL_' registered for user-defined settings. (UNKNOWN_SETTING)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY data.name ASC NULLS LAST LIMIT 2
-CONTEXT:  HTTP status code: 404
+ id |                           data                            
+----+-----------------------------------------------------------
+  5 | {"id":"5","name":"bauble","size":"small","stocked":true}
+  6 | {"id":"6","name":"curio","size":"medium","stocked":false}
+(2 rows)
+
 SELECT * FROM json_bin.json_things ORDER BY data ->> 'name' LIMIT 2;
-ERROR:  pg_clickhouse: DB::Exception: Unknown setting 'allow_suspicious_types_in_order_by'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY data.name ASC NULLS LAST LIMIT 2
+ id |                           data                            
+----+-----------------------------------------------------------
+  5 | {"id":"5","name":"bauble","size":"small","stocked":true}
+  6 | {"id":"6","name":"curio","size":"medium","stocked":false}
+(2 rows)
+
 SET pg_clickhouse.session_settings TO '';
 -- The jsonb -> operator runs locally when used in SELECT target lists.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data -> 'name' FROM json_http.things;
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT data -> 'name' FROM json_http.things;
-                                   ^
+                   QUERY PLAN                    
+-------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: (data -> 'name'::text)
+   Remote SQL: SELECT data FROM json_test.things
+(3 rows)
+
 SELECT data -> 'name' FROM json_http.things ORDER BY id;
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT data -> 'name' FROM json_http.things ORDER BY id;
-                                   ^
+  ?column?  
+------------
+ "widget"
+ "sprocket"
+ "gizmo"
+ "doodad"
+ "bauble"
+ "curio"
+(6 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data -> 'name' FROM json_bin.things;
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT data -> 'name' FROM json_bin.things;
-                                   ^
+                   QUERY PLAN                    
+-------------------------------------------------
+ Foreign Scan on json_bin.things
+   Output: (data -> 'name'::text)
+   Remote SQL: SELECT data FROM json_test.things
+(3 rows)
+
 SELECT data -> 'name' FROM json_bin.things ORDER BY id;
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT data -> 'name' FROM json_bin.things ORDER BY id;
-                                   ^
+  ?column?  
+------------
+ "widget"
+ "sprocket"
+ "gizmo"
+ "doodad"
+ "bauble"
+ "curio"
+(6 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data -> 'name' FROM json_http.json_things;
                    QUERY PLAN                    
@@ -465,8 +709,16 @@ SELECT data -> 'name' FROM json_http.json_things;
 (3 rows)
 
 SELECT data -> 'name' FROM json_http.json_things ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(id Int8, name String, size String, stocked UInt8) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
+  ?column?  
+------------
+ "widget"
+ "sprocket"
+ "gizmo"
+ "doodad"
+ "bauble"
+ "curio"
+(6 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data -> 'name' FROM json_bin.json_things;
                    QUERY PLAN                    
@@ -477,27 +729,47 @@ SELECT data -> 'name' FROM json_bin.json_things;
 (3 rows)
 
 SELECT data -> 'name' FROM json_bin.json_things ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(id Int8, name String, size String, stocked UInt8) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.things ORDER BY id ASC NULLS LAST
+  ?column?  
+------------
+ "widget"
+ "sprocket"
+ "gizmo"
+ "doodad"
+ "bauble"
+ "curio"
+(6 rows)
+
 -- WHERE clause with jsonb -> equality must be pushed down.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.things WHERE data -> 'name' = '"widget"';
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT * FROM json_http.things WHERE data -> 'name' = '"widg...
-                      ^
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((toJSONString(data.name) = '"widget"'))
+(3 rows)
+
 SELECT * FROM json_http.things WHERE data -> 'name' = '"widget"';
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT * FROM json_http.things WHERE data -> 'name' = '"widg...
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.things WHERE data -> 'name' = '"widget"';
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT * FROM json_bin.things WHERE data -> 'name' = '"widge...
-                      ^
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((toJSONString(data.name) = '"widget"'))
+(3 rows)
+
 SELECT * FROM json_bin.things WHERE data -> 'name' = '"widget"';
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things WHERE data -> 'name' = '"widge...
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 -- WHERE clause with json -> cast to text must be pushed down.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_things WHERE (data -> 'name')::text = '"widget"';
@@ -509,9 +781,10 @@ SELECT * FROM json_http.json_things WHERE (data -> 'name')::text = '"widget"';
 (3 rows)
 
 SELECT * FROM json_http.json_things WHERE (data -> 'name')::text = '"widget"';
- id | data 
-----+------
-(0 rows)
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+(1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_things WHERE (data -> 'name')::text = '"widget"';
@@ -523,29 +796,48 @@ SELECT * FROM json_bin.json_things WHERE (data -> 'name')::text = '"widget"';
 (3 rows)
 
 SELECT * FROM json_bin.json_things WHERE (data -> 'name')::text = '"widget"';
- id | data 
-----+------
-(0 rows)
+ id |                           data                           
+----+----------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+(1 row)
 
 -- WHERE clause with jsonb -> JSON boolean literal must push down.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.things WHERE data -> 'stocked' = 'true'::jsonb;
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT * FROM json_http.things WHERE data -> 'stocked' = 'tr...
-                      ^
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((toJSONString(data.stocked) = 'true'))
+(3 rows)
+
 SELECT * FROM json_http.things WHERE data -> 'stocked' = 'true'::jsonb ORDER BY id;
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT * FROM json_http.things WHERE data -> 'stocked' = 'tr...
-                      ^
+ id |                               data                                
+----+-------------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+  2 | {"id": "2", "name": "sprocket", "size": "small", "stocked": true}
+  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
+  5 | {"id": "5", "name": "bauble", "size": "small", "stocked": true}
+(4 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.things WHERE data -> 'stocked' = 'true'::jsonb;
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT * FROM json_bin.things WHERE data -> 'stocked' = 'tru...
-                      ^
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((toJSONString(data.stocked) = 'true'))
+(3 rows)
+
 SELECT * FROM json_bin.things WHERE data -> 'stocked' = 'true'::jsonb ORDER BY id;
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things WHERE data -> 'stocked' = 'tru...
-                      ^
+ id |                               data                                
+----+-------------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+  2 | {"id": "2", "name": "sprocket", "size": "small", "stocked": true}
+  3 | {"id": "3", "name": "gizmo", "size": "medium", "stocked": true}
+  5 | {"id": "5", "name": "bauble", "size": "small", "stocked": true}
+(4 rows)
+
 -- WHERE clause with json -> JSON boolean literal must push down.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_things WHERE (data -> 'stocked')::text = 'true';
@@ -557,9 +849,13 @@ SELECT * FROM json_http.json_things WHERE (data -> 'stocked')::text = 'true';
 (3 rows)
 
 SELECT * FROM json_http.json_things WHERE (data -> 'stocked')::text = 'true' ORDER BY id;
- id | data 
-----+------
-(0 rows)
+ id |                            data                            
+----+------------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+  2 | {"id":"2","name":"sprocket","size":"small","stocked":true}
+  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
+  5 | {"id":"5","name":"bauble","size":"small","stocked":true}
+(4 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_things WHERE (data -> 'stocked')::text = 'true';
@@ -571,50 +867,78 @@ SELECT * FROM json_bin.json_things WHERE (data -> 'stocked')::text = 'true';
 (3 rows)
 
 SELECT * FROM json_bin.json_things WHERE (data -> 'stocked')::text = 'true' ORDER BY id;
- id | data 
-----+------
-(0 rows)
+ id |                            data                            
+----+------------------------------------------------------------
+  1 | {"id":"1","name":"widget","size":"large","stocked":true}
+  2 | {"id":"2","name":"sprocket","size":"small","stocked":true}
+  3 | {"id":"3","name":"gizmo","size":"medium","stocked":true}
+  5 | {"id":"5","name":"bauble","size":"small","stocked":true}
+(4 rows)
 
 -- WHERE clause with jsonb -> wraps the dot notation in toJSONString() so the
 -- result is a proper JSON value (->, unlike ->>, returns jsonb).
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.things WHERE data -> 'name' = '"widget"'::jsonb;
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT * FROM json_http.things WHERE data -> 'name' = '"widg...
-                      ^
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((toJSONString(data.name) = '"widget"'))
+(3 rows)
+
 SELECT * FROM json_http.things WHERE data -> 'name' = '"widget"'::jsonb;
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT * FROM json_http.things WHERE data -> 'name' = '"widg...
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.things WHERE data -> 'name' = '"widget"'::jsonb;
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT * FROM json_bin.things WHERE data -> 'name' = '"widge...
-                      ^
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((toJSONString(data.name) = '"widget"'))
+(3 rows)
+
 SELECT * FROM json_bin.things WHERE data -> 'name' = '"widget"'::jsonb;
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things WHERE data -> 'name' = '"widge...
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 -- WHERE clause with json -> wraps the dot notation in toJSONString() so the
 -- result is a proper JSON value (->, unlike ->>, returns json).
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.things WHERE (data -> 'name')::text = '"widget"';
-ERROR:  relation "json_http.things" does not exist
-LINE 2: SELECT * FROM json_http.things WHERE (data -> 'name')::text ...
-                      ^
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((CAST(toJSONString(data.name) AS String) = '"widget"'))
+(3 rows)
+
 SELECT * FROM json_http.things WHERE (data -> 'name')::text = '"widget"';
-ERROR:  relation "json_http.things" does not exist
-LINE 1: SELECT * FROM json_http.things WHERE (data -> 'name')::text ...
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.things WHERE (data -> 'name')::text = '"widget"';
-ERROR:  relation "json_bin.things" does not exist
-LINE 2: SELECT * FROM json_bin.things WHERE (data -> 'name')::text =...
-                      ^
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.things
+   Output: id, data
+   Remote SQL: SELECT id, data FROM json_test.things WHERE ((CAST(toJSONString(data.name) AS String) = '"widget"'))
+(3 rows)
+
 SELECT * FROM json_bin.things WHERE (data -> 'name')::text = '"widget"';
-ERROR:  relation "json_bin.things" does not exist
-LINE 1: SELECT * FROM json_bin.things WHERE (data -> 'name')::text =...
-                      ^
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": "1", "name": "widget", "size": "large", "stocked": true}
+(1 row)
+
 -- Edge cases: JSON keys that require identifier quoting.
 CALL clickhouse_perform('json_admin', $$
     CREATE TABLE json_test.special_keys (
@@ -630,7 +954,6 @@ INSERT INTO json_http.special_keys
 VALUES (1, '{"my field": "hello", "CamelCase": "world", "select": "reserved"}');
 INSERT INTO json_bin.special_keys
 VALUES (2, E'{"The \\"meaning\\" of life": 42, "back\\\\slash": "bs", "dotted.key": "dot", "it''s": "apos", "key/with!special@chars#": "special", "123numeric": "num"}');
-ERROR:  pg_clickhouse: unsupported column type: Object('json')
 CREATE FOREIGN TABLE json_http.json_special_keys (id integer NOT NULL, data json NOT NULL)
   SERVER http_json_loopback OPTIONS (database 'json_test', table_name 'special_keys');
 CREATE FOREIGN TABLE json_bin.json_special_keys (id integer NOT NULL, data json NOT NULL)
@@ -646,8 +969,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'my field' = 'hello';
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'my field' = 'hello';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as jsonb
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."my field" = 'hello'))
+ id |                               data                                
+----+-------------------------------------------------------------------
+  1 | {"select": "reserved", "my field": "hello", "CamelCase": "world"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'my field' = 'hello';
                                           QUERY PLAN                                           
@@ -658,8 +984,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'my field' = 'hello';
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'my field' = 'hello';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as jsonb
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."my field" = 'hello'))
+ id |                               data                                
+----+-------------------------------------------------------------------
+  1 | {"select": "reserved", "my field": "hello", "CamelCase": "world"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'my field' = 'hello';
                                           QUERY PLAN                                           
@@ -670,8 +999,11 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'my field' = 'hello';
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'my field' = 'hello';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."my field" = 'hello'))
+ id |                             data                             
+----+--------------------------------------------------------------
+  1 | {"CamelCase":"world","my field":"hello","select":"reserved"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'my field' = 'hello';
                                           QUERY PLAN                                           
@@ -682,8 +1014,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'my field' = 'hello';
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'my field' = 'hello';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."my field" = 'hello'))
+ id |                             data                             
+----+--------------------------------------------------------------
+  1 | {"CamelCase":"world","my field":"hello","select":"reserved"}
+(1 row)
+
 -- Key with mixed case.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'CamelCase' = 'world';
@@ -695,8 +1030,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'CamelCase' = 'world';
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'CamelCase' = 'world';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as jsonb
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+ id |                               data                                
+----+-------------------------------------------------------------------
+  1 | {"select": "reserved", "my field": "hello", "CamelCase": "world"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'CamelCase' = 'world';
                                            QUERY PLAN                                           
@@ -707,8 +1045,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'CamelCase' = 'world';
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'CamelCase' = 'world';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as jsonb
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+ id |                               data                                
+----+-------------------------------------------------------------------
+  1 | {"select": "reserved", "my field": "hello", "CamelCase": "world"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'CamelCase' = 'world';
                                            QUERY PLAN                                           
@@ -719,8 +1060,11 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'CamelCase' = 'world';
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'CamelCase' = 'world';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+ id |                             data                             
+----+--------------------------------------------------------------
+  1 | {"CamelCase":"world","my field":"hello","select":"reserved"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'CamelCase' = 'world';
                                            QUERY PLAN                                           
@@ -731,8 +1075,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'CamelCase' = 'world';
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'CamelCase' = 'world';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+ id |                             data                             
+----+--------------------------------------------------------------
+  1 | {"CamelCase":"world","my field":"hello","select":"reserved"}
+(1 row)
+
 -- Key that is a SQL reserved word.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'select' = 'reserved';
@@ -744,8 +1091,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'select' = 'reserved';
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'select' = 'reserved';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as jsonb
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."select" = 'reserved'))
+ id |                               data                                
+----+-------------------------------------------------------------------
+  1 | {"select": "reserved", "my field": "hello", "CamelCase": "world"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'select' = 'reserved';
                                            QUERY PLAN                                           
@@ -756,8 +1106,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'select' = 'reserved';
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'select' = 'reserved';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as jsonb
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."select" = 'reserved'))
+ id |                               data                                
+----+-------------------------------------------------------------------
+  1 | {"select": "reserved", "my field": "hello", "CamelCase": "world"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'select' = 'reserved';
                                            QUERY PLAN                                           
@@ -768,8 +1121,11 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'select' = 'reserved';
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'select' = 'reserved';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."select" = 'reserved'))
+ id |                             data                             
+----+--------------------------------------------------------------
+  1 | {"CamelCase":"world","my field":"hello","select":"reserved"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'select' = 'reserved';
                                            QUERY PLAN                                           
@@ -780,8 +1136,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'select' = 'reserved';
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'select' = 'reserved';
-ERROR:  pg_clickhouse: cannot return Tuple(CamelCase String, `my field` String, select String) as json
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."select" = 'reserved'))
+ id |                             data                             
+----+--------------------------------------------------------------
+  1 | {"CamelCase":"world","my field":"hello","select":"reserved"}
+(1 row)
+
 -- Key containing embedded double quotes.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'The "meaning" of life' = '42';
@@ -793,9 +1152,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'The "meaning" of life' = '4
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'The "meaning" of life' = '42';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.The "meaning" of life' in scope SELECT id, data FROM json_test.special_keys WHERE data.`The "meaning" of life` = '42'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."The ""meaning"" of life" = '42'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'The "meaning" of life' = '42';
                                                 QUERY PLAN                                                 
@@ -806,8 +1167,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'The "meaning" of life' = '42
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'The "meaning" of life' = '42';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.The "meaning" of life' in scope SELECT id, data FROM json_test.special_keys WHERE data.`The "meaning" of life` = '42'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."The ""meaning"" of life" = '42'))
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'The "meaning" of life' = '42';
                                                 QUERY PLAN                                                 
@@ -818,9 +1182,11 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'The "meaning" of life'
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'The "meaning" of life' = '42';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.The "meaning" of life' in scope SELECT id, data FROM json_test.special_keys WHERE data.`The "meaning" of life` = '42'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."The ""meaning"" of life" = '42'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'The "meaning" of life' = '42';
                                                 QUERY PLAN                                                 
@@ -831,8 +1197,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'The "meaning" of life' 
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'The "meaning" of life' = '42';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.The "meaning" of life' in scope SELECT id, data FROM json_test.special_keys WHERE data.`The "meaning" of life` = '42'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."The ""meaning"" of life" = '42'))
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 -- Key containing a backslash.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'back\slash' = 'bs';
@@ -844,9 +1213,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'back\slash' = 'bs';
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'back\slash' = 'bs';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.back\slash' in scope SELECT id, data FROM json_test.special_keys WHERE data.`back\\slash` = 'bs'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'back\slash' = 'bs';
                                           QUERY PLAN                                          
@@ -857,8 +1228,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'back\slash' = 'bs';
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'back\slash' = 'bs';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.back\slash' in scope SELECT id, data FROM json_test.special_keys WHERE data.`back\\slash` = 'bs'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'back\slash' = 'bs';
                                           QUERY PLAN                                          
@@ -869,9 +1243,11 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'back\slash' = 'bs';
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'back\slash' = 'bs';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.back\slash' in scope SELECT id, data FROM json_test.special_keys WHERE data.`back\\slash` = 'bs'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'back\slash' = 'bs';
                                           QUERY PLAN                                          
@@ -882,8 +1258,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'back\slash' = 'bs';
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'back\slash' = 'bs';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.back\slash' in scope SELECT id, data FROM json_test.special_keys WHERE data.`back\\slash` = 'bs'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 -- Key containing a dot (must not be confused with nested access).
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'dotted.key' = 'dot';
@@ -895,9 +1274,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'dotted.key' = 'dot';
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'dotted.key' = 'dot';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.dotted.key' in scope SELECT id, data FROM json_test.special_keys WHERE data.`dotted.key` = 'dot'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."dotted.key" = 'dot'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'dotted.key' = 'dot';
                                           QUERY PLAN                                           
@@ -908,8 +1289,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'dotted.key' = 'dot';
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'dotted.key' = 'dot';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.dotted.key' in scope SELECT id, data FROM json_test.special_keys WHERE data.`dotted.key` = 'dot'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."dotted.key" = 'dot'))
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'dotted.key' = 'dot';
                                           QUERY PLAN                                           
@@ -920,9 +1304,11 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'dotted.key' = 'dot';
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'dotted.key' = 'dot';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.dotted.key' in scope SELECT id, data FROM json_test.special_keys WHERE data.`dotted.key` = 'dot'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."dotted.key" = 'dot'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'dotted.key' = 'dot';
                                           QUERY PLAN                                           
@@ -933,8 +1319,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'dotted.key' = 'dot';
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'dotted.key' = 'dot';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.dotted.key' in scope SELECT id, data FROM json_test.special_keys WHERE data.`dotted.key` = 'dot'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."dotted.key" = 'dot'))
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 -- Key containing an apostrophe / single quote.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'it''s' = 'apos';
@@ -946,9 +1335,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'it''s' = 'apos';
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'it''s' = 'apos';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.it's' in scope SELECT id, data FROM json_test.special_keys WHERE data.`it's` = 'apos'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."it's" = 'apos'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'it''s' = 'apos';
                                         QUERY PLAN                                        
@@ -959,8 +1350,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'it''s' = 'apos';
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'it''s' = 'apos';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.it's' in scope SELECT id, data FROM json_test.special_keys WHERE data.`it's` = 'apos'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."it's" = 'apos'))
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'it''s' = 'apos';
                                         QUERY PLAN                                        
@@ -971,9 +1365,11 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'it''s' = 'apos';
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'it''s' = 'apos';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.it's' in scope SELECT id, data FROM json_test.special_keys WHERE data.`it's` = 'apos'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."it's" = 'apos'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'it''s' = 'apos';
                                         QUERY PLAN                                        
@@ -984,8 +1380,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'it''s' = 'apos';
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'it''s' = 'apos';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.it's' in scope SELECT id, data FROM json_test.special_keys WHERE data.`it's` = 'apos'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."it's" = 'apos'))
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 -- Key with slashes, bangs, at-signs, etc.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'key/with!special@chars#' = 'special';
@@ -997,9 +1396,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'key/with!special@chars#' = 
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'key/with!special@chars#' = 'special';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.key/with!special@chars#' in scope SELECT id, data FROM json_test.special_keys WHERE data.`key/with!special@chars#` = 'special'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."key/with!special@chars#" = 'special'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'key/with!special@chars#' = 'special';
                                                    QUERY PLAN                                                   
@@ -1010,8 +1411,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'key/with!special@chars#' = '
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'key/with!special@chars#' = 'special';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.key/with!special@chars#' in scope SELECT id, data FROM json_test.special_keys WHERE data.`key/with!special@chars#` = 'special'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."key/with!special@chars#" = 'special'))
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'key/with!special@chars#' = 'special';
                                                    QUERY PLAN                                                   
@@ -1022,9 +1426,11 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'key/with!special@chars
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'key/with!special@chars#' = 'special';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.key/with!special@chars#' in scope SELECT id, data FROM json_test.special_keys WHERE data.`key/with!special@chars#` = 'special'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."key/with!special@chars#" = 'special'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'key/with!special@chars#' = 'special';
                                                    QUERY PLAN                                                   
@@ -1035,8 +1441,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'key/with!special@chars#
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'key/with!special@chars#' = 'special';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.key/with!special@chars#' in scope SELECT id, data FROM json_test.special_keys WHERE data.`key/with!special@chars#` = 'special'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."key/with!special@chars#" = 'special'))
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 -- Key that starts with a digit.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> '123numeric' = 'num';
@@ -1048,9 +1457,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> '123numeric' = 'num';
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> '123numeric' = 'num';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.123numeric' in scope SELECT id, data FROM json_test.special_keys WHERE data.`123numeric` = 'num'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."123numeric" = 'num'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> '123numeric' = 'num';
                                           QUERY PLAN                                           
@@ -1061,8 +1472,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> '123numeric' = 'num';
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> '123numeric' = 'num';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.123numeric' in scope SELECT id, data FROM json_test.special_keys WHERE data.`123numeric` = 'num'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."123numeric" = 'num'))
+ id |                                                                            data                                                                             
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"it's": "apos", "dotted": {"key": "dot"}, "123numeric": "num", "back\\slash": "bs", "The \"meaning\" of life": "42", "key/with!special@chars#": "special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> '123numeric' = 'num';
                                           QUERY PLAN                                           
@@ -1073,9 +1487,11 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> '123numeric' = 'num';
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> '123numeric' = 'num';
-ERROR:  pg_clickhouse: Code: 47. DB::Exception: Unknown expression or function identifier 'data.123numeric' in scope SELECT id, data FROM json_test.special_keys WHERE data.`123numeric` = 'num'. (UNKNOWN_IDENTIFIER)
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."123numeric" = 'num'))
-CONTEXT:  HTTP status code: 404
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> '123numeric' = 'num';
                                           QUERY PLAN                                           
@@ -1086,8 +1502,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> '123numeric' = 'num';
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> '123numeric' = 'num';
-ERROR:  pg_clickhouse: DB::Exception: Unknown expression or function identifier 'data.123numeric' in scope SELECT id, data FROM json_test.special_keys WHERE data.`123numeric` = 'num'
-DETAIL:  Remote Query: SELECT id, data FROM json_test.special_keys WHERE ((data."123numeric" = 'num'))
+ id |                                                                       data                                                                       
+----+--------------------------------------------------------------------------------------------------------------------------------------------------
+  2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
 -- =======================================================================
 -- jsonb_extract_path_text / jsonb_extract_path pushdown
 -- =======================================================================
@@ -1125,8 +1544,12 @@ SELECT jsonb_extract_path_text(props, 'customerId') FROM json_http.events;
 (3 rows)
 
 SELECT jsonb_extract_path_text(props, 'customerId') FROM json_http.events ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as jsonb
-DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
+ jsonb_extract_path_text 
+-------------------------
+ C100
+ C200
+(2 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT jsonb_extract_path_text(props, 'customerId') FROM json_bin.events;
                                 QUERY PLAN                                 
@@ -1137,8 +1560,12 @@ SELECT jsonb_extract_path_text(props, 'customerId') FROM json_bin.events;
 (3 rows)
 
 SELECT jsonb_extract_path_text(props, 'customerId') FROM json_bin.events ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as jsonb
-DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
+ jsonb_extract_path_text 
+-------------------------
+ C100
+ C200
+(2 rows)
+
 -- Target-list: multi-level path, still evaluated locally.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT jsonb_extract_path_text(props, 'address', 'city') FROM json_http.events;
@@ -1150,8 +1577,12 @@ SELECT jsonb_extract_path_text(props, 'address', 'city') FROM json_http.events;
 (3 rows)
 
 SELECT jsonb_extract_path_text(props, 'address', 'city') FROM json_http.events ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as jsonb
-DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
+ jsonb_extract_path_text 
+-------------------------
+ Paris
+ London
+(2 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT jsonb_extract_path_text(props, 'address', 'city') FROM json_bin.events;
                                  QUERY PLAN                                  
@@ -1162,8 +1593,12 @@ SELECT jsonb_extract_path_text(props, 'address', 'city') FROM json_bin.events;
 (3 rows)
 
 SELECT jsonb_extract_path_text(props, 'address', 'city') FROM json_bin.events ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as jsonb
-DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
+ jsonb_extract_path_text 
+-------------------------
+ Paris
+ London
+(2 rows)
+
 -- Target-list: jsonb_extract_path (returns jsonb, not text), evaluated locally.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT jsonb_extract_path(props, 'address') FROM json_http.events;
@@ -1175,8 +1610,12 @@ SELECT jsonb_extract_path(props, 'address') FROM json_http.events;
 (3 rows)
 
 SELECT jsonb_extract_path(props, 'address') FROM json_http.events;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as jsonb
-DETAIL:  Remote Query: SELECT props FROM json_test.events
+        jsonb_extract_path         
+-----------------------------------
+ {"zip": "75001", "city": "Paris"}
+ {"zip": "SW1A", "city": "London"}
+(2 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT jsonb_extract_path(props, 'address') FROM json_bin.events;
                             QUERY PLAN                             
@@ -1187,8 +1626,12 @@ SELECT jsonb_extract_path(props, 'address') FROM json_bin.events;
 (3 rows)
 
 SELECT jsonb_extract_path(props, 'address') FROM json_bin.events;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as jsonb
-DETAIL:  Remote Query: SELECT props FROM json_test.events
+        jsonb_extract_path         
+-----------------------------------
+ {"zip": "75001", "city": "Paris"}
+ {"zip": "SW1A", "city": "London"}
+(2 rows)
+
 -- WHERE: single-level jsonb_extract_path_text pushes down as dot notation.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_http.events WHERE jsonb_extract_path_text(props, 'customerId') = 'C100';
@@ -1320,8 +1763,12 @@ SELECT json_extract_path_text(props, 'customerId') FROM json_http.json_events;
 (3 rows)
 
 SELECT json_extract_path_text(props, 'customerId') FROM json_http.json_events ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as json
-DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
+ json_extract_path_text 
+------------------------
+ C100
+ C200
+(2 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT json_extract_path_text(props, 'customerId') FROM json_bin.json_events;
                                 QUERY PLAN                                
@@ -1332,8 +1779,12 @@ SELECT json_extract_path_text(props, 'customerId') FROM json_bin.json_events;
 (3 rows)
 
 SELECT json_extract_path_text(props, 'customerId') FROM json_bin.json_events ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as json
-DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
+ json_extract_path_text 
+------------------------
+ C100
+ C200
+(2 rows)
+
 -- Target-list: multi-level path, still evaluated locally.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT json_extract_path_text(props, 'address', 'city') FROM json_http.json_events;
@@ -1345,8 +1796,12 @@ SELECT json_extract_path_text(props, 'address', 'city') FROM json_http.json_even
 (3 rows)
 
 SELECT json_extract_path_text(props, 'address', 'city') FROM json_http.json_events ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as json
-DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
+ json_extract_path_text 
+------------------------
+ Paris
+ London
+(2 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT json_extract_path_text(props, 'address', 'city') FROM json_bin.json_events;
                                  QUERY PLAN                                 
@@ -1357,8 +1812,12 @@ SELECT json_extract_path_text(props, 'address', 'city') FROM json_bin.json_event
 (3 rows)
 
 SELECT json_extract_path_text(props, 'address', 'city') FROM json_bin.json_events ORDER BY id;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as json
-DETAIL:  Remote Query: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
+ json_extract_path_text 
+------------------------
+ Paris
+ London
+(2 rows)
+
 -- Target-list: json_extract_path (returns json, not text), evaluated locally.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT json_extract_path(props, 'address') FROM json_http.json_events;
@@ -1370,8 +1829,12 @@ SELECT json_extract_path(props, 'address') FROM json_http.json_events;
 (3 rows)
 
 SELECT json_extract_path(props, 'address') FROM json_http.json_events;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as json
-DETAIL:  Remote Query: SELECT props FROM json_test.events
+       json_extract_path        
+--------------------------------
+ {"city":"Paris","zip":"75001"}
+ {"city":"London","zip":"SW1A"}
+(2 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT json_extract_path(props, 'address') FROM json_bin.json_events;
                             QUERY PLAN                            
@@ -1382,8 +1845,12 @@ SELECT json_extract_path(props, 'address') FROM json_bin.json_events;
 (3 rows)
 
 SELECT json_extract_path(props, 'address') FROM json_bin.json_events;
-ERROR:  pg_clickhouse: cannot return Tuple(address Tuple(city String, zip String), customerId String) as json
-DETAIL:  Remote Query: SELECT props FROM json_test.events
+       json_extract_path        
+--------------------------------
+ {"city":"Paris","zip":"75001"}
+ {"city":"London","zip":"SW1A"}
+(2 rows)
+
 -- WHERE: single-level json_extract_path_text pushes down as dot notation.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_http.json_events WHERE json_extract_path_text(props, 'customerId') = 'C100';
@@ -1492,15 +1959,17 @@ CALL clickhouse_perform('json_admin', 'DROP DATABASE json_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;
 DROP SERVER binary_json_loopback CASCADE;
-NOTICE:  drop cascades to 5 other objects
-DETAIL:  drop cascades to foreign table json_bin.json_things
+NOTICE:  drop cascades to 6 other objects
+DETAIL:  drop cascades to foreign table json_bin.things
+drop cascades to foreign table json_bin.json_things
 drop cascades to foreign table json_bin.special_keys
 drop cascades to foreign table json_bin.json_special_keys
 drop cascades to foreign table json_bin.events
 drop cascades to foreign table json_bin.json_events
 DROP SERVER http_json_loopback CASCADE;
-NOTICE:  drop cascades to 5 other objects
-DETAIL:  drop cascades to foreign table json_http.json_things
+NOTICE:  drop cascades to 6 other objects
+DETAIL:  drop cascades to foreign table json_http.things
+drop cascades to foreign table json_http.json_things
 drop cascades to foreign table json_http.special_keys
 drop cascades to foreign table json_http.json_special_keys
 drop cascades to foreign table json_http.events

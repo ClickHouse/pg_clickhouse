@@ -1,0 +1,9 @@
+SET datestyle = 'ISO';
+CREATE SERVER binary_json_coldef_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'json_coldef_test', driver 'binary');
+CREATE SERVER http_json_coldef_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'json_coldef_test', driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_json_coldef_loopback;
+CREATE USER MAPPING FOR CURRENT_USER SERVER http_json_coldef_loopback;
+CREATE SERVER json_coldef_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER json_coldef_admin;
+\set ECHO errors
+SKIP: JSON support incomplete prior to ClickHouse 25.3

@@ -7,6 +7,16 @@ CREATE USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;
 CREATE SERVER json_admin FOREIGN DATA WRAPPER clickhouse_fdw;
 CREATE USER MAPPING FOR CURRENT_USER SERVER json_admin;
 
+\set ECHO errors
+SELECT clickhouse_server_version('json_admin') AS ch_version \gset
+SELECT (split_part(:'ch_version', '.', 1)::int,
+        split_part(:'ch_version', '.', 2)::int) < (25, 3) AS no_ch253 \gset
+\if :no_ch253
+\echo 'SKIP: JSON support incomplete prior to ClickHouse 25.3'
+\quit
+\endif
+\set ECHO all
+
 CALL clickhouse_perform('json_admin', 'DROP DATABASE IF EXISTS json_test');
 CALL clickhouse_perform('json_admin', 'CREATE DATABASE json_test');
 CALL clickhouse_perform('json_admin', $$

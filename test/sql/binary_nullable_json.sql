@@ -5,6 +5,16 @@ CREATE USER MAPPING FOR CURRENT_USER SERVER binary_nullable_json_loopback;
 CREATE SERVER binary_nullable_json_admin FOREIGN DATA WRAPPER clickhouse_fdw;
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_nullable_json_admin;
 
+\set ECHO errors
+SELECT clickhouse_server_version('binary_nullable_json_admin') AS ch_version \gset
+SELECT (split_part(:'ch_version', '.', 1)::int,
+        split_part(:'ch_version', '.', 2)::int) < (25, 3) AS no_ch253 \gset
+\if :no_ch253
+\echo 'SKIP: JSON support incomplete prior to ClickHouse 25.3'
+\quit
+\endif
+\set ECHO all
+
 CALL clickhouse_perform('binary_nullable_json_admin', 'DROP DATABASE IF EXISTS binary_nullable_json_test');
 CALL clickhouse_perform('binary_nullable_json_admin', 'CREATE DATABASE binary_nullable_json_test');
 CALL clickhouse_perform('binary_nullable_json_admin', 'CREATE TABLE binary_nullable_json_test.json_vals (

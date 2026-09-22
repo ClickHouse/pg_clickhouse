@@ -1,0 +1,151 @@
+SET datestyle = 'ISO';
+CREATE SERVER binary_json_coldef_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'json_coldef_test', driver 'binary');
+CREATE SERVER http_json_coldef_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'json_coldef_test', driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_json_coldef_loopback;
+CREATE USER MAPPING FOR CURRENT_USER SERVER http_json_coldef_loopback;
+CREATE SERVER json_coldef_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER json_coldef_admin;
+\set ECHO errors
+CALL clickhouse_perform('json_coldef_admin', 'DROP DATABASE IF EXISTS json_coldef_test');
+CALL clickhouse_perform('json_coldef_admin', 'CREATE DATABASE json_coldef_test');
+CALL clickhouse_perform('json_coldef_admin', $$
+    CREATE TABLE json_coldef_test.things (
+        id   Int32 NOT NULL,
+        data JSON(
+          max_dynamic_paths=0,
+          max_dynamic_types=0,
+          id UInt32,
+          name String,
+          size Enum('small', 'medium', 'large'),
+          stocked Bool,
+          SKIP non.existent
+        ) NOT NULL
+    ) ENGINE = MergeTree PARTITION BY id ORDER BY (id);
+$$);
+CREATE SCHEMA json_coldef_bin;
+CREATE SCHEMA json_coldef_http;
+IMPORT FOREIGN SCHEMA "json_coldef_test" FROM SERVER binary_json_coldef_loopback INTO json_coldef_bin;
+\d json_coldef_bin.things
+             Foreign table "json_coldef_bin.things"
+ Column |  Type   | Collation | Nullable | Default | FDW options 
+--------+---------+-----------+----------+---------+-------------
+ id     | integer |           | not null |         | 
+ data   | jsonb   |           | not null |         | 
+Server: binary_json_coldef_loopback
+FDW options: (database 'json_coldef_test', table_name 'things', engine 'MergeTree')
+
+IMPORT FOREIGN SCHEMA "json_coldef_test" FROM SERVER http_json_coldef_loopback INTO json_coldef_http;
+\d json_coldef_http.things
+             Foreign table "json_coldef_http.things"
+ Column |  Type   | Collation | Nullable | Default | FDW options 
+--------+---------+-----------+----------+---------+-------------
+ id     | integer |           | not null |         | 
+ data   | jsonb   |           | not null |         | 
+Server: http_json_coldef_loopback
+FDW options: (database 'json_coldef_test', table_name 'things', engine 'MergeTree')
+
+INSERT INTO json_coldef_bin.things VALUES
+    (1, '{"id": 1, "name": "widget", "size": "large", "stocked": true}'),
+    (2, '{"id": 2, "name": "sprocket", "size": "small", "stocked": true}')
+;
+INSERT INTO json_coldef_http.things VALUES
+    (3, '{"id": 3, "name": "gizmo", "size": "medium", "stocked": true}'),
+    (4, '{"id": 4, "name": "doodad", "size": "large", "stocked": false}')
+;
+SELECT * FROM json_coldef_bin.things ORDER BY id;
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": 1, "name": "widget", "size": "large", "stocked": true}
+  2 | {"id": 2, "name": "sprocket", "size": "small", "stocked": true}
+  3 | {"id": 3, "name": "gizmo", "size": "medium", "stocked": true}
+  4 | {"id": 4, "name": "doodad", "size": "large", "stocked": false}
+(4 rows)
+
+SELECT * FROM json_coldef_http.things ORDER BY id;
+ id |                              data                               
+----+-----------------------------------------------------------------
+  1 | {"id": 1, "name": "widget", "size": "large", "stocked": true}
+  2 | {"id": 2, "name": "sprocket", "size": "small", "stocked": true}
+  3 | {"id": 3, "name": "gizmo", "size": "medium", "stocked": true}
+  4 | {"id": 4, "name": "doodad", "size": "large", "stocked": false}
+(4 rows)
+
+-- ORDER BY with jsonb ->> pushdown.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM json_coldef_http.things ORDER BY data ->> 'name';
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Foreign Scan on json_coldef_http.things
+   Output: id, data, (data ->> 'name'::text)
+   Remote SQL: SELECT id, data FROM json_coldef_test.things ORDER BY data.name ASC NULLS LAST
+(3 rows)
+
+SELECT * FROM json_coldef_http.things ORDER BY data ->> 'name';
+ id |                              data                               
+----+-----------------------------------------------------------------
+  4 | {"id": 4, "name": "doodad", "size": "large", "stocked": false}
+  3 | {"id": 3, "name": "gizmo", "size": "medium", "stocked": true}
+  2 | {"id": 2, "name": "sprocket", "size": "small", "stocked": true}
+  1 | {"id": 1, "name": "widget", "size": "large", "stocked": true}
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM json_coldef_bin.things ORDER BY data ->> 'name';
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Foreign Scan on json_coldef_bin.things
+   Output: id, data, (data ->> 'name'::text)
+   Remote SQL: SELECT id, data FROM json_coldef_test.things ORDER BY data.name ASC NULLS LAST
+(3 rows)
+
+SELECT * FROM json_coldef_bin.things ORDER BY data ->> 'name';
+ id |                              data                               
+----+-----------------------------------------------------------------
+  4 | {"id": 4, "name": "doodad", "size": "large", "stocked": false}
+  3 | {"id": 3, "name": "gizmo", "size": "medium", "stocked": true}
+  2 | {"id": 2, "name": "sprocket", "size": "small", "stocked": true}
+  1 | {"id": 1, "name": "widget", "size": "large", "stocked": true}
+(4 rows)
+
+SET pg_clickhouse.session_settings TO 'allow_suspicious_types_in_order_by 1';
+SELECT * FROM json_coldef_http.things ORDER BY data ->> 'name' LIMIT 2;
+ id |                              data                              
+----+----------------------------------------------------------------
+  4 | {"id": 4, "name": "doodad", "size": "large", "stocked": false}
+  3 | {"id": 3, "name": "gizmo", "size": "medium", "stocked": true}
+(2 rows)
+
+SELECT * FROM json_coldef_bin.things ORDER BY data ->> 'name' LIMIT 2;
+ id |                              data                              
+----+----------------------------------------------------------------
+  4 | {"id": 4, "name": "doodad", "size": "large", "stocked": false}
+  3 | {"id": 3, "name": "gizmo", "size": "medium", "stocked": true}
+(2 rows)
+
+SET pg_clickhouse.session_settings TO '';
+-- ORDER BY with json ->> pushdown.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM json_coldef_http.json_coldef_things ORDER BY data ->> 'name';
+ERROR:  relation "json_coldef_http.json_coldef_things" does not exist
+LINE 2: SELECT * FROM json_coldef_http.json_coldef_things ORDER BY d...
+                      ^
+SELECT * FROM json_coldef_http.json_coldef_things ORDER BY data ->> 'name';
+ERROR:  relation "json_coldef_http.json_coldef_things" does not exist
+LINE 1: SELECT * FROM json_coldef_http.json_coldef_things ORDER BY d...
+                      ^
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM json_coldef_bin.json_coldef_things ORDER BY data ->> 'name';
+ERROR:  relation "json_coldef_bin.json_coldef_things" does not exist
+LINE 2: SELECT * FROM json_coldef_bin.json_coldef_things ORDER BY da...
+                      ^
+SELECT * FROM json_coldef_bin.json_coldef_things ORDER BY data ->> 'name';
+ERROR:  relation "json_coldef_bin.json_coldef_things" does not exist
+LINE 1: SELECT * FROM json_coldef_bin.json_coldef_things ORDER BY da...
+                      ^
+CALL clickhouse_perform('json_coldef_admin', 'DROP DATABASE json_coldef_test');
+DROP USER MAPPING FOR CURRENT_USER SERVER binary_json_coldef_loopback;
+DROP USER MAPPING FOR CURRENT_USER SERVER http_json_coldef_loopback;
+DROP SERVER binary_json_coldef_loopback CASCADE;
+NOTICE:  drop cascades to foreign table json_coldef_bin.things
+DROP SERVER http_json_coldef_loopback CASCADE;
+NOTICE:  drop cascades to foreign table json_coldef_http.things

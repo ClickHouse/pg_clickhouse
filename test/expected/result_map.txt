@@ -70,10 +70,7 @@ binary_nullable_json.sql
 ------------|----------------------------
  25.8+      | binary_nullable_json.out
  25.3       | binary_nullable_json_1.out
- 24.8       | binary_nullable_json_2.out
- 24.3       | binary_nullable_json_3.out
- 23.8       | binary_nullable_json_4.out
- 23.3       | binary_nullable_json_5.out
+ 23.3-25.2  | binary_nullable_json_2.out
 
 binary_queries.sql
 ------------------
@@ -208,7 +205,7 @@ import_schema.sql
  ClickHouse | File
 ------------|---------------------
  26.7+      | import_schema.out
- 23+-26.6   | import_schema_2.out
+ 23.3-26.6  | import_schema_2.out
 
 json.sql
 --------
@@ -220,11 +217,20 @@ json.sql
  ClickHouse | File
 ------------|------------
  25.8+      | json.out
- 24.10-25.3 | json_2.out
- 24.8-24.9  | json_3.out
- 24.3       | json_4.out
- 23.8       | json_5.out
- 23.3       | json_6.out
+ 25.3       | json_1.out
+ 23.3-25.2  | json_2.out
+
+json_coldef.sql
+----------------
+
+ Postgres | File
+----------|-----------------
+ 14-19    | json_coldef.out
+
+ ClickHouse | File
+------------|-------------------
+ 25.3+      | json_coldef.out
+ 23.3-25.2  | json_coldef_1.out
 
 param.sql
 ---------

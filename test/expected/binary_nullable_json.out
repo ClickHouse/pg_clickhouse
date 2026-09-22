@@ -3,6 +3,7 @@ CREATE SERVER binary_nullable_json_loopback FOREIGN DATA WRAPPER clickhouse_fdw
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_nullable_json_loopback;
 CREATE SERVER binary_nullable_json_admin FOREIGN DATA WRAPPER clickhouse_fdw;
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_nullable_json_admin;
+\set ECHO errors
 CALL clickhouse_perform('binary_nullable_json_admin', 'DROP DATABASE IF EXISTS binary_nullable_json_test');
 CALL clickhouse_perform('binary_nullable_json_admin', 'CREATE DATABASE binary_nullable_json_test');
 CALL clickhouse_perform('binary_nullable_json_admin', 'CREATE TABLE binary_nullable_json_test.json_vals (

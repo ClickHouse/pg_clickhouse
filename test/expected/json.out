@@ -5,6 +5,7 @@ CREATE USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;
 CREATE SERVER json_admin FOREIGN DATA WRAPPER clickhouse_fdw;
 CREATE USER MAPPING FOR CURRENT_USER SERVER json_admin;
+\set ECHO errors
 CALL clickhouse_perform('json_admin', 'DROP DATABASE IF EXISTS json_test');
 CALL clickhouse_perform('json_admin', 'CREATE DATABASE json_test');
 CALL clickhouse_perform('json_admin', $$
