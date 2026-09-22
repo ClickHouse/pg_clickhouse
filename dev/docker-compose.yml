@@ -13,14 +13,32 @@ volumes:
   config:
 
 services:
-  ch_26_7:
+  ch_26_9:
+    image: pgxn/pgxn-tools
+    container_name: ch_26_9
+    platform: linux/amd64
+    stdin_open: true
+    stop_grace_period: 10ms
+    environment:
+      CH_RELEASE: 26.9.2.8-stable
+    working_dir: /work
+    volumes:
+      - ..:/work
+    command: >
+      /bin/sh -c '
+        .github/ubuntu/clickhouse.sh
+        pg-start 19 libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev libre2-dev libicu-dev
+        printf "ClickHouse $$CH_RELEASE and Postgres 19 started"
+        tail -f /dev/null
+      '
+  ch_26_8:
     image: pgxn/pgxn-tools
     container_name: ch_26_8
     platform: linux/amd64
     stdin_open: true
     stop_grace_period: 10ms
     environment:
-      CH_RELEASE: 26.8.1.2041-lts
+      CH_RELEASE: 26.8.11.7-lts
     working_dir: /work
     volumes:
       - ..:/work
@@ -38,7 +56,7 @@ services:
     stdin_open: true
     stop_grace_period: 10ms
     environment:
-      CH_RELEASE: 26.3.27.3-lts
+      CH_RELEASE: 26.3.33.24-lts
     working_dir: /work
     volumes:
       - ..:/work
