@@ -1,0 +1,89 @@
+SET intervalstyle = 'postgres';
+CREATE SERVER binary_interval_int_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'interval_int_test', driver 'binary');
+CREATE SERVER http_interval_int_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'interval_int_test', driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_interval_int_loopback;
+CREATE USER MAPPING FOR CURRENT_USER SERVER http_interval_int_loopback;
+CREATE SERVER interval_int_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER interval_int_admin;
+\set ECHO errors
+CALL clickhouse_perform('interval_int_admin', 'DROP DATABASE IF EXISTS interval_int_test');
+CALL clickhouse_perform('interval_int_admin', 'CREATE DATABASE interval_int_test');
+CALL clickhouse_perform('interval_int_admin', $$
+    CREATE TABLE interval_int_test.intervals (
+        id      Int32              NOT NULL,
+        nanos   IntervalNanosecond NOT NULL,
+        seconds IntervalSecond     NOT NULL,
+        days    IntervalDay        NOT NULL,
+        months  IntervalMonth      NOT NULL
+    ) ENGINE = MergeTree ORDER BY (id);
+$$);
+CREATE SCHEMA ival_int_bin;
+CREATE SCHEMA ival_int_http;
+IMPORT FOREIGN SCHEMA "interval_int_test" FROM SERVER binary_interval_int_loopback INTO ival_int_bin;
+NOTICE:  pg_clickhouse: ClickHouse <column "nanos"> precision exceeds microseconds (6), interval truncates it
+IMPORT FOREIGN SCHEMA "interval_int_test" FROM SERVER http_interval_int_loopback INTO ival_int_http;
+NOTICE:  pg_clickhouse: ClickHouse <column "nanos"> precision exceeds microseconds (6), interval truncates it
+CREATE FOREIGN TABLE ival_int_bin.ints (
+    id      INT    NOT NULL,
+    nanos   BIGINT NOT NULL,
+    seconds BIGINT NOT NULL,
+    days    INT    NOT NULL,
+    months  INT    NOT NULL
+) SERVER binary_interval_int_loopback OPTIONS (table_name 'intervals');
+CREATE FOREIGN TABLE ival_int_http.ints (
+    id      INT    NOT NULL,
+    nanos   BIGINT NOT NULL,
+    seconds BIGINT NOT NULL,
+    days    INT    NOT NULL,
+    months  INT    NOT NULL
+) SERVER http_interval_int_loopback OPTIONS (table_name 'intervals');
+-- Integers insert as unit counts
+INSERT INTO ival_int_bin.ints VALUES (1, 1500, 90, 3, 14);
+INSERT INTO ival_int_http.ints VALUES (2, 2500, 45, 4, 15);
+-- Interval inserts as unit count
+INSERT INTO ival_int_bin.intervals VALUES (3, '1 microsecond', '1 minute', '1 week', '1 year');
+SELECT * FROM ival_int_bin.ints ORDER BY id;
+ id | nanos | seconds | days | months 
+----+-------+---------+------+--------
+  1 |  1500 |      90 |    3 |     14
+  2 |  2500 |      45 |    4 |     15
+  3 |  1000 |      60 |    7 |     12
+(3 rows)
+
+SELECT * FROM ival_int_http.ints ORDER BY id;
+ id | nanos | seconds | days | months 
+----+-------+---------+------+--------
+  1 |  1500 |      90 |    3 |     14
+  2 |  2500 |      45 |    4 |     15
+  3 |  1000 |      60 |    7 |     12
+(3 rows)
+
+SELECT * FROM ival_int_bin.intervals ORDER BY id;
+ id |      nanos      | seconds  |  days  |    months     
+----+-----------------+----------+--------+---------------
+  1 | 00:00:00.000001 | 00:01:30 | 3 days | 1 year 2 mons
+  2 | 00:00:00.000002 | 00:00:45 | 4 days | 1 year 3 mons
+  3 | 00:00:00.000001 | 00:01:00 | 7 days | 1 year
+(3 rows)
+
+SELECT * FROM ival_int_http.intervals ORDER BY id;
+ id |      nanos      | seconds  |  days  |    months     
+----+-----------------+----------+--------+---------------
+  1 | 00:00:00.000001 | 00:01:30 | 3 days | 1 year 2 mons
+  2 | 00:00:00.000002 | 00:00:45 | 4 days | 1 year 3 mons
+  3 | 00:00:00.000001 | 00:01:00 | 7 days | 1 year
+(3 rows)
+
+CALL clickhouse_perform('interval_int_admin', 'DROP DATABASE interval_int_test');
+DROP USER MAPPING FOR CURRENT_USER SERVER binary_interval_int_loopback;
+DROP USER MAPPING FOR CURRENT_USER SERVER http_interval_int_loopback;
+DROP USER MAPPING FOR CURRENT_USER SERVER interval_int_admin;
+DROP SERVER binary_interval_int_loopback CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table ival_int_bin.intervals
+drop cascades to foreign table ival_int_bin.ints
+DROP SERVER http_interval_int_loopback CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table ival_int_http.intervals
+drop cascades to foreign table ival_int_http.ints
+DROP SERVER interval_int_admin;

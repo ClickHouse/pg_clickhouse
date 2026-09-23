@@ -52,7 +52,8 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     to unconstrained `text` because ClickHouse counts bytes while PostgreSQL
     character limits count characters ([#349]).
 *   `IMPORT FOREIGN SCHEMA` now maps `BFloat16` to `real` and `Interval` types
-    to `interval`. `IntervalNanosecond` truncates to microseconds ([#349])
+    to `interval`. `IntervalNanosecond` truncates to microseconds.
+    `Interval` types also map to `bigint` transparently ([#349], [#374]).
 *   `IMPORT FOREIGN SCHEMA` now maps `Int128`, `Int256`, `UInt128`, and
     `UInt256` columns to `numeric` rather than erroring, and `UInt64` to
     `numeric` rather than erroring above the `bigint` maximum. It declares the
@@ -126,6 +127,8 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     "ClickHouse/pg_clickhouse#363 update pg-clickhouse-c"
   [#367]: https://github.com/ClickHouse/pg_clickhouse/pull/367
     "ClickHouse/pg_clickhouse#367 CH 26.9 map cardinality to arrayFlattenedLength"
+  [#374]: https://github.com/ClickHouse/pg_clickhouse/pull/374
+    "ClickHouse/pg_clickhouse#374 update pg-clickhouse-c, improves integer/interval coercion"
   [arrayFlattenedLength]: https://clickhouse.com/docs/reference/functions/regular-functions/array-functions#arrayFlattenedLength
     "ClickHouse Docs: arrayFlattenedLength"
   [#373]: https://github.com/ClickHouse/pg_clickhouse/pull/373

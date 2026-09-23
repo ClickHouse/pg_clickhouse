@@ -1108,6 +1108,18 @@ ClickHouse wrote them.
 
 Additional notes and details follow.
 
+### Type Coercion
+
+With the `binary` driver, alternate scalar types use PostgreSQL's explicit
+casts where available, and array elements are converted to the declared
+element type. Unsupported conversions and out-of-range values raise errors.
+
+With either driver, map ClickHouse `Interval` types to `smallint`, `integer`,
+or `bigint` to read and write counts of their units. For example, an
+`IntervalDay` value of `3` maps to the integer `3`. Mapping
+`IntervalNanosecond` to `bigint` preserves nanoseconds, while mapping to
+`interval` truncates to microseconds.
+
 ### BYTEA
 
 ClickHouse does not provide the equivalent of the PostgreSQL [BYTEA] type, but
