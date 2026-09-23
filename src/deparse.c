@@ -3913,7 +3913,8 @@ deparseSubscriptingRef(SubscriptingRef* node, deparse_expr_cxt* context) {
         /*
          * Slice: CH doesn't support [L:U] syntax, emit arraySlice(). PG slice
          * is inclusive both ends, CH arraySlice takes (arr, offset, length).
-         * Only 1D arrays are supported (enforced elsewhere).
+         * Only 1D arrays are supported (enforced elsewhere). Does not
+         * currently support multiple slices ([L:U][L:U]...).
          */
         Expr* lower = (Expr*)linitial(node->reflowerindexpr);
         Expr* upper = (Expr*)linitial(node->refupperindexpr);
@@ -3942,7 +3943,8 @@ deparseSubscriptingRef(SubscriptingRef* node, deparse_expr_cxt* context) {
 
         appendStringInfoChar(buf, ')');
     } else {
-        /* Single element: emit arr[idx] */
+        ListCell* uplist_item;
+        /* No lower, emit arr[idx][idx]... */
         appendStringInfoChar(buf, '(');
         if (IsA(node->refexpr, Var)) {
             deparseExpr(node->refexpr, context);
@@ -3951,9 +3953,12 @@ deparseSubscriptingRef(SubscriptingRef* node, deparse_expr_cxt* context) {
             deparseExpr(node->refexpr, context);
             appendStringInfoChar(buf, ')');
         }
-        appendStringInfoChar(buf, '[');
-        deparseExpr((Expr*)linitial(node->refupperindexpr), context);
-        appendStringInfoString(buf, "])");
+        foreach (uplist_item, node->refupperindexpr) {
+            appendStringInfoChar(buf, '[');
+            deparseExpr(lfirst(uplist_item), context);
+            appendStringInfoChar(buf, ']');
+        }
+        appendStringInfoChar(buf, ')');
     }
 }
 
@@ -5634,7 +5639,7 @@ deparseArrayExpr(ArrayExpr* node, deparse_expr_cxt* context) {
         appendStringInfoString(buf, "CAST(");
     }
 
-    appendStringInfoString(buf, "[");
+    appendStringInfoChar(buf, '[');
     deparseArrayList(node, context);
     appendStringInfoChar(buf, ']');
 

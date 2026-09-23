@@ -81,6 +81,8 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     [arrayFlattenedLength], which counts every element across nested arrays as
     PostgreSQL does. Earlier ClickHouse versions still use `length`, which
     counts only the outer array ([#367]).
+*   Added pushdown for multidimensional array indexing in `WHERE` clauses
+    (`WHERE foo[1][1] = 'abc'`) ([#373])
 
 ### 🐞 Bug Fixes
 
@@ -126,6 +128,8 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     "ClickHouse/pg_clickhouse#367 CH 26.9 map cardinality to arrayFlattenedLength"
   [arrayFlattenedLength]: https://clickhouse.com/docs/reference/functions/regular-functions/array-functions#arrayFlattenedLength
     "ClickHouse Docs: arrayFlattenedLength"
+  [#373]: https://github.com/ClickHouse/pg_clickhouse/pull/373
+    "ClickHouse/pg_clickhouse#373 Add pushdown for multidimensional array index"
 
 ## [v0.10.0] — 2026-08-11
 

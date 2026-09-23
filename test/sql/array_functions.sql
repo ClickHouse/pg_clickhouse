@@ -11,14 +11,15 @@ CALL clickhouse_perform('arr_admin', $$
         id   Int32,
         vals Array(Int32),
         tags Array(String),
+        pts   Array(Array(Int16)),
         list String
     ) ENGINE = MergeTree ORDER BY id
 $$);
 CALL clickhouse_perform('arr_admin', $$
     INSERT INTO arr_test.t1 VALUES
-        (1, [10,20,30], ['a','b','c'], 'aa-bb-cc'),
-        (2, [40,50],    ['d','e'], 'x//z'),
-        (3, [60],       ['f'], 'Edit -> Insert -> Line Break')
+        (1, [10,20,30], ['a','b','c'], [[1,2],[3,4]], 'aa-bb-cc'),
+        (2, [40,50],    ['d','e'], [[22],[33]], 'x//z'),
+        (3, [60],       ['f'], [[-1,-2]], 'Edit -> Insert -> Line Break')
 $$);
 CALL clickhouse_perform('arr_admin', $$
     CREATE TABLE arr_test.empty_arrays (
@@ -34,17 +35,17 @@ SET search_path = arr_test, public;
 
 -- array_cat → arrayConcat
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE array_cat(vals, ARRAY[99]) = ARRAY[10,20,30,99];
-SELECT * FROM t1 WHERE array_cat(vals, ARRAY[99]) = ARRAY[10,20,30,99];
+SELECT id, vals FROM t1 WHERE array_cat(vals, ARRAY[99]) = ARRAY[10,20,30,99];
+SELECT id, vals FROM t1 WHERE array_cat(vals, ARRAY[99]) = ARRAY[10,20,30,99];
 
 -- array_append → arrayPushBack
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE array_append(vals, 99) = ARRAY[10,20,30,99];
-SELECT * FROM t1 WHERE array_append(vals, 99) = ARRAY[10,20,30,99];
+SELECT id, vals FROM t1 WHERE array_append(vals, 99) = ARRAY[10,20,30,99];
+SELECT id, vals FROM t1 WHERE array_append(vals, 99) = ARRAY[10,20,30,99];
 
 -- array_remove → arrayRemove (CH 26+, EXPLAIN only)
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE array_remove(vals, 20) = ARRAY[10,30];
+SELECT id, vals FROM t1 WHERE array_remove(vals, 20) = ARRAY[10,30];
 
 \unset ECHO
 -- Use a DO block to test arrayRemove on 26+ only.
@@ -59,7 +60,7 @@ BEGIN
 		END LOOP;
     ELSE
 		-- Fake it on earlier versions.
-		RAISE NOTICE '(1,"{10,20,30}","{a,b,c}",aa-bb-cc)';
+		RAISE NOTICE '(1,"{10,20,30}","{a,b,c}","{{1,2},{3,4}}",aa-bb-cc)';
     END IF;
 END;
 $$;
@@ -67,8 +68,8 @@ $$;
 
 -- array_to_string → arrayStringConcat
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE array_to_string(tags, ',') = 'a,b,c';
-SELECT * FROM t1 WHERE array_to_string(tags, ',') = 'a,b,c';
+SELECT id, tags FROM t1 WHERE array_to_string(tags, ',') = 'a,b,c';
+SELECT id, tags FROM t1 WHERE array_to_string(tags, ',') = 'a,b,c';
 
 -- cardinality → arrayFlattenedLength on CH 26.9+, length on older versions
 \unset ECHO
@@ -91,13 +92,13 @@ BEGIN
 END;
 $$;
 \set ECHO all
-SELECT * FROM t1 WHERE cardinality(vals) = 3;
+SELECT id, vals FROM t1 WHERE cardinality(vals) = 3;
 SELECT count(*) FROM empty_arrays WHERE cardinality(vals) = 0;
 
 -- array_position → nullIf(indexOf, 0)
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE array_position(vals, 20) = 2;
-SELECT * FROM t1 WHERE array_position(vals, 20) = 2;
+SELECT id, vals FROM t1 WHERE array_position(vals, 20) = 2;
+SELECT id, vals FROM t1 WHERE array_position(vals, 20) = 2;
 
 -- array_position returns NULL rather than zero when the value is absent.
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -108,8 +109,8 @@ SELECT id FROM t1 WHERE array_position(vals, 999) = 0 ORDER BY id;
 
 -- Third argument constant > 0 should push down arraySlice().
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE array_position(vals, 20, 2) = 2;
-SELECT * FROM t1 WHERE array_position(vals, 20, 2) = 2;
+SELECT id, vals FROM t1 WHERE array_position(vals, 20, 2) = 2;
+SELECT id, vals FROM t1 WHERE array_position(vals, 20, 2) = 2;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM t1
@@ -152,8 +153,8 @@ ORDER BY id;
 
 -- array_length → nullIf(length(), 0) for the first dimension
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE array_length(vals, 1) = 2;
-SELECT * FROM t1 WHERE array_length(vals, 1) = 2;
+SELECT id, vals FROM t1 WHERE array_length(vals, 1) = 2;
+SELECT id, vals FROM t1 WHERE array_length(vals, 1) = 2;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM empty_arrays WHERE array_length(vals, 1) IS NULL ORDER BY id;
 SELECT id FROM empty_arrays WHERE array_length(vals, 1) IS NULL ORDER BY id;
@@ -167,24 +168,24 @@ SELECT id FROM t1 WHERE array_length(vals, id) IS NULL ORDER BY id;
 
 -- array_prepend → arrayPushFront (args reversed)
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE array_prepend(99, vals) = ARRAY[99,10,20,30];
-SELECT * FROM t1 WHERE array_prepend(99, vals) = ARRAY[99,10,20,30];
+SELECT id, vals FROM t1 WHERE array_prepend(99, vals) = ARRAY[99,10,20,30];
+SELECT id, vals FROM t1 WHERE array_prepend(99, vals) = ARRAY[99,10,20,30];
 
 -- string_to_array → splitByString
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE string_to_array(list, '-') = ARRAY['aa','bb','cc'];
-SELECT * FROM t1 WHERE string_to_array(list, '-') = ARRAY['aa','bb','cc'];
+SELECT id, list FROM t1 WHERE string_to_array(list, '-') = ARRAY['aa','bb','cc'];
+SELECT id, list FROM t1 WHERE string_to_array(list, '-') = ARRAY['aa','bb','cc'];
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE string_to_array(list, ' -> ') = ARRAY['aa','bb','cc'];
-SELECT * FROM t1 WHERE string_to_array(list, ' -> ') = ARRAY['Edit','Insert', 'Line Break'];
+SELECT id, list FROM t1 WHERE string_to_array(list, ' -> ') = ARRAY['aa','bb','cc'];
+SELECT id, list FROM t1 WHERE string_to_array(list, ' -> ') = ARRAY['Edit','Insert', 'Line Break'];
 
 -- split_part → splitByString
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE split_part(list, '-', 2) = 'bb';
-SELECT * FROM t1 WHERE split_part(list, '-', 2) = 'bb';
+SELECT id, list FROM t1 WHERE split_part(list, '-', 2) = 'bb';
+SELECT id, list FROM t1 WHERE split_part(list, '-', 2) = 'bb';
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE split_part(list, '-', -1) = 'cc';
-SELECT * FROM t1 WHERE split_part(list, '-', -1) = 'cc';
+SELECT id, list FROM t1 WHERE split_part(list, '-', -1) = 'cc';
+SELECT id, list FROM t1 WHERE split_part(list, '-', -1) = 'cc';
 
 \unset ECHO
 -- Use DO to test functions available in Postgres 14+
@@ -195,17 +196,17 @@ DECLARE
 	output JSONB;
 BEGIN
     IF current_setting('server_version_num')::int >= 140000 THEN
-        EXECUTE 'EXPLAIN (VERBOSE, FORMAT JSON) SELECT * FROM t1 WHERE trim_array(vals, 1) = ARRAY[10,20]' INTO output;
+        EXECUTE 'EXPLAIN (VERBOSE, FORMAT JSON) SELECT id, vals FROM t1 WHERE trim_array(vals, 1) = ARRAY[10,20]' INTO output;
         RAISE NOTICE 'trim_array PUSHED DOWN: %', jsonb_path_query(
             output, '$[0].Plan'
-        )->>'Remote SQL' = 'SELECT id, vals, tags, list FROM arr_test.t1 WHERE ((arrayResize(vals, length(vals) - 1) = [10,20]))';
-        FOR rec IN EXECUTE 'SELECT * FROM t1 WHERE trim_array(vals, 1) = ARRAY[10,20]' LOOP
+        )->>'Remote SQL' = 'SELECT id, vals FROM arr_test.t1 WHERE ((arrayResize(vals, length(vals) - 1) = [10,20]))';
+        FOR rec IN EXECUTE 'SELECT id, vals FROM t1 WHERE trim_array(vals, 1) = ARRAY[10,20]' LOOP
             RAISE NOTICE '%', rec;
         END LOOP;
     ELSE
         -- Fake it on earlier versions.
         RAISE NOTICE 'trim_array PUSHED DOWN: t';
-        RAISE NOTICE '(1,"{10,20,30}","{a,b,c}",aa-bb-cc)';
+        RAISE NOTICE '(1,"{10,20,30}")';
     END IF;
 END;
 $$;
@@ -251,32 +252,32 @@ DECLARE
 BEGIN
     IF current_setting('server_version_num')::int >= 180000 THEN
         FOREACH tc IN ARRAY tests LOOP
-            EXECUTE format('EXPLAIN (VERBOSE, FORMAT JSON) SELECT * FROM t1 WHERE %s', tc->>'where') INTO output;
+            EXECUTE format('EXPLAIN (VERBOSE, FORMAT JSON) SELECT id, vals FROM t1 WHERE %s', tc->>'where') INTO output;
             If tc ? 'push' THEN
                 RAISE NOTICE '% PUSHED DOWN: %', tc->>'func', jsonb_path_query(
                     output, '$[0].Plan'
-                )->>'Remote SQL' = format('SELECT id, vals, tags, list FROM arr_test.t1 WHERE %s', tc->>'push');
+                )->>'Remote SQL' = format('SELECT id, vals FROM arr_test.t1 WHERE %s', tc->>'push');
             ELSE
                 RAISE NOTICE '% NOT PUSHED DOWN: %', tc->>'func', jsonb_path_query(
                     output, '$[0].Plan'
-                )->>'Remote SQL' = 'SELECT id, vals, tags, list FROM arr_test.t1';
+                )->>'Remote SQL' = 'SELECT id, vals FROM arr_test.t1';
             END IF;
-            FOR rec IN EXECUTE format('SELECT * FROM t1 WHERE %s', tc->>'where') LOOP
+            FOR rec IN EXECUTE format('SELECT id, vals FROM t1 WHERE %s', tc->>'where') LOOP
                 RAISE NOTICE '%', rec;
             END LOOP;
         END LOOP;
     ELSE
         -- Fake it for earlier versions.
         RAISE NOTICE 'array_reverse PUSHED DOWN: t';
-        RAISE NOTICE '(1,"{10,20,30}","{a,b,c}",aa-bb-cc)';
+        RAISE NOTICE '(1,"{10,20,30}")';
         RAISE NOTICE 'array_sort PUSHED DOWN: f';
-        RAISE NOTICE '(3,{60},{f},"Edit -> Insert -> Line Break")';
+        RAISE NOTICE '(3,{60})';
         RAISE NOTICE 'array_sort(x, dynamic) NOT PUSHED DOWN: t';
-        RAISE NOTICE '(1,"{10,20,30}","{a,b,c}",aa-bb-cc)';
+        RAISE NOTICE '(1,"{10,20,30}")';
         RAISE NOTICE 'array_sort(x, true) PUSHED DOWN: t';
-        RAISE NOTICE '(1,"{10,20,30}","{a,b,c}",aa-bb-cc)';
+        RAISE NOTICE '(1,"{10,20,30}")';
         RAISE NOTICE 'array_sort(x, true, true) NOT PUSHED DOWN: t';
-        RAISE NOTICE '(1,"{10,20,30}","{a,b,c}",aa-bb-cc)';
+        RAISE NOTICE '(1,"{10,20,30}")';
     END IF;
 END;
 $$;
@@ -296,51 +297,56 @@ SELECT id FROM t1 WHERE array_length(array_sample(vals, 1), 1) = 1 ORDER BY id;
 
 -- Operators: @> → hasAll
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE vals @> ARRAY[10];
-SELECT * FROM t1 WHERE vals @> ARRAY[10] ORDER BY id;
+SELECT id, vals FROM t1 WHERE vals @> ARRAY[10];
+SELECT id, vals FROM t1 WHERE vals @> ARRAY[10] ORDER BY id;
 
 -- Operators: <@ → hasAll (reversed)
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE vals <@ ARRAY[10,20,30];
-SELECT * FROM t1 WHERE vals <@ ARRAY[10,20,30] ORDER BY id;
+SELECT id, vals FROM t1 WHERE vals <@ ARRAY[10,20,30];
+SELECT id, vals FROM t1 WHERE vals <@ ARRAY[10,20,30] ORDER BY id;
 
 -- Operators: && → hasAny
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE vals && ARRAY[20,40];
-SELECT * FROM t1 WHERE vals && ARRAY[20,40] ORDER BY id;
+SELECT id, vals FROM t1 WHERE vals && ARRAY[20,40];
+SELECT id, vals FROM t1 WHERE vals && ARRAY[20,40] ORDER BY id;
 
 -- Subscript pushdown
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE vals[1] = 10;
-SELECT * FROM t1 WHERE vals[1] = 10;
+SELECT id, vals FROM t1 WHERE vals[1] = 10;
+SELECT id, vals FROM t1 WHERE vals[1] = 10;
+
+-- Multidimensional subscript pushdown
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, pts FROM t1 WHERE pts[2][1] = 3;
+SELECT id, pts FROM t1 WHERE pts[2][1] = 3;
 
 -- Slicing pushdown
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE vals[1:2] = ARRAY[10,20];
-SELECT * FROM t1 WHERE vals[1:2] = ARRAY[10,20];
+SELECT id, vals FROM t1 WHERE vals[1:2] = ARRAY[10,20];
+SELECT id, vals FROM t1 WHERE vals[1:2] = ARRAY[10,20];
 
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE vals[:2] = ARRAY[10,20];
-SELECT * FROM t1 WHERE vals[:2] = ARRAY[10,20];
+SELECT id, vals FROM t1 WHERE vals[:2] = ARRAY[10,20];
+SELECT id, vals FROM t1 WHERE vals[:2] = ARRAY[10,20];
 
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE vals[2:] = ARRAY[20,30];
-SELECT * FROM t1 WHERE vals[2:] = ARRAY[20,30];
+SELECT id, vals FROM t1 WHERE vals[2:] = ARRAY[20,30];
+SELECT id, vals FROM t1 WHERE vals[2:] = ARRAY[20,30];
 
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM t1 WHERE vals[:] = ARRAY[10,20,30];
-SELECT * FROM t1 WHERE vals[:] = ARRAY[10,20,30];
+SELECT id, vals FROM t1 WHERE vals[:] = ARRAY[10,20,30];
+SELECT id, vals FROM t1 WHERE vals[:] = ARRAY[10,20,30];
 
 -- Unshippable (function NOT in Remote SQL)
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_dims(vals) = '[1:3]';
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_ndims(vals) = 1;
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_lower(vals, 1) = 1;
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_upper(vals, 1) = 3;
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_replace(vals, 20, 99) = ARRAY[10,99,30];
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_positions(vals, 20) = ARRAY[2];
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_to_string(vals, ',', '*') = '10,20,30';
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE array_fill(7, ARRAY[2], vals) = '[60:61]={7,7}'::int[];
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE string_to_array(list, '/', 'nil') = ARRAY['x','','z'];
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id, vals FROM t1 WHERE array_dims(vals) = '[1:3]';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id, vals FROM t1 WHERE array_ndims(vals) = 1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id, vals FROM t1 WHERE array_lower(vals, 1) = 1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id, vals FROM t1 WHERE array_upper(vals, 1) = 3;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id, vals FROM t1 WHERE array_replace(vals, 20, 99) = ARRAY[10,99,30];
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id, vals FROM t1 WHERE array_positions(vals, 20) = ARRAY[2];
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id, vals FROM t1 WHERE array_to_string(vals, ',', '*') = '10,20,30';
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id, vals FROM t1 WHERE array_fill(7, ARRAY[2], vals) = '[60:61]={7,7}'::int[];
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id, vals FROM t1 WHERE string_to_array(list, '/', 'nil') = ARRAY['x','','z'];
 
 DROP USER MAPPING FOR CURRENT_USER SERVER arr_svr;
 CALL clickhouse_perform('arr_admin', 'DROP DATABASE arr_test');
