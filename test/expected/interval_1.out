@@ -1,0 +1,9 @@
+SET intervalstyle = 'postgres';
+CREATE SERVER binary_interval_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'interval_test', driver 'binary');
+CREATE SERVER http_interval_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'interval_test', driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER binary_interval_loopback;
+CREATE USER MAPPING FOR CURRENT_USER SERVER http_interval_loopback;
+CREATE SERVER interval_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER interval_admin;
+\set ECHO errors
+SKIP: Interval columns unsupported prior to ClickHouse 23.5

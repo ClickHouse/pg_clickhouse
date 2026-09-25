@@ -10,13 +10,13 @@
  */
 
 CREATE TABLE logs (
-    req_id    Int64 NOT NULL,
-    start_at   DateTime64(6, 'UTC') NOT NULL,
-    duration  Int32 NOT NULL,
-    resource  Text  NOT NULL,
+    req_id    Int64                NOT NULL,
+    start_at  DateTime64(6, 'UTC') NOT NULL,
+    duration  IntervalMillisecond  NOT NULL,
+    resource  Text                 NOT NULL,
     method    Enum8('GET' = 1, 'HEAD', 'POST', 'PUT', 'DELETE', 'CONNECT', 'OPTIONS', 'TRACE', 'PATCH', 'QUERY') NOT NULL,
-    node_id   Int64 NOT NULL,
-    response  Int32 NOT NULL
+    node_id   Int64                NOT NULL,
+    response  Int32                NOT NULL
 ) ENGINE = MergeTree
   ORDER BY start_at;
 

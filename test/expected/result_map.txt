@@ -207,6 +207,14 @@ import_schema.sql
  26.7+      | import_schema.out
  23.3-26.6  | import_schema_2.out
 
+interval.sql
+------------
+
+ ClickHouse | File
+------------|--------------------
+ 23.5+      | interval.out
+ 23.3       | interval_1.out
+
 interval_int.sql
 ----------------
 

@@ -4906,7 +4906,7 @@ deparseIntervalOp(Node* first, Node* second, deparse_expr_cxt* context, bool plu
     if (!IsA(second, Const)) {
         bool old_op = context->interval_op;
 
-        appendStringInfoString(buf, plus ? " + INTERVAL " : " - INTERVAL ");
+        appendStringInfoString(buf, plus ? " + " : " - ");
 
         /* second */
         context->interval_op = true;

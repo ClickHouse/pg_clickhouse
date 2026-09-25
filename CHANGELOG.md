@@ -52,8 +52,8 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     to unconstrained `text` because ClickHouse counts bytes while PostgreSQL
     character limits count characters ([#349]).
 *   `IMPORT FOREIGN SCHEMA` now maps `BFloat16` to `real` and `Interval` types
-    to `interval`. `IntervalNanosecond` truncates to microseconds.
-    `Interval` types also map to `bigint` transparently ([#349], [#374]).
+    to `interval`. `IntervalNanosecond` truncates to microseconds. `Interval`
+    types also map to `bigint` transparently ([#349], [#374]).
 *   `IMPORT FOREIGN SCHEMA` now maps `Int128`, `Int256`, `UInt128`, and
     `UInt256` columns to `numeric` rather than erroring, and `UInt64` to
     `numeric` rather than erroring above the `bigint` maximum. It declares the
