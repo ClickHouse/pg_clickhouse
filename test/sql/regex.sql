@@ -131,6 +131,10 @@ SELECT * FROM strings WHERE regexp_replace(val, '[VL]', 'x', 'i') = 'xal1';
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM strings WHERE regexp_replace(val, '[VL]', 'x', 'gig') = 'xax1';
 SELECT * FROM strings WHERE regexp_replace(val, '[VL]', 'x', 'gig') = 'xax1';
+-- Postgres-only flags translate to RE2 equivalents.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM strings WHERE regexp_replace(val, '[VL]', 'x', 'gpit') = 'xax1';
+SELECT * FROM strings WHERE regexp_replace(val, '[VL]', 'x', 'gpit') = 'xax1';
 -- Refer to full match.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM strings WHERE regexp_replace(val, '^val', 'x-\0', 'i') = 'x-val1';

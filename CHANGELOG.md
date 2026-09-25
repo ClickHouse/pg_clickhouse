@@ -89,6 +89,11 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
 
 *   Fixed inserting `interval` values with HTTP driver. Values are now
     encoded based on destination's ClickHouse schema ([#376]).
+*   Fixed `regexp_replace()` pushdown passing flags to ClickHouse unmapped,
+    which failed for `n`/`p`/`t`/`w`. Flags now translate as they do for other
+    regular expression functions ([#377]).
+*   Fixed pushdown of date and timestamp arithmetic dropping sub-second
+    interval precision, such as `ts + interval '0.5 seconds'` ([#377]).
 *   Fixed an issue where a check for ordered aggregates incorrectly handled
     custom aggregates that were not part of an extension. It now properly
     keeps custom aggregate execution local. Thanks to Minh Vu for the PR
@@ -133,6 +138,8 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     "ClickHouse/pg_clickhouse#374 update pg-clickhouse-c, improves integer/interval coercion"
   [#376]: https://github.com/ClickHouse/pg_clickhouse/pull/376
     "ClickHouse/pg_clickhouse#376 http: DESCRIBE TABLE to know destination schema"
+  [#377]: https://github.com/ClickHouse/pg_clickhouse/pull/377
+    "ClickHouse/pg_clickhouse#377 Fix regex bugs, interval arithmetic precision, & optimize allocations"
   [arrayFlattenedLength]: https://clickhouse.com/docs/reference/functions/regular-functions/array-functions#arrayFlattenedLength
     "ClickHouse Docs: arrayFlattenedLength"
   [#373]: https://github.com/ClickHouse/pg_clickhouse/pull/373

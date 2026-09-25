@@ -26,6 +26,7 @@
 #include "nodes/pathnodes.h"
 #include "optimizer/optimizer.h"
 #include "server_version.h"
+#include "utils/date.h"
 #include "utils/relcache.h"
 
 #if PG_VERSION_NUM < 150000
@@ -106,6 +107,8 @@ List*
 chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server);
 char*
 ch_quote_literal(const char* rawstr);
+void
+ch_append_literal(StringInfo buf, const char* s, size_t len);
 char*
 chfdw_datum_to_ch_literal(Datum value, Oid type);
 const char*
@@ -459,9 +462,13 @@ chfdw_get_custom_column_info(Oid relid, uint16 varattno);
 extern CustomObjectDef*
 chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form);
 
-extern Datum ch_timestamp_out(PG_FUNCTION_ARGS);
-extern Datum ch_date_out(PG_FUNCTION_ARGS);
-extern Datum ch_time_out(PG_FUNCTION_ARGS);
+/* Encode as ClickHouse literal text into buf, which needs MAXDATELEN + 1 bytes */
+extern void
+chfdw_encode_timestamp(Timestamp timestamp, char* buf);
+extern void
+chfdw_encode_date(DateADT date, char* buf);
+extern void
+chfdw_encode_time(TimeADT time, char* buf);
 
 extern bool
 chfdw_is_shippable(

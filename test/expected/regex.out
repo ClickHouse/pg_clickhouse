@@ -134,14 +134,30 @@ SELECT * FROM strings WHERE regexp_replace(val, '[VL]', 'x', 'i') = 'xal1';
 -- Replace all case-insensitive.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM strings WHERE regexp_replace(val, '[VL]', 'x', 'gig') = 'xax1';
-                                                         QUERY PLAN                                                          
------------------------------------------------------------------------------------------------------------------------------
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.strings
    Output: id, val
-   Remote SQL: SELECT id, val FROM regex_test.strings WHERE ((replaceRegexpAll(val, concat('(?ii)', '[VL]'), 'x') = 'xax1'))
+   Remote SQL: SELECT id, val FROM regex_test.strings WHERE ((replaceRegexpAll(val, concat('(?i)', '[VL]'), 'x') = 'xax1'))
 (3 rows)
 
 SELECT * FROM strings WHERE regexp_replace(val, '[VL]', 'x', 'gig') = 'xax1';
+ id | val  
+----+------
+  1 | val1
+(1 row)
+
+-- Postgres-only flags translate to RE2 equivalents.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM strings WHERE regexp_replace(val, '[VL]', 'x', 'gpit') = 'xax1';
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.strings
+   Output: id, val
+   Remote SQL: SELECT id, val FROM regex_test.strings WHERE ((replaceRegexpAll(val, concat('(?i-s)', '[VL]'), 'x') = 'xax1'))
+(3 rows)
+
+SELECT * FROM strings WHERE regexp_replace(val, '[VL]', 'x', 'gpit') = 'xax1';
  id | val  
 ----+------
   1 | val1

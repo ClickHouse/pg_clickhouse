@@ -1818,6 +1818,35 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE date_trunc('day', c) > date_
    Remote SQL: SELECT a, b, c FROM functions_test.t1 WHERE ((toStartOfDay(c) > (toStartOfDay(now64(6, 'America/Los_Angeles')) + INTERVAL 1 MONTH + INTERVAL 2 DAY + INTERVAL 10800 SECOND))) ORDER BY a ASC NULLS LAST LIMIT 2
 (3 rows)
 
+-- Sub-second intervals keep microseconds, widening to DateTime64.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a FROM t1 WHERE a = 1 AND c + INTERVAL '0.5 seconds' > c;
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t1
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t1 WHERE ((a = 1)) AND (((toDateTime64(c, 6) + INTERVAL 500000 MICROSECOND) > c))
+(3 rows)
+
+SELECT a FROM t1 WHERE a = 1 AND c + INTERVAL '0.5 seconds' > c;
+ a 
+---
+ 1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a FROM t1 WHERE a = 1 AND c::date - INTERVAL '1 day 0.5 seconds' < c::date - 1;
+                                                                                             QUERY PLAN                                                                                              
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t1
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t1 WHERE ((a = 1)) AND (((toDateTime64(cast(c, 'Nullable(Date)'), 6) - INTERVAL 1 DAY - INTERVAL 500000 MICROSECOND) < (cast(c, 'Nullable(Date)') - 1)))
+(3 rows)
+
+SELECT a FROM t1 WHERE a = 1 AND c::date - INTERVAL '1 day 0.5 seconds' < c::date - 1;
+ a 
+---
+ 1
+(1 row)
+
 \unset ECHO
 NOTICE:  CURRENT_TIME PUSHED DOWN: t
 NOTICE:  CURRENT_TIME(n) PUSHED DOWN: t

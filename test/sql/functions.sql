@@ -435,6 +435,12 @@ SELECT * FROM t1 WHERE date_trunc('day', c) < date_trunc('day', CURRENT_TIMESTAM
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE date_trunc('day', c) < date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '6 months' ORDER BY a LIMIT 2;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE date_trunc('day', c) > date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 month 2 days 3 hours' ORDER BY a LIMIT 2;
 
+-- Sub-second intervals keep microseconds, widening to DateTime64.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a FROM t1 WHERE a = 1 AND c + INTERVAL '0.5 seconds' > c;
+SELECT a FROM t1 WHERE a = 1 AND c + INTERVAL '0.5 seconds' > c;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT a FROM t1 WHERE a = 1 AND c::date - INTERVAL '1 day 0.5 seconds' < c::date - 1;
+SELECT a FROM t1 WHERE a = 1 AND c::date - INTERVAL '1 day 0.5 seconds' < c::date - 1;
+
 \unset ECHO
 -- Use a DO block to test TIME SQL values; Time64 added in CLickHouse 25.6.
 DO $$

@@ -326,7 +326,7 @@ deparseRowExpr(RowExpr* node, deparse_expr_cxt* context);
 static void
 deparseNullIfExpr(NullIfExpr* node, deparse_expr_cxt* context);
 static void
-appendRegex(List* args, deparse_expr_cxt* context);
+appendRegex(List* args, int flags_idx, deparse_expr_cxt* context);
 /*
  * Which rendering of a SubPlan's subquery body deparseSubPlanQuery emits.
  */
@@ -2866,10 +2866,31 @@ deparseRelation(StringInfo buf, Relation rel) {
  */
 static void
 deparseStringLiteral(StringInfo buf, const char* val) {
-    char* quoted = ch_quote_literal(val);
+    ch_append_literal(buf, val, strlen(val));
+}
 
-    appendStringInfoString(buf, quoted);
-    pfree(quoted);
+/*
+ * Append string type value as a SQL literal straight from its varlena,
+ * skipping output function's copy. Returns false for other output functions.
+ */
+static bool
+deparseStringDatum(StringInfo buf, Datum value, Oid typoutput) {
+    switch (typoutput) {
+    case F_TEXTOUT:
+    case F_VARCHAROUT:
+    case F_BPCHAROUT:
+    case F_JSON_OUT: {
+        text* t = DatumGetTextPP(value);
+
+        ch_append_literal(buf, VARDATA_ANY(t), VARSIZE_ANY_EXHDR(t));
+        return true;
+    }
+    case F_NAMEOUT:
+        deparseStringLiteral(buf, NameStr(*DatumGetName(value)));
+        return true;
+    default:
+        return false;
+    }
 }
 
 /*
@@ -3103,30 +3124,18 @@ deparseVar(Var* node, deparse_expr_cxt* context) {
 
 #define USE_ISO_DATES 1
 
-Datum
-ch_time_out(PG_FUNCTION_ARGS) {
-    TimeADT time = PG_GETARG_TIMEADT(0);
-    char* result;
+void
+chfdw_encode_time(TimeADT time, char* buf) {
     struct pg_tm tt, *tm = &tt;
     fsec_t fsec;
-    char buf[MAXDATELEN + 1];
 
     time2tm(time, tm, &fsec);
     EncodeTimeOnly(tm, fsec, false, 0, USE_ISO_DATES, buf);
-
-    result = pstrdup(buf);
-    PG_RETURN_CSTRING(result);
 }
 
-/* date_out()
- * Given internal format date, convert to text string.
- */
-Datum
-ch_date_out(PG_FUNCTION_ARGS) {
-    DateADT date = PG_GETARG_DATEADT(0);
-    char* result;
+void
+chfdw_encode_date(DateADT date, char* buf) {
     struct pg_tm tt, *tm = &tt;
-    char buf[MAXDATELEN + 1];
 
     if (DATE_NOT_FINITE(date)) {
         EncodeSpecialDate(date, buf);
@@ -3136,18 +3145,12 @@ ch_date_out(PG_FUNCTION_ARGS) {
         );
         EncodeDateOnly(tm, USE_ISO_DATES, buf);
     }
-
-    result = pstrdup(buf);
-    PG_RETURN_CSTRING(result);
 }
 
-Datum
-ch_timestamp_out(PG_FUNCTION_ARGS) {
-    Timestamp timestamp = PG_GETARG_TIMESTAMP(0);
-    char* result;
+void
+chfdw_encode_timestamp(Timestamp timestamp, char* buf) {
     struct pg_tm tt, *tm = &tt;
     fsec_t fsec;
-    char buf[MAXDATELEN + 1];
 
     if (TIMESTAMP_NOT_FINITE(timestamp)) {
         EncodeSpecialTimestamp(timestamp, buf);
@@ -3160,9 +3163,6 @@ ch_timestamp_out(PG_FUNCTION_ARGS) {
             errmsg("timestamp out of range")
         );
     }
-
-    result = pstrdup(buf);
-    PG_RETURN_CSTRING(result);
 }
 
 /*
@@ -3199,7 +3199,7 @@ emitArrayElement(
     Datum elt,
     bool isnull,
     Oid element_type,
-    Oid typiofunc
+    FmgrInfo* typoutput
 ) {
     char* extval;
 
@@ -3213,7 +3213,11 @@ emitArrayElement(
         return;
     }
 
-    extval = OidOutputFunctionCall(typiofunc, elt);
+    if (deparseStringDatum(buf, elt, typoutput->fn_oid)) {
+        return;
+    }
+
+    extval = OutputFunctionCall(typoutput, elt);
 
     switch (element_type) {
     case INT2OID:
@@ -3267,7 +3271,7 @@ emitArrayLevel(
     int16 typlen,
     bool typbyval,
     char typalign,
-    Oid typiofunc,
+    FmgrInfo* typoutput,
     int* nleaf
 ) {
     appendStringInfoChar(buf, '[');
@@ -3287,7 +3291,7 @@ emitArrayLevel(
                 typlen,
                 typbyval,
                 typalign,
-                typiofunc,
+                typoutput,
                 nleaf
             );
         } else {
@@ -3300,7 +3304,7 @@ emitArrayLevel(
 #else
             elt = array_iter_next(iter, &isnull, n);
 #endif
-            emitArrayElement(buf, elt, isnull, element_type, typiofunc);
+            emitArrayElement(buf, elt, isnull, element_type, typoutput);
         }
     }
     appendStringInfoChar(buf, ']');
@@ -3320,6 +3324,7 @@ deparseArray(Datum arr, deparse_expr_cxt* context) {
     char typdelim;
     Oid typioparam;
     Oid typiofunc;
+    FmgrInfo typoutput;
     array_iter iter;
 
     if (context->array_as_tuple && ndims > 1) {
@@ -3340,6 +3345,7 @@ deparseArray(Datum arr, deparse_expr_cxt* context) {
         &typioparam,
         &typiofunc
     );
+    fmgr_info(typiofunc, &typoutput);
 
 #if PG_VERSION_NUM < 190000
     array_iter_setup(&iter, array);
@@ -3360,7 +3366,7 @@ deparseArray(Datum arr, deparse_expr_cxt* context) {
             typlen,
             typbyval,
             typalign,
-            typiofunc,
+            &typoutput,
             &nleaf
         );
     } else {
@@ -3382,7 +3388,7 @@ deparseArray(Datum arr, deparse_expr_cxt* context) {
 #else
             elt = array_iter_next(&iter, &isnull, i);
 #endif
-            emitArrayElement(buf, elt, isnull, element_type, typiofunc);
+            emitArrayElement(buf, elt, isnull, element_type, &typoutput);
         }
         appendStringInfoChar(buf, close);
     }
@@ -3417,7 +3423,6 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
     Oid typoutput;
     bool typIsVarlena;
     char* extval = NULL;
-    bool closebr = false;
 
     if (node->constisnull) {
         appendStringInfoString(buf, "NULL");
@@ -3431,8 +3436,11 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
     getTypeOutputInfo(node->consttype, &typoutput, &typIsVarlena);
 
     if (typoutput == F_TIMESTAMPTZ_OUT || typoutput == F_TIMESTAMP_OUT) {
-        extval =
-            DatumGetCString(DirectFunctionCall1(ch_timestamp_out, node->constvalue));
+        char ts[MAXDATELEN + 1];
+
+        chfdw_encode_timestamp(DatumGetTimestamp(node->constvalue), ts);
+        deparseStringLiteral(buf, ts);
+        goto cleanup;
     } else if (typoutput == F_INTERVAL_OUT) {
         /*
          * basically we can't convert month part since we should know about
@@ -3461,6 +3469,8 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
         goto cleanup;
     } else if (node->consttype == BYTEAOID) {
         deparseByteaLiteral(buf, node->constvalue);
+        goto cleanup;
+    } else if (deparseStringDatum(buf, node->constvalue, typoutput)) {
         goto cleanup;
     } else {
         extval = OidOutputFunctionCall(typoutput, node->constvalue);
@@ -3502,10 +3512,6 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
     default:
         deparseStringLiteral(buf, extval);
         break;
-    }
-
-    if (closebr) {
-        appendStringInfoChar(buf, ')');
     }
 
 cleanup:
@@ -4016,13 +4022,16 @@ deparseJsonbExtractPath(FuncExpr* node, deparse_expr_cxt* context, bool wrap_jso
  *  - 's' is applied as 's'
  *  - 't' is ignored
  *  - 'w' is applied as 'm'
+ *  - 'g' is ignored, regexp_replace() picks replaceRegexpAll() for it
 
  *  Whichever of the `[smpw]` flags appears last is the only one applied.
  *
 */
 static void
 appendRegexFlags(Const* arg, deparse_expr_cxt* context) {
-    char* str = TextDatumGetCString(arg->constvalue);
+    text* t         = DatumGetTextPP(arg->constvalue);
+    const char* str = VARDATA_ANY(t);
+    const char* end = str + VARSIZE_ANY_EXHDR(t);
     enum {
         flag_0 = 0,
         flag_i = 1,
@@ -4034,7 +4043,7 @@ appendRegexFlags(Const* arg, deparse_expr_cxt* context) {
     uint16 flags = flag_0;
 
     /* Iterate over the flags. */
-    while (*str) {
+    for (; str < end; str++) {
         switch (*str) {
         case 'i':
             flags |= flag_i;
@@ -4067,7 +4076,6 @@ appendRegexFlags(Const* arg, deparse_expr_cxt* context) {
             flags &= ~flag_s; /* Cancels out s. */
             break;
         }
-        str++;
     }
 
     if (flags & flag_i) {
@@ -4090,15 +4098,15 @@ appendRegexFlags(Const* arg, deparse_expr_cxt* context) {
 /*
  * Utility function used by the regular expression functions to generate the
  * regular expression argument. It expects the second item in `args` to be the
- * regular expression, and the third, optional item to be the flags. If there
- * are no flags it simply appends the regexp expression. If there are flags,
+ * regular expression, and the optional item at `flags_idx` to be the flags. If
+ * there are no flags it simply appends the regexp expression. If there are flags,
  * it emits the regular expression as `concat('(?$flags), $regexp)`,
  * delegating the actually flag output to `appendRegexFlags()`.
  */
 static void
-appendRegex(List* args, deparse_expr_cxt* context) {
+appendRegex(List* args, int flags_idx, deparse_expr_cxt* context) {
 
-    if (list_length(args) <= 2) {
+    if (list_length(args) <= flags_idx) {
         /* No flags argument, just append the regexp expression. */
         deparseExpr((Expr*)list_nth(args, 1), context);
         return;
@@ -4106,7 +4114,7 @@ appendRegex(List* args, deparse_expr_cxt* context) {
 
     /* Concatenate the flags with the regexp expression. */
     appendStringInfoString(context->buf, "concat('(?");
-    appendRegexFlags((Const*)list_nth(args, 2), context);
+    appendRegexFlags((Const*)list_nth(args, flags_idx), context);
     appendStringInfoString(context->buf, ")', ");
     deparseExpr((Expr*)list_nth(args, 1), context);
     appendStringInfoChar(context->buf, ')');
@@ -4528,14 +4536,14 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             appendStringInfoChar(buf, '(');
             deparseExpr((Expr*)linitial(node->args), context);
             appendStringInfoString(buf, ", ");
-            appendRegex(node->args, context);
+            appendRegex(node->args, 2, context);
             appendStringInfoChar(buf, ')');
             return;
         }
         case CF_SPLIT_BY_REGEX: {
             /* splitByRegexp(regexp, s) */
             appendStringInfoChar(buf, '(');
-            appendRegex(node->args, context);
+            appendRegex(node->args, 2, context);
             appendStringInfoString(buf, ", ");
             deparseExpr((Expr*)linitial(node->args), context);
             appendStringInfoChar(buf, ')');
@@ -4543,48 +4551,25 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
         }
         case CF_REPLACE_REGEX: {
             /* replaceRegexpOne() or replaceRegexpAll() */
-            char* flags = NULL;
+            bool global = false;
 
             if (list_length(node->args) >= 4) {
-                /* Determine function name from "g" in flags. */
-                /* XXX May not be a constant. Enforce elsewhere. */
-                Const* arg = (Const*)list_nth(node->args, 3);
+                text* flags =
+                    DatumGetTextPP(((Const*)list_nth(node->args, 3))->constvalue);
 
-                flags   = TextDatumGetCString(arg->constvalue);
-                char* c = strchr(flags, 'g');
-
-                if (c) {
-                    appendStringInfoString(buf, "replaceRegexpAll");
-                    /* Remove any and all g flags. */
-                    while (c[0]) {
-                        while (c[1] == 'g') {
-                            ++c;
-                        }
-                        c[0] = c[1];
-                        ++c;
-                    }
-                } else {
-                    appendStringInfoString(buf, "replaceRegexpOne");
-                }
-            } else {
-                appendStringInfoString(buf, "replaceRegexpOne");
+                global =
+                    memchr(VARDATA_ANY(flags), 'g', VARSIZE_ANY_EXHDR(flags)) != NULL;
             }
-
-            appendStringInfoChar(buf, '(');
+            appendStringInfoString(
+                buf, global ? "replaceRegexpAll(" : "replaceRegexpOne("
+            );
 
             /* Emit the first string to search ("haystack"). */
             deparseExpr((Expr*)linitial(node->args), context);
             appendStringInfoString(buf, ", ");
 
-            /* Emit the regular expression. */
-            if (flags && strlen(flags)) {
-                /* Concatenate flags. */
-                appendStringInfo(context->buf, "concat('(?%s)', ", flags);
-                deparseExpr((Expr*)list_nth(node->args, 1), context);
-                appendStringInfoChar(buf, ')');
-            } else {
-                deparseExpr((Expr*)list_nth(node->args, 1), context);
-            }
+            /* Emit the regular expression, appendRegexFlags skips g. */
+            appendRegex(node->args, 3, context);
 
             /* Emit the replacement string and finish. */
             appendStringInfoString(buf, ", ");
@@ -4596,7 +4581,7 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             /* Parse the regex so we can determine if it has captures. */
             Const* arg        = (Const*)list_nth(((FuncExpr*)node)->args, 1);
             pg_regex_t* regex = RE_compile_and_cache(
-                DatumGetTextP(arg->constvalue), REG_ADVANCED, node->inputcollid
+                DatumGetTextPP(arg->constvalue), REG_ADVANCED, node->inputcollid
             );
 
             /*
@@ -4608,7 +4593,7 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             );
             deparseExpr((Expr*)linitial(node->args), context);
             appendStringInfoString(buf, ", ");
-            appendRegex(node->args, context);
+            appendRegex(node->args, 2, context);
             appendStringInfoString(buf, regex->re_nsub ? ")" : "), 1, 1)");
             return;
         }
@@ -4843,7 +4828,7 @@ deparseSQLValueFunction(SQLValueFunction* svf, deparse_expr_cxt* context) {
         if (fcinfo->isnull) {
             appendStringInfoString(buf, "NULL");
         } else {
-            appendStringInfoString(buf, ch_quote_literal(DatumGetCString(datum)));
+            deparseStringLiteral(buf, DatumGetCString(datum));
         }
         break;
     case SVFOP_SESSION_USER:
@@ -4852,13 +4837,13 @@ deparseSQLValueFunction(SQLValueFunction* svf, deparse_expr_cxt* context) {
         if (fcinfo->isnull) {
             appendStringInfoString(buf, "NULL");
         } else {
-            appendStringInfoString(buf, ch_quote_literal(DatumGetCString(datum)));
+            deparseStringLiteral(buf, DatumGetCString(datum));
         }
         break;
     case SVFOP_CURRENT_CATALOG:
         InitFunctionCallInfoData(*fcinfo, NULL, 0, InvalidOid, NULL, NULL);
         datum = current_database(fcinfo);
-        appendStringInfoString(buf, ch_quote_literal(DatumGetCString(datum)));
+        deparseStringLiteral(buf, DatumGetCString(datum));
         break;
     case SVFOP_CURRENT_SCHEMA:
         InitFunctionCallInfoData(*fcinfo, NULL, 0, InvalidOid, NULL, NULL);
@@ -4866,7 +4851,7 @@ deparseSQLValueFunction(SQLValueFunction* svf, deparse_expr_cxt* context) {
         if (fcinfo->isnull) {
             appendStringInfoString(buf, "NULL");
         } else {
-            appendStringInfoString(buf, ch_quote_literal(DatumGetCString(datum)));
+            deparseStringLiteral(buf, DatumGetCString(datum));
         }
         break;
     default:
@@ -4897,13 +4882,21 @@ appendIntervalTerm(StringInfo buf, bool plus, int64 amount, const char* unit) {
 static void
 deparseIntervalOp(Node* first, Node* second, deparse_expr_cxt* context, bool plus) {
     StringInfo buf = context->buf;
-    Const* constval;
-    Interval* span;
+    Interval* span =
+        IsA(second, Const) ? DatumGetIntervalP(((Const*)second)->constvalue) : NULL;
+    /*
+     * ClickHouse rejects microseconds on Date, and before 23.8 overflowed them
+     * on DateTime, so widen to DateTime64 first
+     */
+    bool widen = span && span->time % USECS_PER_SEC != 0;
 
-    appendStringInfoChar(buf, '(');
+    appendStringInfoString(buf, widen ? "(toDateTime64(" : "(");
     deparseExpr((Expr*)first, context);
+    if (widen) {
+        appendStringInfoString(buf, ", 6)");
+    }
 
-    if (!IsA(second, Const)) {
+    if (!span) {
         bool old_op = context->interval_op;
 
         appendStringInfoString(buf, plus ? " + " : " - ");
@@ -4917,14 +4910,11 @@ deparseIntervalOp(Node* first, Node* second, deparse_expr_cxt* context, bool plu
         return;
     }
 
-    constval = (Const*)second;
-    span     = DatumGetIntervalP(constval->constvalue);
-
     /* clickhouse has no single interval kind, emit one term per unit */
     appendIntervalTerm(buf, plus, span->month, "MONTH");
     appendIntervalTerm(buf, plus, span->day, "DAY");
-    /* sub-second precision dropped, matching ch_timestamp_out */
     appendIntervalTerm(buf, plus, span->time / USECS_PER_SEC, "SECOND");
+    appendIntervalTerm(buf, plus, span->time % USECS_PER_SEC, "MICROSECOND");
 
     appendStringInfoChar(buf, ')');
 }

@@ -145,8 +145,12 @@ chfdw_is_builtin(Oid objectId) {
 }
 
 static bool
-regex_flags_ok(char* flags, bool global_ok) {
-    while (*flags) {
+regex_flags_ok(Datum value, bool global_ok) {
+    text* t           = DatumGetTextPP(value);
+    const char* flags = VARDATA_ANY(t);
+    const char* end   = flags + VARSIZE_ANY_EXHDR(t);
+
+    for (; flags < end; flags++) {
         switch (*flags) {
         case 'i':
         case 'm':
@@ -167,7 +171,6 @@ regex_flags_ok(char* flags, bool global_ok) {
             /* Cannot pass down any other flags */
             return false;
         }
-        flags++;
     }
 
     /* All good. */
@@ -352,14 +355,13 @@ chfdw_is_shippable(
                 if ((list_length(fn->args) >= flags_idx + 1)) {
                     arg = (Expr*)list_nth(((FuncExpr*)node)->args, flags_idx);
 
-                    if (!IsA(arg, Const)) {
+                    if (!IsA(arg, Const) || ((Const*)arg)->constisnull) {
                         /* No support for a dynamic value here. */
                         return false;
                     }
 
                     if (!regex_flags_ok(
-                            TextDatumGetCString(((Const*)arg)->constvalue),
-                            cdef->cf_type == CF_REPLACE_REGEX
+                            ((Const*)arg)->constvalue, cdef->cf_type == CF_REPLACE_REGEX
                         )) {
                         /* Using flags unsupported by ClickHouse. */
                         return false;
@@ -367,7 +369,7 @@ chfdw_is_shippable(
                 }
 
                 arg = (Expr*)list_nth(((FuncExpr*)node)->args, 1);
-                if (!IsA(arg, Const)) {
+                if (!IsA(arg, Const) || ((Const*)arg)->constisnull) {
                     /* No support for a dynamic value here. */
                     return false;
                 }

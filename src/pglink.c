@@ -10,6 +10,7 @@
 #include "parser/parse_type.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
+#include "utils/datetime.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
@@ -107,7 +108,7 @@ binary_prepare_insert(
 );
 static char*
 ch_escape_string(const char* s, size_t len);
-static void
+static char*
 ch_quote_literal_internal(char* dst, const char* src, size_t len);
 extern char*
 ch_quote_literal(const char* rawstr);
@@ -444,9 +445,18 @@ chfdw_datum_to_ch_literal(Datum value, Oid type) {
     case BPCHAROID:
     case VARCHAROID:
     case TEXTOID:
-    case JSONOID:
+    case JSONOID: {
+        /* Escape in place, output function would copy */
+        text* str = DatumGetTextPP(value);
+
+        return ch_escape_string(VARDATA_ANY(str), VARSIZE_ANY_EXHDR(str));
+    }
+    case NAMEOID: {
+        const char* name = NameStr(*DatumGetName(value));
+
+        return ch_escape_string(name, strlen(name));
+    }
     case JSONBOID:
-    case NAMEOID:
     case BITOID:
     case UUIDOID:
     case INETOID: {
@@ -460,25 +470,32 @@ chfdw_datum_to_ch_literal(Datum value, Oid type) {
     }
     case BYTEAOID: {
         /* Copy all of the bytes into a ClickHouse literal string. */
-        bytea* bytes = PG_DETOAST_DATUM(value);
+        bytea* bytes = DatumGetByteaPP(value);
 
-        return ch_escape_string(VARDATA(bytes), VARSIZE_ANY_EXHDR(bytes));
+        return ch_escape_string(VARDATA_ANY(bytes), VARSIZE_ANY_EXHDR(bytes));
     }
-    case DATEOID:
+    case DATEOID: {
         /* we expect Date on other side */
-        return DatumGetCString(DirectFunctionCall1(ch_date_out, value));
+        char date[MAXDATELEN + 1];
+
+        chfdw_encode_date(DatumGetDateADT(value), date);
+        return pstrdup(date);
+    }
     case TIMEOID: {
         /* we expect DateTime on other side */
-        char* extval = DatumGetCString(DirectFunctionCall1(ch_time_out, value));
-        char* retval = psprintf("1970-01-01 %s", extval);
+        char time[MAXDATELEN + 1];
 
-        pfree(extval);
-        return retval;
+        chfdw_encode_time(DatumGetTimeADT(value), time);
+        return psprintf("1970-01-01 %s", time);
     }
     case TIMESTAMPOID:
-    case TIMESTAMPTZOID:
+    case TIMESTAMPTZOID: {
         /* we expect DateTime on other side */
-        return DatumGetCString(DirectFunctionCall1(ch_timestamp_out, value));
+        char ts[MAXDATELEN + 1];
+
+        chfdw_encode_timestamp(DatumGetTimestamp(value), ts);
+        return pstrdup(ts);
+    }
     default:
         ereport(
             ERROR,
@@ -1265,20 +1282,21 @@ ch_escape_string(const char* from, size_t len) {
 }
 
 /*
- * Convenience function to single-quote a literal SQL string. Differs from
- * PostgreSQL's quote_literal_cstr() by never returning an E-quoted string.
+ * Single-quote len bytes of src into dst, which needs room for len * 2 + 2
+ * bytes. Differs from PostgreSQL's quote_literal_cstr() by never returning an
+ * E-quoted string. Returns end of written literal, not NUL terminated.
  */
-static void
+static char*
 ch_quote_literal_internal(char* dst, const char* src, size_t len) {
     *dst++ = '\'';
-    while (*src) {
+    for (const char* end = src + len; src < end; src++) {
         if (SQL_STR_DOUBLE(*src, true)) {
             *dst++ = *src;
         }
-        *dst++ = *src++;
+        *dst++ = *src;
     }
     *dst++ = '\'';
-    *dst++ = '\0';
+    return dst;
 }
 
 /*
@@ -1287,20 +1305,20 @@ ch_quote_literal_internal(char* dst, const char* src, size_t len) {
  */
 char*
 ch_quote_literal(const char* rawstr) {
-    char* result;
-    int len;
+    size_t len = strlen(rawstr);
+    /* Worst case doubles every character, plus quotes and terminator */
+    char* result = palloc(len * 2 + 3);
 
-    len = strlen(rawstr);
-    /* We make a worst-case result area; wasting a little space is OK */
-    result = palloc(
-        (len * 2) /* doubling for every character if each one is
-                   * a quote */
-        + 2       /* two outer quotes */
-        + 1       /* null terminator */
-    );
-
-    ch_quote_literal_internal(result, rawstr, len);
+    *ch_quote_literal_internal(result, rawstr, len) = '\0';
     return result;
+}
+
+/* Append len bytes of s to buf as a quoted ClickHouse literal */
+void
+ch_append_literal(StringInfo buf, const char* s, size_t len) {
+    enlargeStringInfo(buf, len * 2 + 2);
+    buf->len = ch_quote_literal_internal(buf->data + buf->len, s, len) - buf->data;
+    buf->data[buf->len] = '\0';
 }
 
 /*
