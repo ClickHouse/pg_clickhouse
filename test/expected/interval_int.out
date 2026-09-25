@@ -42,13 +42,28 @@ INSERT INTO ival_int_bin.ints VALUES (1, 1500, 90, 3, 14);
 INSERT INTO ival_int_http.ints VALUES (2, 2500, 45, 4, 15);
 -- Interval inserts as unit count
 INSERT INTO ival_int_bin.intervals VALUES (3, '1 microsecond', '1 minute', '1 week', '1 year');
+INSERT INTO ival_int_http.intervals VALUES (4, '2 microseconds', '2 minutes', '2 weeks', '2 years');
+-- Match remote column names and insert column order.
+ALTER FOREIGN TABLE ival_int_http.intervals RENAME nanos TO nanoseconds;
+ALTER FOREIGN TABLE ival_int_http.intervals ALTER COLUMN nanoseconds OPTIONS (ADD column_name 'nanos');
+INSERT INTO ival_int_http.intervals (months, days, seconds, nanoseconds, id)
+VALUES ('-1 year', '-1 week', '-1 minute', '-1 microsecond', 5);
+-- Reject values that cannot be represented in destination units.
+INSERT INTO ival_int_http.intervals (id, nanoseconds) VALUES (6, '1 month');
+ERROR:  pg_clickhouse: interval does not fit IntervalNanosecond
+INSERT INTO ival_int_http.intervals (id, nanoseconds) VALUES (6, '106752 days');
+ERROR:  pg_clickhouse: interval does not fit IntervalNanosecond
+INSERT INTO ival_int_http.intervals (id, nanoseconds, seconds) VALUES (6, '0', '1 microsecond');
+ERROR:  pg_clickhouse: interval does not fit IntervalSecond
 SELECT * FROM ival_int_bin.ints ORDER BY id;
  id | nanos | seconds | days | months 
 ----+-------+---------+------+--------
   1 |  1500 |      90 |    3 |     14
   2 |  2500 |      45 |    4 |     15
   3 |  1000 |      60 |    7 |     12
-(3 rows)
+  4 |  2000 |     120 |   14 |     24
+  5 | -1000 |     -60 |   -7 |    -12
+(5 rows)
 
 SELECT * FROM ival_int_http.ints ORDER BY id;
  id | nanos | seconds | days | months 
@@ -56,23 +71,29 @@ SELECT * FROM ival_int_http.ints ORDER BY id;
   1 |  1500 |      90 |    3 |     14
   2 |  2500 |      45 |    4 |     15
   3 |  1000 |      60 |    7 |     12
-(3 rows)
+  4 |  2000 |     120 |   14 |     24
+  5 | -1000 |     -60 |   -7 |    -12
+(5 rows)
 
 SELECT * FROM ival_int_bin.intervals ORDER BY id;
- id |      nanos      | seconds  |  days  |    months     
-----+-----------------+----------+--------+---------------
-  1 | 00:00:00.000001 | 00:01:30 | 3 days | 1 year 2 mons
-  2 | 00:00:00.000002 | 00:00:45 | 4 days | 1 year 3 mons
-  3 | 00:00:00.000001 | 00:01:00 | 7 days | 1 year
-(3 rows)
+ id |      nanos       |  seconds  |  days   |    months     
+----+------------------+-----------+---------+---------------
+  1 | 00:00:00.000001  | 00:01:30  | 3 days  | 1 year 2 mons
+  2 | 00:00:00.000002  | 00:00:45  | 4 days  | 1 year 3 mons
+  3 | 00:00:00.000001  | 00:01:00  | 7 days  | 1 year
+  4 | 00:00:00.000002  | 00:02:00  | 14 days | 2 years
+  5 | -00:00:00.000001 | -00:01:00 | -7 days | -1 years
+(5 rows)
 
 SELECT * FROM ival_int_http.intervals ORDER BY id;
- id |      nanos      | seconds  |  days  |    months     
-----+-----------------+----------+--------+---------------
-  1 | 00:00:00.000001 | 00:01:30 | 3 days | 1 year 2 mons
-  2 | 00:00:00.000002 | 00:00:45 | 4 days | 1 year 3 mons
-  3 | 00:00:00.000001 | 00:01:00 | 7 days | 1 year
-(3 rows)
+ id |   nanoseconds    |  seconds  |  days   |    months     
+----+------------------+-----------+---------+---------------
+  1 | 00:00:00.000001  | 00:01:30  | 3 days  | 1 year 2 mons
+  2 | 00:00:00.000002  | 00:00:45  | 4 days  | 1 year 3 mons
+  3 | 00:00:00.000001  | 00:01:00  | 7 days  | 1 year
+  4 | 00:00:00.000002  | 00:02:00  | 14 days | 2 years
+  5 | -00:00:00.000001 | -00:01:00 | -7 days | -1 years
+(5 rows)
 
 CALL clickhouse_perform('interval_int_admin', 'DROP DATABASE interval_int_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_interval_int_loopback;

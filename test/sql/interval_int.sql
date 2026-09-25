@@ -56,6 +56,18 @@ INSERT INTO ival_int_http.ints VALUES (2, 2500, 45, 4, 15);
 
 -- Interval inserts as unit count
 INSERT INTO ival_int_bin.intervals VALUES (3, '1 microsecond', '1 minute', '1 week', '1 year');
+INSERT INTO ival_int_http.intervals VALUES (4, '2 microseconds', '2 minutes', '2 weeks', '2 years');
+
+-- Match remote column names and insert column order.
+ALTER FOREIGN TABLE ival_int_http.intervals RENAME nanos TO nanoseconds;
+ALTER FOREIGN TABLE ival_int_http.intervals ALTER COLUMN nanoseconds OPTIONS (ADD column_name 'nanos');
+INSERT INTO ival_int_http.intervals (months, days, seconds, nanoseconds, id)
+VALUES ('-1 year', '-1 week', '-1 minute', '-1 microsecond', 5);
+
+-- Reject values that cannot be represented in destination units.
+INSERT INTO ival_int_http.intervals (id, nanoseconds) VALUES (6, '1 month');
+INSERT INTO ival_int_http.intervals (id, nanoseconds) VALUES (6, '106752 days');
+INSERT INTO ival_int_http.intervals (id, nanoseconds, seconds) VALUES (6, '0', '1 microsecond');
 
 SELECT * FROM ival_int_bin.ints ORDER BY id;
 SELECT * FROM ival_int_http.ints ORDER BY id;

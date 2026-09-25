@@ -489,13 +489,7 @@ chfdw_datum_to_ch_literal(Datum value, Oid type) {
     }
 }
 
-/*
- * Serialize buffered rows as a Native block and POST them.
- *
- * Column types come from PostgreSQL, so they rarely match the destination
- * exactly. ClickHouse casts them per column name under
- * input_format_native_allow_types_conversion, on by default since 23.3.
- */
+/* Serialize buffered rows as a Native block and POST them. */
 static void
 http_flush_insert(ch_http_insert_state* state) {
     pgch_buf body = {};
@@ -528,9 +522,11 @@ http_prepare_insert(
     Oid relid                   = RelationGetRelid(rel);
     size_t ncols                = list_length(target_attrs);
     pgch_col* cols              = palloc0(ncols * sizeof(pgch_col));
+    StringInfoData collist;
     ListCell* lc;
     size_t i = 0;
 
+    initStringInfo(&collist);
     state->ncols     = ncols;
     state->attnums   = palloc0(ncols * sizeof(AttrNumber));
     state->atttypids = palloc0(ncols * sizeof(Oid));
@@ -542,53 +538,50 @@ http_prepare_insert(
         /* Name must match the INSERT column list chfdw_deparse_insert_sql built */
         const char* colname =
             (cinfo && cinfo->colname[0]) ? cinfo->colname : NameStr(attr->attname);
-        const char* chtype;
-        chc_err err = {};
+        appendStringInfo(&collist, "%s%s", i ? ", " : "", pgch_quote_ch_ident(colname));
+        state->attnums[i]   = attnum;
+        state->atttypids[i] = attr->atttypid;
+        cols[i].name        = colname;
+        cols[i].name_len    = strlen(colname);
+        i++;
+    }
+
+    /* HTTP has no INSERT sample block; fetch destination types explicitly. */
+    ch_query describe = new_query(
+        psprintf("DESCRIBE (SELECT %s FROM %s)", collist.data, table_name),
+        0,
+        NULL,
+        NULL,
+        NIL,
+        query->encoding_check
+    );
+    ChFdwScanRowContext ctx = { .cursor = http_native_cursor(conn, &describe) };
+    Datum* values;
+
+    for (size_t j = 0; j < ctx.cursor->columns_count; j++) {
+        ctx.retrieved_attrs = lappend_int(ctx.retrieved_attrs, j + 1);
+    }
+    for (i = 0; i < ncols && (values = chfdw_cursor_fetch_row(&ctx)) != NULL; i++) {
+        text* typetext = DatumGetTextPP(values[1]);
+        char* type     = VARDATA_ANY(typetext);
+        int typelen    = VARSIZE_ANY_EXHDR(typetext);
+        chc_err err    = {};
         chc_type* coltype;
 
-        /*
-         * ClickHouse gained Time64 in 25.6 and casts it to none of the types
-         * a table holds a time of day in, so send a timestamp on the epoch
-         * date, as the TabSeparated payload did.
-         */
-        if (attr->atttypid == TIMEOID) {
-            chtype = attr->attnotnull ? "DateTime64(6, 'UTC')"
-                                      : "Nullable(DateTime64(6, 'UTC'))";
-        } else {
-            chtype = pgch_ch_type_for(
-                attr->atttypid, attr->atttypmod, attr->attnotnull, NULL
-            );
-        }
-
-        /*
-         * A PostgreSQL array type carries no dimension count, only the
-         * declared attndims does, and ClickHouse nests one Array per
-         * dimension.
-         */
-        for (int dim = 1; dim < attr->attndims; dim++) {
-            chtype = psprintf("Array(%s)", chtype);
-        }
-
-        if (chc_type_parse(chtype, strlen(chtype), &pgch_alloc, &coltype, &err) !=
-            CHC_OK) {
+        if (chc_type_parse(type, typelen, &pgch_alloc, &coltype, &err) != CHC_OK) {
             ereport(
                 ERROR,
                 errcode(ERRCODE_FDW_INVALID_DATA_TYPE),
                 errmsg(
                     "pg_clickhouse: could not build ClickHouse type for column \"%s\"",
-                    colname
+                    cols[i].name
                 ),
-                errdetail_internal("%s: %s", chtype, err.msg)
+                errdetail_internal("%.*s: %s", typelen, type, err.msg)
             );
         }
-
-        state->attnums[i]   = attnum;
-        state->atttypids[i] = attr->atttypid;
-        cols[i].name        = colname;
-        cols[i].name_len    = strlen(colname);
-        cols[i].type        = coltype;
-        i++;
+        cols[i].type = coltype;
     }
+    MemoryContextDelete(ctx.cursor->memcxt);
 
     state->writer    = pgch_writer_new(CurrentMemoryContext, cols, ncols);
     state->sql       = pstrdup(query->sql);
@@ -608,16 +601,11 @@ http_insert_tuple(void* istate, TupleTableSlot* slot) {
             Datum value = slot_getattr(slot, state->attnums[i], &isnull);
             Oid valtype = state->atttypids[i];
 
-            /*
-             * PostgreSQL casts inet to text through network_show, which
-             * appends a netmask ClickHouse rejects for IPv4 and IPv6. The
-             * output function omits it for single hosts.
-             */
-            if (valtype == INETOID && !isnull) {
-                value   = CStringGetTextDatum(OidOutputFunctionCall(F_INET_OUT, value));
-                valtype = TEXTOID;
-            } else if (valtype == TIMEOID && !isnull) {
-                /* Pair with the DateTime64 column that http_prepare_insert declares. */
+            chc_kind kind = pgch_column_kind(state->writer, i);
+
+            if (valtype == TIMEOID && !isnull &&
+                (kind == CHC_DATETIME || kind == CHC_DATETIME64)) {
+                /* Preserve time of day on epoch date for timestamp columns. */
                 value = TimestampTzGetDatum(
                     DatumGetTimeADT(value) -
                     (TimestampTz)(POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) *
@@ -1071,9 +1059,9 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
 
     while ((row_values = conn.methods->fetch_row(&tables_ctx)) != NULL) {
         List* triple = list_make3(
-            pstrdup(TextDatumGetCString(row_values[0])),
-            pstrdup(TextDatumGetCString(row_values[1])),
-            pstrdup(TextDatumGetCString(row_values[2]))
+            TextDatumGetCString(row_values[0]),
+            TextDatumGetCString(row_values[1]),
+            TextDatumGetCString(row_values[2])
         );
 
         CHECK_FOR_INTERRUPTS();
