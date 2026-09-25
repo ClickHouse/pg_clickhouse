@@ -52,8 +52,8 @@ function rule(c, dashes, out) {
 
 BEGIN {
     FS = " *\\| *"
-    COLS = 3
-    header = "ClickHouse|PostgreSQL|Notes"
+    COLS = 4
+    header = "ClickHouse|Default PostgreSQL|Additional read targets|Notes"
 
     upstream["Map(K,V)"] = "record[]|One record per pair"
     ours["Map(K,V)"] = "text[][]|One row of text items per pair"
@@ -61,12 +61,12 @@ BEGIN {
     ours["Nested(...)"] = "text[][]|One row of text items per nested row"
     upstream["Nullable(T)"] = "T|Sets nullable on the column"
     ours["Nullable(T)"] = "T|Column imports without NOT NULL"
-    upstream["Tuple(...)"] = "record|Pseudo type, no column takes it"
+    upstream["Tuple(...)"] = "record|Match field order and types"
     ours["Tuple(...)"] = "text[]|Fields become text items"
 
     if (!read_row()) die("no table on standard input")
-    if ($2 "|" $3 "|" $4 != header) {
-        die("header <" $2 "|" $3 "|" $4 "> is not <" header ">")
+    if ($2 "|" $3 "|" $4 "|" $5 != header) {
+        die("header <" $2 "|" $3 "|" $4 "|" $5 "> is not <" header ">")
     }
     keep_row(0)
     if (!read_row() || $2 !~ /^-+$/) die("no rule under the header")
@@ -74,13 +74,13 @@ BEGIN {
     while (read_row()) {
         type = $2
         if (type in ours) {
-            if ($3 "|" $4 != upstream[type]) {
+            if ($3 "|" $5 != upstream[type]) {
                 die("swap for " type " expects <" upstream[type] ">, " \
-                    "got <" $3 "|" $4 ">")
+                    "got <" $3 "|" $5 ">")
             }
             split(ours[type], swap, "|")
             $3 = swap[1]
-            $4 = swap[2]
+            $5 = swap[2]
             swapped[type] = 1
         }
         if ($3 ~ /^record(\[\])*$/) die("no swap for pseudo type row " type)
