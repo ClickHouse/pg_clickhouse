@@ -787,17 +787,6 @@ SELECT * FROM bad_name;
 ERROR:  pg_clickhouse: unsupported line ending character in database name
 DETAIL:  Invalid database name: 'http_test
 X-My-Header: 123'
-/* Deprecated fetch_size option warns but remains accepted for now. */
-CREATE SERVER http_bad_fetch FOREIGN DATA WRAPPER clickhouse_fdw
-    OPTIONS(dbname 'http_test', driver 'http', fetch_size '100');
-WARNING:  option "fetch_size" is deprecated and ignored; will be removed in a future release
-CREATE FOREIGN TABLE ft_bad_fetch (
-    c1 int NOT NULL,
-    c3 text
-) SERVER http_loopback OPTIONS (table_name 't1', fetch_size '100');
-WARNING:  option "fetch_size" is deprecated and ignored; will be removed in a future release
-DROP FOREIGN TABLE ft_bad_fetch;
-DROP SERVER http_bad_fetch;
 /*
  * Native names the column type on the wire, so a String value like `[foo]bar`
  * stays text instead of reading as a CH array literal.

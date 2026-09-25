@@ -137,17 +137,6 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
             );
         }
 
-        if (strcmp(def->defname, "fetch_size") == 0) {
-            ereport(
-                WARNING,
-                errcode(ERRCODE_WARNING_DEPRECATED_FEATURE),
-                errmsg(
-                    "option \"fetch_size\" is deprecated and ignored; will be "
-                    "removed in a future release"
-                )
-            );
-        }
-
         if (strcmp(def->defname, "secure") == 0) {
             const char* val = defGetString(def);
 
@@ -212,8 +201,6 @@ InitChFdwOptions(void) {
         { "table_name",              ForeignTableRelationId,  false },
         { "engine",                  ForeignTableRelationId,  false },
         { "driver",                  ForeignServerRelationId, false },
-        { "fetch_size",              ForeignServerRelationId, false },
-        { "fetch_size",              ForeignTableRelationId,  false },
         { "encoding_check",          ForeignServerRelationId, true  },
         { "aggregatefunction",       AttributeRelationId,     false },
         { "simpleaggregatefunction", AttributeRelationId,     false },

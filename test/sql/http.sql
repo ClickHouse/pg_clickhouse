@@ -249,18 +249,6 @@ CREATE FOREIGN TABLE bad_name (
 ) SERVER http_loopback_bad OPTIONS ( table_name 't3' );
 SELECT * FROM bad_name;
 
-/* Deprecated fetch_size option warns but remains accepted for now. */
-CREATE SERVER http_bad_fetch FOREIGN DATA WRAPPER clickhouse_fdw
-    OPTIONS(dbname 'http_test', driver 'http', fetch_size '100');
-
-CREATE FOREIGN TABLE ft_bad_fetch (
-    c1 int NOT NULL,
-    c3 text
-) SERVER http_loopback OPTIONS (table_name 't1', fetch_size '100');
-
-DROP FOREIGN TABLE ft_bad_fetch;
-DROP SERVER http_bad_fetch;
-
 /*
  * Native names the column type on the wire, so a String value like `[foo]bar`
  * stays text instead of reading as a CH array literal.

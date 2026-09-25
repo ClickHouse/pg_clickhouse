@@ -25,6 +25,9 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     `clickhouse_query(server, sql)` to read rows and `CALL
     clickhouse_perform(server, sql)` to run statements that return none; both
     take a foreign server rather than a connection string ([#346]).
+*   Removed the `fetch_size` server and table options, deprecated in v0.10.0.
+    It's no longer necessary as both the http and the binary driver stream
+    results by ClickHouse Native protocol Block ([#381]).
 *   This release validates the character encoding of text and JSON data
     fetched from ClickHouse, raising an error for violations of the Postgres
     database encoding. Add the new `encoding_check` option to any servers that
@@ -128,7 +131,7 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     "ClickHouse/pg_clickhouse#355 Map UInt64 & Int128/UInt128/Int256/UInt256 to numeric"
   [#359]: https://github.com/ClickHouse/pg_clickhouse/pull/359
     "ClickHouse/pg_clickhouse#359 update pg-clickhouse-c for text encoding verification"
-  [pg_clickhouse#361]: https://github.com/ClickHouse/pg_clickhouse/pull/361
+  [#361]: https://github.com/ClickHouse/pg_clickhouse/pull/361
     "ClickHouse/pg_clickhouse#361 Add the `encoding_check` server option"
   [#363]: https://github.com/ClickHouse/pg_clickhouse/pull/363
     "ClickHouse/pg_clickhouse#363 update pg-clickhouse-c"
@@ -144,6 +147,8 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     "ClickHouse Docs: arrayFlattenedLength"
   [#373]: https://github.com/ClickHouse/pg_clickhouse/pull/373
     "ClickHouse/pg_clickhouse#373 Add pushdown for multidimensional array index"
+  [#381]: https://github.com/ClickHouse/pg_clickhouse/pull/381
+    "ClickHouse/pg_clickhouse#381 Remove the `fetch_size` server and table option"
 
 ## [v0.10.0] — 2026-08-11
 
