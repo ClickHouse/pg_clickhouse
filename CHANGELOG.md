@@ -43,8 +43,9 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
 ### ⬆️ Dependencies
 
 *   Dropped support for PostgreSQL 13.
-*   Updated the vendored pg-clickhouse-c, which now parses `Nested`,
-    `SimpleAggregateFunction`, and parameterized `JSON` types ([#363]).
+*   Updated the vendored pg-clickhouse-c, which now parses unflattened
+    `Nested`, `SimpleAggregateFunction`, and parameterized `JSON` types
+    ([#363]).
 
 ### ⚡ Improvements
 
@@ -72,11 +73,11 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     the column type and stores the aggregate function name, without
     parameters, in a column option. Because `AggregateFunction(count)` has no
     argument type, it imports as `bigint` ([#349], [#363]).
-*   `IMPORT FOREIGN SCHEMA` now imports `Nested` as `text[][]`, with one array
-    per nested row. It also imports parameterized `JSON` as `jsonb` by
-    default, which can be mapped manually to `json` or `text`, and reads
-    `SimpleAggregateFunction` columns. These types previously caused errors
-    ([#363]).
+*   `IMPORT FOREIGN SCHEMA` now imports `Nested` columns created with
+    `flatten_nested=0` as `text[][]`, with one array per nested row. It also
+    imports parameterized `JSON` as `jsonb` by default, which can be mapped
+    manually to `json` or `text`, and reads `SimpleAggregateFunction` columns.
+    These types previously caused errors ([#363]).
 *   Added pushdown for PostgreSQL `sha224()`, `sha256()`, `sha384()`, and
     `sha512()` functions, along with supported constant-algorithm calls to the
     pgcrypto extension's `digest()` function. Thanks to Siva Girish Ramesh for
@@ -87,6 +88,12 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     counts only the outer array ([#367]).
 *   Added pushdown for multidimensional array indexing in `WHERE` clauses
     (`WHERE foo[1][1] = 'abc'`) ([#373])
+
+### 📚 Documentation
+
+*   Expanded the [Composite Types] section of the documentation to detail the
+    behaviors of Array, Tuple, Map, and Nested data type mappings, all of
+    which have been improved but have caveats.
 
 ### 🐞 Bug Fixes
 
@@ -149,6 +156,7 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     "ClickHouse/pg_clickhouse#373 Add pushdown for multidimensional array index"
   [#381]: https://github.com/ClickHouse/pg_clickhouse/pull/381
     "ClickHouse/pg_clickhouse#381 Remove the `fetch_size` server and table option"
+  [Composite Types]: doc/pg_clickhouse.md#composite-types
 
 ## [v0.10.0] — 2026-08-11
 

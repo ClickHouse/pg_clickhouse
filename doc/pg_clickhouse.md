@@ -271,13 +271,14 @@ Some details to keep in mind:
     `NOT NULL`, whatever the ClickHouse declaration, see [State Columns and
     `NOT NULL`](#state-columns-and-not-null).
 
-*   `Tuple` columns import as `text[]`. `Map` and `Nested` columns import as
-    `text[][]`. Each conversion emits a `NOTICE`. PostgreSQL's `record`
-    pseudotype cannot define a table column, so each tuple becomes an array of
-    fields, each map becomes an array of key-value pairs, and each nested value
-    becomes an array of rows. To read fields as records, alter the column to an
-    array of a matching composite type, see [Manual Type
-    Mappings](#manual-type-mappings).
+*   `Tuple` columns import as `text[]`. `Map` and `Nested` columns columns
+    created with `flatten_nested=0` import as `text[][]`. Each conversion
+    emits a `NOTICE`. PostgreSQL's `record` pseudotype cannot define a table
+    column, so each tuple becomes an array of values, each map becomes an
+    two-dimensional array of key-value pairs, and each Nested value becomes an
+    two-dimensional array of rows. To read fields as records, alter the column
+    to an array of a matching composite type, see [Manual Type
+    Mappings](#manual-type-mappings) for an example.
 
 *   `DateTime64` and `Time64` columns with precision greater than 6
     (microseconds) also trigger a `NOTICE`, since PostgreSQL caps precision at
@@ -702,7 +703,7 @@ CREATE TABLE events (id int, ts date, val int, amt float8)
 -- 2023 data lives on ClickHouse
 CREATE FOREIGN TABLE events_2023 PARTITION OF events
     FOR VALUES FROM ('2023-01-01') TO ('2024-01-01')
-    SERVER ch_svr OPTIONS (table_name 'events');
+    SERVER ch_srv OPTIONS (table_name 'events');
 
 -- 2024 data stays local
 CREATE TABLE events_2024 PARTITION OF events
@@ -1248,46 +1249,45 @@ drops that trailing padding, where a [BYTEA] column keeps every byte.
 > As a rule, only use [TEXT] columns for encoded strings and use [BYTEA]
 > columns only for binary data, and never switch between them.
 
-### Manual Type Mappings
+### Composite Types
 
-`IMPORT FOREIGN SCHEMA` uses general-purpose PostgreSQL types. To retain
-structure or constrain values, define PostgreSQL composite or enum types and
-create a foreign table manually. For example, given ClickHouse columns
-`status Enum8('new' = 1, 'done' = 2)`, `point Tuple(Int32, Int32)`,
-`labels Map(String, Int64)`, and `items Nested(id Int32, name String)`:
+#### Array
+
+ClickHouse [Array]s map directly to PostgreSQL arrays, with equivalent
+semantics. The main differences is that Postgres multidimensional arrays must
+have array expressions with matching dimensions. An attempt to read a
+ClickHouse array with different dimensions, such as `[[1], [2,3]]`,
+triggers an error.
+
+Array index access pushes down as appropriate, including multidimensional
+index access. Examples:
 
 ```sql
-CREATE TYPE event_status AS ENUM ('new', 'done');
-CREATE TYPE event_point AS (x integer, y integer);
-CREATE TYPE event_label AS (key text, value bigint);
-CREATE TYPE event_item AS (id integer, name text);
-
-CREATE FOREIGN TABLE events (
-    status event_status,
-    point  event_point,
-    labels event_label[],
-    items  event_item[]
-) SERVER clickhouse_srv;
+SELECT * FROM things where tags[1] = 'foo';
+SELECT * FROM things where pairs[1][2] = 'bar';
 ```
 
-Match composite field order and types to ClickHouse declarations. Map keys and
-values become first and second fields, respectively. `Nested` and `Map` become
-arrays of composites, while `Tuple` becomes one composite value.
+Array slices also push down using the [arraySlice] function, although
+multidimensional slice access is not yet supported:
 
-### MAP
+```sql
+SELECT id, vals FROM t1 WHERE vals[1:2] = ARRAY[10,20];
+SELECT id, vals FROM t1 WHERE vals[1:2][2] = 20; -- currently fails
+```
+
+#### Map
 
 PostgreSQL provides no type corresponding to the ClickHouse [Map] type.
 pg_clickhouse therefore maps [Map] columns to `text[][]`, with each key-value
-pair as its own array. [IMPORT FOREIGN SCHEMA] uses this mapping.
-
-Insert an array of that shape, with each value parsed as its corresponding key
-or value type:
+pair as its own array. [IMPORT FOREIGN SCHEMA](#import-foreign-schema) uses
+this mapping. One can `INSERT` maps as arrays, as well. An example:
 
 ```sql
 -- Create ClickHouse table with Map column.
 CALL clickhouse_perform('ch_srv', $$
     CREATE TABLE maps (
-        c1 Int32, c2 Map(String, Int64)
+        c1 Int32,
+        c2 Map(String, Int64)
     ) ENGINE = MergeTree ORDER BY (c1);
 $$);
 
@@ -1304,24 +1304,201 @@ try=# SELECT * FROM maps;
 (1 row)
 ```
 
-Each nested array must contain exactly two values. Values incompatible with
-corresponding ClickHouse key or value types trigger an error.
-
-Similarly, a `Tuple` column maps to `text[]`. To preserve records, define a
-matching PostgreSQL [composite type], then use [CREATE FOREIGN TABLE] for a
-`Tuple` column with that type. `IMPORT FOREIGN SCHEMA` does not create types,
-so it emits a `NOTICE` and uses text arrays instead.
-
-A [Nested] column becomes an array with one item per nested row. Each item
-contains that row's fields. An array of a matching composite type can read
-these items as records. By default, ClickHouse splits a `Nested` column into
-one `Array` column per field. `IMPORT FOREIGN SCHEMA` reads these from
-ClickHouse's `system.columns` catalog and creates separate PostgreSQL array
-columns, preserving dotted names such as `items.a` and `items.b`.
+Each nested array must contain exactly two text values. Values incompatible
+with corresponding ClickHouse key or value types trigger an error.
 
 > [!NOTE]
 > Inserting a `Map` requires the `binary` driver, which derives column types
-> from the server. The `http` driver builds them from the PostgreSQL column.
+> from the CLickHouse sever. The `http` driver does not, so lacks the
+> information to format and insert the appropriate value.
+
+#### Tuple
+
+Similarly, a ClickHouse [Tuple] columns map to `text[]` and supports `INSERT`s
+via the binary driver. `IMPORT FOREIGN SCHEMA` emits a `NOTICE` when it makes
+such a mapping.
+
+#### Nested
+
+By default, ClickHouse splits a `Nested` column into one `Array` column per
+field (`flatten_nested=1`). `IMPORT FOREIGN SCHEMA` reads these from
+ClickHouse's `system.columns` catalog and creates separate PostgreSQL array
+columns, preserving dotted names such as `items.a` and `items.b`. For example,
+given this foreign table:
+
+```sql
+-- Create ClickHouse table with flattened Nested column.
+CALL clickhouse_perform('ch_srv', $$
+    CREATE TABLE ch.nests (
+        c1 Int32,
+        c2 Nested(id Int64, name String)
+    ) ENGINE = MergeTree ORDER BY (c1)
+$$);
+
+-- Import text[][] column, then insert two pairs.
+IMPORT FOREIGN SCHEMA ch LIMIT TO (nests) FROM SERVER ch_srv INTO public;
+```
+
+It's imported schema has three columns rather than two:
+
+```
+                   Foreign table "public.nests"
+ Column  |   Type   | Collation | Nullable | Default | FDW options
+---------+----------+-----------+----------+---------+-------------
+ c1      | integer  |           | not null |         |
+ c2.id   | bigint[] |           | not null |         |
+ c2.name | text[]   |           | not null |         |
+```
+
+Query the nested columns by double-quoting the column names, e.g.,
+
+```sql
+SELECT ci, "c2.id" FROM nests;
+```
+
+And filter values in a `WHERE` clause using the usual array features,
+including array subscript syntax:
+
+```sql
+SELECT * FROM nests
+ WHERE "c2.id[2]" = '2' OR '12' = ANY("c2.id");
+```
+
+A [Nested] column created with `flatten_nested=0` maps to an array with one
+item per nested row. Each array item contains that row's values:
+
+```sql
+-- Create ClickHouse table with unflattened Nested column.
+CALL clickhouse_perform('ch_srv', $$
+    CREATE TABLE nests (
+        c1 Int32,
+        c2 Nested(id Int64, name String)
+    ) ENGINE = MergeTree ORDER BY (c1) SETTINGS flatten_nested=0
+$$);
+
+-- Import text[][] column, then insert two pairs.
+IMPORT FOREIGN SCHEMA ch LIMIT TO (nests) FROM SERVER ch_srv INTO public;
+```
+
+Now the resulting schema is:
+
+```
+                  Foreign table "public.nests"
+ Column |  Type   | Collation | Nullable | Default | FDW options
+--------+---------+-----------+----------+---------+-------------
+ c1     | integer |           | not null |         |
+ c2     | text[]  |           | not null |         |
+```
+
+Compose nested records in a two-dimensional array with text values formatted
+for each type defined by the ClickHouse Column. For
+`c2 Nested(id Int64, name String)` in this example, it would be:
+
+```sql
+INSERT INTO nests
+VALUES (1, ARRAY[['42', 'Arthur'], ['99', 'Barbara']]);
+```
+
+Pushdown of `text[][]` columns over Nested types fails, however:
+
+```pgsql
+SELECT * FROM nests WHERE c2[1][1] = '42`
+ERROR:  pg_clickhouse: DB::Exception: First argument for function 'arrayElement' must be array, got 'Tuple(serial UInt32, order_id String)' instead
+```
+
+This is because pg_clickhouse cannot tell a text array column over a
+ClickHouse array column from one over a Nested column, so cannot rewrite it
+in ClickHouse's Nested syntax.
+
+However, an array of a matching composite type can also map these items (see
+[Manual Type Mappings](#manual-type-mappings) for details), in which case
+pushdown works as long as the composite field names are identical to the
+Nested field names:
+
+```sql
+SELECT * FROM nests WHERE c2[1].id = 42;
+```
+
+### Manual Type Mappings
+
+`IMPORT FOREIGN SCHEMA` uses general-purpose PostgreSQL types. For example,
+given a ClickHouse table using [Enum], [Tuple], `Map`, and unflattened
+[Nested] (`flatten_nested = 0`) columns, such as:
+
+```sql
+CALL clickhouse_perform('ch_srv', $$
+    CREATE TABLE events (
+      id     UInt32,
+      status Enum8('new' = 1, 'done' = 2),
+      point  Tuple(Int32, Int32),
+      labels Map(String, Int64),
+      items  Nested(id Int32, name String)
+    ) ORDER BY id SETTINGS flatten_nested = 0
+$$);
+
+CALL clickhouse_perform('ch_srv', $$
+    INSERT INTO events
+    VALUES(1, 'new', tuple(3, 4), {'k1': 5, 'k2': 6}, [tuple(100, 'xx')])
+$$);
+```
+
+To retain structure or constrain values, define PostgreSQL composite or enum
+types and create a foreign table manually:
+
+```sql
+CREATE TYPE event_status AS ENUM ('new', 'done');
+CREATE TYPE event_point AS (x integer, y integer);
+CREATE TYPE event_label AS (key text, value bigint);
+CREATE TYPE event_item AS (id integer, name text);
+
+CREATE FOREIGN TABLE events (
+    id     bigint,
+    status event_status,
+    point  event_point,
+    labels event_label[],
+    items  event_item[]
+) SERVER clickhouse_srv;
+```
+
+> [!TIP]
+> Always make the enum labels and composite type field names identical to the
+> ClickHouse enum labels and `Nested` or `Tuple` field names to ensure that
+> pushdown specifies the proper names.
+
+Match composite field order and types to ClickHouse declarations. [Map] keys
+and values become first and second fields, respectively (`key` and `value` in
+this case). `Nested` and `Map` become arrays of composites, while `Tuple`
+becomes one composite value:
+
+```pgsql
+SELECT * FROM events ORDER BY id;
+ id | status | point |       labels        |          items
+----+--------+-------+---------------------+-------------------------
+  1 | new    | (3,4) | {"(k1,5)","(k2,6)"} | {"(100,xx)","(101,yy)"}
+(1 row)
+```
+
+Of course you can use the composite type field names, too, both in a `SELECT`
+list:
+
+```pgsql
+SELECT (point).x,       (point).y,
+       (labels[1]).key, (labels[1]).value,
+       (items[1]).id,   (items[1]).name
+  FROM events ORDER BY id;
+ x | y | key | value | id  | name
+---+---+-----+-------+-----+------
+ 3 | 4 | k1  |     5 | 100 | xx
+```
+
+And, for [Nested] types in a `WHERE` clause --- as long as the field names are
+identical:
+
+```sql
+SELECT * FROM events WHERE items[1].name = 'xx';
+```
+
+`INSERT` using such composites is not yet supported.
 
 ## Function and Operator Reference
 
@@ -1981,10 +2158,16 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: Declaring Composite Types"
   [CALL]: https://www.postgresql.org/docs/current/sql-call.html
     "PostgreSQL Docs: CALL"
+  [Array] https://clickhouse.com/docs/reference/data-types/array
+    "ClickHouse Docs: Array(T)"
   [Map]: https://clickhouse.com/docs/sql-reference/data-types/map
     "ClickHouse Docs: Map"
+  [Tuple]: https://clickhouse.com/docs/reference/data-types/tuple
+    "ClickHouse Docs: Tuple(T1, T2, ...)"
   [Nested]: https://clickhouse.com/docs/sql-reference/data-types/nested-data-structures/nested
     "ClickHouse Docs: Nested"
+  [Enum]: https://clickhouse.com/docs/reference/data-types/enum
+    "ClickHouse Docs: Enum"
   [String]: https://clickhouse.com/docs/sql-reference/data-types/string
     "ClickHouse Docs: String"
   [TEXT]: https://www.postgresql.org/docs/current/datatype-character.html

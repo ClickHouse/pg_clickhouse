@@ -248,6 +248,19 @@ json_coldef.sql
  25.3+      | json_coldef.out
  23.3-25.2  | json_coldef_1.out
 
+nested.sql
+-----------
+
+ Postgres | File
+----------|------------
+ 14-19    | nested.out
+
+ ClickHouse | File
+------------|--------------
+ 26.8+      | nested.out
+ 25.1-26.3  | nested_1.out
+ 23+        | nested_2.out
+
 param.sql
 ---------
 
