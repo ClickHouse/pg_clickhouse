@@ -1,0 +1,87 @@
+\set ECHO errors
+/****************************************************************************/
+-- By default ClickHouse flattens a Nested column.
+CALL clickhouse_perform('nested_admin', $$
+    CREATE TABLE nested_test.visits(
+        visit_id  UInt64,
+        user_id   UInt64,
+        goals     Nested(
+            serial    UInt32,
+            order_id  String
+        )
+    )
+    ENGINE = MergeTree ORDER BY visit_id
+$$);
+-- By default, a Nested column is flattened into multiple columns.
+IMPORT FOREIGN SCHEMA nested_test FROM SERVER binary_nested_loopback INTO nest_bin;
+EXECUTE describe('nest_bin.visits');
+    attname     |     type      | attndims | attnotnull 
+----------------+---------------+----------+------------
+ visit_id       | numeric(20,0) |        0 | t
+ user_id        | numeric(20,0) |        0 | t
+ goals.serial   | bigint[]      |        1 | t
+ goals.order_id | text[]        |        1 | t
+(4 rows)
+
+IMPORT FOREIGN SCHEMA nested_test FROM SERVER http_nested_loopback INTO nest_http;
+EXECUTE describe('nest_http.visits');
+    attname     |     type      | attndims | attnotnull 
+----------------+---------------+----------+------------
+ visit_id       | numeric(20,0) |        0 | t
+ user_id        | numeric(20,0) |        0 | t
+ goals.serial   | bigint[]      |        1 | t
+ goals.order_id | text[]        |        1 | t
+(4 rows)
+
+-- Insert values.
+INSERT INTO nest_bin.visits
+VALUES (1, 1, '{1,2}'::bigint[],'{xx,yy}'::text[]);
+INSERT INTO nest_bin.visits
+VALUES (2, 2, '{3,4}'::bigint[],'{aa,bb}'::text[]);
+SELECT * FROM nest_bin.visits ORDER BY visit_id;
+ visit_id | user_id | goals.serial | goals.order_id 
+----------+---------+--------------+----------------
+        1 |       1 | {1,2}        | {xx,yy}
+        2 |       2 | {3,4}        | {aa,bb}
+(2 rows)
+
+SELECT * FROM nest_http.visits ORDER BY visit_id;
+ visit_id | user_id | goals.serial | goals.order_id 
+----------+---------+--------------+----------------
+        1 |       1 | {1,2}        | {xx,yy}
+        2 |       2 | {3,4}        | {aa,bb}
+(2 rows)
+
+-- Should pushdown array access.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT visit_id FROM nest_bin.visits WHERE "goals.serial"[1] = 1;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on nest_bin.visits
+   Output: visit_id
+   Remote SQL: SELECT visit_id FROM nested_test.visits WHERE ((("goals.serial"[1]) = 1))
+(3 rows)
+
+SELECT visit_id FROM nest_bin.visits WHERE "goals.serial"[1] = 1;
+ visit_id 
+----------
+        1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT visit_id FROM nest_http.visits WHERE "goals.serial"[1] = 1;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on nest_http.visits
+   Output: visit_id
+   Remote SQL: SELECT visit_id FROM nested_test.visits WHERE ((("goals.serial"[1]) = 1))
+(3 rows)
+
+SELECT visit_id FROM nest_http.visits WHERE "goals.serial"[1] = 1;
+ visit_id 
+----------
+        1
+(1 row)
+
+\set ECHO errors
+SKIP: flatten_nested not available prior to ClickHouse 25.1
