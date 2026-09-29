@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file. It uses the
   [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
     "Semantic Versioning 2.0.0"
 
-## [v0.11.0] — Unreleased
+## [v0.11.0] — 2026-09-30
 
 This release makes binary-compatible changes to the v0.10 releases. Once
 installed, any existing use of pg_clickhouse v0.10 will benefit from its
@@ -138,6 +138,8 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.11';
     "ClickHouse/pg_clickhouse#355 Map UInt64 & Int128/UInt128/Int256/UInt256 to numeric"
   [#359]: https://github.com/ClickHouse/pg_clickhouse/pull/359
     "ClickHouse/pg_clickhouse#359 update pg-clickhouse-c for text encoding verification"
+  [#360]: https://github.com/ClickHouse/pg_clickhouse/pull/360
+    "ClickHouse/pg_clickhouse#360 Add pgcrypto digest and SHA function pushdown"
   [#361]: https://github.com/ClickHouse/pg_clickhouse/pull/361
     "ClickHouse/pg_clickhouse#361 Add the `encoding_check` server option"
   [#363]: https://github.com/ClickHouse/pg_clickhouse/pull/363

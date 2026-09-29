@@ -1116,6 +1116,7 @@ Input-compatible types can read strings using their PostgreSQL input function.
 Composite types must have matching fields in matching order. To read a tuple
 as an array, each field must convert to the array's element type, and no field
 can itself be an array.
+
 When read as arrays, `Map` uses one row per key-value pair and `Nested` uses
 one row per nested record. To read a tuple as `box`, provide two points; for
 `circle`, provide a point and radius; for `line`, provide three coefficients.
