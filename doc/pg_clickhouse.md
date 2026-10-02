@@ -1310,7 +1310,7 @@ with corresponding ClickHouse key or value types trigger an error.
 
 > [!NOTE]
 > Inserting a `Map` requires the `binary` driver, which derives column types
-> from the CLickHouse sever. The `http` driver does not, so lacks the
+> from the ClickHouse sever. The `http` driver does not, so lacks the
 > information to format and insert the appropriate value.
 
 #### Tuple
