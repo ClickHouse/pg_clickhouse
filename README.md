@@ -62,6 +62,8 @@ with 36 GB of memory.
 | [Query 21] |    1145 ms |       4470 ms |          |
 | [Query 22] |     270 ms |         45 ms |     ✼    |
 
+## Installation
+
 ### Compile From Source
 
 #### General Unix
@@ -209,6 +211,42 @@ You need to run the test suite using a super user, such as the default
 make installcheck PGUSER=postgres
 ```
 
+### CloudNativePG
+
+Add pg_clickhouse to a [CloudNativePG] cluster using [ExtensionConfiguration]:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+spec:
+  # ... <snip>
+  postgresql:
+    # ExtensionConfiguration
+    extensions:
+      - name: pg_clickhouse
+        image:
+        reference: ghcr.io/ClickHouse/cnpg-pg_clickhouse:{pg_major_version}-{pg_clickhouse_version}
+```
+
+To load it into a database, use [ExtensionSpec]:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: pg_clickhouse-cluster
+spec:
+  name: app
+  owner: app
+  cluster:
+    name: pg_clickhouse-cluster
+  extensions:
+    - name: pg_clickhouse
+      version: {pg_clickhouse_version}
+```
+
 ### Loading
 
 Once `pg_clickhouse` is installed, you can add it to a database by connecting
@@ -292,6 +330,11 @@ adding DML features. Our road map:
   [LibSSL]: https://openssl-library.org "OpenSSL Library"
   [TPC-H]: https://www.tpc.org/tpch/
   [re2]: https://github.com/ClickHouse/pg_re2 "pg_re2: ClickHouse-compatible regex functions using RE2"
+  [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
+  [ExtensionConfiguration]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionconfiguration
+    "CloudNativePG Docs: ExtensionConfiguration:
+  [ExtensionSpec]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionspec
+    "CloudNativePG Docs: ExtensionSpec:
 
   [Query 1]: https://github.com/ClickHouse/pg_clickhouse/blob/main/dev/tpch/queries/1.sql
   [Query 2]: https://github.com/ClickHouse/pg_clickhouse/blob/main/dev/tpch/queries/2.sql

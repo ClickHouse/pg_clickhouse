@@ -1,6 +1,7 @@
 ARG PG_MAJOR=19
+ARG BASE=postgres
 
-FROM postgres:$PG_MAJOR-trixie AS build
+FROM $BASE AS build
 
 WORKDIR /work
 COPY . .
@@ -23,7 +24,9 @@ RUN make && make install DESTDIR=/dest
 # Build the latest stable version of the re2 extension.
 RUN cd /tmp && pgxn download re2 && unzip re2-*.zip && rm re2-*.zip && cd re2-* && make && make install DESTDIR=/dest
 
-FROM postgres:$PG_MAJOR-trixie
+##############################################################################
+# Main image with Postgres, pg_clickhouse, and pg_re2.
+FROM $BASE
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends libcurl4t64 uuid libre2-11 liblz4-1 libzstd1 ca-certificates \
@@ -33,17 +36,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends libcurl4t64 uui
 # Install extension files.
 COPY --chmod=644 --from=build \
     /dest/usr/share/postgresql/$PG_MAJOR/extension/*.* \
+    /dest/usr/share/postgresql/$PG_MAJOR/extension/*.* \
     /usr/share/postgresql/$PG_MAJOR/extension/
 
 # Install shared libraries.
 COPY --chmod=755 --from=build \
     /dest/usr/lib/postgresql/$PG_MAJOR/lib/*.so* \
+    /dest/usr/lib/postgresql/$PG_MAJOR/lib/*.so* \
     /usr/lib/postgresql/$PG_MAJOR/lib/
 
 # Install bitcode files.
 COPY --chmod=644 --from=build \
-    /dest/usr/lib/postgresql/$PG_MAJOR/lib/bitcode/*.bc \
+    /dest/usr/lib/postgresql/$PG_MAJOR/lib/bitcode/ \
+    /dest/usr/lib/postgresql/$PG_MAJOR/lib/bitcode/ \
     /usr/lib/postgresql/$PG_MAJOR/lib/bitcode/
-COPY --chmod=644 --from=build \
-    /dest/usr/lib/postgresql/$PG_MAJOR/lib/bitcode/pg_clickhouse/src/*.bc \
-    /usr/lib/postgresql/$PG_MAJOR/lib/bitcode/pg_clickhouse/src/

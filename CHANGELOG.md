@@ -7,6 +7,16 @@ All notable changes to this project will be documented in this file. It uses the
   [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
     "Semantic Versioning 2.0.0"
 
+## [v0.11.1] — Unreleased
+
+### 🚀 Distribution
+
+*   Added Postgres 19beta4 image.
+*   Added [CloudNativePG] extension images.
+
+  [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
+  [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
+
 ## [v0.11.0] — 2026-09-30
 
 This release makes binary-compatible changes to the v0.10 releases. Once

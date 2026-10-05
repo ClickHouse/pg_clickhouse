@@ -26,7 +26,7 @@ jobs:
       - name: Install Extensions
         run: pgxn install re2
       - name: Checkout the Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with: { submodules: recursive }
       - name: Start ClickHouse
         run: .github/ubuntu/clickhouse.sh
