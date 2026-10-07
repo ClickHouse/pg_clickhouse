@@ -875,6 +875,20 @@ classify_notin_subplan(SubPlan* subplan, PlannerInfo* root, Relids relids) {
     return NOTIN_SHIP_NONE;
 }
 
+/* Datetime +/- interval Param, which deparseIntervalOp splits into parts */
+static bool
+is_interval_param_op(OpExpr* oe) {
+    CustomObjectDef* cdef;
+
+    if (list_length(oe->args) != 2 || !IsA(lsecond(oe->args), Param)) {
+        return false;
+    }
+
+    cdef = chfdw_check_for_custom_operator(oe->opno, NULL);
+    return cdef && (cdef->cf_type == CF_DATETIME_PL_INTERVAL ||
+                    cdef->cf_type == CF_DATETIME_MI_INTERVAL);
+}
+
 /*
  * Check if expression is safe to execute remotely, and return true if so.
  *
@@ -927,6 +941,9 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             if (var->varattno < 0) {
                 return false;
             }
+        } else if (var->varlevelsup == 0 && var->vartype == INTERVALOID) {
+            /* Outer Var becomes a Param deparseIntervalOp cannot split */
+            return false;
         }
     } break;
     case T_Const:
@@ -948,6 +965,11 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
          * to handle such cases as direct foreign updates.)
          */
         if (p->paramkind == PARAM_MULTIEXPR) {
+            return false;
+        }
+
+        /* Only deparseIntervalOp knows how to apply interval params */
+        if (p->paramtype == INTERVALOID) {
             return false;
         }
     } break;
@@ -1059,6 +1081,16 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
          */
         if (!chfdw_is_shippable(node, oe->opno, OperatorRelationId, fpinfo, NULL)) {
             return false;
+        }
+
+        if (is_interval_param_op(oe)) {
+            if (((Param*)lsecond(oe->args))->paramkind == PARAM_MULTIEXPR) {
+                return false;
+            }
+            if (!foreign_expr_walker(linitial(oe->args), glob_cxt, EXPR_CTX_EXACT)) {
+                return false;
+            }
+            break;
         }
 
         /*
@@ -1866,11 +1898,7 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
         break;
 
     case INTERVALOID:
-        if (with_typemod) {
-            buf = printTypmod("UInt64", typemod, typeform->typmodout);
-        } else {
-            buf = pstrdup("UInt64");
-        }
+        buf = pstrdup("UInt64");
         break;
 
     case TIMEOID:
@@ -3523,31 +3551,42 @@ cleanup:
  * in that list as the remote parameter number.  During EXPLAIN, there's
  * no need to identify a parameter number.
  */
+/*
+ * SubPlan scope: a PARAM_EXEC Param here is (usually) a correlation
+ * reference, the planner's replacement for an outer-query Var inside the
+ * subquery (SS_replace_correlation_vars). subplan->parParam and
+ * subplan->args run in parallel: paramid -> the outer expression that
+ * feeds it. Return that expression, or NULL if not a correlation param.
+ */
+static Expr*
+correlation_arg(Param* node, deparse_expr_cxt* context) {
+    ListCell* pp;
+    ListCell* ap;
+
+    if (context->subplan == NULL || node->paramkind != PARAM_EXEC) {
+        return NULL;
+    }
+
+    Assert(context->parent_ctx != NULL);
+
+    forboth(pp, context->subplan->parParam, ap, context->subplan->args) {
+        if (lfirst_int(pp) == node->paramid) {
+            return (Expr*)lfirst(ap);
+        }
+    }
+    return NULL;
+}
+
 static void
 deparseParam(Param* node, deparse_expr_cxt* context) {
-    /*
-     * SubPlan scope: a PARAM_EXEC Param here is (usually) a correlation
-     * reference, the planner's replacement for an outer-query Var inside the
-     * subquery (SS_replace_correlation_vars). subplan->parParam and
-     * subplan->args run in parallel: paramid -> the outer expression that
-     * feeds it. Inline that expression, deparsed in the PARENT scope so it
-     * picks up the outer query's aliases.
-     */
-    if (context->subplan != NULL && node->paramkind == PARAM_EXEC) {
-        ListCell* pp;
-        ListCell* ap;
+    Expr* outer = correlation_arg(node, context);
 
-        Assert(context->parent_ctx != NULL);
-
-        forboth(pp, context->subplan->parParam, ap, context->subplan->args) {
-            if (lfirst_int(pp) == node->paramid) {
-                appendStringInfoChar(context->buf, '(');
-                deparseExpr((Expr*)lfirst(ap), context->parent_ctx);
-                appendStringInfoChar(context->buf, ')');
-                return;
-            }
-        }
-        /* Not a correlation param; fall through to normal handling. */
+    /* Deparse in PARENT scope to pick up outer query's aliases */
+    if (outer) {
+        appendStringInfoChar(context->buf, '(');
+        deparseExpr(outer, context->parent_ctx);
+        appendStringInfoChar(context->buf, ')');
+        return;
     }
 
     if (context->params_list) {
@@ -3573,6 +3612,15 @@ deparseParam(Param* node, deparse_expr_cxt* context) {
     }
 }
 
+/* PostgreSQL intervals retain months, days, microseconds; CH intervals use one unit */
+static char*
+remote_param_type_name(Oid paramtype, int32 paramtypmod) {
+    if (paramtype == INTERVALOID) {
+        return pstrdup("Tuple(Int32, Int32, Int64)");
+    }
+    return deparse_type_name(paramtype, paramtypmod);
+}
+
 /*
  * Print the representation of a parameter to be sent to the remote side
  * by param number and remote data type.
@@ -3585,7 +3633,7 @@ printRemoteParam(
     deparse_expr_cxt* context
 ) {
     StringInfo buf  = context->buf;
-    char* ptypename = deparse_type_name(paramtype, paramtypmod);
+    char* ptypename = remote_param_type_name(paramtype, paramtypmod);
 
     appendStringInfo(buf, "{p%d:%s}", paramindex, ptypename);
 }
@@ -3606,7 +3654,7 @@ printRemoteParam(
 static void
 printRemotePlaceholder(Oid paramtype, int32 paramtypmod, deparse_expr_cxt* context) {
     StringInfo buf  = context->buf;
-    char* ptypename = deparse_type_name(paramtype, paramtypmod);
+    char* ptypename = remote_param_type_name(paramtype, paramtypmod);
 
     appendStringInfo(buf, "((SELECT CAST(null AS Nullable(%s))", ptypename);
 }
@@ -4881,6 +4929,23 @@ deparseIntervalOp(Node* first, Node* second, deparse_expr_cxt* context, bool plu
      * on DateTime, so widen to DateTime64 first
      */
     bool widen = span && span->time % USECS_PER_SEC != 0;
+
+    if (IsA(second, Param) && !correlation_arg((Param*)second, context)) {
+        static const char* const units[] = { "Month", "Day", "Microsecond" };
+
+        appendStringInfoString(buf, "(toDateTime64(");
+        deparseExpr((Expr*)first, context);
+        appendStringInfoString(buf, ", 6)");
+        for (size_t i = 0; i < lengthof(units); i++) {
+            appendStringInfo(
+                buf, " %c toInterval%s(tupleElement(", plus ? '+' : '-', units[i]
+            );
+            deparseExpr((Expr*)second, context);
+            appendStringInfo(buf, ", %zu))", i + 1);
+        }
+        appendStringInfoChar(buf, ')');
+        return;
+    }
 
     appendStringInfoString(buf, widen ? "(toDateTime64(" : "(");
     deparseExpr((Expr*)first, context);

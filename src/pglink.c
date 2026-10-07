@@ -495,6 +495,11 @@ chfdw_datum_to_ch_literal(Datum value, Oid type) {
         chfdw_encode_timestamp(DatumGetTimestamp(value), ts);
         return pstrdup(ts);
     }
+    case INTERVALOID: {
+        Interval* span = DatumGetIntervalP(value);
+
+        return psprintf("(%d,%d," INT64_FORMAT ")", span->month, span->day, span->time);
+    }
     default:
         ereport(
             ERROR,

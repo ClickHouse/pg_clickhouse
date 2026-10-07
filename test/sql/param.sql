@@ -178,6 +178,15 @@ EXECUTE st10('2026-09-28 23:59:59.999999');
 PREPARE st11(date) AS SELECT id FROM bin_test.typed WHERE d = $1;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st11('1960-01-01');
 EXECUTE st11('1960-01-01');
+PREPARE st12(interval) AS SELECT id FROM bin_test.typed WHERE ts + $1 >= '2026-10-29 00:00:00+00' ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st12('1 month 0.5 seconds');
+EXECUTE st12('1 month 0.5 seconds');
+EXECUTE st12('1 month');
+PREPARE st13(interval) AS SELECT id FROM bin_test.typed WHERE d - $1 < '1959-12-31' ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st13('1 day 1 microsecond');
+EXECUTE st13('1 day 1 microsecond');
+EXECUTE st13('1 day');
+EXECUTE st13('-1 year');
 RESET plan_cache_mode;
 
 -- cleanup
@@ -192,6 +201,8 @@ DEALLOCATE st8;
 DEALLOCATE st9;
 DEALLOCATE st10;
 DEALLOCATE st11;
+DEALLOCATE st12;
+DEALLOCATE st13;
 
 -- ===================================================================
 -- http foreign tables
@@ -313,6 +324,15 @@ EXECUTE st10('2026-09-28 23:59:59.999999');
 PREPARE st11(date) AS SELECT id FROM http_test.typed WHERE d = $1;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st11('1960-01-01');
 EXECUTE st11('1960-01-01');
+PREPARE st12(interval) AS SELECT id FROM http_test.typed WHERE ts + $1 >= '2026-10-29 00:00:00+00' ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st12('1 month 0.5 seconds');
+EXECUTE st12('1 month 0.5 seconds');
+EXECUTE st12('1 month');
+PREPARE st13(interval) AS SELECT id FROM http_test.typed WHERE d - $1 < '1959-12-31' ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st13('1 day 1 microsecond');
+EXECUTE st13('1 day 1 microsecond');
+EXECUTE st13('1 day');
+EXECUTE st13('-1 year');
 RESET plan_cache_mode;
 
 -- cleanup
@@ -327,6 +347,8 @@ DEALLOCATE st8;
 DEALLOCATE st9;
 DEALLOCATE st10;
 DEALLOCATE st11;
+DEALLOCATE st12;
+DEALLOCATE st13;
 
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER param_bin_svr;

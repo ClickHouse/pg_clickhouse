@@ -17,6 +17,9 @@ All notable changes to this project will be documented in this file. It uses the
 ### ⚡ Improvements
 
 *   Added pushdown for datetime arithmetic with interval parameters ([#389]).
+*   Added pushdown for `point` values and coordinate subscripts; geometric
+    operators and expressions involving other geometric types are evaluated
+    locally ([#389]).
 *   Added pushdown for more regression aggregate functions on ClickHouse 26.9+:
     *   [regr_avgx]
     *   [regr_avgy]
