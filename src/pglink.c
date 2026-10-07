@@ -433,6 +433,9 @@ chfdw_datum_to_ch_literal(Datum value, Oid type) {
 
     initStringInfo(&buf);
     switch (type) {
+    case POINTOID:
+        chfdw_append_point_literal(&buf, value);
+        return buf.data;
     case BOOLOID:
     case INT2OID:
     case INT4OID:

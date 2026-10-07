@@ -43,6 +43,7 @@
 #include "utils/date.h"
 #include "utils/datetime.h"
 #include "utils/fmgroids.h"
+#include "utils/geo_decls.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
@@ -908,6 +909,34 @@ is_interval_param_op(OpExpr* oe) {
  * EXPR_CTX_TRUTH only while every enclosing node treats NULL and FALSE
  * identically.
  */
+/*
+ * Return 1-based ClickHouse tuple index for point[0] or point[1], else 0.
+ * PostgreSQL returns NULL for other indexes, where tupleElement fails
+ */
+static int
+point_subscript_index(SubscriptingRef* ar) {
+    Const* c;
+
+    if (ar->refcontainertype != POINTOID || ar->reflowerindexpr != NIL ||
+        list_length(ar->refupperindexpr) != 1) {
+        return 0;
+    }
+
+    c = (Const*)linitial(ar->refupperindexpr);
+    if (!IsA(c, Const) || c->consttype != INT4OID || c->constisnull) {
+        return 0;
+    }
+
+    switch (DatumGetInt32(c->constvalue)) {
+    case 0:
+        return 1;
+    case 1:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
 static bool
 foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
     bool check_type = true;
@@ -984,7 +1013,7 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
 
-        if (!type_is_array(ar->refcontainertype)) {
+        if (!type_is_array(ar->refcontainertype) && point_subscript_index(ar) == 0) {
             return false;
         }
 
@@ -1346,6 +1375,12 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
     } break;
     case T_CoerceViaIO: {
         CoerceViaIO* me = (CoerceViaIO*)node;
+
+        /* ClickHouse text forms of geometric types differ from PostgreSQL's */
+        if (chfdw_is_geometric_type(me->resulttype) ||
+            chfdw_is_geometric_type(exprType((Node*)me->arg))) {
+            return false;
+        }
 
         if (!foreign_expr_walker((Node*)me->arg, glob_cxt, EXPR_CTX_EXACT)) {
             return false;
@@ -1911,6 +1946,11 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
     case UUIDOID:
     case JSONOID:
     case JSONBOID:
+    case POINTOID:
+    case POLYGONOID:
+    case BOXOID:
+    case CIRCLEOID:
+    case LINEOID:
         buf = pgch_ch_type_for(type_oid, with_typemod ? typemod : -1, true, NULL);
         break;
 
@@ -1923,6 +1963,12 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
         break;
     case TEXTOID:
         buf = pstrdup("String");
+        break;
+
+    /* pg-clickhouse-c reads back LineString as path, but CH < 24.6 lacks it */
+    case PATHOID:
+    case LSEGOID:
+        buf = pstrdup("Array(Point)");
         break;
     }
 
@@ -3229,6 +3275,18 @@ chfdw_append_float_literal(StringInfo buf, double v) {
     }
 }
 
+/* Shippability admits only point among geometric types */
+void
+chfdw_append_point_literal(StringInfo buf, Datum val) {
+    Point* p = DatumGetPointP(val);
+
+    appendStringInfoChar(buf, '(');
+    chfdw_append_float_literal(buf, p->x);
+    appendStringInfoChar(buf, ',');
+    chfdw_append_float_literal(buf, p->y);
+    appendStringInfoChar(buf, ')');
+}
+
 static void
 emitArrayElement(
     StringInfo buf,
@@ -3472,6 +3530,11 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
         showtype = 1;
     }
 
+    /* Bare tuple of integers is no geometry type for ClickHouse functions */
+    if (showtype == 0 && chfdw_is_geometric_type(node->consttype)) {
+        showtype = 1;
+    }
+
     if (showtype > 0) {
         appendStringInfoString(buf, "cast(");
     }
@@ -3510,6 +3573,9 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
         goto cleanup;
     } else if (node->consttype == BYTEAOID) {
         deparseByteaLiteral(buf, node->constvalue);
+        goto cleanup;
+    } else if (node->consttype == POINTOID) {
+        chfdw_append_point_literal(buf, node->constvalue);
         goto cleanup;
     } else if (deparseStringDatum(buf, node->constvalue, typoutput)) {
         goto cleanup;
@@ -3974,7 +4040,15 @@ deparseGuardedNotIn(SubPlan* subplan, deparse_expr_cxt* context) {
  */
 static void
 deparseSubscriptingRef(SubscriptingRef* node, deparse_expr_cxt* context) {
-    StringInfo buf = context->buf;
+    StringInfo buf  = context->buf;
+    int point_index = point_subscript_index(node);
+
+    if (point_index != 0) {
+        appendStringInfoString(buf, "tupleElement(");
+        deparseExpr(node->refexpr, context);
+        appendStringInfo(buf, ", %d)", point_index);
+        return;
+    }
 
     if (node->reflowerindexpr != NIL) {
         /*
