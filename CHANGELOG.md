@@ -41,6 +41,8 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed ClickHouse type mappings for date, time, timestamp, UUID, and JSON
     casts and parameters, preserving timestamp precision and UTC semantics for
     `timestamptz` ([#389]).
+*   Preserved floating-point parameter values with shortest round-trip literals,
+    including `NaN` and infinities ([#389]).
 *   Fixed GCC 15 build failure caused by a `-Wclobbered` error in binary
     driver connection setup ([#395]).
 *   Added checks to prevent the pushdown of custom functions or

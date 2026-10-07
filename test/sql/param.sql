@@ -187,6 +187,15 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st13('1 day 1 microsecond');
 EXECUTE st13('1 day 1 microsecond');
 EXECUTE st13('1 day');
 EXECUTE st13('-1 year');
+PREPARE st14(float8) AS SELECT id FROM bin_test.typed WHERE f = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st14(1e-10);
+EXECUTE st14(1e-10);
+PREPARE st15(float8) AS SELECT id FROM bin_test.typed WHERE f > $1 ORDER BY id;
+EXECUTE st15('-Infinity');
+EXECUTE st15('-0');
+EXECUTE st15(0.25);
+EXECUTE st15('Infinity');
+EXECUTE st15('NaN');
 RESET plan_cache_mode;
 
 -- cleanup
@@ -203,6 +212,8 @@ DEALLOCATE st10;
 DEALLOCATE st11;
 DEALLOCATE st12;
 DEALLOCATE st13;
+DEALLOCATE st14;
+DEALLOCATE st15;
 
 -- ===================================================================
 -- http foreign tables
@@ -333,6 +344,15 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st13('1 day 1 microsecond');
 EXECUTE st13('1 day 1 microsecond');
 EXECUTE st13('1 day');
 EXECUTE st13('-1 year');
+PREPARE st14(float8) AS SELECT id FROM http_test.typed WHERE f = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st14(1e-10);
+EXECUTE st14(1e-10);
+PREPARE st15(float8) AS SELECT id FROM http_test.typed WHERE f > $1 ORDER BY id;
+EXECUTE st15('-Infinity');
+EXECUTE st15('-0');
+EXECUTE st15(0.25);
+EXECUTE st15('Infinity');
+EXECUTE st15('NaN');
 RESET plan_cache_mode;
 
 -- cleanup
@@ -349,6 +369,8 @@ DEALLOCATE st10;
 DEALLOCATE st11;
 DEALLOCATE st12;
 DEALLOCATE st13;
+DEALLOCATE st14;
+DEALLOCATE st15;
 
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER param_bin_svr;

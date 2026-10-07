@@ -458,6 +458,52 @@ EXECUTE st13('-1 year');
 ----
 (0 rows)
 
+PREPARE st14(float8) AS SELECT id FROM bin_test.typed WHERE f = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st14(1e-10);
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on bin_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((f = {p1:Float64}))
+(3 rows)
+
+EXECUTE st14(1e-10);
+ id 
+----
+  1
+(1 row)
+
+PREPARE st15(float8) AS SELECT id FROM bin_test.typed WHERE f > $1 ORDER BY id;
+EXECUTE st15('-Infinity');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st15('-0');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st15(0.25);
+ id 
+----
+  2
+(1 row)
+
+EXECUTE st15('Infinity');
+ id 
+----
+(0 rows)
+
+EXECUTE st15('NaN');
+ id 
+----
+(0 rows)
+
 RESET plan_cache_mode;
 -- cleanup
 DEALLOCATE st1;
@@ -473,6 +519,8 @@ DEALLOCATE st10;
 DEALLOCATE st11;
 DEALLOCATE st12;
 DEALLOCATE st13;
+DEALLOCATE st14;
+DEALLOCATE st15;
 -- ===================================================================
 -- http foreign tables
 -- ===================================================================
@@ -880,6 +928,52 @@ EXECUTE st13('-1 year');
 ----
 (0 rows)
 
+PREPARE st14(float8) AS SELECT id FROM http_test.typed WHERE f = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st14(1e-10);
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on http_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((f = {p1:Float64}))
+(3 rows)
+
+EXECUTE st14(1e-10);
+ id 
+----
+  1
+(1 row)
+
+PREPARE st15(float8) AS SELECT id FROM http_test.typed WHERE f > $1 ORDER BY id;
+EXECUTE st15('-Infinity');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st15('-0');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st15(0.25);
+ id 
+----
+  2
+(1 row)
+
+EXECUTE st15('Infinity');
+ id 
+----
+(0 rows)
+
+EXECUTE st15('NaN');
+ id 
+----
+(0 rows)
+
 RESET plan_cache_mode;
 -- cleanup
 DEALLOCATE st1;
@@ -895,6 +989,8 @@ DEALLOCATE st10;
 DEALLOCATE st11;
 DEALLOCATE st12;
 DEALLOCATE st13;
+DEALLOCATE st14;
+DEALLOCATE st15;
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER param_bin_svr;
 DROP SERVER param_bin_svr CASCADE;
