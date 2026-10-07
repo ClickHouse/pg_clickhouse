@@ -42,6 +42,7 @@ All notable changes to this project will be documented in this file. It uses the
     `timestamptz` ([#389]).
 *   Preserved floating-point parameter values with shortest round-trip literals,
     including `NaN` and infinities ([#389]).
+*   Fixed bare `numeric` casts to use `Nullable(Decimal(76, 38))` ([#389]).
 *   Fixed GCC 15 build failure caused by a `-Wclobbered` error in binary
     driver connection setup ([#395]).
 *   Added checks to prevent the pushdown of custom functions or
@@ -49,6 +50,8 @@ All notable changes to this project will be documented in this file. It uses the
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
+  [#389]: https://github.com/ClickHouse/pg_clickhouse/pull/389
+    "ClickHouse/pg_clickhouse#389 Fix uuid, temporal, float & numeric type mapping, push down interval params & points"
   [#395]: https://github.com/ClickHouse/pg_clickhouse/pull/395
     "ClickHouse/pg_clickhouse#395 Fix gcc15 Wclobbered warning"
   [regr_avgx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgx

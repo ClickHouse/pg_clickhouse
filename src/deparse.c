@@ -1924,14 +1924,10 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
 
     case NUMERICOID:
         if (with_typemod) {
-            /*
-             * Unconstrained numeric potentially much larger than ClickHouse can
-               do; max it out when no precision specified.
-            */
-            buf = typemod < 0 ? "Decimal(76, 38)"
-                              : printTypmod("Decimal", typemod, typeform->typmodout);
+            buf = printTypmod("Decimal", typemod, typeform->typmodout);
         } else {
-            buf = pstrdup("Decimal");
+            /* ClickHouse reads bare Decimal as Decimal(10, 0), use max precision */
+            buf = pstrdup("Decimal(76, 38)");
         }
         break;
 
@@ -4501,14 +4497,17 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
      */
     if (node->funcformat == COERCE_EXPLICIT_CAST) {
         Oid rettype = node->funcresulttype;
+        Expr* arg   = linitial(node->args);
         int32 coercedTypmod;
+        /* ClickHouse multiplies Float32 by 10^scale in Float32, breaks at scale 38 */
+        bool widen = rettype == NUMERICOID && exprType((Node*)arg) == FLOAT4OID;
 
         /* Get the typmod if this is a length-coercion function */
         (void)exprIsLengthCoercion((Node*)node, &coercedTypmod);
 
-        appendStringInfoString(buf, "cast(");
-        deparseExpr((Expr*)linitial(node->args), context);
-        appendStringInfoString(buf, ", ");
+        appendStringInfoString(buf, widen ? "cast(toFloat64(" : "cast(");
+        deparseExpr(arg, context);
+        appendStringInfoString(buf, widen ? "), " : ", ");
         deparseStringLiteral(
             buf, psprintf("Nullable(%s)", deparse_type_name(rettype, coercedTypmod))
         );
