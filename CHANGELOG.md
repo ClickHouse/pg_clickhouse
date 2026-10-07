@@ -14,8 +14,15 @@ All notable changes to this project will be documented in this file. It uses the
 *   Added Postgres 19beta4 image.
 *   Added [CloudNativePG] extension images.
 
+### 🐞 Bug Fixes
+
+*   Fixed GCC 15 build failure caused by a `-Wclobbered` error in binary
+    driver connection setup ([#395]).
+
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
+  [#395]: https://github.com/ClickHouse/pg_clickhouse/pull/395
+    "ClickHouse/pg_clickhouse#395 Fix gcc15 Wclobbered warning"
 
 ## [v0.11.0] — 2026-09-30
 

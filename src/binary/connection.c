@@ -266,7 +266,6 @@ tls_connect(ch_binary_connection_t* conn, const char* host, tls_version min_vers
 
 ch_binary_connection_t*
 ch_binary_connect(ch_connection_details* details) {
-    const char* host = details->host ? details->host : "127.0.0.1";
     int port;
     bool tls;
 
@@ -289,6 +288,8 @@ ch_binary_connect(ch_connection_details* details) {
         conn->reset_cb.func = binary_conn_reset_cb;
         conn->reset_cb.arg  = conn;
         MemoryContextRegisterResetCallback(cxt, &conn->reset_cb);
+
+        const char* host = details->host ? details->host : "127.0.0.1";
 
         conn->fd = tcp_connect(host, port);
         if (tls) {
