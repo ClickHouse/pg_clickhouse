@@ -1,6 +1,6 @@
 SET datestyle = 'ISO';
 CREATE SERVER binary_loopback FOREIGN DATA WRAPPER clickhouse_fdw
-    OPTIONS(dbname 'binary_test', driver 'binary');
+    OPTIONS(dbname 'binary_test');
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_loopback;
 
 CREATE SERVER binary_admin FOREIGN DATA WRAPPER clickhouse_fdw;

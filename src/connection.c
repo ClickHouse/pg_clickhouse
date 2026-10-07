@@ -52,7 +52,7 @@ static ch_connection
 clickhouse_connect(ForeignServer* server, UserMapping* user) {
     /* default settings */
     ch_connection_details details = {
-        .driver         = "http",
+        .driver         = "binary",
         .host           = "127.0.0.1",
         .dbname         = "default",
         .encoding_check = CHC_ENC_FAIL,

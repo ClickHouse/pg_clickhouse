@@ -1,11 +1,11 @@
 SET datestyle = 'ISO';
 CREATE SERVER http_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'http_test', driver 'http');
-CREATE SERVER http_loopback2 FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'http_test');
+CREATE SERVER http_loopback2 FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'http_test', driver 'http');
 
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_loopback;
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_loopback2;
 
-CREATE SERVER http_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE SERVER http_admin FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(driver 'http');
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_admin;
 
 CALL clickhouse_perform('http_admin', 'DROP DATABASE IF EXISTS http_test');
@@ -240,7 +240,8 @@ SELECT COUNT(DISTINCT c1) FROM ft2;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
 
 /* Disallow line endings in database names. */
-CREATE SERVER http_loopback_bad FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname E'http_test\r\nX-My-Header: 123');
+CREATE SERVER http_loopback_bad FOREIGN DATA WRAPPER clickhouse_fdw
+OPTIONS(driver 'http', dbname E'http_test\r\nX-My-Header: 123');
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_loopback_bad;
 
 CREATE FOREIGN TABLE bad_name (

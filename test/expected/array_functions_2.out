@@ -431,9 +431,8 @@ SELECT id FROM t1 WHERE array_length(array_sample(vals, 1), 1) = 1 ORDER BY id;
 (3 rows)
 
 SELECT id FROM t1 WHERE array_length(array_sample(vals, 1), 1) = 1 ORDER BY id;
-ERROR:  pg_clickhouse: Code: 46. DB::Exception: Unknown function arrayRandomSample: While processing SELECT id FROM arr_test.t1 WHERE nullIf(length(arrayRandomSample(vals, 1)), 0) = 1 ORDER BY id ASC NULLS LAST. (UNKNOWN_FUNCTION)
+ERROR:  pg_clickhouse: DB::Exception: Unknown function arrayRandomSample: While processing SELECT id FROM arr_test.t1 WHERE nullIf(length(arrayRandomSample(vals, 1)), 0) = 1 ORDER BY id ASC NULLS LAST
 DETAIL:  Remote Query: SELECT id FROM arr_test.t1 WHERE (((nullIf(length(arrayRandomSample(vals, 1)), 0)) = 1)) ORDER BY id ASC NULLS LAST
-CONTEXT:  HTTP status code: 404
 \endif
 -- Operators: @> → hasAll
 EXPLAIN (VERBOSE, COSTS OFF)

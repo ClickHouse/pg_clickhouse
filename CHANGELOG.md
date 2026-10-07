@@ -9,6 +9,11 @@ All notable changes to this project will be documented in this file. It uses the
 
 ## [v0.11.1] — Unreleased
 
+### 🚨 Compatibility
+
+*   Changed the default driver from "http" to "binary". Use
+    `OPTIONS(driver 'http')` to restore use of the HTTP driver if needed.
+
 ### 🚀 Distribution
 
 *   Added Postgres 19beta4 image.
