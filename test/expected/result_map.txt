@@ -17,7 +17,8 @@ aggregates.sql
 
  ClickHouse | File
 ------------|-----------------
- 24.8+      | aggregates.out
+ 26.9+      | aggregates.out
+ 24.8-26.8  | aggregates_2.out
  24.3       | aggregates_3.out
  23.8       | aggregates_4.out
  23.3       | aggregates_5.out

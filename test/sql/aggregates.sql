@@ -447,7 +447,6 @@ SELECT bool_or(duration > 5000) FROM agg_http.hits;
 \echo -- bit_and pushdown (binary)
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT bit_and(duration::int4) FROM agg_bin.hits WHERE id = 3498231651;
-
 SELECT bit_and(duration::int4) FROM agg_bin.hits WHERE id = 3498231651;
 
 \echo -- bit_or pushdown (binary)
@@ -466,10 +465,77 @@ SELECT bit_xor(duration::int4) FROM agg_bin.hits WHERE id = 3498231651;
 SELECT bit_xor(duration::int4) FROM agg_bin.hits WHERE id = 3498231651;
 \endif
 
--- regr_* local fallback (not pushed)
-\echo -- regr_slope local fallback
+-- regr_slope() pushes down on 26.9+
+\echo -- regr_slope pushdown
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT regr_slope(cost::float8, duration::float8) FROM agg_bin.hits;
+SELECT regr_slope(b, a) FROM agg_bin.agg_numbers;
+SELECT regr_slope(b, a) FROM agg_bin.agg_numbers;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_slope(b, a) FROM agg_http.agg_numbers;
+SELECT regr_slope(b, a) FROM agg_http.agg_numbers;
+
+-- regr_avgy() pushes down on 26.9+
+\echo -- regr_avgy pushdown
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_avgy(b, a) FROM agg_bin.agg_numbers;
+SELECT regr_avgy(b, a) FROM agg_bin.agg_numbers;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_avgy(b, a) FROM agg_http.agg_numbers;
+SELECT regr_avgy(b, a) FROM agg_http.agg_numbers;
+
+-- regr_count() pushes down on 26.9+
+\echo -- regr_count pushdown
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_count(b, a) FROM agg_bin.agg_numbers;
+SELECT regr_count(b, a) FROM agg_bin.agg_numbers;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_count(b, a) FROM agg_http.agg_numbers;
+SELECT regr_count(b, a) FROM agg_http.agg_numbers;
+
+-- regr_intercept() pushes down on 26.9+
+\echo -- regr_intercept pushdown
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_intercept(b, a) FROM agg_bin.agg_numbers;
+SELECT regr_intercept(b, a) FROM agg_bin.agg_numbers;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_intercept(b, a) FROM agg_http.agg_numbers;
+SELECT regr_intercept(b, a) FROM agg_http.agg_numbers;
+
+-- regr_r2() pushes down on 26.9+
+\echo -- regr_r2 pushdown
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_r2(b, a) FROM agg_bin.agg_numbers;
+SELECT regr_r2(b, a) FROM agg_bin.agg_numbers;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_r2(b, a) FROM agg_http.agg_numbers;
+SELECT regr_r2(b, a) FROM agg_http.agg_numbers;
+
+-- regr_sxx() pushes down on 26.9+
+\echo -- regr_sxx pushdown
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_sxx(b, a) FROM agg_bin.agg_numbers;
+SELECT regr_sxx(b, a) FROM agg_bin.agg_numbers;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_sxx(b, a) FROM agg_http.agg_numbers;
+SELECT regr_sxx(b, a) FROM agg_http.agg_numbers;
+
+-- regr_sxy() pushes down on 26.9+
+\echo -- regr_sxy pushdown
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_sxy(b, a) FROM agg_bin.agg_numbers;
+SELECT regr_sxy(b, a) FROM agg_bin.agg_numbers;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_sxy(b, a) FROM agg_http.agg_numbers;
+SELECT regr_sxy(b, a) FROM agg_http.agg_numbers;
+
+-- regr_syy() pushes down on 26.9+
+\echo -- regr_syy pushdown
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_syy(b, a) FROM agg_bin.agg_numbers;
+SELECT regr_syy(b, a) FROM agg_bin.agg_numbers;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_syy(b, a) FROM agg_http.agg_numbers;
+SELECT regr_syy(b, a) FROM agg_http.agg_numbers;
 
 -- corr()
 \echo -- corr(int, float) corr(float, int)

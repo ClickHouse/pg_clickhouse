@@ -42,4 +42,13 @@ jobs:
         env: { CH_RELEASE: "${{ matrix.ch }}" }
         run: .github/ubuntu/clickhouse.sh
       - name: Test
+        id: test
         run: pg-build-test
+      - name: Upload Diffs
+        if: failure() && steps.test.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: regression-ch${{ matrix.ch }}
+          path: |
+            regression.diffs
+            results

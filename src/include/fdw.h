@@ -420,6 +420,7 @@ typedef enum {
                                 * list aggregate function */
     CF_ENCODE,                 /* encode(bytea, fmt) → hex/base64 family */
     CF_DIGEST,                 /* pgcrypto digest(data, algorithm) → hash function */
+    CF_REGR_AGG,               /* regr_*() aggregates → to 26.9+ */
 } custom_object_type;
 
 typedef enum {

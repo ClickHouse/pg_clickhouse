@@ -1383,26 +1383,28 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- regr_slope pushdown
-                              QUERY PLAN                              
-----------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_slope((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_slope(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Aggregate
+   Output: regr_slope((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
      regr_slope     
 --------------------
  0.5127507004412711
 (1 row)
 
-                              QUERY PLAN                              
-----------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_slope((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_slope(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Aggregate
+   Output: regr_slope((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
      regr_slope     
 --------------------
@@ -1410,26 +1412,28 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- regr_avgy pushdown
-                             QUERY PLAN                              
----------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_avgy((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_avgy(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Aggregate
+   Output: regr_avgy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
      regr_avgy      
 --------------------
  107.94315227307379
 (1 row)
 
-                             QUERY PLAN                              
----------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_avgy((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_avgy(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Aggregate
+   Output: regr_avgy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
      regr_avgy      
 --------------------
@@ -1437,26 +1441,28 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- regr_count pushdown
-                              QUERY PLAN                              
-----------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_count((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_count(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Aggregate
+   Output: regr_count((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
  regr_count 
 ------------
           4
 (1 row)
 
-                              QUERY PLAN                              
-----------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_count((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_count(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Aggregate
+   Output: regr_count((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
  regr_count 
 ------------
@@ -1464,26 +1470,28 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- regr_intercept pushdown
-                                QUERY PLAN                                
---------------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_intercept((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_intercept(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Aggregate
+   Output: regr_intercept((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
   regr_intercept   
 -------------------
  82.56199260123087
 (1 row)
 
-                                QUERY PLAN                                
---------------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_intercept((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_intercept(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Aggregate
+   Output: regr_intercept((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
   regr_intercept   
 -------------------
@@ -1491,26 +1499,28 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- regr_r2 pushdown
-                            QUERY PLAN                             
--------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_r2((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_r2(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Aggregate
+   Output: regr_r2((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
        regr_r2       
 ---------------------
  0.01949779820318026
 (1 row)
 
-                            QUERY PLAN                             
--------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_r2((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_r2(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Aggregate
+   Output: regr_r2((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
        regr_r2       
 ---------------------
@@ -1518,26 +1528,28 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- regr_sxx pushdown
-                             QUERY PLAN                             
---------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_sxx((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_sxx(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_sxx((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
  regr_sxx 
 ----------
      5099
 (1 row)
 
-                             QUERY PLAN                             
---------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_sxx((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_sxx(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_sxx((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
  regr_sxx 
 ----------
@@ -1545,26 +1557,28 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- regr_sxy pushdown
-                             QUERY PLAN                             
---------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_sxy((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_sxy(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_sxy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
       regr_sxy      
 --------------------
  2614.5158215500414
 (1 row)
 
-                             QUERY PLAN                             
---------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_sxy((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_sxy(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_sxy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
       regr_sxy      
 --------------------
@@ -1572,26 +1586,28 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- regr_syy pushdown
-                             QUERY PLAN                             
---------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_syy((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_syy(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_syy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
      regr_syy     
 ------------------
  68756.2156939293
 (1 row)
 
-                             QUERY PLAN                             
---------------------------------------------------------------------
- Foreign Scan
-   Output: (regr_syy((b)::double precision, (a)::double precision))
-   Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT regr_syy(b, a) FROM agg_test.agg_numbers
-(4 rows)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_syy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
 
      regr_syy     
 ------------------

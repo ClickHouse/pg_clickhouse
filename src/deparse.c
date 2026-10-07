@@ -419,9 +419,10 @@ chfdw_is_foreign_expr(
      * Check that the expression consists of nodes that are safe to execute
      * remotely.
      */
-    glob_cxt.root           = root;
-    glob_cxt.foreignrel     = baserel;
-    glob_cxt.subquery_scope = false;
+    glob_cxt.root                    = root;
+    glob_cxt.foreignrel              = baserel;
+    glob_cxt.subquery_scope          = false;
+    glob_cxt.foreignrel->fdw_private = fpinfo;
 
     /*
      * For an upper relation, use relids from its underneath scan relation,
@@ -1209,25 +1210,6 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
 
         /* groupConcat has no ORDER BY; block ordered string_agg */
         if (agg->aggfnoid == F_STRING_AGG_TEXT_TEXT && agg->aggorder != NIL) {
-            return false;
-        }
-
-        /* Block aggregates with no ClickHouse equivalent */
-        switch (agg->aggfnoid) {
-        case F_STRING_AGG_BYTEA_BYTEA:
-        case F_REGR_COUNT:
-        case F_REGR_SXX:
-        case F_REGR_SYY:
-        case F_REGR_SXY:
-        case F_REGR_AVGX:
-        case F_REGR_AVGY:
-        case F_REGR_R2:
-        case F_REGR_SLOPE:
-        case F_REGR_INTERCEPT:
-#if PG_VERSION_NUM >= 160000
-        case F_JSON_AGG_STRICT:
-        case F_JSONB_AGG_STRICT:
-#endif
             return false;
         }
 

@@ -14,6 +14,19 @@ All notable changes to this project will be documented in this file. It uses the
 *   Changed the default driver from "http" to "binary". Use
     `OPTIONS(driver 'http')` to restore use of the HTTP driver if needed.
 
+### ⚡ Improvements
+
+*   Added pushdown for more regression aggregate functions on ClickHouse 26.9+:
+    *   [regr_avgx]
+    *   [regr_avgy]
+    *   [regr_count]
+    *   [regr_intercept]
+    *   [regr_r2]
+    *   [regr_slope]
+    *   [regr_sxx]
+    *   [regr_sxy]
+    *   [regr_syy]
+
 ### 🚀 Distribution
 
 *   Added Postgres 19beta4 image.
@@ -28,6 +41,15 @@ All notable changes to this project will be documented in this file. It uses the
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
   [#395]: https://github.com/ClickHouse/pg_clickhouse/pull/395
     "ClickHouse/pg_clickhouse#395 Fix gcc15 Wclobbered warning"
+  [regr_avgx](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgx)
+  [regr_avgy](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgy)
+  [regr_count](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_count)
+  [regr_intercept](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_intercept)
+  [regr_r2](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_r2)
+  [regr_slope](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_slope)
+  [regr_sxx](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxx)
+  [regr_sxy](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxy)
+  [regr_syy](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_syy)
 
 ## [v0.11.0] — 2026-09-30
 

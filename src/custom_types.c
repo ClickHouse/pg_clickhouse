@@ -513,7 +513,20 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         return true;
 #endif
 
-        /* 1:1 pass-through: PG and CH agree on name and semantics */
+        /* 1:1 pass-through: PG and CH 26.9+ agree on name and semantics */
+    case F_REGR_AVGX:
+    case F_REGR_AVGY:
+    case F_REGR_COUNT:
+    case F_REGR_INTERCEPT:
+    case F_REGR_R2:
+    case F_REGR_SLOPE:
+    case F_REGR_SXX:
+    case F_REGR_SXY:
+    case F_REGR_SYY:
+        def->cf_type = CF_REGR_AGG;
+        return true;
+
+    /* 1:1 pass-through: PG and CH agree on name and semantics */
     case F_ARRAY_AGG_ANYARRAY:
     case F_AVG_INT8:
     case F_AVG_INT4:

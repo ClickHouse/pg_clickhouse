@@ -2849,6 +2849,16 @@ clickhouseGetForeignUpperPaths(
     fpinfo->stage           = stage;
     output_rel->fdw_private = fpinfo;
 
+    /*
+     * Might need to check the server version for availability of features, so
+     * set up the user for the connection. Prefer the inner relation user ID,
+     * as that's the relation to be read from ClickHouse.
+     */
+    ((CHFdwRelationInfo*)input_rel->fdw_private)->user = GetUserMapping(
+        OidIsValid(input_rel->userid) ? input_rel->userid : GetUserId(),
+        input_rel->serverid
+    );
+
     switch (stage) {
     case UPPERREL_GROUP_AGG:
         add_foreign_grouping_paths(

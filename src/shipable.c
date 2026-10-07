@@ -388,6 +388,8 @@ chfdw_is_shippable(
                  * CF_REGEX_ICASE_MATCH, and CF_REGEX_ICASE_NO_MATCH.
                  */
             } break;
+            case CF_REGR_AGG:
+                return chfdw_version_ge(chfdw_get_server_version(fpinfo->user), 26, 9);
             default:
                 break;
             }

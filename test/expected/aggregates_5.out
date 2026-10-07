@@ -1363,15 +1363,237 @@ DETAIL:  Remote Query: SELECT groupBitOr(cast(duration, 'Nullable(Int32)')) FROM
 
 ERROR:  pg_clickhouse: DB::Exception: Illegal type Int32 of argument for aggregate function groupBitXor
 DETAIL:  Remote Query: SELECT groupBitXor(cast(duration, 'Nullable(Int32)')) FROM agg_test.hits WHERE ((id = 3498231651))
--- regr_slope local fallback
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
+-- regr_slope pushdown
+                             QUERY PLAN                             
+--------------------------------------------------------------------
  Aggregate
-   Output: regr_slope((cost)::double precision, (duration)::double precision)
-   ->  Foreign Scan on agg_bin.hits
-         Output: id, uuid, "timestamp", datestamp, path, duration, cost
-         Remote SQL: SELECT duration, cost FROM agg_test.hits
+   Output: regr_slope((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
 (5 rows)
+
+     regr_slope     
+--------------------
+ 0.5127507004412711
+(1 row)
+
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Aggregate
+   Output: regr_slope((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+     regr_slope     
+--------------------
+ 0.5127507004412711
+(1 row)
+
+-- regr_avgy pushdown
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Aggregate
+   Output: regr_avgy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+     regr_avgy      
+--------------------
+ 107.94315227307379
+(1 row)
+
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Aggregate
+   Output: regr_avgy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+     regr_avgy      
+--------------------
+ 107.94315227307379
+(1 row)
+
+-- regr_count pushdown
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Aggregate
+   Output: regr_count((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+ regr_count 
+------------
+          4
+(1 row)
+
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Aggregate
+   Output: regr_count((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+ regr_count 
+------------
+          4
+(1 row)
+
+-- regr_intercept pushdown
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Aggregate
+   Output: regr_intercept((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+  regr_intercept   
+-------------------
+ 82.56199260123087
+(1 row)
+
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Aggregate
+   Output: regr_intercept((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+  regr_intercept   
+-------------------
+ 82.56199260123087
+(1 row)
+
+-- regr_r2 pushdown
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Aggregate
+   Output: regr_r2((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+       regr_r2       
+---------------------
+ 0.01949779820318026
+(1 row)
+
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Aggregate
+   Output: regr_r2((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+       regr_r2       
+---------------------
+ 0.01949779820318026
+(1 row)
+
+-- regr_sxx pushdown
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_sxx((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+ regr_sxx 
+----------
+     5099
+(1 row)
+
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_sxx((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+ regr_sxx 
+----------
+     5099
+(1 row)
+
+-- regr_sxy pushdown
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_sxy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+      regr_sxy      
+--------------------
+ 2614.5158215500414
+(1 row)
+
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_sxy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+      regr_sxy      
+--------------------
+ 2614.5158215500414
+(1 row)
+
+-- regr_syy pushdown
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_syy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+     regr_syy     
+------------------
+ 68756.2156939293
+(1 row)
+
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Aggregate
+   Output: regr_syy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+     regr_syy     
+------------------
+ 68756.2156939293
+(1 row)
 
 -- corr(int, float) corr(float, int)
                                                       QUERY PLAN                                                      
