@@ -266,7 +266,8 @@ tls_connect(ch_binary_connection_t* conn, const char* host, tls_version min_vers
 
 ch_binary_connection_t*
 ch_binary_connect(ch_connection_details* details) {
-    const char* host = details->host ? details->host : "127.0.0.1";
+    /* volatile: GCC 15 -Wclobbered flags it as live across PG_TRY */
+    const char* volatile host = details->host ? details->host : "127.0.0.1";
     int port;
     bool tls;
 
