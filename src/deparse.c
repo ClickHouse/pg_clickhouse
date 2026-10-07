@@ -48,6 +48,7 @@
 #include "utils/typcache.h"
 
 #include "fdw.h"
+#include "pg-clickhouse-encode.h"
 
 /* Aggregate OIDs absent from fmgroids.h on all PG versions. */
 #define F_STRING_AGG_TEXT_TEXT 3538
@@ -1872,12 +1873,14 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
         }
         break;
 
+    case TIMEOID:
     case TIMESTAMPTZOID:
     case TIMESTAMPOID:
-        buf = pstrdup("DateTime");
-        break;
     case DATEOID:
-        buf = pstrdup("Date");
+    case UUIDOID:
+    case JSONOID:
+    case JSONBOID:
+        buf = pgch_ch_type_for(type_oid, with_typemod ? typemod : -1, true, NULL);
         break;
 
     case VARCHAROID:
@@ -3411,11 +3414,16 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
         return;
     }
 
+    getTypeOutputInfo(node->consttype, &typoutput, &typIsVarlena);
+
+    /* Bare literal would parse in column timezone, not UTC */
+    if (showtype == 0 && typoutput == F_TIMESTAMPTZ_OUT) {
+        showtype = 1;
+    }
+
     if (showtype > 0) {
         appendStringInfoString(buf, "cast(");
     }
-
-    getTypeOutputInfo(node->consttype, &typoutput, &typIsVarlena);
 
     if (typoutput == F_TIMESTAMPTZ_OUT || typoutput == F_TIMESTAMP_OUT) {
         char ts[MAXDATELEN + 1];
@@ -4355,9 +4363,11 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
 
         appendStringInfoString(buf, "cast(");
         deparseExpr((Expr*)linitial(node->args), context);
-        appendStringInfo(
-            buf, ", 'Nullable(%s)')", deparse_type_name(rettype, coercedTypmod)
+        appendStringInfoString(buf, ", ");
+        deparseStringLiteral(
+            buf, psprintf("Nullable(%s)", deparse_type_name(rettype, coercedTypmod))
         );
+        appendStringInfoChar(buf, ')');
         return;
     }
 
@@ -5617,7 +5627,9 @@ deparseArrayExpr(ArrayExpr* node, deparse_expr_cxt* context) {
 
     /* If the array is empty, we need an explicit cast to the array type. */
     if (node->elements == NIL) {
-        appendStringInfo(buf, ", '%s')", deparse_type_name(node->array_typeid, -1));
+        appendStringInfoString(buf, ", ");
+        deparseStringLiteral(buf, deparse_type_name(node->array_typeid, -1));
+        appendStringInfoChar(buf, ')');
     }
 }
 

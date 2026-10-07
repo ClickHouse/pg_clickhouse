@@ -41,6 +41,23 @@ CALL clickhouse_perform('param_admin', $$
     FROM numbers(1, 110)
 $$);
 
+CALL clickhouse_perform('param_admin', $$
+    CREATE TABLE param_test.typed (
+        id  Int,
+        u   UUID,
+        ts  DateTime64(3, 'UTC'),
+        lts DateTime64(3),
+        d   Date32,
+        f   Float64
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+
+CALL clickhouse_perform('param_admin', $$
+    INSERT INTO param_test.typed VALUES
+        (1, '188dff2f-0205-4912-8210-2214e84482cd', '2026-09-28 23:59:59.500', '2026-09-28 23:59:59.500', '1960-01-01', 1e-10),
+        (2, '00000000-0000-0000-0000-000000000002', '2026-09-29 00:00:00.000', '2026-09-29 00:00:00.000', '2026-09-29', 0.5)
+$$);
+
 -- ===================================================================
 -- binary foreign tables
 -- ===================================================================
@@ -135,6 +152,34 @@ ALTER FOREIGN TABLE bin_test.ft1 OPTIONS (SET table_name 'ft1');
 EXPLAIN (VERBOSE, COSTS OFF) SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4);
 SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4);
 
+-- uuid, sub-second timestamp, pre-1970 date, and float parameters
+CREATE FOREIGN TABLE bin_test.typed (
+	id int NOT NULL,
+	u uuid,
+	ts timestamptz,
+	lts timestamp,
+	d date,
+	f float8
+) SERVER param_bin_svr OPTIONS(
+    database 'param_test',
+    table_name 'typed'
+);
+SET plan_cache_mode = force_generic_plan;
+PREPARE st8(uuid) AS SELECT id FROM bin_test.typed WHERE u = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st8('188dff2f-0205-4912-8210-2214e84482cd');
+EXECUTE st8('188dff2f-0205-4912-8210-2214e84482cd');
+PREPARE st9(timestamptz) AS SELECT id FROM bin_test.typed WHERE ts <= $1 ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st9('2026-09-28 23:59:59.999999+00');
+EXECUTE st9('2026-09-28 23:59:59.999999+00');
+EXECUTE st9('2026-09-28 23:59:59.4+00');
+PREPARE st10(timestamp) AS SELECT id FROM bin_test.typed WHERE lts <= $1 ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st10('2026-09-28 23:59:59.999999');
+EXECUTE st10('2026-09-28 23:59:59.999999');
+PREPARE st11(date) AS SELECT id FROM bin_test.typed WHERE d = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st11('1960-01-01');
+EXECUTE st11('1960-01-01');
+RESET plan_cache_mode;
+
 -- cleanup
 DEALLOCATE st1;
 DEALLOCATE st2;
@@ -143,6 +188,10 @@ DEALLOCATE st4;
 DEALLOCATE st5;
 DEALLOCATE st6;
 DEALLOCATE st7;
+DEALLOCATE st8;
+DEALLOCATE st9;
+DEALLOCATE st10;
+DEALLOCATE st11;
 
 -- ===================================================================
 -- http foreign tables
@@ -238,6 +287,34 @@ ALTER FOREIGN TABLE http_test.ft1 OPTIONS (SET table_name 'ft1');
 EXPLAIN (VERBOSE, COSTS OFF) SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4);
 SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4);
 
+-- uuid, sub-second timestamp, pre-1970 date, and float parameters
+CREATE FOREIGN TABLE http_test.typed (
+	id int NOT NULL,
+	u uuid,
+	ts timestamptz,
+	lts timestamp,
+	d date,
+	f float8
+) SERVER param_http_svr OPTIONS(
+    database 'param_test',
+    table_name 'typed'
+);
+SET plan_cache_mode = force_generic_plan;
+PREPARE st8(uuid) AS SELECT id FROM http_test.typed WHERE u = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st8('188dff2f-0205-4912-8210-2214e84482cd');
+EXECUTE st8('188dff2f-0205-4912-8210-2214e84482cd');
+PREPARE st9(timestamptz) AS SELECT id FROM http_test.typed WHERE ts <= $1 ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st9('2026-09-28 23:59:59.999999+00');
+EXECUTE st9('2026-09-28 23:59:59.999999+00');
+EXECUTE st9('2026-09-28 23:59:59.4+00');
+PREPARE st10(timestamp) AS SELECT id FROM http_test.typed WHERE lts <= $1 ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st10('2026-09-28 23:59:59.999999');
+EXECUTE st10('2026-09-28 23:59:59.999999');
+PREPARE st11(date) AS SELECT id FROM http_test.typed WHERE d = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st11('1960-01-01');
+EXECUTE st11('1960-01-01');
+RESET plan_cache_mode;
+
 -- cleanup
 DEALLOCATE st1;
 DEALLOCATE st2;
@@ -246,6 +323,10 @@ DEALLOCATE st4;
 DEALLOCATE st5;
 DEALLOCATE st6;
 DEALLOCATE st7;
+DEALLOCATE st8;
+DEALLOCATE st9;
+DEALLOCATE st10;
+DEALLOCATE st11;
 
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER param_bin_svr;

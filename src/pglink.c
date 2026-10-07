@@ -482,11 +482,10 @@ chfdw_datum_to_ch_literal(Datum value, Oid type) {
         return pstrdup(date);
     }
     case TIMEOID: {
-        /* we expect DateTime on other side */
         char time[MAXDATELEN + 1];
 
         chfdw_encode_time(DatumGetTimeADT(value), time);
-        return psprintf("1970-01-01 %s", time);
+        return pstrdup(time);
     }
     case TIMESTAMPOID:
     case TIMESTAMPTZOID: {
