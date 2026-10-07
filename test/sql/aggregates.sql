@@ -537,6 +537,12 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT regr_syy(b, a) FROM agg_http.agg_numbers;
 SELECT regr_syy(b, a) FROM agg_http.agg_numbers;
 
+-- round() should work with these values.
+SELECT round(regr_syy(b, a)), regr_syy(b, a) FROM agg_bin.agg_numbers;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(regr_syy(b, a)::numeric, 4), regr_syy(b, a)::numeric FROM agg_bin.agg_numbers;
+SELECT round(regr_syy(b, a)::numeric, 4), regr_syy(b, a)::numeric FROM agg_bin.agg_numbers;
+
 -- corr()
 \echo -- corr(int, float) corr(float, int)
 EXPLAIN (VERBOSE, COSTS OFF) SELECT corr(a, b), corr(b, a) FROM agg_bin.agg_numbers;
@@ -545,7 +551,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT corr(a, b), corr(b, a) FROM agg_http.agg_num
 SELECT corr(a, b), corr(b, a) FROM agg_http.agg_numbers;
 
 -- covar_pop, covar_samp()
-\echo -- corr(int, float) corr(float, int)
+\echo -- covar_pop(int, float) covar_pop(float, int) covar_samp(int, float) covar_samp(float, int)
 EXPLAIN (VERBOSE, COSTS OFF) SELECT covar_pop(b, a), covar_samp(b, a) FROM agg_bin.agg_numbers;
 SELECT covar_pop(b, a), covar_samp(b, a) FROM agg_bin.agg_numbers;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT covar_pop(b, a), covar_samp(b, a) FROM agg_bin.agg_numbers;

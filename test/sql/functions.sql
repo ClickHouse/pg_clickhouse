@@ -692,6 +692,15 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
 SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
 
+-- round() pushes down over an aggregate.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(avg(f64)), avg(f64) FROM t6;
+SELECT round(avg(f64)), avg(f64) FROM t6;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
+SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
+
 -- Trig functions push down at f64 = 0 where PG and CH agree exactly.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT i64 FROM t6 WHERE i64 = 0 AND sin(f64) = 0;
