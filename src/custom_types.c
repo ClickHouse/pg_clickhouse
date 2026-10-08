@@ -159,18 +159,21 @@ re2_func_name(char* proname) {
 
 /*
  * Map pg_clickhouse pushdown function names to ClickHouse case-sensitive
- * names. Must be kept in lexicographic order.
+ * names. Must be kept in lexicographic order and in sync with functions we
+ * define to be pushed down.
  */
 static char* ch_func_map[][2] = {
     { "argmax",         "argMax"         },
     { "argmin",         "argMin"         },
     { "dictget",        "dictGet"        },
+    { "quantile",       "quantile"       },
     { "quantileexact",  "quantileExact"  },
     { "touint128",      "toUInt128"      },
     { "touint16",       "toUInt16"       },
     { "touint32",       "toUInt32"       },
     { "touint64",       "toUInt64"       },
     { "touint8",        "toUInt8"        },
+    { "uniq",           "uniq"           },
     { "uniqcombined",   "uniqCombined"   },
     { "uniqcombined64", "uniqCombined64" },
     { "uniqexact",      "uniqExact"      },
@@ -179,6 +182,11 @@ static char* ch_func_map[][2] = {
     { NULL,             NULL             },
 };
 
+/*
+ * Returns the canonical, case-sensitive name of proname if it's is one of the
+ * custom functions pg_clickhouse provides to push down to ClickHouse.
+ * Otherwise return NULL.
+ */
 inline static char*
 ch_func_name(char* proname) {
     size_t i = 0;
@@ -189,7 +197,7 @@ ch_func_name(char* proname) {
         }
         i++;
     }
-    return proname;
+    return NULL;
 }
 
 /* Map pgcrypto digest algorithms to ClickHouse function names. */
@@ -663,7 +671,6 @@ chfdw_check_for_custom_function(Oid funcid) {
     CustomObjectDef* entry;
     builtin_func_def def = { .paren_count = 1 };
     bool is_builtin      = chfdw_is_builtin(funcid);
-
     if (is_builtin && !lookup_builtin_func(funcid, &def)) {
         return NULL;
     }
@@ -705,11 +712,9 @@ chfdw_check_for_custom_function(Oid funcid) {
             procform = (Form_pg_proc)GETSTRUCT(proctup);
             proname  = NameStr(procform->proname);
 
-            if (STR_EQUAL(extname, "intarray")) {
-                if (STR_EQUAL(proname, "idx")) {
-                    entry->cf_type = CF_INTARRAY_IDX;
-                    strcpy(entry->custom_name, "indexOf");
-                }
+            if (STR_EQUAL(extname, "intarray") && STR_EQUAL(proname, "idx")) {
+                entry->cf_type = CF_INTARRAY_IDX;
+                strcpy(entry->custom_name, "indexOf");
             } else if (STR_EQUAL(extname, "re2")) {
                 /* pg_re2: 1:1 pushdown to ClickHouse RE2 functions. */
                 entry->cf_type = CF_CH_FUNCTION;
@@ -725,29 +730,35 @@ chfdw_check_for_custom_function(Oid funcid) {
                     );
                     return NULL;
                 }
-            } else if (STR_EQUAL(extname, "pgcrypto")) {
-                if (STR_EQUAL(proname, "digest") && procform->pronargs == 2 &&
-                    (procform->proargtypes.values[0] == TEXTOID ||
-                     procform->proargtypes.values[0] == BYTEAOID) &&
-                    procform->proargtypes.values[1] == TEXTOID &&
-                    procform->prorettype == BYTEAOID) {
-                    entry->cf_type = CF_DIGEST;
-                    strcpy(entry->custom_name, "\1");
-                } else {
-                    ReleaseSysCache(proctup);
-                    pfree(extname);
-                    hash_search(
-                        custom_objects_cache, (void*)&funcid, HASH_REMOVE, NULL
-                    );
-                    return NULL;
-                }
-            } else if (STR_EQUAL(extname, "pg_clickhouse")) {
+            } else if (
+                STR_EQUAL(extname, "pgcrypto") && STR_EQUAL(proname, "digest") &&
+                procform->pronargs == 2 &&
+                (procform->proargtypes.values[0] == TEXTOID ||
+                 procform->proargtypes.values[0] == BYTEAOID) &&
+                procform->proargtypes.values[1] == TEXTOID &&
+                procform->prorettype == BYTEAOID
+            ) {
+                entry->cf_type = CF_DIGEST;
+                strcpy(entry->custom_name, "\1");
+            } else if (
+                STR_EQUAL(extname, "pg_clickhouse") && (proname = ch_func_name(proname))
+            ) {
                 /* pg_clickhouse custom functions. */
                 entry->cf_type = CF_CH_FUNCTION;
-                strlcpy(entry->custom_name, ch_func_name(proname), NAMEDATALEN);
+                strlcpy(entry->custom_name, proname, NAMEDATALEN);
+            } else {
+                /* Unknown extension & function. */
+                ReleaseSysCache(proctup);
+                pfree(extname);
+                hash_search(custom_objects_cache, (void*)&funcid, HASH_REMOVE, NULL);
+                return NULL;
             }
             ReleaseSysCache(proctup);
             pfree(extname);
+        } else {
+            /* We current do not support custom extension functions. */
+            hash_search(custom_objects_cache, (void*)&funcid, HASH_REMOVE, NULL);
+            return NULL;
         }
     }
 

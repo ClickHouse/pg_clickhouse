@@ -651,6 +651,21 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_http.json_events
 WHERE json_extract_path(props, VARIADIC ARRAY[NULL]::text[]) IS NULL;
 
+-- json_agg() and jsonb_agg() should stay local.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT json_agg(id) FROM json_bin.json_events;
+SELECT json_agg(id) FROM json_bin.json_events;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT json_agg(id) FROM json_http.json_events;
+SELECT json_agg(id) FROM json_http.json_events;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT jsonb_agg(id) FROM json_bin.json_events;
+SELECT jsonb_agg(id) FROM json_bin.json_events;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT jsonb_agg(id) FROM json_http.json_events;
+SELECT jsonb_agg(id ORDER BY id) FROM json_http.json_events;
+
 CALL clickhouse_perform('json_admin', 'DROP DATABASE json_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;

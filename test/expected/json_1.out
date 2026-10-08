@@ -1955,6 +1955,75 @@ WHERE json_extract_path(props, VARIADIC ARRAY[NULL]::text[]) IS NULL;
    Remote SQL: SELECT id, props FROM json_test.events
 (4 rows)
 
+-- json_agg() and jsonb_agg() should stay local.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT json_agg(id) FROM json_bin.json_events;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Aggregate
+   Output: json_agg(id)
+   ->  Foreign Scan on json_bin.json_events
+         Output: id, event_name, props
+         Remote SQL: SELECT id FROM json_test.events
+(5 rows)
+
+SELECT json_agg(id) FROM json_bin.json_events;
+ json_agg 
+----------
+ [1, 2]
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT json_agg(id) FROM json_http.json_events;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Aggregate
+   Output: json_agg(id)
+   ->  Foreign Scan on json_http.json_events
+         Output: id, event_name, props
+         Remote SQL: SELECT id FROM json_test.events
+(5 rows)
+
+SELECT json_agg(id) FROM json_http.json_events;
+ json_agg 
+----------
+ [1, 2]
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT jsonb_agg(id) FROM json_bin.json_events;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Aggregate
+   Output: jsonb_agg(id)
+   ->  Foreign Scan on json_bin.json_events
+         Output: id, event_name, props
+         Remote SQL: SELECT id FROM json_test.events
+(5 rows)
+
+SELECT jsonb_agg(id) FROM json_bin.json_events;
+ jsonb_agg 
+-----------
+ [1, 2]
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT jsonb_agg(id) FROM json_http.json_events;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Aggregate
+   Output: jsonb_agg(id)
+   ->  Foreign Scan on json_http.json_events
+         Output: id, event_name, props
+         Remote SQL: SELECT id FROM json_test.events
+(5 rows)
+
+SELECT jsonb_agg(id ORDER BY id) FROM json_http.json_events;
+ jsonb_agg 
+-----------
+ [1, 2]
+(1 row)
+
 CALL clickhouse_perform('json_admin', 'DROP DATABASE json_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;

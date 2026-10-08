@@ -36,20 +36,24 @@ All notable changes to this project will be documented in this file. It uses the
 
 *   Fixed GCC 15 build failure caused by a `-Wclobbered` error in binary
     driver connection setup ([#395]).
+*   Added checks to prevent the pushdown of custom functions or
+    pg_clickhouse's own local functions ([#397]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
   [#395]: https://github.com/ClickHouse/pg_clickhouse/pull/395
     "ClickHouse/pg_clickhouse#395 Fix gcc15 Wclobbered warning"
-  [regr_avgx](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgx)
-  [regr_avgy](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgy)
-  [regr_count](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_count)
-  [regr_intercept](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_intercept)
-  [regr_r2](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_r2)
-  [regr_slope](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_slope)
-  [regr_sxx](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxx)
-  [regr_sxy](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxy)
-  [regr_syy](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_syy)
+  [regr_avgx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgx
+  [regr_avgy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgy
+  [regr_count]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_count
+  [regr_intercept]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_intercept
+  [regr_r2]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_r2
+  [regr_slope]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_slope
+  [regr_sxx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxx
+  [regr_sxy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxy
+  [regr_syy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_syy
+  [#397]: https://github.com/ClickHouse/pg_clickhouse/pull/397
+    "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
 
 ## [v0.11.0] — 2026-09-30
 

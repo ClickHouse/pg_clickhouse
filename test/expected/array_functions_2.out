@@ -434,6 +434,13 @@ SELECT id FROM t1 WHERE array_length(array_sample(vals, 1), 1) = 1 ORDER BY id;
 ERROR:  pg_clickhouse: DB::Exception: Unknown function arrayRandomSample: While processing SELECT id FROM arr_test.t1 WHERE nullIf(length(arrayRandomSample(vals, 1)), 0) = 1 ORDER BY id ASC NULLS LAST
 DETAIL:  Remote Query: SELECT id FROM arr_test.t1 WHERE (((nullIf(length(arrayRandomSample(vals, 1)), 0)) = 1)) ORDER BY id ASC NULLS LAST
 \endif
+-- Prevent intarray from loading or to wait till it's unloaded.
+SELECT pg_advisory_lock(hashtext('intarray'));
+ pg_advisory_lock 
+------------------
+ 
+(1 row)
+
 -- Operators: @> → hasAll
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id, vals FROM t1 WHERE vals @> ARRAY[10];
@@ -574,6 +581,13 @@ SELECT id, vals FROM t1 WHERE vals[:] = ARRAY[10,20,30];
  id |    vals    
 ----+------------
   1 | {10,20,30}
+(1 row)
+
+-- Let other tests load intarray.
+SELECT pg_advisory_unlock(hashtext('intarray'));
+ pg_advisory_unlock 
+--------------------
+ t
 (1 row)
 
 -- Unshippable (function NOT in Remote SQL)

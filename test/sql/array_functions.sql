@@ -295,6 +295,9 @@ SELECT id FROM t1 WHERE array_length(array_sample(vals, 1), 1) = 1 ORDER BY id;
 SELECT id FROM t1 WHERE array_length(array_sample(vals, 1), 1) = 1 ORDER BY id;
 \endif
 
+-- Prevent intarray from loading or to wait till it's unloaded.
+SELECT pg_advisory_lock(hashtext('intarray'));
+
 -- Operators: @> → hasAll
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id, vals FROM t1 WHERE vals @> ARRAY[10];
@@ -336,6 +339,9 @@ SELECT id, vals FROM t1 WHERE vals[2:] = ARRAY[20,30];
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id, vals FROM t1 WHERE vals[:] = ARRAY[10,20,30];
 SELECT id, vals FROM t1 WHERE vals[:] = ARRAY[10,20,30];
+
+-- Let other tests load intarray.
+SELECT pg_advisory_unlock(hashtext('intarray'));
 
 -- Unshippable (function NOT in Remote SQL)
 EXPLAIN (VERBOSE, COSTS OFF) SELECT id, vals FROM t1 WHERE array_dims(vals) = '[1:3]';
