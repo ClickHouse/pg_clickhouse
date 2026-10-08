@@ -2389,6 +2389,39 @@ SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
 ---
 (0 rows)
 
+-- round() pushes down over an aggregate.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(avg(f64)), avg(f64) FROM t6;
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan
+   Output: (round(avg(f64))), (avg(f64))
+   Relations: Aggregate on (t6)
+   Remote SQL: SELECT round(avg(f64)), avg(f64) FROM functions_test.t6
+(4 rows)
+
+SELECT round(avg(f64)), avg(f64) FROM t6;
+   round   |       avg       
+-----------+-----------------
+ 954335170 | 954335169.54835
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
+                                                           QUERY PLAN                                                           
+--------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (round(avg((f64)::numeric), 4)), (avg((f64)::numeric))
+   Relations: Aggregate on (t6)
+   Remote SQL: SELECT round(avg(cast(f64, 'Nullable(Decimal)')), 4), avg(cast(f64, 'Nullable(Decimal)')) FROM functions_test.t6
+(4 rows)
+
+SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
+     round      |       avg       
+----------------+-----------------
+ 954335169.5484 | 954335169.54835
+(1 row)
+
 -- Trig functions push down at f64 = 0 where PG and CH agree exactly.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT i64 FROM t6 WHERE i64 = 0 AND sin(f64) = 0;

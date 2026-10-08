@@ -1604,6 +1604,24 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  68756.2156939293
 (1 row)
 
+ round |     regr_syy     
+-------+------------------
+ 68756 | 68756.2156939293
+(1 row)
+
+                                                                          QUERY PLAN                                                                          
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (round((regr_syy((b)::double precision, (a)::double precision))::numeric, 4)), ((regr_syy((b)::double precision, (a)::double precision))::numeric)
+   Relations: Aggregate on (agg_numbers)
+   Remote SQL: SELECT stddev_samp(cast(b, 'Nullable(Decimal(76, 38))')), stddev_samp(cast(b, 'Nullable(Decimal(76, 38))')), stddev_pop(cast(b, 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
+(4 rows)
+
+    round   |                   regr_syy                   
+------------+----------------------------------------------
+ 68756.2157 | 68756.21569392930381649593538520770884423405
+(1 row)
+
 -- corr(int, float) corr(float, int)
                                                       QUERY PLAN                                                      
 ----------------------------------------------------------------------------------------------------------------------
@@ -1631,7 +1649,7 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  0.1396345165178734 | 0.1396345165178734
 (1 row)
 
--- corr(int, float) corr(float, int)
+-- covar_pop(int, float) covar_pop(float, int) covar_samp(int, float) covar_samp(float, int)
                                                            QUERY PLAN                                                            
 ---------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
