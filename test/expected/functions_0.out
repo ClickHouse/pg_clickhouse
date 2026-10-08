@@ -509,18 +509,19 @@ SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
-                                                             QUERY PLAN                                                             
-------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
-   Output: (percentile_cont('0.95'::double precision) WITHIN GROUP (ORDER BY (date_part('epoch'::text, timezone('UTC'::text, c)))))
-   Relations: Aggregate on (t1)
-   Remote SQL: SELECT quantile(0.95)(toUnixTimestamp(toTimeZone(c, 'UTC'))) FROM functions_test.t1
-(4 rows)
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: percentile_cont('0.95'::double precision) WITHIN GROUP (ORDER BY (date_part('epoch'::text, timezone('UTC'::text, c))))
+   ->  Foreign Scan on public.t1
+         Output: a, b, c
+         Remote SQL: SELECT c FROM functions_test.t1
+(5 rows)
 
 SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
  percentile_cont 
 -----------------
-      1546426260
+      1546397460
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
@@ -566,18 +567,19 @@ SELECT percentile_cont(ARRAY[0.25, 0.5, 0.75]) WITHIN GROUP (ORDER BY a) FROM t1
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(ARRAY[0.9, 0.95, 0.99]) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
-                                                                   QUERY PLAN                                                                    
--------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
-   Output: (percentile_cont('{0.9,0.95,0.99}'::double precision[]) WITHIN GROUP (ORDER BY (date_part('epoch'::text, timezone('UTC'::text, c)))))
-   Relations: Aggregate on (t1)
-   Remote SQL: SELECT quantiles(0.9,0.95,0.99)(toUnixTimestamp(toTimeZone(c, 'UTC'))) FROM functions_test.t1
-(4 rows)
+                                                                  QUERY PLAN                                                                   
+-----------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: percentile_cont('{0.9,0.95,0.99}'::double precision[]) WITHIN GROUP (ORDER BY (date_part('epoch'::text, timezone('UTC'::text, c))))
+   ->  Foreign Scan on public.t1
+         Output: a, b, c
+         Remote SQL: SELECT c FROM functions_test.t1
+(5 rows)
 
 SELECT percentile_cont(ARRAY[0.9, 0.95, 0.99]) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
           percentile_cont           
 ------------------------------------
- {1546425720,1546426260,1546426692}
+ {1546396920,1546397460,1546397892}
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(ARRAY[0.25, 0.5, 0.75]) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
@@ -617,18 +619,19 @@ SELECT percentile_disc(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_disc(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
-                                                             QUERY PLAN                                                             
-------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
-   Output: (percentile_disc('0.95'::double precision) WITHIN GROUP (ORDER BY (date_part('epoch'::text, timezone('UTC'::text, c)))))
-   Relations: Aggregate on (t1)
-   Remote SQL: SELECT quantileExactLow(0.95)(toUnixTimestamp(toTimeZone(c, 'UTC'))) FROM functions_test.t1
-(4 rows)
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: percentile_disc('0.95'::double precision) WITHIN GROUP (ORDER BY (date_part('epoch'::text, timezone('UTC'::text, c))))
+   ->  Foreign Scan on public.t1
+         Output: a, b, c
+         Remote SQL: SELECT c FROM functions_test.t1
+(5 rows)
 
 SELECT percentile_disc(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
  percentile_disc 
 -----------------
-      1546426800
+      1546398000
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_disc(0.25) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
@@ -674,18 +677,19 @@ SELECT percentile_disc(ARRAY[0.25, 0.5, 0.75]) WITHIN GROUP (ORDER BY a) FROM t1
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_disc(ARRAY[0.9, 0.95, 0.99]) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
-                                                                   QUERY PLAN                                                                    
--------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
-   Output: (percentile_disc('{0.9,0.95,0.99}'::double precision[]) WITHIN GROUP (ORDER BY (date_part('epoch'::text, timezone('UTC'::text, c)))))
-   Relations: Aggregate on (t1)
-   Remote SQL: SELECT quantilesExactLow(0.9,0.95,0.99)(toUnixTimestamp(toTimeZone(c, 'UTC'))) FROM functions_test.t1
-(4 rows)
+                                                                  QUERY PLAN                                                                   
+-----------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: percentile_disc('{0.9,0.95,0.99}'::double precision[]) WITHIN GROUP (ORDER BY (date_part('epoch'::text, timezone('UTC'::text, c))))
+   ->  Foreign Scan on public.t1
+         Output: a, b, c
+         Remote SQL: SELECT c FROM functions_test.t1
+(5 rows)
 
 SELECT percentile_disc(ARRAY[0.9, 0.95, 0.99]) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
           percentile_disc           
 ------------------------------------
- {1546426800,1546426800,1546426800}
+ {1546398000,1546398000,1546398000}
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_disc(ARRAY[0.25, 0.5, 0.75]) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
@@ -739,61 +743,81 @@ SELECT local_ordered_count() WITHIN GROUP (ORDER BY a) FROM t1;
 DROP AGGREGATE local_ordered_count(integer);
 DROP FUNCTION local_ordered_sfunc(integer, integer);
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('dAy', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
-                                                                                       QUERY PLAN                                                                                        
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Sort
    Output: (date_trunc('dAy'::text, (c AT TIME ZONE 'UTC'::text)))
-   Relations: Aggregate on (t1)
-   Remote SQL: SELECT toStartOfDay(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toStartOfDay(toTimeZone(c, 'UTC'))) ORDER BY toStartOfDay(toTimeZone(c, 'UTC')) ASC NULLS LAST
-(4 rows)
+   Sort Key: (date_trunc('dAy'::text, (t1.c AT TIME ZONE 'UTC'::text)))
+   ->  HashAggregate
+         Output: (date_trunc('dAy'::text, (c AT TIME ZONE 'UTC'::text)))
+         Group Key: date_trunc('dAy'::text, (t1.c AT TIME ZONE 'UTC'::text))
+         ->  Foreign Scan on public.t1
+               Output: date_trunc('dAy'::text, (c AT TIME ZONE 'UTC'::text))
+               Remote SQL: SELECT c FROM functions_test.t1
+(9 rows)
 
 SELECT date_trunc('day', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
            d1           
 ------------------------
- 2018-12-31 16:00:00-08
- 2019-01-01 16:00:00-08
+ 2018-12-31 00:00:00-08
+ 2019-01-01 00:00:00-08
 (2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('day', c at time zone 'UTC') as d1 FROM t2 GROUP BY d1 ORDER BY d1;
-                                                                                       QUERY PLAN                                                                                        
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Sort
    Output: (date_trunc('day'::text, (c AT TIME ZONE 'UTC'::text)))
-   Relations: Aggregate on (t2)
-   Remote SQL: SELECT toStartOfDay(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toStartOfDay(toTimeZone(c, 'UTC'))) ORDER BY toStartOfDay(toTimeZone(c, 'UTC')) ASC NULLS LAST
-(4 rows)
+   Sort Key: (date_trunc('day'::text, (t2.c AT TIME ZONE 'UTC'::text)))
+   ->  HashAggregate
+         Output: (date_trunc('day'::text, (c AT TIME ZONE 'UTC'::text)))
+         Group Key: date_trunc('day'::text, (t2.c AT TIME ZONE 'UTC'::text))
+         ->  Foreign Scan on public.t2
+               Output: date_trunc('day'::text, (c AT TIME ZONE 'UTC'::text))
+               Remote SQL: SELECT c FROM functions_test.t1
+(9 rows)
 
 SELECT date_trunc('day', c at time zone 'UTC') as d1 FROM t2 GROUP BY d1 ORDER BY d1;
          d1          
 ---------------------
- 2018-12-31 16:00:00
- 2019-01-01 16:00:00
+ 2019-01-01 00:00:00
+ 2019-01-02 00:00:00
 (2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('day'::text, timezone('UTC'::text, c)) as d1 FROM t1 GROUP BY d1 ORDER BY d1;
-                                                                                       QUERY PLAN                                                                                        
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Sort
    Output: (date_part('day'::text, timezone('UTC'::text, c)))
-   Relations: Aggregate on (t1)
-   Remote SQL: SELECT toDayOfMonth(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toDayOfMonth(toTimeZone(c, 'UTC'))) ORDER BY toDayOfMonth(toTimeZone(c, 'UTC')) ASC NULLS LAST
-(4 rows)
+   Sort Key: (date_part('day'::text, timezone('UTC'::text, t1.c)))
+   ->  HashAggregate
+         Output: (date_part('day'::text, timezone('UTC'::text, c)))
+         Group Key: date_part('day'::text, timezone('UTC'::text, t1.c))
+         ->  Foreign Scan on public.t1
+               Output: date_part('day'::text, timezone('UTC'::text, c))
+               Remote SQL: SELECT c FROM functions_test.t1
+(9 rows)
 
 SELECT date_part('day'::text, timezone('UTC'::text, c)) as d1 FROM t1 GROUP BY d1 ORDER BY d1;
  d1 
 ----
   1
-  2
+ 31
 (2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('day'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
-                                                                                       QUERY PLAN                                                                                        
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Sort
    Output: (date_part('day'::text, timezone('UTC'::text, c)))
-   Relations: Aggregate on (t2)
-   Remote SQL: SELECT toDayOfMonth(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toDayOfMonth(toTimeZone(c, 'UTC'))) ORDER BY toDayOfMonth(toTimeZone(c, 'UTC')) ASC NULLS LAST
-(4 rows)
+   Sort Key: (date_part('day'::text, timezone('UTC'::text, t2.c)))
+   ->  HashAggregate
+         Output: (date_part('day'::text, timezone('UTC'::text, c)))
+         Group Key: date_part('day'::text, timezone('UTC'::text, t2.c))
+         ->  Foreign Scan on public.t2
+               Output: date_part('day'::text, timezone('UTC'::text, c))
+               Remote SQL: SELECT c FROM functions_test.t1
+(9 rows)
 
 SELECT date_part('day'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
  d1 
@@ -803,13 +827,18 @@ SELECT date_part('day'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d
 (2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('doy'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
-                                                                                      QUERY PLAN                                                                                      
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Sort
    Output: (date_part('doy'::text, timezone('UTC'::text, c)))
-   Relations: Aggregate on (t2)
-   Remote SQL: SELECT toDayOfYear(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toDayOfYear(toTimeZone(c, 'UTC'))) ORDER BY toDayOfYear(toTimeZone(c, 'UTC')) ASC NULLS LAST
-(4 rows)
+   Sort Key: (date_part('doy'::text, timezone('UTC'::text, t2.c)))
+   ->  HashAggregate
+         Output: (date_part('doy'::text, timezone('UTC'::text, c)))
+         Group Key: date_part('doy'::text, timezone('UTC'::text, t2.c))
+         ->  Foreign Scan on public.t2
+               Output: date_part('doy'::text, timezone('UTC'::text, c))
+               Remote SQL: SELECT c FROM functions_test.t1
+(9 rows)
 
 SELECT date_part('doy'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
  d1 
@@ -819,13 +848,18 @@ SELECT date_part('doy'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d
 (2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('dow'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
-                                                                                          QUERY PLAN                                                                                           
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Sort
    Output: (date_part('dow'::text, timezone('UTC'::text, c)))
-   Relations: Aggregate on (t2)
-   Remote SQL: SELECT toDayOfWeek(toTimeZone(c, 'UTC'), 2) FROM functions_test.t1 GROUP BY (toDayOfWeek(toTimeZone(c, 'UTC'), 2)) ORDER BY toDayOfWeek(toTimeZone(c, 'UTC'), 2) ASC NULLS LAST
-(4 rows)
+   Sort Key: (date_part('dow'::text, timezone('UTC'::text, t2.c)))
+   ->  HashAggregate
+         Output: (date_part('dow'::text, timezone('UTC'::text, c)))
+         Group Key: date_part('dow'::text, timezone('UTC'::text, t2.c))
+         ->  Foreign Scan on public.t2
+               Output: date_part('dow'::text, timezone('UTC'::text, c))
+               Remote SQL: SELECT c FROM functions_test.t1
+(9 rows)
 
 SELECT date_part('dow'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
  d1 
@@ -835,13 +869,18 @@ SELECT date_part('dow'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d
 (2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('minuTe'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
-                                                                                 QUERY PLAN                                                                                  
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Sort
    Output: (date_part('minuTe'::text, timezone('UTC'::text, c)))
-   Relations: Aggregate on (t2)
-   Remote SQL: SELECT toMinute(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toMinute(toTimeZone(c, 'UTC'))) ORDER BY toMinute(toTimeZone(c, 'UTC')) ASC NULLS LAST
-(4 rows)
+   Sort Key: (date_part('minuTe'::text, timezone('UTC'::text, t2.c)))
+   ->  HashAggregate
+         Output: (date_part('minuTe'::text, timezone('UTC'::text, c)))
+         Group Key: date_part('minuTe'::text, timezone('UTC'::text, t2.c))
+         ->  Foreign Scan on public.t2
+               Output: date_part('minuTe'::text, timezone('UTC'::text, c))
+               Remote SQL: SELECT c FROM functions_test.t1
+(9 rows)
 
 SELECT date_part('minuTe'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
  d1 
@@ -850,30 +889,40 @@ SELECT date_part('minuTe'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP B
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc('SeCond', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
-                                                                                                                     QUERY PLAN                                                                                                                      
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Sort
    Output: (date_trunc('SeCond'::text, (c AT TIME ZONE 'UTC'::text)))
-   Relations: Aggregate on (t1)
-   Remote SQL: SELECT toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1)) FROM functions_test.t1 GROUP BY (toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1))) ORDER BY toStartOfSecond(toDateTime64(toTimeZone(c, 'UTC'), 1)) ASC NULLS LAST
-(4 rows)
+   Sort Key: (date_trunc('SeCond'::text, (t1.c AT TIME ZONE 'UTC'::text)))
+   ->  HashAggregate
+         Output: (date_trunc('SeCond'::text, (c AT TIME ZONE 'UTC'::text)))
+         Group Key: date_trunc('SeCond'::text, (t1.c AT TIME ZONE 'UTC'::text))
+         ->  Foreign Scan on public.t1
+               Output: date_trunc('SeCond'::text, (c AT TIME ZONE 'UTC'::text))
+               Remote SQL: SELECT c FROM functions_test.t1
+(9 rows)
 
 SELECT date_trunc('SeCond', c at time zone 'UTC') as d1 FROM t1 GROUP BY d1 ORDER BY d1;
            d1           
 ------------------------
- 2019-01-01 02:00:00-08
- 2019-01-02 02:00:00-08
- 2019-01-02 03:00:00-08
+ 2018-12-31 18:00:00-08
+ 2019-01-01 18:00:00-08
+ 2019-01-01 19:00:00-08
 (3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('ePoch'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
-                                                                                            QUERY PLAN                                                                                            
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Sort
    Output: (date_part('ePoch'::text, timezone('UTC'::text, c)))
-   Relations: Aggregate on (t2)
-   Remote SQL: SELECT toUnixTimestamp(toTimeZone(c, 'UTC')) FROM functions_test.t1 GROUP BY (toUnixTimestamp(toTimeZone(c, 'UTC'))) ORDER BY toUnixTimestamp(toTimeZone(c, 'UTC')) ASC NULLS LAST
-(4 rows)
+   Sort Key: (date_part('ePoch'::text, timezone('UTC'::text, t2.c)))
+   ->  HashAggregate
+         Output: (date_part('ePoch'::text, timezone('UTC'::text, c)))
+         Group Key: date_part('ePoch'::text, timezone('UTC'::text, t2.c))
+         ->  Foreign Scan on public.t2
+               Output: date_part('ePoch'::text, timezone('UTC'::text, c))
+               Remote SQL: SELECT c FROM functions_test.t1
+(9 rows)
 
 SELECT date_part('ePoch'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY d1 ORDER BY d1;
      d1     
@@ -985,11 +1034,11 @@ SELECT a, dictGet('functions_test.t3_dict', 'val', (1, 'key' || a::text)) as val
 
 -- Check date_part mappings.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('year', ts) = '2027';
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(ts) = 2027))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(toDateTime64(ts, 6, 'America/Los_Angeles')) = 2027))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('year', ts) = '2027';
@@ -999,11 +1048,11 @@ SELECT ts FROM t5 WHERE date_part('year', ts) = '2027';
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('month', ts) = '11';
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
+                                                    QUERY PLAN                                                     
+-------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(ts) = 11))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(toDateTime64(ts, 6, 'America/Los_Angeles')) = 11))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('month', ts) = '11';
@@ -1013,39 +1062,39 @@ SELECT ts FROM t5 WHERE date_part('month', ts) = '11';
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('day', ts) = '18';
-                                   QUERY PLAN                                   
---------------------------------------------------------------------------------
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(ts) = 18))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(toDateTime64(ts, 6, 'America/Los_Angeles')) = 18))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('day', ts) = '18';
          ts          
 ---------------------
  2028-01-18 15:15:28
-(1 row)
+ 2029-02-18 17:16:29
+(2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('hour', ts) = '20';
-                                QUERY PLAN                                
---------------------------------------------------------------------------
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toHour(ts) = 20))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toHour(toDateTime64(ts, 6, 'America/Los_Angeles')) = 20))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('hour', ts) = '20';
-         ts          
----------------------
- 2025-10-15 13:12:25
-(1 row)
+ ts 
+----
+(0 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('minute', ts) = '16';
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMinute(ts) = 16))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMinute(toDateTime64(ts, 6, 'America/Los_Angeles')) = 16))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('minute', ts) = '16';
@@ -1056,11 +1105,11 @@ SELECT ts FROM t5 WHERE date_part('minute', ts) = '16';
 (2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('second', ts) = '26';
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                                                                                                                       QUERY PLAN                                                                                                                        
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toSecond(ts) = 26))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE (((toSecond(toDateTime64(ts, 6, 'America/Los_Angeles')) + (toDecimal64(toDateTime64(ts, 6, 'America/Los_Angeles'), 6) - floor(toDecimal64(toDateTime64(ts, 6, 'America/Los_Angeles'), 6)))) = 26))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('second', ts) = '26';
@@ -1070,11 +1119,11 @@ SELECT ts FROM t5 WHERE date_part('second', ts) = '26';
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('doy', ts) = '351';
-                                   QUERY PLAN                                   
---------------------------------------------------------------------------------
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfYear(ts) = 351))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfYear(toDateTime64(ts, 6, 'America/Los_Angeles')) = 351))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('doy', ts) = '351';
@@ -1084,11 +1133,11 @@ SELECT ts FROM t5 WHERE date_part('doy', ts) = '351';
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
-                                   QUERY PLAN                                    
----------------------------------------------------------------------------------
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfWeek(ts, 2) = 2))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfWeek(toDateTime64(ts, 6, 'America/Los_Angeles'), 2) = 2))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
@@ -1096,15 +1145,16 @@ SELECT ts FROM t5 WHERE date_part('dow', ts) = '2';
 ---------------------
  2026-11-17 00:13:26
  2028-01-18 15:15:28
-(2 rows)
+ 2030-03-19 19:16:30
+(3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part('dow', ts) AS dow FROM t8 GROUP BY dow ORDER BY dow;
-                                                               QUERY PLAN                                                                
------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                           QUERY PLAN                                                                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (date_part('dow'::text, ts))
    Relations: Aggregate on (t8)
-   Remote SQL: SELECT toDayOfWeek(ts, 2) FROM functions_test.t8 GROUP BY (toDayOfWeek(ts, 2)) ORDER BY toDayOfWeek(ts, 2) ASC NULLS LAST
+   Remote SQL: SELECT toDayOfWeek(toDateTime64(ts, 6, 'America/Los_Angeles'), 2) FROM functions_test.t8 GROUP BY (toDayOfWeek(toDateTime64(ts, 6, 'America/Los_Angeles'), 2)) ORDER BY toDayOfWeek(toDateTime64(ts, 6, 'America/Los_Angeles'), 2) ASC NULLS LAST
 (4 rows)
 
 SELECT date_part('dow', ts) AS dow FROM t8 GROUP BY dow ORDER BY dow;
@@ -1120,11 +1170,11 @@ SELECT date_part('dow', ts) AS dow FROM t8 GROUP BY dow ORDER BY dow;
 (7 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('quarter', ts) = '1';
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toQuarter(ts) = 1))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toQuarter(toDateTime64(ts, 6, 'America/Los_Angeles')) = 1))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('quarter', ts) = '1';
@@ -1136,11 +1186,11 @@ SELECT ts FROM t5 WHERE date_part('quarter', ts) = '1';
 (3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('isoyear', ts) = '2025';
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOYear(ts) = 2025))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOYear(toDateTime64(ts, 6, 'America/Los_Angeles')) = 2025))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('isoyear', ts) = '2025';
@@ -1150,11 +1200,11 @@ SELECT ts FROM t5 WHERE date_part('isoyear', ts) = '2025';
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('week', ts) = '47';
-                                 QUERY PLAN                                  
------------------------------------------------------------------------------
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOWeek(ts) = 47))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOWeek(toDateTime64(ts, 6, 'America/Los_Angeles')) = 47))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('week', ts) = '47';
@@ -1164,27 +1214,26 @@ SELECT ts FROM t5 WHERE date_part('week', ts) = '47';
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('epoch', ts) > '1866158180';
-                                        QUERY PLAN                                         
--------------------------------------------------------------------------------------------
+                                                                                           QUERY PLAN                                                                                            
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toUnixTimestamp(ts) > 1866158180))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE (((toDecimal64(toDateTime64(ts, 6, 'America/Los_Angeles'), 6) + timeZoneOffset(toDateTime64(ts, 6, 'America/Los_Angeles'))) > 1866158180))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('epoch', ts) > '1866158180';
          ts          
 ---------------------
- 2029-02-18 17:16:29
  2030-03-19 19:16:30
-(2 rows)
+(1 row)
 
 -- Check date_part from date.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('year', ts::date) = 2027;
-                                                           QUERY PLAN                                                           
---------------------------------------------------------------------------------------------------------------------------------
+                                                                                  QUERY PLAN                                                                                   
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 2027))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(toDateTime64(cast(cast(ts, 'Nullable(Date32)'), 'Nullable(DateTime64(6))'), 6, 'America/Los_Angeles')) = 2027))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('year', ts::date) = 2027;
@@ -1194,11 +1243,11 @@ SELECT ts FROM t5 WHERE date_part('year', ts::date) = 2027;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('month', ts::date) = 11;
-                                                          QUERY PLAN                                                           
--------------------------------------------------------------------------------------------------------------------------------
+                                                                                  QUERY PLAN                                                                                  
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 11))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(toDateTime64(cast(cast(ts, 'Nullable(Date32)'), 'Nullable(DateTime64(6))'), 6, 'America/Los_Angeles')) = 11))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('month', ts::date) = 11;
@@ -1208,26 +1257,26 @@ SELECT ts FROM t5 WHERE date_part('month', ts::date) = 11;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_part('day', ts::date) = 18;
-                                                             QUERY PLAN                                                             
-------------------------------------------------------------------------------------------------------------------------------------
+                                                                                    QUERY PLAN                                                                                     
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(cast(cast(ts, 'Nullable(Date)'), 'Nullable(DateTime)')) = 18))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(toDateTime64(cast(cast(ts, 'Nullable(Date32)'), 'Nullable(DateTime64(6))'), 6, 'America/Los_Angeles')) = 18))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_part('day', ts::date) = 18;
          ts          
 ---------------------
- 2028-01-18 15:15:28
+ 2029-02-18 17:16:29
 (1 row)
 
 -- Check EXTRACT mappings.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(year FROM ts) = 2027;
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(ts) = 2027))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(toDateTime64(ts, 6, 'America/Los_Angeles')) = 2027))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(year FROM ts) = 2027;
@@ -1237,11 +1286,11 @@ SELECT ts FROM t5 WHERE EXTRACT(year FROM ts) = 2027;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(month FROM ts) = 11;
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
+                                                    QUERY PLAN                                                     
+-------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(ts) = 11))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(toDateTime64(ts, 6, 'America/Los_Angeles')) = 11))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(month FROM ts) = 11;
@@ -1251,39 +1300,39 @@ SELECT ts FROM t5 WHERE EXTRACT(month FROM ts) = 11;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(day FROM ts) = 18;
-                                   QUERY PLAN                                   
---------------------------------------------------------------------------------
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(ts) = 18))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(toDateTime64(ts, 6, 'America/Los_Angeles')) = 18))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(day FROM ts) = 18;
          ts          
 ---------------------
  2028-01-18 15:15:28
-(1 row)
+ 2029-02-18 17:16:29
+(2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(hour FROM ts) = 20;
-                                QUERY PLAN                                
---------------------------------------------------------------------------
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toHour(ts) = 20))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toHour(toDateTime64(ts, 6, 'America/Los_Angeles')) = 20))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(hour FROM ts) = 20;
-         ts          
----------------------
- 2025-10-15 13:12:25
-(1 row)
+ ts 
+----
+(0 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(minute FROM ts) = 16;
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMinute(ts) = 16))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMinute(toDateTime64(ts, 6, 'America/Los_Angeles')) = 16))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(minute FROM ts) = 16;
@@ -1294,11 +1343,11 @@ SELECT ts FROM t5 WHERE EXTRACT(minute FROM ts) = 16;
 (2 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(second FROM ts) = 26;
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                                                                                                                       QUERY PLAN                                                                                                                        
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toSecond(ts) = 26))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE (((toSecond(toDateTime64(ts, 6, 'America/Los_Angeles')) + (toDecimal64(toDateTime64(ts, 6, 'America/Los_Angeles'), 6) - floor(toDecimal64(toDateTime64(ts, 6, 'America/Los_Angeles'), 6)))) = 26))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(second FROM ts) = 26;
@@ -1308,11 +1357,11 @@ SELECT ts FROM t5 WHERE EXTRACT(second FROM ts) = 26;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(doy FROM ts) = 351;
-                                   QUERY PLAN                                   
---------------------------------------------------------------------------------
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfYear(ts) = 351))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfYear(toDateTime64(ts, 6, 'America/Los_Angeles')) = 351))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(doy FROM ts) = 351;
@@ -1322,11 +1371,11 @@ SELECT ts FROM t5 WHERE EXTRACT(doy FROM ts) = 351;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(dow FROM ts) = 2;
-                                   QUERY PLAN                                    
----------------------------------------------------------------------------------
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfWeek(ts, 2) = 2))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfWeek(toDateTime64(ts, 6, 'America/Los_Angeles'), 2) = 2))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(dow FROM ts) = 2;
@@ -1334,14 +1383,15 @@ SELECT ts FROM t5 WHERE EXTRACT(dow FROM ts) = 2;
 ---------------------
  2026-11-17 00:13:26
  2028-01-18 15:15:28
-(2 rows)
+ 2030-03-19 19:16:30
+(3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(quarter FROM ts) = 1;
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toQuarter(ts) = 1))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toQuarter(toDateTime64(ts, 6, 'America/Los_Angeles')) = 1))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(quarter FROM ts) = 1;
@@ -1353,11 +1403,11 @@ SELECT ts FROM t5 WHERE EXTRACT(quarter FROM ts) = 1;
 (3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(isoyear FROM ts) = 2025;
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOYear(ts) = 2025))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOYear(toDateTime64(ts, 6, 'America/Los_Angeles')) = 2025))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(isoyear FROM ts) = 2025;
@@ -1367,11 +1417,11 @@ SELECT ts FROM t5 WHERE EXTRACT(isoyear FROM ts) = 2025;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(week FROM ts) = 47;
-                                 QUERY PLAN                                  
------------------------------------------------------------------------------
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOWeek(ts) = 47))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toISOWeek(toDateTime64(ts, 6, 'America/Los_Angeles')) = 47))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(week FROM ts) = 47;
@@ -1381,27 +1431,26 @@ SELECT ts FROM t5 WHERE EXTRACT(week FROM ts) = 47;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(epoch FROM ts) > 1866158180;
-                                        QUERY PLAN                                         
--------------------------------------------------------------------------------------------
+                                                                                           QUERY PLAN                                                                                            
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toUnixTimestamp(ts) > 1866158180))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE (((toDecimal64(toDateTime64(ts, 6, 'America/Los_Angeles'), 6) + timeZoneOffset(toDateTime64(ts, 6, 'America/Los_Angeles'))) > 1866158180))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(epoch FROM ts) > 1866158180;
          ts          
 ---------------------
- 2029-02-18 17:16:29
  2030-03-19 19:16:30
-(2 rows)
+(1 row)
 
 -- Check extract from date.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(year FROM ts::date) = 2027;
-                                             QUERY PLAN                                             
-----------------------------------------------------------------------------------------------------
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(cast(ts, 'Nullable(Date)')) = 2027))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toYear(cast(ts, 'Nullable(Date32)')) = 2027))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(year FROM ts::date) = 2027;
@@ -1411,11 +1460,11 @@ SELECT ts FROM t5 WHERE EXTRACT(year FROM ts::date) = 2027;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(month FROM ts::date) = 11;
-                                            QUERY PLAN                                             
----------------------------------------------------------------------------------------------------
+                                             QUERY PLAN                                              
+-----------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(cast(ts, 'Nullable(Date)')) = 11))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonth(cast(ts, 'Nullable(Date32)')) = 11))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(month FROM ts::date) = 11;
@@ -1425,11 +1474,11 @@ SELECT ts FROM t5 WHERE EXTRACT(month FROM ts::date) = 11;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE EXTRACT(day FROM ts::date) = 18;
-                                               QUERY PLAN                                               
---------------------------------------------------------------------------------------------------------
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(cast(ts, 'Nullable(Date)')) = 18))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDayOfMonth(cast(ts, 'Nullable(Date32)')) = 18))
 (3 rows)
 
 SELECT ts FROM t5 WHERE EXTRACT(day FROM ts::date) = 18;
@@ -1440,11 +1489,11 @@ SELECT ts FROM t5 WHERE EXTRACT(day FROM ts::date) = 18;
 
 -- Check date_trunc mappings.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('year', ts) = '2026-01-01'::date;
-                                        QUERY PLAN                                         
--------------------------------------------------------------------------------------------
+                                                                                QUERY PLAN                                                                                 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfYear(ts) = '2026-01-01'))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDateTime64(toStartOfYear(toDateTime64(ts, 6, 'America/Los_Angeles')), 6, 'America/Los_Angeles') = '2026-01-01'))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_trunc('year', ts) = '2026-01-01'::date;
@@ -1454,11 +1503,11 @@ SELECT ts FROM t5 WHERE date_trunc('year', ts) = '2026-01-01'::date;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('month', ts) = '2027-12-01'::date;
-                                         QUERY PLAN                                         
---------------------------------------------------------------------------------------------
+                                                                                 QUERY PLAN                                                                                 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfMonth(ts) = '2027-12-01'))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDateTime64(toStartOfMonth(toDateTime64(ts, 6, 'America/Los_Angeles')), 6, 'America/Los_Angeles') = '2027-12-01'))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_trunc('month', ts) = '2027-12-01'::date;
@@ -1468,11 +1517,11 @@ SELECT ts FROM t5 WHERE date_trunc('month', ts) = '2027-12-01'::date;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('day', ts) = '2028-01-18'::date;
-                                        QUERY PLAN                                        
-------------------------------------------------------------------------------------------
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfDay(ts) = '2028-01-18'))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfDay(toDateTime64(ts, 6, 'America/Los_Angeles')) = '2028-01-18'))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_trunc('day', ts) = '2028-01-18'::date;
@@ -1482,53 +1531,50 @@ SELECT ts FROM t5 WHERE date_trunc('day', ts) = '2028-01-18'::date;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('hour', ts) = '2029-02-19T01:00:00';
-                                             QUERY PLAN                                             
-----------------------------------------------------------------------------------------------------
+                                                                 QUERY PLAN                                                                 
+--------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfHour(ts) = '2029-02-19 01:00:00'))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfHour(toDateTime64(ts, 6, 'America/Los_Angeles')) = '2029-02-19 01:00:00'))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_trunc('hour', ts) = '2029-02-19T01:00:00';
-         ts          
----------------------
- 2029-02-18 17:16:29
-(1 row)
+ ts 
+----
+(0 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('minute', ts) = '2025-10-15T20:12:00';
-                                              QUERY PLAN                                              
-------------------------------------------------------------------------------------------------------
+                                                                  QUERY PLAN                                                                  
+----------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfMinute(ts) = '2025-10-15 20:12:00'))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfMinute(toDateTime64(ts, 6, 'America/Los_Angeles')) = '2025-10-15 20:12:00'))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_trunc('minute', ts) = '2025-10-15T20:12:00';
-         ts          
----------------------
- 2025-10-15 13:12:25
-(1 row)
+ ts 
+----
+(0 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('second', ts) = '2027-12-17T22:14:27';
-                                                      QUERY PLAN                                                       
------------------------------------------------------------------------------------------------------------------------
+                                                                  QUERY PLAN                                                                  
+----------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfSecond(toDateTime64(ts, 1)) = '2027-12-17 22:14:27'))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfSecond(toDateTime64(ts, 6, 'America/Los_Angeles')) = '2027-12-17 22:14:27'))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_trunc('second', ts) = '2027-12-17T22:14:27';
-         ts          
----------------------
- 2027-12-17 14:14:27
-(1 row)
+ ts 
+----
+(0 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('week', ts) = '2028-01-17'::date;
-                                      QUERY PLAN                                      
---------------------------------------------------------------------------------------
+                                                                              QUERY PLAN                                                                              
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toMonday(ts) = '2028-01-17'))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDateTime64(toMonday(toDateTime64(ts, 6, 'America/Los_Angeles')), 6, 'America/Los_Angeles') = '2028-01-17'))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_trunc('week', ts) = '2028-01-17'::date;
@@ -1538,11 +1584,11 @@ SELECT ts FROM t5 WHERE date_trunc('week', ts) = '2028-01-17'::date;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ts FROM t5 WHERE date_trunc('quarter', ts) = '2027-10-01'::date;
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                                                                  QUERY PLAN                                                                                  
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: ts
-   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toStartOfQuarter(ts) = '2027-10-01'))
+   Remote SQL: SELECT ts FROM functions_test.t5 WHERE ((toDateTime64(toStartOfQuarter(toDateTime64(ts, 6, 'America/Los_Angeles')), 6, 'America/Los_Angeles') = '2027-10-01'))
 (3 rows)
 
 SELECT ts FROM t5 WHERE date_trunc('quarter', ts) = '2027-10-01'::date;
@@ -1569,11 +1615,11 @@ SELECT key1 FROM t3_map WHERE md5(val) LIKE 'a%' ORDER BY key1;
 
 -- Check to_timestamp(float8).
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(0);
-                                                     QUERY PLAN                                                     
---------------------------------------------------------------------------------------------------------------------
+                                                                    QUERY PLAN                                                                    
+--------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t6
    Output: i64, f64
-   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(i64, 6, 'UTC') = '1970-01-01 00:00:00'))
+   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(i64, 6, 'UTC') = cast('1970-01-01 00:00:00' as DateTime64(6, 'UTC'))))
 (3 rows)
 
 SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(0);
@@ -1583,11 +1629,11 @@ SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(0);
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(0);
-                                                     QUERY PLAN                                                     
---------------------------------------------------------------------------------------------------------------------
+                                                                    QUERY PLAN                                                                    
+--------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t6
    Output: i64, f64
-   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(f64, 6, 'UTC') = '1970-01-01 00:00:00'))
+   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(f64, 6, 'UTC') = cast('1970-01-01 00:00:00' as DateTime64(6, 'UTC'))))
 (3 rows)
 
 SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(0);
@@ -1597,11 +1643,11 @@ SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(0);
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(0);
-                                                     QUERY PLAN                                                     
---------------------------------------------------------------------------------------------------------------------
+                                                                    QUERY PLAN                                                                    
+--------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t6
    Output: i64, f64
-   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(i64, 6, 'UTC') = '1970-01-01 00:00:00'))
+   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(i64, 6, 'UTC') = cast('1970-01-01 00:00:00' as DateTime64(6, 'UTC'))))
 (3 rows)
 
 SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(2042323443);
@@ -1611,11 +1657,11 @@ SELECT * FROM t6 WHERE to_timestamp(i64) = to_timestamp(2042323443);
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(2042323443);
-                                                     QUERY PLAN                                                     
---------------------------------------------------------------------------------------------------------------------
+                                                                    QUERY PLAN                                                                    
+--------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t6
    Output: i64, f64
-   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(f64, 6, 'UTC') = '2034-09-20 00:04:03'))
+   Remote SQL: SELECT i64, f64 FROM functions_test.t6 WHERE ((toDateTime64(f64, 6, 'UTC') = cast('2034-09-20 00:04:03' as DateTime64(6, 'UTC'))))
 (3 rows)
 
 SELECT * FROM t6 WHERE to_timestamp(f64) = to_timestamp(2042323443);
@@ -1756,11 +1802,11 @@ SELECT * FROM t1 WHERE c < LOCALTIMESTAMP(3) ORDER BY a LIMIT 2;
 
 -- Use with other functions.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE date_part('year', c) < date_part('year', CURRENT_DATE);
-                                                                    QUERY PLAN                                                                    
---------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                              QUERY PLAN                                                                                                               
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t1
    Output: a, b, c
-   Remote SQL: SELECT a, b, c FROM functions_test.t1 WHERE ((toYear(c) < toYear(cast(toDate(now('America/Los_Angeles')), 'Nullable(DateTime)'))))
+   Remote SQL: SELECT a, b, c FROM functions_test.t1 WHERE ((toYear(toDateTime64(c, 6, 'America/Los_Angeles')) < toYear(toDateTime64(cast(toDate(now('America/Los_Angeles')), 'Nullable(DateTime64(6))'), 6, 'America/Los_Angeles'))))
 (3 rows)
 
 SELECT * FROM t1 WHERE date_part('year', c) < date_part('year', CURRENT_DATE);
@@ -1773,11 +1819,11 @@ SELECT * FROM t1 WHERE date_part('year', c) < date_part('year', CURRENT_DATE);
 (4 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE date_trunc('day', c) < date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '1 day' ORDER BY a LIMIT 2;
-                                                                                     QUERY PLAN                                                                                     
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                 QUERY PLAN                                                                                                                                                 
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t1
    Output: a, b, c
-   Remote SQL: SELECT a, b, c FROM functions_test.t1 WHERE ((toStartOfDay(c) < (toStartOfDay(now64(6, 'America/Los_Angeles')) - INTERVAL 1 DAY))) ORDER BY a ASC NULLS LAST LIMIT 2
+   Remote SQL: SELECT a, b, c FROM functions_test.t1 WHERE ((toStartOfDay(toDateTime64(c, 6, 'America/Los_Angeles')) < (toDateTime64(toStartOfDay(toDateTime64(now64(6, 'America/Los_Angeles'), 6, 'America/Los_Angeles')), 6, 'America/Los_Angeles') - INTERVAL 1 DAY))) ORDER BY a ASC NULLS LAST LIMIT 2
 (3 rows)
 
 SELECT * FROM t1 WHERE date_trunc('day', c) < date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '1 day' ORDER BY a;
@@ -1791,28 +1837,28 @@ SELECT * FROM t1 WHERE date_trunc('day', c) < date_trunc('day', CURRENT_TIMESTAM
 
 -- Month and compound intervals push down as INTERVAL <n> <unit> chains (issue #61).
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE date_trunc('day', c) < date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '6 months' ORDER BY a LIMIT 2;
-                                                                                      QUERY PLAN                                                                                      
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                  QUERY PLAN                                                                                                                                                  
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t1
    Output: a, b, c
-   Remote SQL: SELECT a, b, c FROM functions_test.t1 WHERE ((toStartOfDay(c) < (toStartOfDay(now64(6, 'America/Los_Angeles')) - INTERVAL 6 MONTH))) ORDER BY a ASC NULLS LAST LIMIT 2
+   Remote SQL: SELECT a, b, c FROM functions_test.t1 WHERE ((toStartOfDay(toDateTime64(c, 6, 'America/Los_Angeles')) < (toDateTime64(toStartOfDay(toDateTime64(now64(6, 'America/Los_Angeles'), 6, 'America/Los_Angeles')), 6, 'America/Los_Angeles') - INTERVAL 6 MONTH))) ORDER BY a ASC NULLS LAST LIMIT 2
 (3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE date_trunc('day', c) > date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 month 2 days 3 hours' ORDER BY a LIMIT 2;
-                                                                                                          QUERY PLAN                                                                                                           
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                      QUERY PLAN                                                                                                                                                                       
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t1
    Output: a, b, c
-   Remote SQL: SELECT a, b, c FROM functions_test.t1 WHERE ((toStartOfDay(c) > (toStartOfDay(now64(6, 'America/Los_Angeles')) + INTERVAL 1 MONTH + INTERVAL 2 DAY + INTERVAL 10800 SECOND))) ORDER BY a ASC NULLS LAST LIMIT 2
+   Remote SQL: SELECT a, b, c FROM functions_test.t1 WHERE ((toStartOfDay(toDateTime64(c, 6, 'America/Los_Angeles')) > (toDateTime64(toStartOfDay(toDateTime64(now64(6, 'America/Los_Angeles'), 6, 'America/Los_Angeles')), 6, 'America/Los_Angeles') + INTERVAL 1 MONTH + INTERVAL 2 DAY + INTERVAL 10800 SECOND))) ORDER BY a ASC NULLS LAST LIMIT 2
 (3 rows)
 
 -- Sub-second intervals keep microseconds, widening to DateTime64.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT a FROM t1 WHERE a = 1 AND c + INTERVAL '0.5 seconds' > c;
-                                                          QUERY PLAN                                                          
-------------------------------------------------------------------------------------------------------------------------------
+                                                                     QUERY PLAN                                                                      
+-----------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t1
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t1 WHERE ((a = 1)) AND (((toDateTime64(c, 6) + INTERVAL 500000 MICROSECOND) > c))
+   Remote SQL: SELECT a FROM functions_test.t1 WHERE ((a = 1)) AND (((toDateTime64(c, 6, 'America/Los_Angeles') + INTERVAL 500000 MICROSECOND) > c))
 (3 rows)
 
 SELECT a FROM t1 WHERE a = 1 AND c + INTERVAL '0.5 seconds' > c;
@@ -1822,11 +1868,11 @@ SELECT a FROM t1 WHERE a = 1 AND c + INTERVAL '0.5 seconds' > c;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT a FROM t1 WHERE a = 1 AND c::date - INTERVAL '1 day 0.5 seconds' < c::date - 1;
-                                                                                             QUERY PLAN                                                                                              
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                               QUERY PLAN                                                                                                
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t1
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t1 WHERE ((a = 1)) AND (((toDateTime64(cast(c, 'Nullable(Date)'), 6) - INTERVAL 1 DAY - INTERVAL 500000 MICROSECOND) < (cast(c, 'Nullable(Date)') - 1)))
+   Remote SQL: SELECT a FROM functions_test.t1 WHERE ((a = 1)) AND (((toDateTime64(cast(c, 'Nullable(Date32)'), 6) - INTERVAL 1 DAY - INTERVAL 500000 MICROSECOND) < (cast(c, 'Nullable(Date32)') - 1)))
 (3 rows)
 
 SELECT a FROM t1 WHERE a = 1 AND c::date - INTERVAL '1 day 0.5 seconds' < c::date - 1;
@@ -1974,11 +2020,11 @@ DROP EXTENSION fuzzystrmatch;
 -- formatDateTime equivalent.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT to_char(ts, 'YYYY-MM-DD HH24:MI:SS') FROM t5 ORDER BY 1;
-                                                   QUERY PLAN                                                   
-----------------------------------------------------------------------------------------------------------------
+                                                                       QUERY PLAN                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: to_char(ts, 'YYYY-MM-DD HH24:MI:SS'::text)
-   Remote SQL: SELECT ts FROM functions_test.t5 ORDER BY formatDateTime(ts, '%Y-%m-%d %H:%i:%S') ASC NULLS LAST
+   Remote SQL: SELECT ts FROM functions_test.t5 ORDER BY formatDateTime(toDateTime64(ts, 6, 'America/Los_Angeles'), '%Y-%m-%d %H:%i:%S') ASC NULLS LAST
 (3 rows)
 
 SELECT to_char(ts, 'YYYY-MM-DD HH24:MI:SS') FROM t5 ORDER BY 1;
@@ -1994,11 +2040,11 @@ SELECT to_char(ts, 'YYYY-MM-DD HH24:MI:SS') FROM t5 ORDER BY 1;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT to_char(ts, 'YY/MM/DD HH12:MI AM Q DDD Mon Dy') FROM t5 ORDER BY 1;
-                                                         QUERY PLAN                                                         
-----------------------------------------------------------------------------------------------------------------------------
+                                                                             QUERY PLAN                                                                             
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: to_char(ts, 'YY/MM/DD HH12:MI AM Q DDD Mon Dy'::text)
-   Remote SQL: SELECT ts FROM functions_test.t5 ORDER BY formatDateTime(ts, '%y/%m/%d %I:%i %p %Q %j %b %a') ASC NULLS LAST
+   Remote SQL: SELECT ts FROM functions_test.t5 ORDER BY formatDateTime(toDateTime64(ts, 6, 'America/Los_Angeles'), '%y/%m/%d %I:%i %p %Q %j %b %a') ASC NULLS LAST
 (3 rows)
 
 SELECT to_char(ts, 'YY/MM/DD HH12:MI AM Q DDD Mon Dy') FROM t5 ORDER BY 1;
@@ -2015,11 +2061,11 @@ SELECT to_char(ts, 'YY/MM/DD HH12:MI AM Q DDD Mon Dy') FROM t5 ORDER BY 1;
 -- Quoted literal text and a literal % round-trip via formatDateTime escaping.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT to_char(ts, '"Year=" YYYY "%"') FROM t5 ORDER BY 1;
-                                                QUERY PLAN                                                
-----------------------------------------------------------------------------------------------------------
+                                                                    QUERY PLAN                                                                    
+--------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t5
    Output: to_char(ts, '"Year=" YYYY "%"'::text)
-   Remote SQL: SELECT ts FROM functions_test.t5 ORDER BY formatDateTime(ts, 'Year= %Y %%') ASC NULLS LAST
+   Remote SQL: SELECT ts FROM functions_test.t5 ORDER BY formatDateTime(toDateTime64(ts, 6, 'America/Los_Angeles'), 'Year= %Y %%') ASC NULLS LAST
 (3 rows)
 
 SELECT to_char(ts, '"Year=" YYYY "%"') FROM t5 ORDER BY 1;
@@ -2189,16 +2235,16 @@ SELECT i64 FROM t6 WHERE power(f64, 2::float8) < 1 ORDER BY i64;
 -- https://github.com/ClickHouse/ClickHouse/issues/115327
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
-                                                          QUERY PLAN                                                           
--------------------------------------------------------------------------------------------------------------------------------
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((modulo(cast(a, 'Nullable(Decimal)'), 3) = 0)) ORDER BY a ASC NULLS LAST
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((modulo(cast(a, 'Nullable(Decimal(76, 38))'), 3) = 0)) ORDER BY a ASC NULLS LAST
 (3 rows)
 
 SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing (CAST(a, 'Nullable(Decimal)') % 3) = 0
-DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((modulo(cast(a, 'Nullable(Decimal)'), 3) = 0)) ORDER BY a ASC NULLS LAST
+ERROR:  pg_clickhouse: DB::Exception: Illegal types Decimal(76, 38) and UInt8 of arguments of function modulo: While processing (CAST(a, 'Nullable(Decimal(76, 38))') % 3) = 0
+DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((modulo(cast(a, 'Nullable(Decimal(76, 38))'), 3) = 0)) ORDER BY a ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
                            QUERY PLAN                           
@@ -2296,16 +2342,19 @@ SELECT i64 FROM t6 WHERE abs(f64) = 0;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE abs(a::numeric) = 5;
-                                          QUERY PLAN                                           
------------------------------------------------------------------------------------------------
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((abs(cast(a, 'Nullable(Decimal)')) = 5))
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((abs(cast(a, 'Nullable(Decimal(76, 38))')) = 5))
 (3 rows)
 
 SELECT a FROM t3 WHERE abs(a::numeric) = 5;
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing abs(CAST(a, 'Nullable(Decimal)')) = 5
-DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((abs(cast(a, 'Nullable(Decimal)')) = 5))
+ a 
+---
+ 5
+(1 row)
+
 -- factorial(int8) pushes down.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE factorial(a) = 120;
@@ -2340,28 +2389,33 @@ SELECT i64 FROM t6 WHERE round(f64) = 0;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE round(a::numeric) = 5;
-                                             QUERY PLAN                                             
-----------------------------------------------------------------------------------------------------
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round(cast(a, 'Nullable(Decimal)'), 0) = 5))
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round(cast(a, 'Nullable(Decimal(76, 38))'), 0) = 5))
 (3 rows)
 
 SELECT a FROM t3 WHERE round(a::numeric) = 5;
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing round(CAST(a, 'Nullable(Decimal)'), 0) = 5
-DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((round(cast(a, 'Nullable(Decimal)'), 0) = 5))
+ a 
+---
+ 5
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
-                                                 QUERY PLAN                                                  
--------------------------------------------------------------------------------------------------------------
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round((cast(a, 'Nullable(Decimal)') / 3), 2) = 1.67))
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round((cast(a, 'Nullable(Decimal(76, 38))') / 3), 2) = 1.67))
 (3 rows)
 
 SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing round(CAST(a, 'Nullable(Decimal)') / 3, 2) = 1.67
-DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((round((cast(a, 'Nullable(Decimal)') / 3), 2) = 1.67))
+ a 
+---
+(0 rows)
+
 -- Trig functions push down at f64 = 0 where PG and CH agree exactly.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT i64 FROM t6 WHERE i64 = 0 AND sin(f64) = 0;
@@ -2737,11 +2791,11 @@ SELECT val FROM t4 WHERE reverse(val::bytea) = 'olleh'::bytea;
 -- date(timestamp) and date(timestamptz) push down as CH date (alias for toDate).
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a, b FROM t1 WHERE date(c) = '2019-01-01'::date;
-                                    QUERY PLAN                                     
------------------------------------------------------------------------------------
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t1
    Output: a, b
-   Remote SQL: SELECT a, b FROM functions_test.t1 WHERE ((date(c) = '2019-01-01'))
+   Remote SQL: SELECT a, b FROM functions_test.t1 WHERE ((toDate(toDateTime64(c, 6, 'America/Los_Angeles')) = '2019-01-01'))
 (3 rows)
 
 SELECT a, b FROM t1 WHERE date(c) = '2019-01-01'::date;
@@ -2754,11 +2808,11 @@ SELECT a, b FROM t1 WHERE date(c) = '2019-01-01'::date;
 SET timezone = 'UTC';
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a, b FROM t2 WHERE date(c) = '2019-01-01'::date;
-                                    QUERY PLAN                                     
------------------------------------------------------------------------------------
+                                                 QUERY PLAN                                                  
+-------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t2
    Output: a, b
-   Remote SQL: SELECT a, b FROM functions_test.t1 WHERE ((date(c) = '2019-01-01'))
+   Remote SQL: SELECT a, b FROM functions_test.t1 WHERE ((toDate(toDateTime64(c, 6, 'UTC')) = '2019-01-01'))
 (3 rows)
 
 SELECT a, b FROM t2 WHERE date(c) = '2019-01-01'::date;

@@ -258,11 +258,6 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         def->cf_type = CF_DATE_PART;
         def->ch_name = "\1";
         return true;
-    case F_TIMEZONE_TEXT_TIMESTAMP:
-    case F_TIMEZONE_TEXT_TIMESTAMPTZ:
-        def->cf_type = CF_TIMEZONE;
-        def->ch_name = "toTimeZone";
-        return true;
     case F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE:
     case F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE_INT4:
         def->cf_type = CF_ARRAY_POSITION;
@@ -404,6 +399,11 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         /* CH lacks "power", maps to pow */
     case F_TO_TIMESTAMP_FLOAT8:
         def->cf_type = CF_TO_TIMESTAMP;
+        def->ch_name = "\1";
+        return true;
+    case F_DATE_TIMESTAMP:
+    case F_DATE_TIMESTAMPTZ:
+        def->cf_type = CF_DATE;
         def->ch_name = "\1";
         return true;
     case F_TO_CHAR_TIMESTAMP_TEXT:
@@ -650,9 +650,6 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     case F_RTRIM_TEXT_TEXT:
     case F_CONCAT_WS:
     case F_LENGTH_BYTEA:
-        /* date(ts), date(tstz) deparse as CH date() (alias toDate) */
-    case F_DATE_TIMESTAMP:
-    case F_DATE_TIMESTAMPTZ:
         /* window functions: lead/lag share PG and CH names */
     case F_LEAD_ANYELEMENT:
     case F_LEAD_ANYELEMENT_INT4:

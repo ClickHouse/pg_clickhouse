@@ -1,0 +1,489 @@
+SET datestyle = 'ISO';
+CREATE SERVER stz_bin_svr FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'stz_test', driver 'binary');
+CREATE SERVER stz_http_svr FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'stz_test', driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER stz_bin_svr;
+CREATE USER MAPPING FOR CURRENT_USER SERVER stz_http_svr;
+CREATE SERVER stz_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER stz_admin;
+\set ECHO errors
+CALL clickhouse_perform('stz_admin', 'DROP DATABASE IF EXISTS stz_test');
+CALL clickhouse_perform('stz_admin', 'CREATE DATABASE stz_test');
+CALL clickhouse_perform('stz_admin', $$
+    CREATE TABLE stz_test.wall (id Int, ts DateTime64(6))
+    ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('stz_admin', $$
+    CREATE TABLE stz_test.utc (id Int, ts DateTime('UTC'))
+    ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('stz_admin', $$
+    CREATE TABLE stz_test.day (id Int, d Date, ts DateTime64(6, 'UTC'))
+    ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('stz_admin', $$
+    INSERT INTO stz_test.day VALUES
+        (1, '2020-03-07', '2020-03-07 10:00:05.25'),
+        (2, '2020-07-01', '1969-12-31 23:59:58.75')
+$$);
+CALL clickhouse_perform('stz_admin', $$
+    INSERT INTO stz_test.utc
+    SELECT number, addMonths(toDateTime('2020-01-01 10:00:00', 'UTC'), number * 3)
+    FROM numbers(4)
+$$);
+CREATE FOREIGN TABLE stz_bin_wall (id int, ts timestamp)
+    SERVER stz_bin_svr OPTIONS (table_name 'wall');
+CREATE FOREIGN TABLE stz_http_wall (id int, ts timestamp)
+    SERVER stz_http_svr OPTIONS (table_name 'wall');
+CREATE FOREIGN TABLE stz_bin_utc (id int, ts timestamptz)
+    SERVER stz_bin_svr OPTIONS (table_name 'utc');
+CREATE FOREIGN TABLE stz_http_utc (id int, ts timestamptz)
+    SERVER stz_http_svr OPTIONS (table_name 'utc');
+CREATE FOREIGN TABLE stz_bin_day (id int, d timestamp, ts timestamptz)
+    SERVER stz_bin_svr OPTIONS (table_name 'day');
+CREATE FOREIGN TABLE stz_http_day (id int, d timestamp, ts timestamptz)
+    SERVER stz_http_svr OPTIONS (table_name 'day');
+-- Verify unzoned DateTime64 literals use PostgreSQL TimeZone.
+SET timezone = 'America/Los_Angeles';
+INSERT INTO stz_bin_wall VALUES (1, '2024-07-01 12:00');
+INSERT INTO stz_http_wall VALUES (2, '2024-07-01 12:00');
+CALL clickhouse_perform('stz_admin', $$
+    INSERT INTO stz_test.wall VALUES (3, '2024-07-01 12:00:00')
+$$);
+SELECT * FROM clickhouse_query('stz_admin', $$
+    SELECT id FROM stz_test.wall WHERE ts = '2024-07-01 12:00:00' ORDER BY id
+$$) AS t(id int);
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+SELECT * FROM stz_bin_wall ORDER BY id;
+ id |         ts          
+----+---------------------
+  1 | 2024-07-01 12:00:00
+  2 | 2024-07-01 12:00:00
+  3 | 2024-07-01 12:00:00
+(3 rows)
+
+SELECT * FROM stz_http_wall ORDER BY id;
+ id |         ts          
+----+---------------------
+  1 | 2024-07-01 12:00:00
+  2 | 2024-07-01 12:00:00
+  3 | 2024-07-01 12:00:00
+(3 rows)
+
+-- Verify pushed down literals and functions match local evaluation.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM stz_bin_wall
+ WHERE ts = '2024-07-01 12:00' AND date_part('hour', ts) = 12;
+                                                                   QUERY PLAN                                                                    
+-------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.stz_bin_wall
+   Output: id
+   Remote SQL: SELECT id FROM stz_test.wall WHERE ((ts = '2024-07-01 12:00:00')) AND ((toHour(toDateTime64(ts, 6, 'America/Los_Angeles')) = 12))
+(3 rows)
+
+SELECT id FROM stz_bin_wall
+ WHERE ts = '2024-07-01 12:00' AND date_part('hour', ts) = 12 ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+SELECT id FROM stz_http_wall
+ WHERE ts = '2024-07-01 12:00' AND date_part('hour', ts) = 12 ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+-- Execute six times to test parameters with generic plans.
+PREPARE prep_bin(timestamp) AS SELECT id FROM stz_bin_wall WHERE ts = $1 ORDER BY id;
+EXECUTE prep_bin('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXECUTE prep_bin('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXECUTE prep_bin('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXECUTE prep_bin('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXECUTE prep_bin('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXECUTE prep_bin('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+DEALLOCATE prep_bin;
+PREPARE prep_http(timestamp) AS SELECT id FROM stz_http_wall WHERE ts = $1 ORDER BY id;
+EXECUTE prep_http('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXECUTE prep_http('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXECUTE prep_http('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXECUTE prep_http('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXECUTE prep_http('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXECUTE prep_http('2024-07-01 12:00');
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+DEALLOCATE prep_http;
+-- Read same instants as Tokyo wall clock times. Before ClickHouse 26.3,
+-- literals use time zone unzoned columns had when table loaded
+\if :ch263
+SET timezone = 'Asia/Tokyo';
+SELECT * FROM stz_bin_wall WHERE ts = '2024-07-02 04:00' ORDER BY id;
+SELECT * FROM stz_http_wall WHERE ts = '2024-07-02 04:00' ORDER BY id;
+-- Verify fixed offsets map to ClickHouse Fixed/UTC zones.
+SET timezone = '+05:30';
+SELECT * FROM stz_bin_wall WHERE ts = '2024-07-01 13:30' ORDER BY id;
+SELECT * FROM stz_http_wall WHERE ts = '2024-07-01 13:30' ORDER BY id;
+\endif
+-- Verify explicit UTC columns use PostgreSQL TimeZone across DST.
+SET timezone = 'America/Los_Angeles';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_trunc('day', ts) AS d, to_char(ts, 'HH24') AS h, count(*)
+  FROM stz_bin_utc WHERE extract(hour FROM ts) = 3 GROUP BY d, h ORDER BY d;
+                                                                                                                                                                                                                              QUERY PLAN                                                                                                                                                                                                                               
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_trunc('day'::text, ts)), (to_char(ts, 'HH24'::text)), (count(*))
+   Relations: Aggregate on (stz_bin_utc)
+   Remote SQL: SELECT toStartOfDay(toDateTime64(ts, 6, 'America/Los_Angeles')), formatDateTime(toDateTime64(ts, 6, 'America/Los_Angeles'), '%H'), count(*) FROM stz_test.utc WHERE ((toHour(toDateTime64(ts, 6, 'America/Los_Angeles')) = 3)) GROUP BY (toStartOfDay(toDateTime64(ts, 6, 'America/Los_Angeles'))), (formatDateTime(toDateTime64(ts, 6, 'America/Los_Angeles'), '%H')) ORDER BY toStartOfDay(toDateTime64(ts, 6, 'America/Los_Angeles')) ASC NULLS LAST
+(4 rows)
+
+SELECT date_trunc('day', ts) AS d, to_char(ts, 'HH24') AS h, count(*)
+  FROM stz_bin_utc WHERE extract(hour FROM ts) = 3 GROUP BY d, h ORDER BY d;
+           d            | h  | count 
+------------------------+----+-------
+ 2020-04-01 00:00:00-07 | 03 |     1
+ 2020-07-01 00:00:00-07 | 03 |     1
+ 2020-10-01 00:00:00-07 | 03 |     1
+(3 rows)
+
+SELECT date_trunc('day', ts) AS d, to_char(ts, 'HH24') AS h, count(*)
+  FROM stz_http_utc WHERE extract(hour FROM ts) = 3 GROUP BY d, h ORDER BY d;
+           d            | h  | count 
+------------------------+----+-------
+ 2020-04-01 00:00:00-07 | 03 |     1
+ 2020-07-01 00:00:00-07 | 03 |     1
+ 2020-10-01 00:00:00-07 | 03 |     1
+(3 rows)
+
+SELECT id, ts, date_part('hour', ts) FROM stz_bin_utc ORDER BY id;
+ id |           ts           | date_part 
+----+------------------------+-----------
+  0 | 2020-01-01 02:00:00-08 |         2
+  1 | 2020-04-01 03:00:00-07 |         3
+  2 | 2020-07-01 03:00:00-07 |         3
+  3 | 2020-10-01 03:00:00-07 |         3
+(4 rows)
+
+-- Verify interval arithmetic preserves 02:00 across PST and PDT.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM stz_bin_utc WHERE ts + interval '3 months' = '2020-04-01 02:00';
+                                                                                QUERY PLAN                                                                                 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.stz_bin_utc
+   Output: id
+   Remote SQL: SELECT id FROM stz_test.utc WHERE (((toDateTime64(ts, 6, 'America/Los_Angeles') + INTERVAL 3 MONTH) = cast('2020-04-01 09:00:00' as DateTime64(6, 'UTC'))))
+(3 rows)
+
+SELECT id FROM stz_bin_utc WHERE ts + interval '3 months' = '2020-04-01 02:00';
+ id 
+----
+  0
+(1 row)
+
+SELECT id FROM stz_http_utc WHERE ts + interval '3 months' = '2020-04-01 02:00';
+ id 
+----
+  0
+(1 row)
+
+PREPARE prep_iv(interval) AS SELECT id FROM stz_bin_utc WHERE ts + $1 = '2020-04-01 02:00';
+EXECUTE prep_iv('3 months');
+ id 
+----
+  0
+(1 row)
+
+EXECUTE prep_iv('3 months');
+ id 
+----
+  0
+(1 row)
+
+EXECUTE prep_iv('3 months');
+ id 
+----
+  0
+(1 row)
+
+EXECUTE prep_iv('3 months');
+ id 
+----
+  0
+(1 row)
+
+EXECUTE prep_iv('3 months');
+ id 
+----
+  0
+(1 row)
+
+EXECUTE prep_iv('3 months');
+ id 
+----
+  0
+(1 row)
+
+DEALLOCATE prep_iv;
+-- Verify epoch extraction interprets timestamp wall clock times as UTC.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM stz_bin_wall WHERE date_part('epoch', ts) = 1719835200;
+                                                                                         QUERY PLAN                                                                                          
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.stz_bin_wall
+   Output: id
+   Remote SQL: SELECT id FROM stz_test.wall WHERE (((toDecimal64(toDateTime64(ts, 6, 'America/Los_Angeles'), 6) + timeZoneOffset(toDateTime64(ts, 6, 'America/Los_Angeles'))) = 1719835200))
+(3 rows)
+
+SELECT id FROM stz_bin_wall WHERE date_part('epoch', ts) = 1719835200 ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+SELECT id FROM stz_http_wall WHERE date_part('epoch', ts) = 1719835200 ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+SELECT id FROM stz_bin_utc WHERE extract(epoch FROM ts) = 1577872800;
+ id 
+----
+  0
+(1 row)
+
+-- Verify timezone() evaluates locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM stz_bin_utc WHERE date_part('hour', ts AT TIME ZONE 'UTC') = 10;
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.stz_bin_utc
+   Output: id
+   Filter: (date_part('hour'::text, (stz_bin_utc.ts AT TIME ZONE 'UTC'::text)) = '10'::double precision)
+   Remote SQL: SELECT id, ts FROM stz_test.utc
+(4 rows)
+
+SELECT id FROM stz_bin_utc WHERE date_part('hour', ts AT TIME ZONE 'UTC') = 10 ORDER BY id;
+ id 
+----
+  0
+  1
+  2
+  3
+(4 rows)
+
+-- Verify second and epoch extraction preserve microseconds before 1970.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, date_part('second', ts), extract(epoch FROM ts) FROM stz_bin_day
+ WHERE date_part('second', ts) > 5 ORDER BY id;
+                                                                                                                                    QUERY PLAN                                                                                                                                    
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.stz_bin_day
+   Output: id, date_part('second'::text, ts), EXTRACT(epoch FROM ts)
+   Remote SQL: SELECT id, ts FROM stz_test.day WHERE (((toSecond(toDateTime64(ts, 6, 'America/Los_Angeles')) + (toDecimal64(toDateTime64(ts, 6, 'America/Los_Angeles'), 6) - floor(toDecimal64(toDateTime64(ts, 6, 'America/Los_Angeles'), 6)))) > 5)) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id, date_part('second', ts), extract(epoch FROM ts) FROM stz_bin_day
+ WHERE date_part('second', ts) > 5 ORDER BY id;
+ id | date_part |      extract      
+----+-----------+-------------------
+  1 |      5.25 | 1583575205.250000
+  2 |     58.75 |         -1.250000
+(2 rows)
+
+SELECT id, date_part('second', ts), extract(epoch FROM ts) FROM stz_http_day
+ WHERE date_part('second', ts) > 5 ORDER BY id;
+ id | date_part |      extract      
+----+-----------+-------------------
+  1 |      5.25 | 1583575205.250000
+  2 |     58.75 |         -1.250000
+(2 rows)
+
+-- Verify date_trunc supports dates before 1970.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM stz_bin_day
+ WHERE date_trunc('month', ts) = '1969-12-01' AND date_trunc('hour', ts) = '1969-12-31 15:00';
+                                                                                                                                                              QUERY PLAN                                                                                                                                                              
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.stz_bin_day
+   Output: id
+   Remote SQL: SELECT id FROM stz_test.day WHERE ((toDateTime64(toStartOfMonth(toDateTime64(ts, 6, 'America/Los_Angeles')), 6, 'America/Los_Angeles') = cast('1969-12-01 08:00:00' as DateTime64(6, 'UTC')))) AND ((toStartOfHour(toDateTime64(ts, 6, 'America/Los_Angeles')) = cast('1969-12-31 23:00:00' as DateTime64(6, 'UTC'))))
+(3 rows)
+
+SELECT id FROM stz_bin_day
+ WHERE date_trunc('month', ts) = '1969-12-01' AND date_trunc('hour', ts) = '1969-12-31 15:00';
+ id 
+----
+  2
+(1 row)
+
+SELECT id FROM stz_http_day
+ WHERE date_trunc('month', ts) = '1969-12-01' AND date_trunc('hour', ts) = '1969-12-31 15:00';
+ id 
+----
+  2
+(1 row)
+
+-- Verify Date mapped to timestamp uses midnight and supports day arithmetic.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, d FROM stz_bin_day
+ WHERE date_trunc('month', d) = '2020-03-01' AND d + interval '1 day' = '2020-03-08'
+   AND date_part('epoch', d) = 1583539200;
+                                                                                                                                                                                                         QUERY PLAN                                                                                                                                                                                                         
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.stz_bin_day
+   Output: id, d
+   Remote SQL: SELECT id, d FROM stz_test.day WHERE ((toDateTime64(toStartOfMonth(toDateTime64(d, 6, 'America/Los_Angeles')), 6, 'America/Los_Angeles') = '2020-03-01 00:00:00')) AND (((toDateTime64(d, 6, 'America/Los_Angeles') + INTERVAL 1 DAY) = '2020-03-08 00:00:00')) AND (((toDecimal64(toDateTime64(d, 6, 'America/Los_Angeles'), 6) + timeZoneOffset(toDateTime64(d, 6, 'America/Los_Angeles'))) = 1583539200))
+(3 rows)
+
+SELECT id, d FROM stz_bin_day
+ WHERE date_trunc('month', d) = '2020-03-01' AND d + interval '1 day' = '2020-03-08'
+   AND date_part('epoch', d) = 1583539200;
+ id |          d          
+----+---------------------
+  1 | 2020-03-07 00:00:00
+(1 row)
+
+SELECT id, d FROM stz_http_day
+ WHERE date_trunc('month', d) = '2020-03-01' AND d + interval '1 day' = '2020-03-08'
+   AND date_part('epoch', d) = 1583539200;
+ id |          d          
+----+---------------------
+  1 | 2020-03-07 00:00:00
+(1 row)
+
+-- Verify date() uses TimeZone: 10:00 UTC falls on next day at UTC+14.
+SET timezone = 'Pacific/Kiritimati';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, date(ts) FROM stz_bin_utc WHERE date(ts) = '2020-01-02';
+                                                        QUERY PLAN                                                        
+--------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.stz_bin_utc
+   Output: id, date(ts)
+   Remote SQL: SELECT id, ts FROM stz_test.utc WHERE ((toDate(toDateTime64(ts, 6, 'Pacific/Kiritimati')) = '2020-01-02'))
+(3 rows)
+
+SELECT id, date(ts) FROM stz_bin_utc WHERE date(ts) = '2020-01-02';
+ id |    date    
+----+------------
+  0 | 2020-01-02
+(1 row)
+
+SELECT id, date(ts) FROM stz_http_utc WHERE date(ts) = '2020-01-02';
+ id |    date    
+----+------------
+  0 | 2020-01-02
+(1 row)
+
+RESET timezone;
+CALL clickhouse_perform('stz_admin', 'DROP DATABASE stz_test');
+DROP USER MAPPING FOR CURRENT_USER SERVER stz_bin_svr;
+DROP SERVER stz_bin_svr CASCADE;
+NOTICE:  drop cascades to 3 other objects
+DETAIL:  drop cascades to foreign table stz_bin_wall
+drop cascades to foreign table stz_bin_utc
+drop cascades to foreign table stz_bin_day
+DROP USER MAPPING FOR CURRENT_USER SERVER stz_http_svr;
+DROP SERVER stz_http_svr CASCADE;
+NOTICE:  drop cascades to 3 other objects
+DETAIL:  drop cascades to foreign table stz_http_wall
+drop cascades to foreign table stz_http_utc
+drop cascades to foreign table stz_http_day
+DROP USER MAPPING FOR CURRENT_USER SERVER stz_admin;
+DROP SERVER stz_admin;

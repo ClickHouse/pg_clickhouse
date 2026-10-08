@@ -206,7 +206,8 @@ import_schema.sql
  ClickHouse | File
 ------------|---------------------
  26.7+      | import_schema.out
- 23.3-26.6  | import_schema_2.out
+ 23.6-26.6  | import_schema_2.out
+ 23.3-23.5  | import_schema_3.out
 
 interval.sql
 ------------
@@ -285,6 +286,15 @@ regex.sql
 ------------|-------------
  25+        | regex.out
  23-24      | regex_1.out
+
+session_timezone.sql
+--------------------
+
+ ClickHouse | File
+------------|--------------------------
+ 26.3+      | session_timezone.out
+ 23.6-26.2  | session_timezone_1.out
+ 23.3-23.5  | session_timezone_2.out
 
 subplan_pushdown.sql
 --------------------

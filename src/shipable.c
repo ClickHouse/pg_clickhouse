@@ -25,6 +25,7 @@
 #include "utils/builtins.h"
 #include "utils/hsearch.h"
 #include "utils/inval.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 /* Hash table for caching the results of shippability lookups */
@@ -142,6 +143,38 @@ lookup_shippable(Oid objectId, Oid classId, CHFdwRelationInfo* fpinfo) {
 bool
 chfdw_is_builtin(Oid objectId) {
     return (objectId < FirstUnpinnedObjectId);
+}
+
+bool
+chfdw_is_geometric_type(Oid type_oid) {
+    Oid elem_oid = get_element_type(type_oid);
+
+    switch (OidIsValid(elem_oid) ? elem_oid : type_oid) {
+    case POINTOID:
+    case LSEGOID:
+    case PATHOID:
+    case BOXOID:
+    case POLYGONOID:
+    case LINEOID:
+    case CIRCLEOID:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/*
+ * PostgreSQL geometric operators use fuzzy comparisons and algorithms
+ * ClickHouse does not share, so expressions on these types must run locally
+ */
+static bool
+is_geometric_operator(Oid opno) {
+    Oid left;
+    Oid right;
+
+    op_input_types(opno, &left, &right);
+    return chfdw_is_geometric_type(left) || chfdw_is_geometric_type(right) ||
+           chfdw_is_geometric_type(get_op_rettype(opno));
 }
 
 static bool
@@ -406,6 +439,16 @@ chfdw_is_shippable(
      * dropping the implicit wrapper, regardless of the underlying funcid.
      */
     if (chfdw_is_builtin(objectId)) {
+        /*
+         * Empty Ring and LineString read back as NULL polygon and path, so
+         * only point values ship
+         */
+        if (classId == TypeRelationId) {
+            return objectId == POINTOID || !chfdw_is_geometric_type(objectId);
+        }
+        if (classId == OperatorRelationId) {
+            return !is_geometric_operator(objectId);
+        }
         if (classId != ProcedureRelationId) {
             return true;
         }

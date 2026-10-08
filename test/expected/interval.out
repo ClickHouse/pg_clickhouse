@@ -108,11 +108,11 @@ SELECT id, base + nanos
   FROM ival_bin.intervals
  WHERE base + nanos > base
  ORDER BY id;
-                                                          QUERY PLAN                                                          
-------------------------------------------------------------------------------------------------------------------------------
+                                                                              QUERY PLAN                                                                              
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on ival_bin.intervals
    Output: id, (base + nanos)
-   Remote SQL: SELECT id, base, nanos FROM interval_test.intervals WHERE (((base + nanos) > base)) ORDER BY id ASC NULLS LAST
+   Remote SQL: SELECT id, base, nanos FROM interval_test.intervals WHERE (((toDateTime64(base, 6, 'America/Los_Angeles') + nanos) > base)) ORDER BY id ASC NULLS LAST
 (3 rows)
 
 SELECT id, base + nanos
@@ -132,11 +132,11 @@ EXPLAIN (verbose, COSTS OFF)
    FROM ival_bin.intervals
   WHERE base - nanos < base
   ORDER BY id;
-                                                          QUERY PLAN                                                          
-------------------------------------------------------------------------------------------------------------------------------
+                                                                              QUERY PLAN                                                                              
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on ival_bin.intervals
    Output: id, (base - nanos)
-   Remote SQL: SELECT id, base, nanos FROM interval_test.intervals WHERE (((base - nanos) < base)) ORDER BY id ASC NULLS LAST
+   Remote SQL: SELECT id, base, nanos FROM interval_test.intervals WHERE (((toDateTime64(base, 6, 'America/Los_Angeles') - nanos) < base)) ORDER BY id ASC NULLS LAST
 (3 rows)
 
  SELECT id, base - nanos

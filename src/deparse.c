@@ -24,6 +24,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
+#include "common/shortest_dec.h"
 #include "fmgr.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
@@ -42,18 +43,22 @@
 #include "utils/date.h"
 #include "utils/datetime.h"
 #include "utils/fmgroids.h"
+#include "utils/geo_decls.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
 #include "fdw.h"
+#include "pg-clickhouse-encode.h"
+
+#include <math.h>
 
 /* Aggregate OIDs absent from fmgroids.h on all PG versions. */
 #define F_STRING_AGG_TEXT_TEXT 3538
 
-/* Oft-used syntax to quote quote the session time zone literal string. */
-#define QUOTED_TZ ch_quote_literal(pg_get_timezone_name(session_timezone))
+/* Quote session time zone for ClickHouse SQL. */
+#define QUOTED_TZ ch_quote_literal(pgch_session_timezone())
 
 /* variable counter */
 static uint32 var_counter = 0;
@@ -874,6 +879,20 @@ classify_notin_subplan(SubPlan* subplan, PlannerInfo* root, Relids relids) {
     return NOTIN_SHIP_NONE;
 }
 
+/* Datetime +/- interval Param, which deparseIntervalOp splits into parts */
+static bool
+is_interval_param_op(OpExpr* oe) {
+    CustomObjectDef* cdef;
+
+    if (list_length(oe->args) != 2 || !IsA(lsecond(oe->args), Param)) {
+        return false;
+    }
+
+    cdef = chfdw_check_for_custom_operator(oe->opno, NULL);
+    return cdef && (cdef->cf_type == CF_DATETIME_PL_INTERVAL ||
+                    cdef->cf_type == CF_DATETIME_MI_INTERVAL);
+}
+
 /*
  * Check if expression is safe to execute remotely, and return true if so.
  *
@@ -890,6 +909,34 @@ classify_notin_subplan(SubPlan* subplan, PlannerInfo* root, Relids relids) {
  * EXPR_CTX_TRUTH only while every enclosing node treats NULL and FALSE
  * identically.
  */
+/*
+ * Return 1-based ClickHouse tuple index for point[0] or point[1], else 0.
+ * PostgreSQL returns NULL for other indexes, where tupleElement fails
+ */
+static int
+point_subscript_index(SubscriptingRef* ar) {
+    Const* c;
+
+    if (ar->refcontainertype != POINTOID || ar->reflowerindexpr != NIL ||
+        list_length(ar->refupperindexpr) != 1) {
+        return 0;
+    }
+
+    c = (Const*)linitial(ar->refupperindexpr);
+    if (!IsA(c, Const) || c->consttype != INT4OID || c->constisnull) {
+        return 0;
+    }
+
+    switch (DatumGetInt32(c->constvalue)) {
+    case 0:
+        return 1;
+    case 1:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
 static bool
 foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
     bool check_type = true;
@@ -926,6 +973,9 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             if (var->varattno < 0) {
                 return false;
             }
+        } else if (var->varlevelsup == 0 && var->vartype == INTERVALOID) {
+            /* Outer Var becomes a Param deparseIntervalOp cannot split */
+            return false;
         }
     } break;
     case T_Const:
@@ -949,6 +999,11 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
         if (p->paramkind == PARAM_MULTIEXPR) {
             return false;
         }
+
+        /* Only deparseIntervalOp knows how to apply interval params */
+        if (p->paramtype == INTERVALOID) {
+            return false;
+        }
     } break;
     case T_SubscriptingRef: {
         SubscriptingRef* ar = (SubscriptingRef*)node;
@@ -958,7 +1013,7 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
 
-        if (!type_is_array(ar->refcontainertype)) {
+        if (!type_is_array(ar->refcontainertype) && point_subscript_index(ar) == 0) {
             return false;
         }
 
@@ -1058,6 +1113,16 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
          */
         if (!chfdw_is_shippable(node, oe->opno, OperatorRelationId, fpinfo, NULL)) {
             return false;
+        }
+
+        if (is_interval_param_op(oe)) {
+            if (((Param*)lsecond(oe->args))->paramkind == PARAM_MULTIEXPR) {
+                return false;
+            }
+            if (!foreign_expr_walker(linitial(oe->args), glob_cxt, EXPR_CTX_EXACT)) {
+                return false;
+            }
+            break;
         }
 
         /*
@@ -1310,6 +1375,12 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
     } break;
     case T_CoerceViaIO: {
         CoerceViaIO* me = (CoerceViaIO*)node;
+
+        /* ClickHouse text forms of geometric types differ from PostgreSQL's */
+        if (chfdw_is_geometric_type(me->resulttype) ||
+            chfdw_is_geometric_type(exprType((Node*)me->arg))) {
+            return false;
+        }
 
         if (!foreign_expr_walker((Node*)me->arg, glob_cxt, EXPR_CTX_EXACT)) {
             return false;
@@ -1853,31 +1924,30 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
 
     case NUMERICOID:
         if (with_typemod) {
-            /*
-             * Unconstrained numeric potentially much larger than ClickHouse can
-               do; max it out when no precision specified.
-            */
-            buf = typemod < 0 ? "Decimal(76, 38)"
-                              : printTypmod("Decimal", typemod, typeform->typmodout);
+            buf = printTypmod("Decimal", typemod, typeform->typmodout);
         } else {
-            buf = pstrdup("Decimal");
+            /* ClickHouse reads bare Decimal as Decimal(10, 0), use max precision */
+            buf = pstrdup("Decimal(76, 38)");
         }
         break;
 
     case INTERVALOID:
-        if (with_typemod) {
-            buf = printTypmod("UInt64", typemod, typeform->typmodout);
-        } else {
-            buf = pstrdup("UInt64");
-        }
+        buf = pstrdup("UInt64");
         break;
 
+    case TIMEOID:
     case TIMESTAMPTZOID:
     case TIMESTAMPOID:
-        buf = pstrdup("DateTime");
-        break;
     case DATEOID:
-        buf = pstrdup("Date");
+    case UUIDOID:
+    case JSONOID:
+    case JSONBOID:
+    case POINTOID:
+    case POLYGONOID:
+    case BOXOID:
+    case CIRCLEOID:
+    case LINEOID:
+        buf = pgch_ch_type_for(type_oid, with_typemod ? typemod : -1, true, NULL);
         break;
 
     case VARCHAROID:
@@ -1889,6 +1959,12 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
         break;
     case TEXTOID:
         buf = pstrdup("String");
+        break;
+
+    /* pg-clickhouse-c reads back LineString as path, but CH < 24.6 lacks it */
+    case PATHOID:
+    case LSEGOID:
+        buf = pstrdup("Array(Point)");
         break;
     }
 
@@ -3175,6 +3251,38 @@ deparseByteaLiteral(StringInfo buf, Datum value) {
     appendStringInfoChar(buf, '\'');
 }
 
+/*
+ * Append shortest decimal text that reads back as original float value
+ * Ignore extra_float_digits; use forms ClickHouse accepts as Float64
+ */
+void
+chfdw_append_float_literal(StringInfo buf, double v) {
+    char num[DOUBLE_SHORTEST_DECIMAL_LEN];
+
+    if (isnan(v)) {
+        appendStringInfoString(buf, "nan");
+    } else if (isinf(v)) {
+        appendStringInfoString(buf, v < 0 ? "-inf" : "inf");
+    } else if (v == 0 && signbit(v)) {
+        appendStringInfoString(buf, "-0.");
+    } else {
+        double_to_shortest_decimal_buf(v, num);
+        appendStringInfoString(buf, num);
+    }
+}
+
+/* Shippability admits only point among geometric types */
+void
+chfdw_append_point_literal(StringInfo buf, Datum val) {
+    Point* p = DatumGetPointP(val);
+
+    appendStringInfoChar(buf, '(');
+    chfdw_append_float_literal(buf, p->x);
+    appendStringInfoChar(buf, ',');
+    chfdw_append_float_literal(buf, p->y);
+    appendStringInfoChar(buf, ')');
+}
+
 static void
 emitArrayElement(
     StringInfo buf,
@@ -3411,11 +3519,21 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
         return;
     }
 
+    getTypeOutputInfo(node->consttype, &typoutput, &typIsVarlena);
+
+    /* Bare literal would parse in column timezone, not UTC */
+    if (showtype == 0 && typoutput == F_TIMESTAMPTZ_OUT) {
+        showtype = 1;
+    }
+
+    /* Bare tuple of integers is no geometry type for ClickHouse functions */
+    if (showtype == 0 && chfdw_is_geometric_type(node->consttype)) {
+        showtype = 1;
+    }
+
     if (showtype > 0) {
         appendStringInfoString(buf, "cast(");
     }
-
-    getTypeOutputInfo(node->consttype, &typoutput, &typIsVarlena);
 
     if (typoutput == F_TIMESTAMPTZ_OUT || typoutput == F_TIMESTAMP_OUT) {
         char ts[MAXDATELEN + 1];
@@ -3451,6 +3569,9 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
         goto cleanup;
     } else if (node->consttype == BYTEAOID) {
         deparseByteaLiteral(buf, node->constvalue);
+        goto cleanup;
+    } else if (node->consttype == POINTOID) {
+        chfdw_append_point_literal(buf, node->constvalue);
         goto cleanup;
     } else if (deparseStringDatum(buf, node->constvalue, typoutput)) {
         goto cleanup;
@@ -3515,31 +3636,42 @@ cleanup:
  * in that list as the remote parameter number.  During EXPLAIN, there's
  * no need to identify a parameter number.
  */
+/*
+ * SubPlan scope: a PARAM_EXEC Param here is (usually) a correlation
+ * reference, the planner's replacement for an outer-query Var inside the
+ * subquery (SS_replace_correlation_vars). subplan->parParam and
+ * subplan->args run in parallel: paramid -> the outer expression that
+ * feeds it. Return that expression, or NULL if not a correlation param.
+ */
+static Expr*
+correlation_arg(Param* node, deparse_expr_cxt* context) {
+    ListCell* pp;
+    ListCell* ap;
+
+    if (context->subplan == NULL || node->paramkind != PARAM_EXEC) {
+        return NULL;
+    }
+
+    Assert(context->parent_ctx != NULL);
+
+    forboth(pp, context->subplan->parParam, ap, context->subplan->args) {
+        if (lfirst_int(pp) == node->paramid) {
+            return (Expr*)lfirst(ap);
+        }
+    }
+    return NULL;
+}
+
 static void
 deparseParam(Param* node, deparse_expr_cxt* context) {
-    /*
-     * SubPlan scope: a PARAM_EXEC Param here is (usually) a correlation
-     * reference, the planner's replacement for an outer-query Var inside the
-     * subquery (SS_replace_correlation_vars). subplan->parParam and
-     * subplan->args run in parallel: paramid -> the outer expression that
-     * feeds it. Inline that expression, deparsed in the PARENT scope so it
-     * picks up the outer query's aliases.
-     */
-    if (context->subplan != NULL && node->paramkind == PARAM_EXEC) {
-        ListCell* pp;
-        ListCell* ap;
+    Expr* outer = correlation_arg(node, context);
 
-        Assert(context->parent_ctx != NULL);
-
-        forboth(pp, context->subplan->parParam, ap, context->subplan->args) {
-            if (lfirst_int(pp) == node->paramid) {
-                appendStringInfoChar(context->buf, '(');
-                deparseExpr((Expr*)lfirst(ap), context->parent_ctx);
-                appendStringInfoChar(context->buf, ')');
-                return;
-            }
-        }
-        /* Not a correlation param; fall through to normal handling. */
+    /* Deparse in PARENT scope to pick up outer query's aliases */
+    if (outer) {
+        appendStringInfoChar(context->buf, '(');
+        deparseExpr(outer, context->parent_ctx);
+        appendStringInfoChar(context->buf, ')');
+        return;
     }
 
     if (context->params_list) {
@@ -3565,6 +3697,15 @@ deparseParam(Param* node, deparse_expr_cxt* context) {
     }
 }
 
+/* PostgreSQL intervals retain months, days, microseconds; CH intervals use one unit */
+static char*
+remote_param_type_name(Oid paramtype, int32 paramtypmod) {
+    if (paramtype == INTERVALOID) {
+        return pstrdup("Tuple(Int32, Int32, Int64)");
+    }
+    return deparse_type_name(paramtype, paramtypmod);
+}
+
 /*
  * Print the representation of a parameter to be sent to the remote side
  * by param number and remote data type.
@@ -3577,7 +3718,7 @@ printRemoteParam(
     deparse_expr_cxt* context
 ) {
     StringInfo buf  = context->buf;
-    char* ptypename = deparse_type_name(paramtype, paramtypmod);
+    char* ptypename = remote_param_type_name(paramtype, paramtypmod);
 
     appendStringInfo(buf, "{p%d:%s}", paramindex, ptypename);
 }
@@ -3598,7 +3739,7 @@ printRemoteParam(
 static void
 printRemotePlaceholder(Oid paramtype, int32 paramtypmod, deparse_expr_cxt* context) {
     StringInfo buf  = context->buf;
-    char* ptypename = deparse_type_name(paramtype, paramtypmod);
+    char* ptypename = remote_param_type_name(paramtype, paramtypmod);
 
     appendStringInfo(buf, "((SELECT CAST(null AS Nullable(%s))", ptypename);
 }
@@ -3895,7 +4036,15 @@ deparseGuardedNotIn(SubPlan* subplan, deparse_expr_cxt* context) {
  */
 static void
 deparseSubscriptingRef(SubscriptingRef* node, deparse_expr_cxt* context) {
-    StringInfo buf = context->buf;
+    StringInfo buf  = context->buf;
+    int point_index = point_subscript_index(node);
+
+    if (point_index != 0) {
+        appendStringInfoString(buf, "tupleElement(");
+        deparseExpr(node->refexpr, context);
+        appendStringInfo(buf, ", %d)", point_index);
+        return;
+    }
 
     if (node->reflowerindexpr != NIL) {
         /*
@@ -4323,6 +4472,69 @@ chfdw_translate_to_char_format(const char* pgfmt, StringInfo out) {
     return true;
 }
 
+static bool
+isTimestamp(Expr* arg) {
+    Oid type = exprType((Node*)arg);
+
+    return type == TIMESTAMPOID || type == TIMESTAMPTZOID;
+}
+
+/*
+ * ClickHouse datetime functions use column or server time zones, ignoring
+ * session_timezone. Convert to PostgreSQL TimeZone and interpret Date values
+ * mapped or implicitly cast to timestamp as midnight.
+ */
+static void
+deparseZonedExpr(Expr* arg, deparse_expr_cxt* context) {
+    if (!isTimestamp(arg)) {
+        deparseExpr(arg, context);
+        return;
+    }
+    appendStringInfoString(context->buf, "toDateTime64(");
+    deparseExpr(arg, context);
+    appendStringInfo(context->buf, ", 6, %s)", QUOTED_TZ);
+}
+
+/*
+ * PostgreSQL epoch extraction interprets timestamp and date as UTC and
+ * preserves microseconds. ClickHouse toUnixTimestamp uses instants and
+ * truncates fractional seconds.
+ */
+static void
+deparseEpoch(Expr* arg, deparse_expr_cxt* context) {
+    StringInfo buf = context->buf;
+
+    appendStringInfoString(buf, "(toDecimal64(");
+    if (isTimestamp(arg)) {
+        deparseZonedExpr(arg, context);
+    } else {
+        appendStringInfoString(buf, "toDateTime64(");
+        deparseExpr(arg, context);
+        appendStringInfoString(buf, ", 6, 'UTC')");
+    }
+    appendStringInfoString(buf, ", 6)");
+    if (exprType((Node*)arg) == TIMESTAMPOID) {
+        appendStringInfoString(buf, " + timeZoneOffset(");
+        deparseZonedExpr(arg, context);
+        appendStringInfoChar(buf, ')');
+    }
+    appendStringInfoChar(buf, ')');
+}
+
+/* Preserve fractional seconds that ClickHouse toSecond truncates. */
+static void
+deparseSecond(Expr* arg, deparse_expr_cxt* context) {
+    StringInfo buf = context->buf;
+
+    appendStringInfoString(buf, "(toSecond(");
+    deparseZonedExpr(arg, context);
+    appendStringInfoString(buf, ") + (toDecimal64(");
+    deparseZonedExpr(arg, context);
+    appendStringInfoString(buf, ", 6) - floor(toDecimal64(");
+    deparseZonedExpr(arg, context);
+    appendStringInfoString(buf, ", 6))))");
+}
+
 /*
  * Deparse a function call.
  */
@@ -4348,16 +4560,21 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
      */
     if (node->funcformat == COERCE_EXPLICIT_CAST) {
         Oid rettype = node->funcresulttype;
+        Expr* arg   = linitial(node->args);
         int32 coercedTypmod;
+        /* ClickHouse multiplies Float32 by 10^scale in Float32, breaks at scale 38 */
+        bool widen = rettype == NUMERICOID && exprType((Node*)arg) == FLOAT4OID;
 
         /* Get the typmod if this is a length-coercion function */
         (void)exprIsLengthCoercion((Node*)node, &coercedTypmod);
 
-        appendStringInfoString(buf, "cast(");
-        deparseExpr((Expr*)linitial(node->args), context);
-        appendStringInfo(
-            buf, ", 'Nullable(%s)')", deparse_type_name(rettype, coercedTypmod)
+        appendStringInfoString(buf, widen ? "cast(toFloat64(" : "cast(");
+        deparseExpr(arg, context);
+        appendStringInfoString(buf, widen ? "), " : ", ");
+        deparseStringLiteral(
+            buf, psprintf("Nullable(%s)", deparse_type_name(rettype, coercedTypmod))
         );
+        appendStringInfoChar(buf, ')');
         return;
     }
 
@@ -4401,30 +4618,41 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             appendStringInfoString(buf, ", 6, 'UTC')");
             return;
         }
+        case CF_DATE: {
+            appendStringInfoString(buf, "toDate(");
+            deparseZonedExpr((Expr*)linitial(node->args), context);
+            appendStringInfoChar(buf, ')');
+            return;
+        }
         case CF_DATE_TRUNC: {
             Const* arg      = (Const*)linitial(node->args);
             char* trunctype = TextDatumGetCString(arg->constvalue);
+            const char* fn;
+            /* Match PostgreSQL timestamp results for ClickHouse date functions. */
+            bool date = false;
 
             CSTRING_TOLOWER(trunctype);
-            int cast_to_datetime64 = 0;
 
             if (strcmp(trunctype, "week") == 0) {
-                appendStringInfoString(buf, "toMonday");
+                fn   = "toMonday";
+                date = true;
             } else if (strcmp(trunctype, "second") == 0) {
-                cast_to_datetime64 = 1;
-                appendStringInfoString(buf, "toStartOfSecond");
+                fn = "toStartOfSecond";
             } else if (strcmp(trunctype, "minute") == 0) {
-                appendStringInfoString(buf, "toStartOfMinute");
+                fn = "toStartOfMinute";
             } else if (strcmp(trunctype, "hour") == 0) {
-                appendStringInfoString(buf, "toStartOfHour");
+                fn = "toStartOfHour";
             } else if (strcmp(trunctype, "day") == 0) {
-                appendStringInfoString(buf, "toStartOfDay");
+                fn = "toStartOfDay";
             } else if (strcmp(trunctype, "month") == 0) {
-                appendStringInfoString(buf, "toStartOfMonth");
+                fn   = "toStartOfMonth";
+                date = true;
             } else if (strcmp(trunctype, "quarter") == 0) {
-                appendStringInfoString(buf, "toStartOfQuarter");
+                fn   = "toStartOfQuarter";
+                date = true;
             } else if (strcmp(trunctype, "year") == 0) {
-                appendStringInfoString(buf, "toStartOfYear");
+                fn   = "toStartOfYear";
+                date = true;
             } else {
                 ereport(
                     ERROR,
@@ -4434,14 +4662,14 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             }
 
             pfree(trunctype);
-            if (cast_to_datetime64) {
-                appendStringInfoString(buf, "(toDateTime64(");
-                deparseExpr(list_nth(node->args, 1), context);
-                appendStringInfoString(buf, ", 1))");
-            } else {
-                appendStringInfoChar(buf, '(');
-                deparseExpr(list_nth(node->args, 1), context);
-                appendStringInfoChar(buf, ')');
+            if (date) {
+                appendStringInfoString(buf, "toDateTime64(");
+            }
+            appendStringInfo(buf, "%s(", fn);
+            deparseZonedExpr(list_nth(node->args, 1), context);
+            appendStringInfoChar(buf, ')');
+            if (date) {
+                appendStringInfo(buf, ", 6, %s)", QUOTED_TZ);
             }
             return;
         }
@@ -4452,6 +4680,17 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
 
             CSTRING_TOLOWER(parttype);
 
+            if (strcmp(parttype, "epoch") == 0) {
+                pfree(parttype);
+                deparseEpoch(list_nth(node->args, 1), context);
+                return;
+            }
+            if (strcmp(parttype, "second") == 0 &&
+                isTimestamp(list_nth(node->args, 1))) {
+                pfree(parttype);
+                deparseSecond(list_nth(node->args, 1), context);
+                return;
+            }
             if (strcmp(parttype, "day") == 0) {
                 appendStringInfoString(buf, "toDayOfMonth");
             } else if (strcmp(parttype, "doy") == 0) {
@@ -4475,8 +4714,6 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
                 appendStringInfoString(buf, "toISOYear");
             } else if (strcmp(parttype, "week") == 0) {
                 appendStringInfoString(buf, "toISOWeek");
-            } else if (strcmp(parttype, "epoch") == 0) {
-                appendStringInfoString(buf, "toUnixTimestamp");
             } else {
                 ereport(
                     ERROR,
@@ -4487,7 +4724,7 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
 
             pfree(parttype);
             appendStringInfoChar(buf, '(');
-            deparseExpr(list_nth(node->args, 1), context);
+            deparseZonedExpr(list_nth(node->args, 1), context);
             if (postgres_dow) {
                 /* Mode 2 aligns with Postgres behavior (Sunday = 0). */
                 appendStringInfoString(buf, ", 2");
@@ -4495,7 +4732,6 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             appendStringInfoChar(buf, ')');
             return;
         }
-        case CF_TIMEZONE:
         case CF_ARRAY_PREPEND:
         case CF_STRING_TO_ARRAY:
         case CF_STRING_TO_ARRAY_PART: {
@@ -4665,7 +4901,7 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             }
 
             appendStringInfoChar(buf, '(');
-            deparseExpr((Expr*)linitial(node->args), context);
+            deparseZonedExpr((Expr*)linitial(node->args), context);
             appendStringInfoString(buf, ", ");
             deparseStringLiteral(buf, chfmt.data);
             appendStringInfoChar(buf, ')');
@@ -4861,6 +5097,21 @@ appendIntervalTerm(StringInfo buf, bool plus, int64 amount, const char* unit) {
     );
 }
 
+/*
+ * PostgreSQL adds months and days in TimeZone; ClickHouse uses column time
+ * zone. Convert timestamps to PostgreSQL TimeZone before interval arithmetic.
+ */
+static void
+deparseWideExpr(Expr* first, bool widen, deparse_expr_cxt* context) {
+    if (!widen || isTimestamp(first)) {
+        deparseZonedExpr(first, context);
+        return;
+    }
+    appendStringInfoString(context->buf, "toDateTime64(");
+    deparseExpr(first, context);
+    appendStringInfoString(context->buf, ", 6)");
+}
+
 static void
 deparseIntervalOp(Node* first, Node* second, deparse_expr_cxt* context, bool plus) {
     StringInfo buf = context->buf;
@@ -4872,11 +5123,24 @@ deparseIntervalOp(Node* first, Node* second, deparse_expr_cxt* context, bool plu
      */
     bool widen = span && span->time % USECS_PER_SEC != 0;
 
-    appendStringInfoString(buf, widen ? "(toDateTime64(" : "(");
-    deparseExpr((Expr*)first, context);
-    if (widen) {
-        appendStringInfoString(buf, ", 6)");
+    if (IsA(second, Param) && !correlation_arg((Param*)second, context)) {
+        static const char* const units[] = { "Month", "Day", "Microsecond" };
+
+        appendStringInfoChar(buf, '(');
+        deparseWideExpr((Expr*)first, true, context);
+        for (size_t i = 0; i < lengthof(units); i++) {
+            appendStringInfo(
+                buf, " %c toInterval%s(tupleElement(", plus ? '+' : '-', units[i]
+            );
+            deparseExpr((Expr*)second, context);
+            appendStringInfo(buf, ", %zu))", i + 1);
+        }
+        appendStringInfoChar(buf, ')');
+        return;
     }
+
+    appendStringInfoChar(buf, '(');
+    deparseWideExpr((Expr*)first, widen, context);
 
     if (!span) {
         bool old_op = context->interval_op;
@@ -5617,7 +5881,9 @@ deparseArrayExpr(ArrayExpr* node, deparse_expr_cxt* context) {
 
     /* If the array is empty, we need an explicit cast to the array type. */
     if (node->elements == NIL) {
-        appendStringInfo(buf, ", '%s')", deparse_type_name(node->array_typeid, -1));
+        appendStringInfoString(buf, ", ");
+        deparseStringLiteral(buf, deparse_type_name(node->array_typeid, -1));
+        appendStringInfoChar(buf, ')');
     }
 }
 

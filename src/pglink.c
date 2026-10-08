@@ -328,13 +328,11 @@ native_chunks_cancelled(void* ud pg_attribute_unused()) {
 }
 
 /* Room for every setting native_overrides writes. */
-#define NATIVE_OVERRIDES_MAX 3
+#define NATIVE_OVERRIDES_MAX 5
 
 /*
- * Settings the shared decoder needs from a Native response: the pair
- * PGCH_NATIVE_SETTINGS joins, plus the format itself. Listed one by one
- * because each needs its own server version gate; an unknown HTTP setting
- * fails the query.
+ * Configure Native decoding and PostgreSQL datetime semantics. Unknown HTTP
+ * settings cause query errors, so check server versions before sending them.
  */
 static int
 native_overrides(void* conn, ch_setting out[NATIVE_OVERRIDES_MAX]) {
@@ -344,12 +342,18 @@ native_overrides(void* conn, ch_setting out[NATIVE_OVERRIDES_MAX]) {
 
     /* Format as a setting keeps SQL unchanged, so query parameters work. */
     out[n++] = (ch_setting){ "default_format", "Native" };
+    /* Preserve dates before 1970 in ClickHouse datetime functions. */
+    out[n++] = (ch_setting){ "enable_extended_results_for_datetime_functions", "1" };
     if (chfdw_version_ge(version, 24, 7)) {
         out[n++] =
             (ch_setting){ "output_format_native_encode_types_in_binary_format", "0" };
     }
     if (chfdw_version_ge(version, 24, 10)) {
         out[n++] = (ch_setting){ "output_format_native_write_json_as_string", "1" };
+    }
+    /* Interpret unzoned DateTime64 values in PostgreSQL TimeZone. */
+    if (chfdw_version_ge(version, 23, 6)) {
+        out[n++] = (ch_setting){ "session_timezone", pgch_session_timezone() };
     }
 
     return n;
@@ -425,11 +429,17 @@ again:
  */
 extern char*
 chfdw_datum_to_ch_literal(Datum value, Oid type) {
+    StringInfoData buf;
+
     if (type_is_array(type)) {
         return chfdw_array_to_ch_literal(value);
     }
 
+    initStringInfo(&buf);
     switch (type) {
+    case POINTOID:
+        chfdw_append_point_literal(&buf, value);
+        return buf.data;
     case BOOLOID:
     case INT2OID:
     case INT4OID:
@@ -437,9 +447,11 @@ chfdw_datum_to_ch_literal(Datum value, Oid type) {
     case INT8OID:
         return psprintf(INT64_FORMAT, DatumGetInt64(value));
     case FLOAT4OID:
-        return psprintf("%f", DatumGetFloat4(value));
+        chfdw_append_float_literal(&buf, DatumGetFloat4(value));
+        return buf.data;
     case FLOAT8OID:
-        return psprintf("%f", DatumGetFloat8(value));
+        chfdw_append_float_literal(&buf, DatumGetFloat8(value));
+        return buf.data;
     case NUMERICOID:
         return DatumGetCString(DirectFunctionCall1(numeric_out, value));
     case BPCHAROID:
@@ -482,11 +494,10 @@ chfdw_datum_to_ch_literal(Datum value, Oid type) {
         return pstrdup(date);
     }
     case TIMEOID: {
-        /* we expect DateTime on other side */
         char time[MAXDATELEN + 1];
 
         chfdw_encode_time(DatumGetTimeADT(value), time);
-        return psprintf("1970-01-01 %s", time);
+        return pstrdup(time);
     }
     case TIMESTAMPOID:
     case TIMESTAMPTZOID: {
@@ -495,6 +506,11 @@ chfdw_datum_to_ch_literal(Datum value, Oid type) {
 
         chfdw_encode_timestamp(DatumGetTimestamp(value), ts);
         return pstrdup(ts);
+    }
+    case INTERVALOID: {
+        Interval* span = DatumGetIntervalP(value);
+
+        return psprintf("(%d,%d," INT64_FORMAT ")", span->month, span->day, span->time);
     }
     default:
         ereport(
@@ -667,12 +683,7 @@ binary_is_broken(const void* conn) {
 
 static ch_server_version
 binary_server_version(void* conn) {
-    ch_server_version v = { 0, 0, 0 };
-
-    ch_binary_server_version(
-        (ch_binary_connection_t*)conn, &v.major, &v.minor, &v.patch
-    );
-    return v;
+    return ch_binary_server_version((ch_binary_connection_t*)conn);
 }
 
 static void
