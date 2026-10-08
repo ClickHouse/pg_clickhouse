@@ -31,27 +31,6 @@
 #include "binary_internal.h"
 #include "kv_list.h"
 
-/*
- * output_format_native_write_json_as_string exists on the server from
- * 24.10 onwards. Sending it as `important` against an older server would
- * fail the query, so gate.
- */
-bool
-server_supports_json_as_string(const chc_client* c) {
-    const chc_server_info* info = chc_client_server_info(c);
-
-    if (!info) {
-        return false;
-    }
-    if (info->version_major > 24) {
-        return true;
-    }
-    if (info->version_major == 24 && info->version_minor >= 10) {
-        return true;
-    }
-    return false;
-}
-
 const char*
 ch_binary_exception_message(const chc_exception* ex) {
     if (ex) {
@@ -111,18 +90,18 @@ ch_binary_drain(ch_binary_connection_t* conn, char** out_msg) {
  */
 chc_query_setting*
 ch_binary_query_settings(
-    const chc_client* c,
+    const ch_binary_connection_t* conn,
     const ch_query* query,
     size_t* n_settings
 ) {
-    bool json_as_string = server_supports_json_as_string(c);
-    size_t n            = (query->settings ? (size_t)query->settings->length : 0) +
-                          (json_as_string ? 1 : 0);
+    /* Unknown important settings cause query errors on older servers. */
+    ch_server_version version = ch_binary_server_version(conn);
+    bool json_as_string       = chfdw_version_ge(version, 24, 10);
+    bool timezone             = chfdw_version_ge(version, 23, 6);
+    size_t n = (query->settings ? (size_t)query->settings->length : 0) + 1 +
+               (json_as_string ? 1 : 0) + (timezone ? 1 : 0);
 
     *n_settings = n;
-    if (!n) {
-        return NULL;
-    }
 
     chc_query_setting* settings = palloc0(n * sizeof(*settings));
     size_t i                    = 0;
@@ -134,9 +113,21 @@ ch_binary_query_settings(
         settings[i].important = true;
         i++;
     }
+    /* Preserve dates before 1970 in ClickHouse datetime functions. */
+    settings[i].name      = "enable_extended_results_for_datetime_functions";
+    settings[i].value     = "1";
+    settings[i].important = true;
+    i++;
     if (json_as_string) {
         settings[i].name      = "output_format_native_write_json_as_string";
         settings[i].value     = "1";
+        settings[i].important = true;
+        i++;
+    }
+    if (timezone) {
+        /* Interpret unzoned DateTime64 values in PostgreSQL TimeZone. */
+        settings[i].name      = "session_timezone";
+        settings[i].value     = pgch_session_timezone();
         settings[i].important = true;
     }
     return settings;

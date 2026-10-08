@@ -1,0 +1,9 @@
+SET datestyle = 'ISO';
+CREATE SERVER stz_bin_svr FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'stz_test', driver 'binary');
+CREATE SERVER stz_http_svr FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'stz_test', driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER stz_bin_svr;
+CREATE USER MAPPING FOR CURRENT_USER SERVER stz_http_svr;
+CREATE SERVER stz_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER stz_admin;
+\set ECHO errors
+SKIP: session_timezone unsupported prior to ClickHouse 23.6

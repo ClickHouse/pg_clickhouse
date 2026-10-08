@@ -57,8 +57,8 @@
 /* Aggregate OIDs absent from fmgroids.h on all PG versions. */
 #define F_STRING_AGG_TEXT_TEXT 3538
 
-/* Oft-used syntax to quote quote the session time zone literal string. */
-#define QUOTED_TZ ch_quote_literal(pg_get_timezone_name(session_timezone))
+/* Quote session time zone for ClickHouse SQL. */
+#define QUOTED_TZ ch_quote_literal(pgch_session_timezone())
 
 /* variable counter */
 static uint32 var_counter = 0;
@@ -4472,6 +4472,69 @@ chfdw_translate_to_char_format(const char* pgfmt, StringInfo out) {
     return true;
 }
 
+static bool
+isTimestamp(Expr* arg) {
+    Oid type = exprType((Node*)arg);
+
+    return type == TIMESTAMPOID || type == TIMESTAMPTZOID;
+}
+
+/*
+ * ClickHouse datetime functions use column or server time zones, ignoring
+ * session_timezone. Convert to PostgreSQL TimeZone and interpret Date values
+ * mapped or implicitly cast to timestamp as midnight.
+ */
+static void
+deparseZonedExpr(Expr* arg, deparse_expr_cxt* context) {
+    if (!isTimestamp(arg)) {
+        deparseExpr(arg, context);
+        return;
+    }
+    appendStringInfoString(context->buf, "toDateTime64(");
+    deparseExpr(arg, context);
+    appendStringInfo(context->buf, ", 6, %s)", QUOTED_TZ);
+}
+
+/*
+ * PostgreSQL epoch extraction interprets timestamp and date as UTC and
+ * preserves microseconds. ClickHouse toUnixTimestamp uses instants and
+ * truncates fractional seconds.
+ */
+static void
+deparseEpoch(Expr* arg, deparse_expr_cxt* context) {
+    StringInfo buf = context->buf;
+
+    appendStringInfoString(buf, "(toDecimal64(");
+    if (isTimestamp(arg)) {
+        deparseZonedExpr(arg, context);
+    } else {
+        appendStringInfoString(buf, "toDateTime64(");
+        deparseExpr(arg, context);
+        appendStringInfoString(buf, ", 6, 'UTC')");
+    }
+    appendStringInfoString(buf, ", 6)");
+    if (exprType((Node*)arg) == TIMESTAMPOID) {
+        appendStringInfoString(buf, " + timeZoneOffset(");
+        deparseZonedExpr(arg, context);
+        appendStringInfoChar(buf, ')');
+    }
+    appendStringInfoChar(buf, ')');
+}
+
+/* Preserve fractional seconds that ClickHouse toSecond truncates. */
+static void
+deparseSecond(Expr* arg, deparse_expr_cxt* context) {
+    StringInfo buf = context->buf;
+
+    appendStringInfoString(buf, "(toSecond(");
+    deparseZonedExpr(arg, context);
+    appendStringInfoString(buf, ") + (toDecimal64(");
+    deparseZonedExpr(arg, context);
+    appendStringInfoString(buf, ", 6) - floor(toDecimal64(");
+    deparseZonedExpr(arg, context);
+    appendStringInfoString(buf, ", 6))))");
+}
+
 /*
  * Deparse a function call.
  */
@@ -4555,30 +4618,41 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             appendStringInfoString(buf, ", 6, 'UTC')");
             return;
         }
+        case CF_DATE: {
+            appendStringInfoString(buf, "toDate(");
+            deparseZonedExpr((Expr*)linitial(node->args), context);
+            appendStringInfoChar(buf, ')');
+            return;
+        }
         case CF_DATE_TRUNC: {
             Const* arg      = (Const*)linitial(node->args);
             char* trunctype = TextDatumGetCString(arg->constvalue);
+            const char* fn;
+            /* Match PostgreSQL timestamp results for ClickHouse date functions. */
+            bool date = false;
 
             CSTRING_TOLOWER(trunctype);
-            int cast_to_datetime64 = 0;
 
             if (strcmp(trunctype, "week") == 0) {
-                appendStringInfoString(buf, "toMonday");
+                fn   = "toMonday";
+                date = true;
             } else if (strcmp(trunctype, "second") == 0) {
-                cast_to_datetime64 = 1;
-                appendStringInfoString(buf, "toStartOfSecond");
+                fn = "toStartOfSecond";
             } else if (strcmp(trunctype, "minute") == 0) {
-                appendStringInfoString(buf, "toStartOfMinute");
+                fn = "toStartOfMinute";
             } else if (strcmp(trunctype, "hour") == 0) {
-                appendStringInfoString(buf, "toStartOfHour");
+                fn = "toStartOfHour";
             } else if (strcmp(trunctype, "day") == 0) {
-                appendStringInfoString(buf, "toStartOfDay");
+                fn = "toStartOfDay";
             } else if (strcmp(trunctype, "month") == 0) {
-                appendStringInfoString(buf, "toStartOfMonth");
+                fn   = "toStartOfMonth";
+                date = true;
             } else if (strcmp(trunctype, "quarter") == 0) {
-                appendStringInfoString(buf, "toStartOfQuarter");
+                fn   = "toStartOfQuarter";
+                date = true;
             } else if (strcmp(trunctype, "year") == 0) {
-                appendStringInfoString(buf, "toStartOfYear");
+                fn   = "toStartOfYear";
+                date = true;
             } else {
                 ereport(
                     ERROR,
@@ -4588,14 +4662,14 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             }
 
             pfree(trunctype);
-            if (cast_to_datetime64) {
-                appendStringInfoString(buf, "(toDateTime64(");
-                deparseExpr(list_nth(node->args, 1), context);
-                appendStringInfoString(buf, ", 1))");
-            } else {
-                appendStringInfoChar(buf, '(');
-                deparseExpr(list_nth(node->args, 1), context);
-                appendStringInfoChar(buf, ')');
+            if (date) {
+                appendStringInfoString(buf, "toDateTime64(");
+            }
+            appendStringInfo(buf, "%s(", fn);
+            deparseZonedExpr(list_nth(node->args, 1), context);
+            appendStringInfoChar(buf, ')');
+            if (date) {
+                appendStringInfo(buf, ", 6, %s)", QUOTED_TZ);
             }
             return;
         }
@@ -4606,6 +4680,17 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
 
             CSTRING_TOLOWER(parttype);
 
+            if (strcmp(parttype, "epoch") == 0) {
+                pfree(parttype);
+                deparseEpoch(list_nth(node->args, 1), context);
+                return;
+            }
+            if (strcmp(parttype, "second") == 0 &&
+                isTimestamp(list_nth(node->args, 1))) {
+                pfree(parttype);
+                deparseSecond(list_nth(node->args, 1), context);
+                return;
+            }
             if (strcmp(parttype, "day") == 0) {
                 appendStringInfoString(buf, "toDayOfMonth");
             } else if (strcmp(parttype, "doy") == 0) {
@@ -4629,8 +4714,6 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
                 appendStringInfoString(buf, "toISOYear");
             } else if (strcmp(parttype, "week") == 0) {
                 appendStringInfoString(buf, "toISOWeek");
-            } else if (strcmp(parttype, "epoch") == 0) {
-                appendStringInfoString(buf, "toUnixTimestamp");
             } else {
                 ereport(
                     ERROR,
@@ -4641,7 +4724,7 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
 
             pfree(parttype);
             appendStringInfoChar(buf, '(');
-            deparseExpr(list_nth(node->args, 1), context);
+            deparseZonedExpr(list_nth(node->args, 1), context);
             if (postgres_dow) {
                 /* Mode 2 aligns with Postgres behavior (Sunday = 0). */
                 appendStringInfoString(buf, ", 2");
@@ -4649,7 +4732,6 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             appendStringInfoChar(buf, ')');
             return;
         }
-        case CF_TIMEZONE:
         case CF_ARRAY_PREPEND:
         case CF_STRING_TO_ARRAY:
         case CF_STRING_TO_ARRAY_PART: {
@@ -4819,7 +4901,7 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             }
 
             appendStringInfoChar(buf, '(');
-            deparseExpr((Expr*)linitial(node->args), context);
+            deparseZonedExpr((Expr*)linitial(node->args), context);
             appendStringInfoString(buf, ", ");
             deparseStringLiteral(buf, chfmt.data);
             appendStringInfoChar(buf, ')');
@@ -5015,6 +5097,21 @@ appendIntervalTerm(StringInfo buf, bool plus, int64 amount, const char* unit) {
     );
 }
 
+/*
+ * PostgreSQL adds months and days in TimeZone; ClickHouse uses column time
+ * zone. Convert timestamps to PostgreSQL TimeZone before interval arithmetic.
+ */
+static void
+deparseWideExpr(Expr* first, bool widen, deparse_expr_cxt* context) {
+    if (!widen || isTimestamp(first)) {
+        deparseZonedExpr(first, context);
+        return;
+    }
+    appendStringInfoString(context->buf, "toDateTime64(");
+    deparseExpr(first, context);
+    appendStringInfoString(context->buf, ", 6)");
+}
+
 static void
 deparseIntervalOp(Node* first, Node* second, deparse_expr_cxt* context, bool plus) {
     StringInfo buf = context->buf;
@@ -5029,9 +5126,8 @@ deparseIntervalOp(Node* first, Node* second, deparse_expr_cxt* context, bool plu
     if (IsA(second, Param) && !correlation_arg((Param*)second, context)) {
         static const char* const units[] = { "Month", "Day", "Microsecond" };
 
-        appendStringInfoString(buf, "(toDateTime64(");
-        deparseExpr((Expr*)first, context);
-        appendStringInfoString(buf, ", 6)");
+        appendStringInfoChar(buf, '(');
+        deparseWideExpr((Expr*)first, true, context);
         for (size_t i = 0; i < lengthof(units); i++) {
             appendStringInfo(
                 buf, " %c toInterval%s(tupleElement(", plus ? '+' : '-', units[i]
@@ -5043,11 +5139,8 @@ deparseIntervalOp(Node* first, Node* second, deparse_expr_cxt* context, bool plu
         return;
     }
 
-    appendStringInfoString(buf, widen ? "(toDateTime64(" : "(");
-    deparseExpr((Expr*)first, context);
-    if (widen) {
-        appendStringInfoString(buf, ", 6)");
-    }
+    appendStringInfoChar(buf, '(');
+    deparseWideExpr((Expr*)first, widen, context);
 
     if (!span) {
         bool old_op = context->interval_op;

@@ -379,7 +379,6 @@ typedef enum {
     CF_DATE_PART,            /* date_part function */
     CF_DATETIME_PL_INTERVAL, /* date/timestamp/timestamptz + interval */
     CF_DATETIME_MI_INTERVAL, /* date/timestamp/timestamptz - interval */
-    CF_TIMEZONE,             /* timezone */
     CF_HSTORE_FETCHVAL,      /* -> operation on hstore */
     CF_RE2_MATCH,            /* @~ re operation */
     CF_INTARRAY_IDX,
@@ -404,6 +403,7 @@ typedef enum {
     CF_CURRENT_SCHEMA,         /* CF_CURRENT_SCHEMA → string literal */
     CF_CLOCK_TIMESTAMP,        /* clock_timestamp → nowInBlock64(6, $TZ) */
     CF_TO_TIMESTAMP,           /* to_timestamp → toDateTime64($arg, 6, 'UTC') */
+    CF_DATE,                   /* date → toDate($arg, $TZ) */
     CF_ARRAY_LENGTH,           /* array_length(array, 1) → nullIf(length(), 0) */
     CF_ARRAY_POSITION,         /* array_position → nullIf(indexOf(), 0) */
     CF_ARRAY_PREPEND,          /* array_prepend → arrayPushFront, swap args */

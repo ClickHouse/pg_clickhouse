@@ -80,17 +80,13 @@ struct ch_binary_connection_t {
 extern void
 ch_binary_set_deadline(ch_binary_connection_t* conn, int64_t deadline_us);
 
-/* True if server advertises output_format_native_write_json_as_string. */
-extern bool
-server_supports_json_as_string(const chc_client* c);
-
 /*
- * Collect settings for query, adding session settings before driver settings.
- * Store number of settings in *n_settings and return NULL when list is empty.
+ * Collect query settings, adding session settings before driver settings.
+ * Store number of settings in *n_settings.
  */
 extern chc_query_setting*
 ch_binary_query_settings(
-    const chc_client* c,
+    const ch_binary_connection_t* conn,
     const ch_query* query,
     size_t* n_settings
 );

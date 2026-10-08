@@ -112,12 +112,12 @@ SET enable_sort TO off;
 -- subquery using stable function (can't be sent to remote, but is?)
 PREPARE st2(int) AS SELECT * FROM bin_test.ft1 t1 WHERE t1.c1 < $2 AND t1.c3 IN (SELECT c3 FROM bin_test.ft2 t2 WHERE c1 > $1 AND date(c4) = date('1970-01-17')) ORDER BY c1;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st2(10, 20);
-                                                                                                                              QUERY PLAN                                                                                                                              
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                   QUERY PLAN                                                                                                                                                   
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
    Relations: (ft1 t1) LEFT SEMI JOIN (ft2 t2)
-   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((date(r3.c4) = '1970-01-17')) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
+   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((toDate(toDateTime64(r3.c4, 6, 'America/Los_Angeles')) = '1970-01-17')) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
 (4 rows)
 
 EXECUTE st2(10, 20);
@@ -136,12 +136,12 @@ RESET enable_sort;
 -- subquery using immutable function (can be sent to remote)
 PREPARE st3(int) AS SELECT * FROM bin_test.ft1 t1 WHERE t1.c1 < $2 AND t1.c3 IN (SELECT c3 FROM bin_test.ft2 t2 WHERE c1 > $1 AND date(c5) = date('1970-01-17'::timestamptz)) ORDER BY c1;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st3(10, 20);
-                                                                                                                                                    QUERY PLAN                                                                                                                                                     
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                                              QUERY PLAN                                                                                                                                                                                               
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
    Relations: (ft1 t1) LEFT SEMI JOIN (ft2 t2)
-   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((date(r3.c5) = date(cast('1970-01-17 08:00:00' as DateTime64(6, 'UTC'))))) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
+   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((toDate(toDateTime64(r3.c5, 6, 'America/Los_Angeles')) = toDate(toDateTime64(cast('1970-01-17 08:00:00' as DateTime64(6, 'UTC')), 6, 'America/Los_Angeles')))) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
 (4 rows)
 
 EXECUTE st3(10, 20);
@@ -413,11 +413,11 @@ EXECUTE st11('1960-01-01');
 
 PREPARE st12(interval) AS SELECT id FROM bin_test.typed WHERE ts + $1 >= '2026-10-29 00:00:00+00' ORDER BY id;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st12('1 month 0.5 seconds');
-                                                                                                                                                                                   QUERY PLAN                                                                                                                                                                                    
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                                               QUERY PLAN                                                                                                                                                                                               
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on bin_test.typed
    Output: id
-   Remote SQL: SELECT id FROM param_test.typed WHERE (((toDateTime64(ts, 6) + toIntervalMonth(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 1)) + toIntervalDay(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 2)) + toIntervalMicrosecond(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 3))) >= cast('2026-10-29 00:00:00' as DateTime64(6, 'UTC')))) ORDER BY id ASC NULLS LAST
+   Remote SQL: SELECT id FROM param_test.typed WHERE (((toDateTime64(ts, 6, 'America/Los_Angeles') + toIntervalMonth(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 1)) + toIntervalDay(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 2)) + toIntervalMicrosecond(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 3))) >= cast('2026-10-29 00:00:00' as DateTime64(6, 'UTC')))) ORDER BY id ASC NULLS LAST
 (3 rows)
 
 EXECUTE st12('1 month 0.5 seconds');
@@ -582,12 +582,12 @@ SET enable_sort TO off;
 -- subquery using stable function (can't be sent to remote, but is?)
 PREPARE st2(int) AS SELECT * FROM http_test.ft1 t1 WHERE t1.c1 < $2 AND t1.c3 IN (SELECT c3 FROM http_test.ft2 t2 WHERE c1 > $1 AND date(c4) = date('1970-01-17')) ORDER BY c1;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st2(10, 20);
-                                                                                                                              QUERY PLAN                                                                                                                              
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                   QUERY PLAN                                                                                                                                                   
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
    Relations: (ft1 t1) LEFT SEMI JOIN (ft2 t2)
-   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((date(r3.c4) = '1970-01-17')) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
+   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((toDate(toDateTime64(r3.c4, 6, 'America/Los_Angeles')) = '1970-01-17')) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
 (4 rows)
 
 EXECUTE st2(10, 20);
@@ -606,12 +606,12 @@ RESET enable_sort;
 -- subquery using immutable function (can be sent to remote)
 PREPARE st3(int) AS SELECT * FROM http_test.ft1 t1 WHERE t1.c1 < $2 AND t1.c3 IN (SELECT c3 FROM http_test.ft2 t2 WHERE c1 > $1 AND date(c5) = date('1970-01-17'::timestamptz)) ORDER BY c1;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st3(10, 20);
-                                                                                                                                                    QUERY PLAN                                                                                                                                                     
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                                              QUERY PLAN                                                                                                                                                                                               
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
    Relations: (ft1 t1) LEFT SEMI JOIN (ft2 t2)
-   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((date(r3.c5) = date(cast('1970-01-17 08:00:00' as DateTime64(6, 'UTC'))))) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
+   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((toDate(toDateTime64(r3.c5, 6, 'America/Los_Angeles')) = toDate(toDateTime64(cast('1970-01-17 08:00:00' as DateTime64(6, 'UTC')), 6, 'America/Los_Angeles')))) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
 (4 rows)
 
 EXECUTE st3(10, 20);
@@ -883,11 +883,11 @@ EXECUTE st11('1960-01-01');
 
 PREPARE st12(interval) AS SELECT id FROM http_test.typed WHERE ts + $1 >= '2026-10-29 00:00:00+00' ORDER BY id;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st12('1 month 0.5 seconds');
-                                                                                                                                                                                   QUERY PLAN                                                                                                                                                                                    
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                                               QUERY PLAN                                                                                                                                                                                               
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on http_test.typed
    Output: id
-   Remote SQL: SELECT id FROM param_test.typed WHERE (((toDateTime64(ts, 6) + toIntervalMonth(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 1)) + toIntervalDay(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 2)) + toIntervalMicrosecond(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 3))) >= cast('2026-10-29 00:00:00' as DateTime64(6, 'UTC')))) ORDER BY id ASC NULLS LAST
+   Remote SQL: SELECT id FROM param_test.typed WHERE (((toDateTime64(ts, 6, 'America/Los_Angeles') + toIntervalMonth(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 1)) + toIntervalDay(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 2)) + toIntervalMicrosecond(tupleElement({p1:Tuple(Int32, Int32, Int64)}, 3))) >= cast('2026-10-29 00:00:00' as DateTime64(6, 'UTC')))) ORDER BY id ASC NULLS LAST
 (3 rows)
 
 EXECUTE st12('1 month 0.5 seconds');

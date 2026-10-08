@@ -328,13 +328,11 @@ native_chunks_cancelled(void* ud pg_attribute_unused()) {
 }
 
 /* Room for every setting native_overrides writes. */
-#define NATIVE_OVERRIDES_MAX 3
+#define NATIVE_OVERRIDES_MAX 5
 
 /*
- * Settings the shared decoder needs from a Native response: the pair
- * PGCH_NATIVE_SETTINGS joins, plus the format itself. Listed one by one
- * because each needs its own server version gate; an unknown HTTP setting
- * fails the query.
+ * Configure Native decoding and PostgreSQL datetime semantics. Unknown HTTP
+ * settings cause query errors, so check server versions before sending them.
  */
 static int
 native_overrides(void* conn, ch_setting out[NATIVE_OVERRIDES_MAX]) {
@@ -344,12 +342,18 @@ native_overrides(void* conn, ch_setting out[NATIVE_OVERRIDES_MAX]) {
 
     /* Format as a setting keeps SQL unchanged, so query parameters work. */
     out[n++] = (ch_setting){ "default_format", "Native" };
+    /* Preserve dates before 1970 in ClickHouse datetime functions. */
+    out[n++] = (ch_setting){ "enable_extended_results_for_datetime_functions", "1" };
     if (chfdw_version_ge(version, 24, 7)) {
         out[n++] =
             (ch_setting){ "output_format_native_encode_types_in_binary_format", "0" };
     }
     if (chfdw_version_ge(version, 24, 10)) {
         out[n++] = (ch_setting){ "output_format_native_write_json_as_string", "1" };
+    }
+    /* Interpret unzoned DateTime64 values in PostgreSQL TimeZone. */
+    if (chfdw_version_ge(version, 23, 6)) {
+        out[n++] = (ch_setting){ "session_timezone", pgch_session_timezone() };
     }
 
     return n;
@@ -679,12 +683,7 @@ binary_is_broken(const void* conn) {
 
 static ch_server_version
 binary_server_version(void* conn) {
-    ch_server_version v = { 0, 0, 0 };
-
-    ch_binary_server_version(
-        (ch_binary_connection_t*)conn, &v.major, &v.minor, &v.patch
-    );
-    return v;
+    return ch_binary_server_version((ch_binary_connection_t*)conn);
 }
 
 static void

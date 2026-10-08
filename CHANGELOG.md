@@ -40,8 +40,22 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed ClickHouse type mappings for date, time, timestamp, UUID, and JSON
     casts and parameters, preserving timestamp precision and UTC semantics for
     `timestamptz` ([#389]).
-*   Preserved floating-point parameter values with shortest round-trip literals,
-    including `NaN` and infinities ([#389]).
+*   Set ClickHouse `session_timezone` to PostgreSQL `TimeZone` on ClickHouse
+    23.6 and later. This makes ClickHouse interpret unzoned timestamp literals
+    and parameters using PostgreSQL's time zone ([#389]).
+*   Matched PostgreSQL `TimeZone` when pushing down `date_part`, `extract`,
+    `date_trunc`, `to_char`, `date`, and timestamp arithmetic with intervals,
+    regardless of ClickHouse column or server time zones ([#389]).
+*   Preserved microseconds in pushed down `date_part('second')` and
+    `date_part('epoch')`. PostgreSQL interprets `timestamp` and `date` values
+    as UTC for epoch extraction ([#389]).
+*   Fixed pushdown of `date_trunc` to return timestamps for `week`, `month`,
+    `quarter`, and `year`, allowing comparisons with timestamps. Enabled
+    `enable_extended_results_for_datetime_functions` to support dates before
+    1970 ([#389]).
+*   Don't push down `timezone()` or `AT TIME ZONE` ([#389]).
+*   Preserved floating-point parameter values with shortest round-trip
+    literals, including `NaN` and infinities ([#389]).
 *   Fixed bare `numeric` casts to use `Nullable(Decimal(76, 38))` ([#389]).
 *   Fixed GCC 15 build failure caused by a `-Wclobbered` error in binary
     driver connection setup ([#395]).

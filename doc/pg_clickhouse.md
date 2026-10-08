@@ -1135,6 +1135,27 @@ or `bigint` to read and write counts of their units. For example, an
 `IntervalNanosecond` to `bigint` preserves nanoseconds, while mapping to
 `interval` truncates to microseconds.
 
+### Time Zones
+
+On ClickHouse 23.6 and later, pg_clickhouse sets ClickHouse
+[session_timezone] to PostgreSQL [TimeZone] for each query. This overrides
+`session_timezone` in [`pg_clickhouse.session_settings`]. ClickHouse uses the
+setting to parse and format `DateTime` and `DateTime64` values without an
+explicit time zone, including timestamp literals and parameters. Older
+ClickHouse versions use the server time zone.
+
+ClickHouse date and time functions use each column's time zone, or the server
+time zone when a column has none. They do not use `session_timezone`. To match
+PostgreSQL, pg_clickhouse converts timestamp arguments to `DateTime64` in
+PostgreSQL's `TimeZone` when it pushes down `date_part`, `extract`,
+`date_trunc`, `to_char`, and `date`. A `Date` column mapped to `timestamp` is
+treated as midnight. Timestamp arithmetic with intervals also uses
+PostgreSQL's `TimeZone`, so month and day calculations follow daylight savings.
+
+When PostgreSQL's `TimeZone` is a fixed UTC offset, ClickHouse supports
+offsets in 15-minute increments from −14:00 through +14:00. Other fixed
+offsets raise an error.
+
 ### BYTEA
 
 ClickHouse does not provide the equivalent of the PostgreSQL [BYTEA] type, but
@@ -1603,11 +1624,15 @@ equivalents as follows:
     *   `date_part('month')`: [toMonth](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toMonth)
     *   `date_part('hour')`: [toHour](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toHour)
     *   `date_part('minute')`: [toMinute](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toMinute)
-    *   `date_part('second')`: [toSecond](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toSecond)
+    *   `date_part('second')`: [toSecond](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toSecond),
+        with fractional seconds preserved for timestamps
     *   `date_part('quarter')`: [toQuarter](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toQuarter)
     *   `date_part('isoyear')`: [toISOYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toISOYear)
     *   `date_part('week')`: [toISOYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toISOWeek)
-    *   `date_part('epoch')`: [toISOYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toUnixTimestamp)
+    *   `date_part('epoch')`: cast [toDateTime64](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#todatetime64)
+        to `Decimal64(6)` to preserve microseconds; for `timestamp`, adjust
+        with [timeZoneOffset](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#timeZoneOffset)
+        so PostgreSQL interprets the wall-clock value as UTC
 *   `date_trunc`:
     *   `date_trunc('week')`: [toMonday](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toMonday)
     *   `date_trunc('second')`: [toStartOfSecond](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfSecond)
@@ -1619,7 +1644,6 @@ equivalents as follows:
     *   `date_trunc('year')`: [toStartOfYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfYear)
 *   `extract(field FROM source)`: same mappings as `date_part`
 *   `date(timestamp)` & `date(timestamptz)`: [toDate](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#toDate)
-    (deparsed as CH alias `date`)
 *   `array_position`: [indexOf](https://clickhouse.com/docs/sql-reference/functions/array-functions#indexOf) with
     [nullIf](https://clickhouse.com/docs/reference/functions/regular-functions/functions-for-nulls#nullif)
     to convert `0` to `NULL` and
@@ -2075,6 +2099,13 @@ other backslash sequences are treated as literal text.
 
 Copyright (c) 2025-2026, ClickHouse.
 
+  [session_timezone]: https://clickhouse.com/docs/operations/settings/settings#session_timezone
+    "ClickHouse Docs: session_timezone"
+  [enable_extended_results_for_datetime_functions]: https://clickhouse.com/docs/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions
+    "ClickHouse Docs: enable_extended_results_for_datetime_functions"
+  [TimeZone]: https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-TIMEZONE
+    "PostgreSQL Docs: TimeZone"
+  [`pg_clickhouse.session_settings`]: #pg_clickhousesession_settings
   [foreign data wrapper]: https://www.postgresql.org/docs/current/fdwhandler.html
     "PostgreSQL Docs: Writing a Foreign Data Wrapper"
   [Docker image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse
