@@ -34,6 +34,8 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### 🐞 Bug Fixes
 
+*   Fixed unconstrained numeric casts and parameters to use Decimal(76, 38),
+    widening Float32 before casting to preserve fractional values ([#402]).
 *   Fixed GCC 15 build failure caused by a `-Wclobbered` error in binary
     driver connection setup ([#395]).
 *   Added checks to prevent the pushdown of custom functions or
@@ -54,6 +56,8 @@ All notable changes to this project will be documented in this file. It uses the
   [regr_syy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_syy
   [#397]: https://github.com/ClickHouse/pg_clickhouse/pull/397
     "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
+  [#402]: https://github.com/ClickHouse/pg_clickhouse/pull/402
+    "ClickHouse/pg_clickhouse#402 Specify precision for unconstrained numeric casts"
 
 ## [v0.11.0] — 2026-09-30
 

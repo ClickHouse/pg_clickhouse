@@ -2196,16 +2196,21 @@ SELECT i64 FROM t6 WHERE power(f64, 2::float8) < 1 ORDER BY i64;
 -- https://github.com/ClickHouse/ClickHouse/issues/115327
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
-                                                          QUERY PLAN                                                           
--------------------------------------------------------------------------------------------------------------------------------
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((modulo(cast(a, 'Nullable(Decimal)'), 3) = 0)) ORDER BY a ASC NULLS LAST
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((modulo(cast(a, 'Nullable(Decimal(76, 38))'), 3) = 0)) ORDER BY a ASC NULLS LAST
 (3 rows)
 
 SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing (CAST(a, 'Nullable(Decimal)') % 3) = 0
-DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((modulo(cast(a, 'Nullable(Decimal)'), 3) = 0)) ORDER BY a ASC NULLS LAST
+ a 
+---
+ 3
+ 6
+ 9
+(3 rows)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
                            QUERY PLAN                           
@@ -2303,16 +2308,19 @@ SELECT i64 FROM t6 WHERE abs(f64) = 0;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE abs(a::numeric) = 5;
-                                          QUERY PLAN                                           
------------------------------------------------------------------------------------------------
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((abs(cast(a, 'Nullable(Decimal)')) = 5))
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((abs(cast(a, 'Nullable(Decimal(76, 38))')) = 5))
 (3 rows)
 
 SELECT a FROM t3 WHERE abs(a::numeric) = 5;
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing abs(CAST(a, 'Nullable(Decimal)')) = 5
-DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((abs(cast(a, 'Nullable(Decimal)')) = 5))
+ a 
+---
+ 5
+(1 row)
+
 -- factorial(int8) pushes down.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE factorial(a) = 120;
@@ -2347,28 +2355,33 @@ SELECT i64 FROM t6 WHERE round(f64) = 0;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE round(a::numeric) = 5;
-                                             QUERY PLAN                                             
-----------------------------------------------------------------------------------------------------
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round(cast(a, 'Nullable(Decimal)'), 0) = 5))
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round(cast(a, 'Nullable(Decimal(76, 38))'), 0) = 5))
 (3 rows)
 
 SELECT a FROM t3 WHERE round(a::numeric) = 5;
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing round(CAST(a, 'Nullable(Decimal)'), 0) = 5
-DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((round(cast(a, 'Nullable(Decimal)'), 0) = 5))
+ a 
+---
+ 5
+(1 row)
+
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
-                                                 QUERY PLAN                                                  
--------------------------------------------------------------------------------------------------------------
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round((cast(a, 'Nullable(Decimal)') / 3), 2) = 1.67))
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round((cast(a, 'Nullable(Decimal(76, 38))') / 3), 2) = 1.67))
 (3 rows)
 
 SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing round(CAST(a, 'Nullable(Decimal)') / 3, 2) = 1.67
-DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((round((cast(a, 'Nullable(Decimal)') / 3), 2) = 1.67))
+ a 
+---
+(0 rows)
+
 -- Trig functions push down at f64 = 0 where PG and CH agree exactly.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT i64 FROM t6 WHERE i64 = 0 AND sin(f64) = 0;
