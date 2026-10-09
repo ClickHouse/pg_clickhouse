@@ -1,3 +1,4 @@
+\i test/include/normalize.sql
 CREATE SERVER where_sub_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'where_sub_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER where_sub_loopback;
 
@@ -29,7 +30,7 @@ IMPORT FOREIGN SCHEMA "where_sub_test" FROM SERVER where_sub_loopback INTO where
 -- \d where_sub.orders
 -- \d where_sub.lines
 
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT class, COUNT(*) AS order_count
   FROM where_sub.orders
  WHERE date >= date '2025-07-01'
@@ -39,7 +40,7 @@ SELECT class, COUNT(*) AS order_count
         WHERE order_id = id AND created_at < updated_at
    )
  GROUP BY class
- ORDER BY class;
+ ORDER BY class$$);
 
 CALL clickhouse_perform('where_sub_admin', 'DROP DATABASE where_sub_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER where_sub_loopback;

@@ -48,18 +48,6 @@ binary.sql
  26+        | binary.out
  < 26       | binary_1.out
 
-binary_inserts.sql
-------------------
-
- Postgres | File
-----------|----------------------
- 18-19    | binary_inserts.out
- 14-17    | binary_inserts_1.out
-
- ClickHouse | File
-------------|--------------------
- 23+        | binary_inserts.out
-
 binary_nullable_json.sql
 ------------------------
 
@@ -72,35 +60,6 @@ binary_nullable_json.sql
  25.8+      | binary_nullable_json.out
  25.3       | binary_nullable_json_1.out
  23.3-25.2  | binary_nullable_json_2.out
-
-binary_queries.sql
-------------------
-
- Postgres | File
-----------|----------------------
- 19       | binary_queries.out
- 18       | binary_queries_1.out
- 17       | binary_queries_2.out
- 16       | binary_queries_3.out
- 14-15    | binary_queries_4.out
-
- ClickHouse | File
-------------|----------------------
- 26         | binary_queries.out
- 23.8-25    | binary_queries_5.out
- 23.3       | binary_queries_6.out
-
-deparse_checks.sql
-------------------
-
- Postgres | File
-----------|----------------------
- 18-19    | deparse_checks.out
- 14-17    | deparse_checks_1.out
-
- ClickHouse | File
-------------|--------------------
- 23+        | deparse_checks.out
 
 docs_offload_partition.sql
 --------------------------
@@ -115,18 +74,6 @@ docs_offload_partition.sql
 ------------|------------------------------
  23+        | docs_offload_partition.out
 
-engines.sql
------------
-
- Postgres | File
-----------|---------------
- 18-19    | engines.out
- 14-17    | engines_1.out
-
- ClickHouse | File
-------------|-------------
- 23+        | engines.out
-
 functions.sql
 -------------
 
@@ -134,8 +81,7 @@ functions.sql
 ----------|---------------
  19       | functions.out
  18       | functions_1.out
- 15-17    | functions_2.out
- 14       | functions_3.out
+ 14-17    | functions_2.out
 
  ClickHouse | File
 ------------|-----------------
@@ -147,43 +93,6 @@ functions.sql
  23.8       | functions_8.out
  23.3       | functions_9.out
 
-hashing.sql
------------
-
- Postgres | File
-----------|---------------
- 19       | hashing.out
- 14-18    | hashing_1.out
-
-http.sql
---------
-
- Postgres | File
-----------|------------
- 19       | http.out
- 18       | http_1.out
- 17       | http_2.out
- 16       | http_3.out
- 14-15    | http_4.out
-
- ClickHouse | File
-------------|------------
- 23.8+      | http.out
- 23.3       | http_5.out
-
-http_inserts.sql
-----------------
-
- Postgres | File
-----------|--------------------
- 18-19    | http_inserts.out
- 14-17    | http_inserts_1.out
-
- ClickHouse | File
-------------|--------------------
- 24+        | http_inserts.out
- 23         | http_inserts_2.out
-
 ilike_regex.sql
 ---------------
  Postgres | File
@@ -194,19 +103,6 @@ ilike_regex.sql
 ------------|-------------------
  25+        | ilike_regex.out
  23-24      | ilike_regex_1.out
-
-import_schema.sql
------------------
-
- Postgres | File
-----------|---------------------
- 18-19    | import_schema.out
- 14-17    | import_schema_1.out
-
- ClickHouse | File
-------------|---------------------
- 26.7+      | import_schema.out
- 23.3-26.6  | import_schema_2.out
 
 interval.sql
 ------------
@@ -258,22 +154,8 @@ nested.sql
 
  ClickHouse | File
 ------------|--------------
- 26.8+      | nested.out
- 25.1-26.3  | nested_1.out
- 23+        | nested_2.out
-
-param.sql
----------
-
- Postgres | File
-----------|-------------
- 19       | param.out
- 17-18    | param_1.out
- 14-16    | param_2.out
-
- ClickHouse | File
-------------|-----------
- 23+        | param.out
+ 25.1+      | nested.out
+ < 25.1     | nested_2.out
 
 regex.sql
 ---------
@@ -292,9 +174,7 @@ subplan_pushdown.sql
  Postgres | File
 ----------|------------------------
  19       | subplan_pushdown.out
- 17-18    | subplan_pushdown_1.out
- 16       | subplan_pushdown_2.out
- 14-15    | subplan_pushdown_3.out
+ 14-18    | subplan_pushdown_1.out
 
 ClickHouse | File
 ------------|--------------------------------------
@@ -313,30 +193,6 @@ subquery_eq.sql
 ------------|----------------------------------
  25.8+      | subquery_eq.out (per Postgres, above)
  < 25.8     | subquery_eq_2.out (test aborts)
-
-subquery_pushdown.sql
----------------------
-
- Postgres | File
-----------|-------------------------
- 18-19    | subquery_pushdown.out
- 14-17    | subquery_pushdown_1.out
-
- ClickHouse | File
-------------|-----------------------
- 23+        | subquery_pushdown.out
-
-timezone.sql
-------------
-
- Postgres | File
-----------|--------------
- 14-19    | timezone.out
-
- ClickHouse | File
-------------|----------------
- 25.8+      | timezone.out
- 23-25.7    | timezone_1.out
 
 vector_pushdown.sql
 -------------------
@@ -363,18 +219,6 @@ vector_types.sql
  25.8+      | installed | vector_types.out
  23.3-25.3  | installed | vector_types_1.out
  any        | absent    | vector_types_2.out
-
-where_sub.sql
--------------
-
- Postgres | File
-----------|-----------------
- 18-19    | where_sub.out
- 14-17    | where_sub_1.out
-
- ClickHouse | File
-------------|-----------------
- 23+        | where_sub.out
 
 window_functions.sql
 --------------------

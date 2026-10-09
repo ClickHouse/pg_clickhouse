@@ -1,4 +1,5 @@
 SET datestyle = 'ISO';
+\i test/include/normalize.sql
 CREATE SERVER binary_queries_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'binary_queries_test', driver 'binary');
 CREATE SERVER binary_queries_loopback2 FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'binary_queries_test', driver 'binary');
 
@@ -91,11 +92,11 @@ SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work
 
 ALTER SERVER binary_queries_loopback OPTIONS (SET dbname 'no such database');
 
-SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should fail
+SELECT * FROM pg_temp.error_filter($$SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1$$);  -- should fail
 
 ALTER USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback OPTIONS (ADD user 'no such user');
 
-SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should fail
+SELECT * FROM pg_temp.error_filter($$SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1$$);  -- should fail
 
 ALTER SERVER binary_queries_loopback OPTIONS (SET dbname 'binary_queries_test');
 ALTER USER MAPPING FOR CURRENT_USER SERVER binary_queries_loopback OPTIONS (DROP user);
@@ -140,7 +141,7 @@ SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 JOIN ft1 t2 ON (t1.c1 = t2.c1) order by
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) OFFSET 100 LIMIT 10;
 
-EXPLAIN SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
+SELECT * FROM pg_temp.explain_filter($$EXPLAIN SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10$$);
 SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
 
 RESET enable_hashjoin;
@@ -150,9 +151,9 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE t1.c1 = 1;         -- Va
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE t1.c1 = 100 AND t1.c2 = 0; -- BoolExpr
 
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 IS NULL;        -- NullTest
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c3 IS NULL;        -- NullTest
 
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 IS NOT NULL;    -- NullTest
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c3 IS NOT NULL;    -- NullTest
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE round(abs(c1), 0) = 1; -- FuncExpr
 
@@ -162,8 +163,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE 1 = factorial(c1);      
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c6 IS DISTINCT FROM c7; -- DistinctExpr
 
--- Optimized away on Postgres 19+ by commit e2debb643
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE (c1 IS NOT NULL) IS DISTINCT FROM (c1 IS NOT NULL); -- DistinctExpr + NullTest
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE (c3 IS NOT NULL) IS DISTINCT FROM (c8 = 'foo'); -- DistinctExpr + NullTest
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = ANY(ARRAY[c2, 1, c1 + 0]); -- ScalarArrayOpExpr
 
@@ -193,8 +193,13 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FROM ft2;
 SELECT COUNT(DISTINCT c1) FROM ft2;
 
 /* DISTINCT with IF */
+-- Postgres 16+ presorts DISTINCT aggregate input, pushing ORDER BY down.
+-- Disable so all versions plan alike
+BEGIN;
+DO $$BEGIN IF current_setting('server_version_num')::int >= 160000 THEN SET LOCAL enable_presorted_aggregate = off; END IF; END$$;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
 SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
+COMMIT;
 
 /* https://github.com/ClickHouse/pg_clickhouse/issues/25 */
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(*) FILTER (WHERE c1 < 20) FROM ft2;
@@ -202,7 +207,7 @@ SELECT COUNT(*) FILTER (WHERE c1 < 10) FROM ft2;
 
 -- Pulled-up subqueries can place an outer-join RTE before the base foreign
 -- tables represented by a pushed-down scan.
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT t4.c1, COUNT(DISTINCT t4.c2)
 FROM (SELECT * FROM ft1) t1
 JOIN (SELECT * FROM ft2) t2 ON t1.c1 = t2.c1
@@ -210,7 +215,7 @@ LEFT JOIN (SELECT * FROM ft4) t3 ON t1.c2 = t3.c2
 JOIN (SELECT * FROM ft5) t4 ON t2.c1 = t4.c1
 WHERE t1.c1 < 4
 GROUP BY t4.c1
-ORDER BY t4.c1;
+ORDER BY t4.c1$$);
 
 SELECT t4.c1, COUNT(DISTINCT t4.c2)
 FROM (SELECT * FROM ft1) t1

@@ -1,0 +1,111 @@
+\i test/include/normalize.sql
+\set normalize_echo :ECHO
+\set ECHO none
+-- Explicit endpoint options, empty dbname falls back to default
+CREATE SERVER endpoint_bin FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (driver 'binary', host 'localhost', port '9000', secure 'false', dbname '');
+CREATE USER MAPPING FOR CURRENT_USER SERVER endpoint_bin OPTIONS (user 'default', password '');
+SELECT clickhouse_server_version('endpoint_bin') <> '0.0.0' AS connected;
+ connected 
+-----------
+ t
+(1 row)
+
+CREATE SERVER endpoint_http FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (driver 'http', host 'localhost', port '8123', secure 'no', dbname '');
+CREATE USER MAPPING FOR CURRENT_USER SERVER endpoint_http OPTIONS (user 'default', password '');
+SELECT clickhouse_server_version('endpoint_http') <> '0.0.0' AS connected;
+ connected 
+-----------
+ t
+(1 row)
+
+-- Unparsable port is ignored in favor of default
+CREATE SERVER endpoint_badport FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (driver 'binary', port 'abc');
+CREATE USER MAPPING FOR CURRENT_USER SERVER endpoint_badport;
+SELECT clickhouse_server_version('endpoint_badport') <> '0.0.0' AS connected;
+ connected 
+-----------
+ t
+(1 row)
+
+-- Nothing listens on port 1
+CREATE SERVER endpoint_bin_refused FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (driver 'binary', port '1');
+CREATE USER MAPPING FOR CURRENT_USER SERVER endpoint_bin_refused;
+SELECT clickhouse_server_version('endpoint_bin_refused');
+ERROR:  pg_clickhouse: connect(127.0.0.1:1): Connection refused
+CREATE SERVER endpoint_http_refused FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (driver 'http', port '1');
+CREATE USER MAPPING FOR CURRENT_USER SERVER endpoint_http_refused;
+-- Version probe over HTTP reports unknown rather than failing
+SELECT clickhouse_server_version('endpoint_http_refused');
+ clickhouse_server_version 
+---------------------------
+ 0.0.0
+(1 row)
+
+CREATE FOREIGN TABLE endpoint_http_refused_one (dummy int)
+    SERVER endpoint_http_refused OPTIONS (database 'system', table_name 'one');
+SELECT * FROM pg_temp.error_filter($$SELECT * FROM endpoint_http_refused_one$$);
+                                                           error                                                           
+---------------------------------------------------------------------------------------------------------------------------
+ ERROR:  pg_clickhouse: communication error: Failed to connect to 127.0.0.1 port 1 after N ms: Could not connect to server
+(1 row)
+
+SELECT * FROM pg_temp.error_filter($$INSERT INTO endpoint_http_refused_one VALUES (1)$$);
+                                                           error                                                           
+---------------------------------------------------------------------------------------------------------------------------
+ ERROR:  pg_clickhouse: communication error: Failed to connect to 127.0.0.1 port 1 after N ms: Could not connect to server
+(1 row)
+
+SELECT * FROM pg_temp.error_filter($$CALL clickhouse_perform('endpoint_http_refused', 'SELECT 1')$$);
+                                                           error                                                           
+---------------------------------------------------------------------------------------------------------------------------
+ ERROR:  pg_clickhouse: communication error: Failed to connect to 127.0.0.1 port 1 after N ms: Could not connect to server
+(1 row)
+
+-- TLS against plaintext HTTP port fails handshake, once per minimum version
+CREATE SERVER endpoint_bin_tls12 FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (driver 'binary', port '8123', secure 'on', min_tls_version 'TLSv1.2');
+CREATE USER MAPPING FOR CURRENT_USER SERVER endpoint_bin_tls12;
+SELECT clickhouse_server_version('endpoint_bin_tls12');
+ERROR:  pg_clickhouse: openssl failed to connect
+DETAIL:  error:0A00010B:SSL routines::wrong version number
+CREATE SERVER endpoint_bin_tls1 FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (driver 'binary', port '8123', secure 'on', min_tls_version 'TLSv1');
+CREATE USER MAPPING FOR CURRENT_USER SERVER endpoint_bin_tls1;
+SELECT clickhouse_server_version('endpoint_bin_tls1');
+ERROR:  pg_clickhouse: openssl failed to connect
+DETAIL:  error:0A00010B:SSL routines::wrong version number
+CREATE SERVER endpoint_http_tls13 FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (driver 'http', port '8123', secure 'on', min_tls_version 'TLSv1.3');
+CREATE USER MAPPING FOR CURRENT_USER SERVER endpoint_http_tls13;
+CREATE FOREIGN TABLE endpoint_http_tls13_one (dummy int)
+    SERVER endpoint_http_tls13 OPTIONS (database 'system', table_name 'one');
+SELECT * FROM endpoint_http_tls13_one;
+ERROR:  pg_clickhouse: communication error: TLS connect error: error:0A00010B:SSL routines::wrong version number
+CREATE SERVER endpoint_http_tls11 FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (driver 'http', port '8123', secure 'on', min_tls_version 'TLSv1.1');
+CREATE USER MAPPING FOR CURRENT_USER SERVER endpoint_http_tls11;
+CREATE FOREIGN TABLE endpoint_http_tls11_one (dummy int)
+    SERVER endpoint_http_tls11 OPTIONS (database 'system', table_name 'one');
+SELECT * FROM endpoint_http_tls11_one;
+ERROR:  pg_clickhouse: communication error: TLS connect error: error:0A00010B:SSL routines::wrong version number
+DROP SERVER endpoint_bin, endpoint_http, endpoint_badport, endpoint_bin_refused,
+    endpoint_http_refused, endpoint_bin_tls12, endpoint_bin_tls1,
+    endpoint_http_tls13, endpoint_http_tls11 CASCADE;
+NOTICE:  drop cascades to 12 other objects
+DETAIL:  drop cascades to user mapping for postgres on server endpoint_http_tls11
+drop cascades to foreign table endpoint_http_tls11_one
+drop cascades to user mapping for postgres on server endpoint_http_tls13
+drop cascades to foreign table endpoint_http_tls13_one
+drop cascades to user mapping for postgres on server endpoint_bin_tls1
+drop cascades to user mapping for postgres on server endpoint_bin_tls12
+drop cascades to user mapping for postgres on server endpoint_http_refused
+drop cascades to foreign table endpoint_http_refused_one
+drop cascades to user mapping for postgres on server endpoint_bin_refused
+drop cascades to user mapping for postgres on server endpoint_badport
+drop cascades to user mapping for postgres on server endpoint_http
+drop cascades to user mapping for postgres on server endpoint_bin

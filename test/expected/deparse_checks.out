@@ -1,3 +1,6 @@
+\i test/include/normalize.sql
+\set normalize_echo :ECHO
+\set ECHO none
 CREATE SERVER deparse_lookback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'deparse_test');
 CREATE USER MAPPING FOR CURRENT_USER SERVER deparse_lookback;
 CREATE SERVER deparse_admin FOREIGN DATA WRAPPER clickhouse_fdw;
@@ -10,18 +13,23 @@ CALL clickhouse_perform('deparse_admin', '
 	order by a');
 CALL clickhouse_perform('deparse_admin', '
 	insert into deparse_test.t1 select number % 10, number % 10 > 5 from numbers(1, 100);');
+CALL clickhouse_perform('deparse_admin', '
+	create table deparse_test.t2 (id Int32, grp Int32, s String, ts DateTime64(6), n Nullable(Int32), arr Array(Int32))
+	engine = MergeTree()
+	order by id');
+CALL clickhouse_perform('deparse_admin', '
+	create table deparse_test.t3 (id Int32, v Nullable(Int32), sign Int8)
+	engine = CollapsingMergeTree(sign)
+	order by id');
 CREATE SCHEMA deparse_test;
 IMPORT FOREIGN SCHEMA deparse_test FROM SERVER deparse_lookback INTO deparse_test;
 SET search_path = deparse_test, public;
-\d+ t1
-                                     Foreign table "deparse_test.t1"
- Column |   Type   | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+----------+-----------+----------+---------+-------------+---------+--------------+-------------
- a      | integer  |           | not null |         |             | plain   |              | 
- b      | smallint |           | not null |         |             | plain   |              | 
-Not-null constraints:
-    "t1_a_not_null" NOT NULL "a"
-    "t1_b_not_null" NOT NULL "b"
+\d t1
+                 Foreign table "deparse_test.t1"
+ Column |   Type   | Collation | Nullable | Default | FDW options 
+--------+----------+-----------+----------+---------+-------------
+ a      | integer  |           | not null |         | 
+ b      | smallint |           | not null |         | 
 Server: deparse_lookback
 FDW options: (database 'deparse_test', table_name 't1', engine 'MergeTree')
 
@@ -60,7 +68,414 @@ SELECT * FROM t1 ORDER BY a NULLS FIRST, b LIMIT 3;
  0 | f
 (3 rows)
 
+-- Expression forms
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2 WHERE greatest(id, grp) > 1 AND least(id, grp, 3) < 5;
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Remote SQL: SELECT id FROM deparse_test.t2 WHERE ((greatest(id, grp) > 1)) AND ((least(id, grp, 3) < 5))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2 WHERE nullif(grp, 1) = 2;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Remote SQL: SELECT id FROM deparse_test.t2 WHERE ((NULLIF(grp,1) = 2))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT CASE grp WHEN 1 THEN 'one' WHEN 2 THEN 'two' ELSE s END, count(*) FROM t2 GROUP BY 1;
+                                                                                       QUERY PLAN                                                                                       
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (CASE grp WHEN 1 THEN 'one'::text WHEN 2 THEN 'two'::text ELSE s END), (count(*))
+   Relations: Aggregate on (t2)
+   Remote SQL: SELECT CASE grp WHEN (1) THEN 'one' WHEN (2) THEN 'two' ELSE s END, count(*) FROM deparse_test.t2 GROUP BY (CASE grp WHEN (1) THEN 'one' WHEN (2) THEN 'two' ELSE s END)
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2 WHERE id / 2 = 1;
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Remote SQL: SELECT id FROM deparse_test.t2 WHERE ((toInt32(id / 2) = 1))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2 WHERE concat(s, NULL::text) = 'x' AND coalesce(n > 1, true);
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Filter: (concat(t2.s, NULL::text) = 'x'::text)
+   Remote SQL: SELECT id, s FROM deparse_test.t2 WHERE (COALESCE((n > 1), 1))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2 WHERE array_fill(grp, ARRAY[2]) = ARRAY[1, 1];
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Remote SQL: SELECT id FROM deparse_test.t2 WHERE ((arrayWithConstant([2], grp) = [1,1]))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2 WHERE to_char(ts, '"a\"b" \"YYYY %') = 'x';
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Remote SQL: SELECT id FROM deparse_test.t2 WHERE ((formatDateTime(ts, 'a"b "%Y %%') = 'x'))
+(3 rows)
+
+-- Array literals
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2 WHERE arr = ARRAY[[1, 2], [3, 4]] OR arr = ARRAY[1, NULL] OR arr = '{}';
+                                                   QUERY PLAN                                                   
+----------------------------------------------------------------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Remote SQL: SELECT id FROM deparse_test.t2 WHERE (((arr = [[1,2],[3,4]]) OR (arr = [1,NULL]) OR (arr = [])))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2 WHERE s = ANY(ARRAY['a''b', E'c\\d', NULL]);
+                                    QUERY PLAN                                    
+----------------------------------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Remote SQL: SELECT id FROM deparse_test.t2 WHERE ((s IN ('a''b','c\\d',NULL)))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2 WHERE CASE grp WHEN 1 THEN true WHEN 2 THEN false END;
+                                                 QUERY PLAN                                                  
+-------------------------------------------------------------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Remote SQL: SELECT id FROM deparse_test.t2 WHERE (CASE grp WHEN (1) THEN 1 WHEN (2) THEN 0 ELSE NULL END)
+(3 rows)
+
+-- hstore fetch with constant hstore ships as array lookup
+CREATE EXTENSION IF NOT EXISTS hstore;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2 WHERE ('a=>x, b=>y'::hstore -> s) = 'x';
+                                                QUERY PLAN                                                 
+-----------------------------------------------------------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Remote SQL: SELECT id FROM deparse_test.t2 WHERE (((['x','y'][nullif(indexOf(['a','b'],s), 0)]) = 'x'))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2 WHERE (hstore(s, s) -> s) = 'x';
+                      QUERY PLAN                      
+------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Filter: ((hstore(t2.s, t2.s) -> t2.s) = 'x'::text)
+   Remote SQL: SELECT id, s FROM deparse_test.t2
+(4 rows)
+
+-- Aggregates: CollapsingMergeTree sign weighting, ordered-set
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sum(v), avg(v) FILTER (WHERE v > 0), avg(v), count(v) FROM t3;
+                                                                                                QUERY PLAN                                                                                                
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(v)), (avg(v) FILTER (WHERE (v > 0))), (avg(v)), (count(v))
+   Relations: Aggregate on (t3)
+   Remote SQL: SELECT sum(v * sign), sumIf(v * sign,(((v > 0)) > 0)) / sumIf(sign,(v > 0) AND v IS NOT NULL), sum(v * sign) / sumIf(sign,v IS NOT NULL), sumIf(sign,(v) IS NOT NULL) FROM deparse_test.t3
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY grp),
+       percentile_disc(ARRAY[0.25, 0.75]) WITHIN GROUP (ORDER BY grp)
+FROM t2;
+                                                                                        QUERY PLAN                                                                                        
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (percentile_cont('0.5'::double precision) WITHIN GROUP (ORDER BY ((grp)::double precision))), (percentile_disc('{0.25,0.75}'::double precision[]) WITHIN GROUP (ORDER BY grp))
+   Relations: Aggregate on (t2)
+   Remote SQL: SELECT quantile(0.5)(grp), quantilesExactLow(0.25,0.75)(grp) FROM deparse_test.t2
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT rank(1, 'x') WITHIN GROUP (ORDER BY grp, s) FROM t2;
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Aggregate
+   Output: rank(1, 'x'::text) WITHIN GROUP (ORDER BY grp, s)
+   ->  Foreign Scan on deparse_test.t2
+         Output: id, grp, s, ts, n, arr
+         Remote SQL: SELECT grp, s FROM deparse_test.t2
+(5 rows)
+
+-- Casts
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t2
+WHERE id::int2 = 1 AND id::float4 = 1 AND id::numeric = 1 AND id::numeric(10, 2) = 1
+  AND s::varchar = 'a' AND s::varchar(5) = 'a' AND s::char(3) = 'a' AND (id > 1)::bool;
+                                                                                                                                                                              QUERY PLAN                                                                                                                                                                               
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on deparse_test.t2
+   Output: id
+   Remote SQL: SELECT id FROM deparse_test.t2 WHERE ((id > 1)) AND ((s = 'a')) AND ((cast(id, 'Nullable(Int16)') = 1)) AND ((cast(id, 'Nullable(Float32)') = 1)) AND ((cast(id, 'Nullable(Decimal(76, 38))') = 1)) AND ((cast(s, 'Nullable(FixedString(5))') = 'a')) AND ((cast(s, 'Nullable(FixedString(3))') = 'a')) AND ((cast(id, 'Nullable(Decimal(10,2))') = 1))
+(3 rows)
+
+-- Window frames, one window per query to push down
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(grp) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM t2;
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(grp)), id
+   Relations: Window on (t2)
+   Remote SQL: SELECT sum(grp) OVER (ORDER BY id ASC ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), id FROM deparse_test.t2
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(grp) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM t2;
+                                                           QUERY PLAN                                                           
+--------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(grp)), id
+   Relations: Window on (t2)
+   Remote SQL: SELECT sum(grp) OVER (ORDER BY id ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), id FROM deparse_test.t2
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(grp) OVER (ORDER BY id RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) FROM t2;
+                                                           QUERY PLAN                                                            
+---------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(grp)), id
+   Relations: Window on (t2)
+   Remote SQL: SELECT sum(grp) OVER (ORDER BY id ASC RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING), id FROM deparse_test.t2
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(grp) OVER (ORDER BY id ROWS BETWEEN 1 FOLLOWING AND 3 FOLLOWING) FROM t2;
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(grp)), id
+   Relations: Window on (t2)
+   Remote SQL: SELECT sum(grp) OVER (ORDER BY id ASC ROWS BETWEEN 1 FOLLOWING AND 3 FOLLOWING), id FROM deparse_test.t2
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(grp) OVER (ORDER BY id ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING) FROM t2;
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(grp)), id
+   Relations: Window on (t2)
+   Remote SQL: SELECT sum(grp) OVER (ORDER BY id ASC ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING), id FROM deparse_test.t2
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(grp) OVER (ORDER BY id ROWS UNBOUNDED PRECEDING) FROM t2;
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(grp)), id
+   Relations: Window on (t2)
+   Remote SQL: SELECT sum(grp) OVER (ORDER BY id ASC ROWS UNBOUNDED PRECEDING), id FROM deparse_test.t2
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(grp) OVER (ORDER BY id ROWS CURRENT ROW) FROM t2;
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(grp)), id
+   Relations: Window on (t2)
+   Remote SQL: SELECT sum(grp) OVER (ORDER BY id ASC ROWS CURRENT ROW), id FROM deparse_test.t2
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(grp) OVER (ORDER BY id ROWS 2 PRECEDING) FROM t2;
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(grp)), id
+   Relations: Window on (t2)
+   Remote SQL: SELECT sum(grp) OVER (ORDER BY id ASC ROWS 2 PRECEDING), id FROM deparse_test.t2
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT lag(grp, 2, 0) OVER (PARTITION BY grp, s ORDER BY id, ts) FROM t2;
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (lag(grp, 2, 0)), id, ts, grp, s
+   Relations: Window on (t2)
+   Remote SQL: SELECT lag(grp, 2, 0) OVER (PARTITION BY grp, s ORDER BY id ASC, ts ASC), id, ts, grp, s FROM deparse_test.t2
+(4 rows)
+
+SELECT * FROM pg_temp.remote_sql($$
+SELECT id, sum(grp) FILTER (WHERE grp > 1) OVER (ORDER BY id) FROM t2$$);
+                           remote_sql                           
+----------------------------------------------------------------
+ SELECT id, grp FROM deparse_test.t2 ORDER BY id ASC NULLS LAST
+(1 row)
+
+-- Join and grouping shapes
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT t1.a, t2.id FROM t1 RIGHT JOIN t2 ON t1.a = t2.id WHERE t1.a > 1 OR t1.a IS NULL;
+                                                                       QUERY PLAN                                                                        
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: t1.a, t2.id
+   Relations: (t2) LEFT JOIN (t1)
+   Remote SQL: SELECT r1.a, r2.id FROM  deparse_test.t2 r2 ALL LEFT JOIN deparse_test.t1 r1 ON (((r1.a = r2.id))) WHERE (((r1.a > 1) OR (r1.a IS NULL)))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT t1.a, t2.id FROM t1 FULL JOIN t2 ON t1.a = t2.id;
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: t1.a, t2.id
+   Relations: (t1) FULL JOIN (t2)
+   Remote SQL: SELECT r1.a, r2.id FROM  deparse_test.t1 r1 ALL FULL JOIN deparse_test.t2 r2 ON (((r1.a = r2.id)))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT t1.a, t2.id FROM t1 JOIN t2 ON t1.a < t2.id;
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: t1.a, t2.id
+   Relations: (t1) INNER JOIN (t2)
+   Remote SQL: SELECT r1.a, r2.id FROM  deparse_test.t1 r1 ALL INNER JOIN deparse_test.t2 r2 ON (TRUE) WHERE ((r1.a < r2.id))
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.id WHERE t2.s = random()::text;
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Merge Join
+   Output: t1.a
+   Merge Cond: (t1.a = t2.id)
+   ->  Sort
+         Output: t1.a
+         Sort Key: t1.a
+         ->  Foreign Scan on deparse_test.t1
+               Output: t1.a
+               Remote SQL: SELECT a FROM deparse_test.t1
+   ->  Sort
+         Output: t2.id
+         Sort Key: t2.id
+         ->  Foreign Scan on deparse_test.t2
+               Output: t2.id
+               Filter: (t2.s = (random())::text)
+               Remote SQL: SELECT id, s FROM deparse_test.t2
+(16 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 LEFT JOIN t2 ON t1.a = t2.id AND t2.s = random()::text;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Merge Left Join
+   Output: t1.a, t1.b, t2.id, t2.grp, t2.s, t2.ts, t2.n, t2.arr
+   Merge Cond: (t1.a = t2.id)
+   ->  Sort
+         Output: t1.a, t1.b
+         Sort Key: t1.a
+         ->  Foreign Scan on deparse_test.t1
+               Output: t1.a, t1.b
+               Remote SQL: SELECT a, b FROM deparse_test.t1
+   ->  Sort
+         Output: t2.id, t2.grp, t2.s, t2.ts, t2.n, t2.arr
+         Sort Key: t2.id
+         ->  Foreign Scan on deparse_test.t2
+               Output: t2.id, t2.grp, t2.s, t2.ts, t2.n, t2.arr
+               Filter: (t2.s = (random())::text)
+               Remote SQL: SELECT id, grp, s, ts, n, arr FROM deparse_test.t2
+(16 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM t1 LEFT JOIN (SELECT id, coalesce(n, 0) AS x FROM t2) ss ON t1.a = ss.id
+JOIN t2 t3 ON t3.id = t1.a;
+                                                                               QUERY PLAN                                                                               
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Merge Left Join
+   Output: t1.a, t1.b, t2.id, (COALESCE(t2.n, 0)), t3.id, t3.grp, t3.s, t3.ts, t3.n, t3.arr
+   Merge Cond: (t1.a = t2.id)
+   ->  Sort
+         Output: t1.a, t1.b, t3.id, t3.grp, t3.s, t3.ts, t3.n, t3.arr
+         Sort Key: t1.a
+         ->  Foreign Scan
+               Output: t1.a, t1.b, t3.id, t3.grp, t3.s, t3.ts, t3.n, t3.arr
+               Relations: (t1) INNER JOIN (t2 t3)
+               Remote SQL: SELECT r1.a, r1.b, r4.id, r4.grp, r4.s, r4.ts, r4.n, r4.arr FROM  deparse_test.t1 r1 ALL INNER JOIN deparse_test.t2 r4 ON (((r1.a = r4.id)))
+   ->  Sort
+         Output: t2.id, (COALESCE(t2.n, 0))
+         Sort Key: t2.id
+         ->  Foreign Scan on deparse_test.t2
+               Output: t2.id, COALESCE(t2.n, 0)
+               Remote SQL: SELECT id, n FROM deparse_test.t2
+(16 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT t1.a FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t2 JOIN t2 t3 ON t2.id = t3.id WHERE t2.id = t1.a);
+                                                        QUERY PLAN                                                        
+--------------------------------------------------------------------------------------------------------------------------
+ Hash Anti Join
+   Output: t1.a
+   Hash Cond: (t1.a = t2.id)
+   ->  Foreign Scan on deparse_test.t1
+         Output: t1.a, t1.b
+         Remote SQL: SELECT a FROM deparse_test.t1
+   ->  Hash
+         Output: t2.id
+         ->  Foreign Scan
+               Output: t2.id
+               Relations: (t2) INNER JOIN (t2 t3)
+               Remote SQL: SELECT r2.id FROM  deparse_test.t2 r2 ALL INNER JOIN deparse_test.t2 r3 ON (((r2.id = r3.id)))
+(12 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT grp, count(*) FROM t2 GROUP BY ROLLUP(grp);
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ GroupAggregate
+   Output: grp, count(*)
+   Group Key: t2.grp
+   Group Key: ()
+   ->  Foreign Scan on deparse_test.t2
+         Output: id, grp, s, ts, n, arr
+         Remote SQL: SELECT grp FROM deparse_test.t2 ORDER BY grp ASC NULLS LAST
+(7 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT grp, count(*) FROM t2 WHERE s = random()::text GROUP BY grp;
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
+ GroupAggregate
+   Output: grp, count(*)
+   Group Key: t2.grp
+   ->  Foreign Scan on deparse_test.t2
+         Output: id, grp, s, ts, n, arr
+         Filter: (t2.s = (random())::text)
+         Remote SQL: SELECT grp, s FROM deparse_test.t2 ORDER BY grp ASC NULLS LAST
+(7 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT grp FROM t2 GROUP BY grp HAVING max(s) = random()::text;
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Foreign Scan
+   Output: grp
+   Filter: ((max(t2.s)) = (random())::text)
+   Relations: Aggregate on (t2)
+   Remote SQL: SELECT grp, max(s) FROM deparse_test.t2 GROUP BY grp
+(5 rows)
+
 DROP USER MAPPING FOR CURRENT_USER SERVER deparse_lookback;
 CALL clickhouse_perform('deparse_admin', 'DROP DATABASE deparse_test');
 DROP SERVER deparse_lookback CASCADE;
-NOTICE:  drop cascades to foreign table t1
+NOTICE:  drop cascades to 3 other objects
+DETAIL:  drop cascades to foreign table t1
+drop cascades to foreign table t2
+drop cascades to foreign table t3
