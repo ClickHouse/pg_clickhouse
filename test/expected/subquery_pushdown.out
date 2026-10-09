@@ -1,6 +1,9 @@
 -- Test for TPC-H Q4 style EXISTS subquery pushdown
 -- TPC-H schema reference: https://raw.githubusercontent.com/Vonng/pgtpc/refs/heads/master/tpch/ddl/schema.ddl
 SET datestyle = 'ISO';
+\i test/include/normalize.sql
+\set normalize_echo :ECHO
+\set ECHO none
 CREATE SERVER subquery_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'subquery_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER subquery_loopback;
 CREATE SERVER subquery_admin FOREIGN DATA WRAPPER clickhouse_fdw;
@@ -54,7 +57,7 @@ SET SESSION search_path = subquery_test,public;
 -- Test SEMI-JOIN / EXISTS subquery pushdown (TPC-H Q4 style query)
 -- ===================================================================
 -- First, show the explain plan - this should show SEMI JOIN being pushed down
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT
     o_orderpriority,
     count(*) as order_count
@@ -71,14 +74,11 @@ WHERE
 GROUP BY
     o_orderpriority
 ORDER BY
-    o_orderpriority;
-                                                                                                                                                                            QUERY PLAN                                                                                                                                                                            
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
-   Output: orders.o_orderpriority, (count(*))
-   Relations: Aggregate on ((orders) LEFT SEMI JOIN (lineitem))
-   Remote SQL: SELECT r1.o_orderpriority, count(*) FROM  subquery_test.orders r1 LEFT SEMI JOIN subquery_test.lineitem r3 ON (((r3.l_commitdate < r3.l_receiptdate)) AND ((r1.o_orderkey = r3.l_orderkey))) WHERE ((r1.o_orderdate >= '1993-07-01')) AND ((r1.o_orderdate < '1993-10-01')) GROUP BY r1.o_orderpriority ORDER BY r1.o_orderpriority ASC NULLS LAST
-(4 rows)
+    o_orderpriority$$);
+                                                                                                                                                                     remote_sql                                                                                                                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ SELECT r1.o_orderpriority, count(*) FROM  subquery_test.orders r1 LEFT SEMI JOIN subquery_test.lineitem r2 ON (((r2.l_commitdate < r2.l_receiptdate)) AND ((r1.o_orderkey = r2.l_orderkey))) WHERE ((r1.o_orderdate >= '1993-07-01')) AND ((r1.o_orderdate < '1993-10-01')) GROUP BY r1.o_orderpriority ORDER BY r1.o_orderpriority ASC NULLS LAST
+(1 row)
 
 -- Execute the actual query
 SELECT

@@ -1,4 +1,5 @@
 SET datestyle = 'ISO';
+\i test/include/normalize.sql
 -- Create servers for each engine.
 CREATE SERVER param_bin_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(driver 'binary');
@@ -156,7 +157,7 @@ CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.t1 TO param_test
 ALTER FOREIGN TABLE bin_test.ft1 OPTIONS (SET table_name 'ft1');
 
 -- implicit parameter
-EXPLAIN (VERBOSE, COSTS OFF) SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4);
+SELECT * FROM pg_temp.remote_sql($$SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4)$$);
 SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4);
 
 -- UUID, fractional timestamp, and pre-1970 date parameters
@@ -325,7 +326,7 @@ CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.t1 TO param_test
 ALTER FOREIGN TABLE http_test.ft1 OPTIONS (SET table_name 'ft1');
 
 -- implicit parameter
-EXPLAIN (VERBOSE, COSTS OFF) SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4);
+SELECT * FROM pg_temp.remote_sql($$SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4)$$);
 SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4);
 
 -- UUID, fractional timestamp, and pre-1970 date parameters
@@ -383,6 +384,57 @@ EXECUTE st15('-0');
 EXECUTE st15(0.25);
 PREPARE st16(float8) AS SELECT id FROM http_test.typed WHERE f <> $1 ORDER BY id;
 EXECUTE st16('NaN');
+
+-- ===================================================================
+-- parameter literals per type, generic plans keep them as Params
+-- ===================================================================
+CALL clickhouse_perform('param_admin', $$
+    CREATE TABLE param_test.lit (
+        id Int32, i8 Int64, f4 Float32, f8 Float64, s String, by String,
+        d Date, ts DateTime64(6), arr Array(String)
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('param_admin', $$
+    INSERT INTO param_test.lit VALUES
+    (1, 9000000000, 1.5, 2.25, 'q''uote\\back\b\f\r\n\t\a\v', 'by\0te',
+     '2024-02-29', '2024-02-29 12:34:56', ['t\tb', 'n\nl', 'q''x', 'b\\s', 'bs\b'])
+$$);
+CREATE FOREIGN TABLE bin_test.lit (
+    id int, i8 bigint, f4 real, f8 float8, s text, by bytea,
+    d date, ts timestamp, arr text[]
+) SERVER param_bin_svr OPTIONS (database 'param_test', table_name 'lit');
+CREATE FOREIGN TABLE http_test.lit (
+    id int, i8 bigint, f4 real, f8 float8, s text, by bytea,
+    d date, ts timestamp, arr text[]
+) SERVER param_http_svr OPTIONS (database 'param_test', table_name 'lit');
+SET plan_cache_mode = force_generic_plan;
+PREPARE lit_bin(bigint, real, float8, text, bytea, date, timestamp, text[]) AS
+SELECT id FROM bin_test.lit
+ WHERE i8 = $1 AND f4 = $2 AND f8 = $3 AND s = $4 AND by = $5
+   AND d = $6 AND ts = $7 AND arr = $8;
+PREPARE lit_http(bigint, real, float8, text, bytea, date, timestamp, text[]) AS
+SELECT id FROM http_test.lit
+ WHERE i8 = $1 AND f4 = $2 AND f8 = $3 AND s = $4 AND by = $5
+   AND d = $6 AND ts = $7 AND arr = $8;
+EXPLAIN (VERBOSE, COSTS OFF)
+EXECUTE lit_bin(9000000000, 1.5, 2.25, E'q''uote\\back\b\f\r\n\t\x07\x0b', '\x6279007465',
+                '2024-02-29', '2024-02-29 12:34:56',
+                ARRAY[E't\tb', E'n\nl', 'q''x', E'b\\s', E'bs\b']);
+EXECUTE lit_bin(9000000000, 1.5, 2.25, E'q''uote\\back\b\f\r\n\t\x07\x0b', '\x6279007465',
+                '2024-02-29', '2024-02-29 12:34:56',
+                ARRAY[E't\tb', E'n\nl', 'q''x', E'b\\s', E'bs\b']);
+EXPLAIN (VERBOSE, COSTS OFF)
+EXECUTE lit_http(9000000000, 1.5, 2.25, E'q''uote\\back\b\f\r\n\t\x07\x0b', '\x6279007465',
+                 '2024-02-29', '2024-02-29 12:34:56',
+                 ARRAY[E't\tb', E'n\nl', 'q''x', E'b\\s', E'bs\b']);
+EXECUTE lit_http(9000000000, 1.5, 2.25, E'q''uote\\back\b\f\r\n\t\x07\x0b', '\x6279007465',
+                 '2024-02-29', '2024-02-29 12:34:56',
+                 ARRAY[E't\tb', E'n\nl', 'q''x', E'b\\s', E'bs\b']);
+EXECUTE lit_bin(9000000000, 1.5, 2.25, NULL, '\x6279007465',
+                '2024-02-29', '2024-02-29 12:34:56',
+                ARRAY[E't\tb', E'n\nl', 'q''x', E'b\\s', E'bs\b']);
+DEALLOCATE lit_bin;
+DEALLOCATE lit_http;
 RESET plan_cache_mode;
 
 -- cleanup

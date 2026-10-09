@@ -1,4 +1,5 @@
 SET datestyle = 'ISO';
+\i test/include/normalize.sql
 CREATE SERVER http_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'http_test', driver 'http');
 CREATE SERVER http_loopback2 FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'http_test', driver 'http');
 
@@ -134,11 +135,11 @@ SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work
 
 ALTER SERVER http_loopback OPTIONS (SET dbname 'no such database');
 
-SELECT c3, c4 FROM ft1 ORDER BY c3, c1;  -- should fail
+SELECT * FROM pg_temp.error_filter($$SELECT c3, c4 FROM ft1 ORDER BY c3, c1$$);  -- should fail
 
 ALTER USER MAPPING FOR CURRENT_USER SERVER http_loopback OPTIONS (ADD user 'no such user');
 
-SELECT c3, c4 FROM ft1 ORDER BY c3, c1;  -- should fail
+SELECT * FROM pg_temp.error_filter($$SELECT c3, c4 FROM ft1 ORDER BY c3, c1$$);  -- should fail
 
 ALTER SERVER http_loopback OPTIONS (SET dbname 'http_test');
 ALTER USER MAPPING FOR CURRENT_USER SERVER http_loopback OPTIONS (DROP user);
@@ -166,8 +167,8 @@ SELECT COUNT(*) FROM ft1 t1;
 
 SELECT * FROM ft1 t1 WHERE t1.c3 IN (SELECT c2 FROM ft2 t2 WHERE c1 <= 10) ORDER BY c1;
 
-EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM ft1 t1 WHERE t1.c3 = (SELECT MAX(c2) FROM ft2 t2) ORDER BY c1;
+SELECT * FROM pg_temp.remote_sql($$
+SELECT * FROM ft1 t1 WHERE t1.c3 = (SELECT MAX(c2) FROM ft2 t2) ORDER BY c1$$);
 SELECT * FROM ft1 t1 WHERE t1.c3 = (SELECT MAX(c2) FROM ft2 t2) ORDER BY c1;
 
 WITH t1 AS (SELECT * FROM ft1 WHERE c1 <= 10) SELECT t2.c1, t2.c2, t2.c2 FROM t1, ft2 t2 WHERE t1.c1 = t2.c1 ORDER BY t1.c1;
@@ -184,7 +185,7 @@ SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 JOIN ft1 t2 ON (t1.c1 = t2.c1) order by
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) OFFSET 100 LIMIT 10;
 
-EXPLAIN SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
+SELECT * FROM pg_temp.explain_filter($$EXPLAIN SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10$$);
 SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
 
 RESET enable_hashjoin;
@@ -194,9 +195,9 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE t1.c1 = 1;         -- Va
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE t1.c1 = 100 AND t1.c2 = 0; -- BoolExpr
 
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 IS NULL;        -- NullTest
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c3 IS NULL;        -- NullTest
 
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 IS NOT NULL;    -- NullTest
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c3 IS NOT NULL;    -- NullTest
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE round(abs(c1), 0) = 1; -- FuncExpr
 
@@ -206,8 +207,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE 1 = factorial(c1);      
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c6 IS DISTINCT FROM c7; -- DistinctExpr
 
--- Optimized away on Postgres 19+ by commit e2debb643
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE (c1 IS NOT NULL) IS DISTINCT FROM (c1 IS NOT NULL); -- DistinctExpr + NullTest
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE (c3 IS NOT NULL) IS DISTINCT FROM (c8 = 'foo'); -- DistinctExpr + NullTest
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = ANY(ARRAY[c2, 1, c1 + 0]); -- ScalarArrayOpExpr
 
@@ -237,7 +237,12 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FROM ft2;
 SELECT COUNT(DISTINCT c1) FROM ft2;
 
 /* DISTINCT with IF */
+-- Postgres 16+ presorts DISTINCT aggregate input, pushing ORDER BY down.
+-- Disable so all versions plan alike
+BEGIN;
+DO $$BEGIN IF current_setting('server_version_num')::int >= 160000 THEN SET LOCAL enable_presorted_aggregate = off; END IF; END$$;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
+COMMIT;
 
 /* Disallow line endings in database names. */
 CREATE SERVER http_loopback_bad FOREIGN DATA WRAPPER clickhouse_fdw

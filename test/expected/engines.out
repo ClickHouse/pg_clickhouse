@@ -43,77 +43,62 @@ CALL clickhouse_perform('engines_admin', '
 CREATE SCHEMA engines_test;
 IMPORT FOREIGN SCHEMA engines_test FROM SERVER engines_loopback INTO engines_test;
 SET search_path = engines_test, public;
-\d+ t1
-                                    Foreign table "engines_test.t1"
- Column |  Type   | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+---------+-----------+----------+---------+-------------+---------+--------------+-------------
- a      | integer |           | not null |         |             | plain   |              | 
- b      | integer |           | not null |         |             | plain   |              | 
-Not-null constraints:
-    "t1_a_not_null" NOT NULL "a"
-    "t1_b_not_null" NOT NULL "b"
+\d t1
+                 Foreign table "engines_test.t1"
+ Column |  Type   | Collation | Nullable | Default | FDW options 
+--------+---------+-----------+----------+---------+-------------
+ a      | integer |           | not null |         | 
+ b      | integer |           | not null |         | 
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't1', engine 'MergeTree')
 
-\d+ t1_aggr
-                                         Foreign table "engines_test.t1_aggr"
- Column |  Type   | Collation | Nullable | Default |        FDW options        | Storage | Stats target | Description 
---------+---------+-----------+----------+---------+---------------------------+---------+--------------+-------------
- a      | integer |           | not null |         |                           | plain   |              | 
- b      | integer |           |          |         | (aggregatefunction 'sum') | plain   |              | 
-Not-null constraints:
-    "t1_aggr_a_not_null" NOT NULL "a"
+\d t1_aggr
+                     Foreign table "engines_test.t1_aggr"
+ Column |  Type   | Collation | Nullable | Default |        FDW options        
+--------+---------+-----------+----------+---------+---------------------------
+ a      | integer |           | not null |         | 
+ b      | integer |           |          |         | (aggregatefunction 'sum')
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't1_aggr', engine 'MaterializedView')
 
-\d+ t2
-                                           Foreign table "engines_test.t2"
- Column |  Type   | Collation | Nullable | Default |        FDW options        | Storage | Stats target | Description 
---------+---------+-----------+----------+---------+---------------------------+---------+--------------+-------------
- a      | integer |           | not null |         |                           | plain   |              | 
- b      | integer |           |          |         | (aggregatefunction 'sum') | plain   |              | 
-Not-null constraints:
-    "t2_a_not_null" NOT NULL "a"
+\d t2
+                        Foreign table "engines_test.t2"
+ Column |  Type   | Collation | Nullable | Default |        FDW options        
+--------+---------+-----------+----------+---------+---------------------------
+ a      | integer |           | not null |         | 
+ b      | integer |           |          |         | (aggregatefunction 'sum')
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't2', engine 'AggregatingMergeTree')
 
-\d+ t3
-                                      Foreign table "engines_test.t3"
- Column |   Type    | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
- a      | integer   |           | not null |         |             | plain    |              | 
- b      | integer[] |           | not null |         |             | extended |              | 
- c      | integer[] |           | not null |         |             | extended |              | 
-Not-null constraints:
-    "t3_a_not_null" NOT NULL "a"
-    "t3_b_not_null" NOT NULL "b"
-    "t3_c_not_null" NOT NULL "c"
+\d t3
+                  Foreign table "engines_test.t3"
+ Column |   Type    | Collation | Nullable | Default | FDW options 
+--------+-----------+-----------+----------+---------+-------------
+ a      | integer   |           | not null |         | 
+ b      | integer[] |           | not null |         | 
+ c      | integer[] |           | not null |         | 
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't3', engine 'MergeTree')
 
-\d+ t3_aggr
-                                            Foreign table "engines_test.t3_aggr"
- Column |   Type    | Collation | Nullable | Default |         FDW options          | Storage  | Stats target | Description 
---------+-----------+-----------+----------+---------+------------------------------+----------+--------------+-------------
- a      | integer   |           | not null |         |                              | plain    |              | 
- b      | integer[] |           |          |         | (aggregatefunction 'sumMap') | extended |              | 
-Not-null constraints:
-    "t3_aggr_a_not_null" NOT NULL "a"
+\d t3_aggr
+                        Foreign table "engines_test.t3_aggr"
+ Column |   Type    | Collation | Nullable | Default |         FDW options          
+--------+-----------+-----------+----------+---------+------------------------------
+ a      | integer   |           | not null |         | 
+ b      | integer[] |           |          |         | (aggregatefunction 'sumMap')
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't3_aggr', engine 'MaterializedView')
 
-\d+ t4
-                                                Foreign table "engines_test.t4"
- Column |   Type    | Collation | Nullable | Default |           FDW options           | Storage  | Stats target | Description 
---------+-----------+-----------+----------+---------+---------------------------------+----------+--------------+-------------
- a      | integer   |           | not null |         |                                 | plain    |              | 
- b      | integer   |           |          |         | (aggregatefunction 'sum')       | plain    |              | 
- c      | integer[] |           |          |         | (aggregatefunction 'sumMap')    | extended |              | 
- d      | bigint    |           |          |         | (simpleaggregatefunction 'sum') | plain    |              | 
- e      | bigint    |           |          |         | (aggregatefunction 'count')     | plain    |              | 
- f      | integer   |           |          |         | (aggregatefunction 'quantile')  | plain    |              | 
-Not-null constraints:
-    "t4_a_not_null" NOT NULL "a"
+\d t4
+                            Foreign table "engines_test.t4"
+ Column |   Type    | Collation | Nullable | Default |           FDW options           
+--------+-----------+-----------+----------+---------+---------------------------------
+ a      | integer   |           | not null |         | 
+ b      | integer   |           |          |         | (aggregatefunction 'sum')
+ c      | integer[] |           |          |         | (aggregatefunction 'sumMap')
+ d      | bigint    |           |          |         | (simpleaggregatefunction 'sum')
+ e      | bigint    |           |          |         | (aggregatefunction 'count')
+ f      | integer   |           |          |         | (aggregatefunction 'quantile')
 Server: engines_loopback
 FDW options: (database 'engines_test', table_name 't4', engine 'AggregatingMergeTree')
 

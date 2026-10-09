@@ -1,3 +1,6 @@
+\i test/include/normalize.sql
+\set normalize_echo :ECHO
+\set ECHO none
 CREATE SERVER udf_loopback FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'udf_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER udf_loopback;
@@ -109,27 +112,26 @@ SELECT id FROM udf_vals WHERE ch_noop_float8_float8('1', 1.1) = 1.1;
    Remote SQL: SELECT id FROM udf_test.vals
 (4 rows)
 
-\unset ECHO
 -- Keep unknown extension's functions local.
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
-SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE set_limit(id) = '1' $$);
-           remote_sql           
---------------------------------
- "SELECT id FROM udf_test.vals"
+SELECT * FROM pg_temp.remote_sql($$ SELECT id FROM udf_vals WHERE set_limit(id) = '1' $$);
+          remote_sql          
+------------------------------
+ SELECT id FROM udf_test.vals
 (1 row)
 
 -- Keep unknown extension's types and operators local.
 CREATE EXTENSION IF NOT EXISTS citext;
-SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) = '1' $$);
-           remote_sql           
---------------------------------
- "SELECT id FROM udf_test.vals"
+SELECT * FROM pg_temp.remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) = '1' $$);
+          remote_sql          
+------------------------------
+ SELECT id FROM udf_test.vals
 (1 row)
 
-SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) IS NULL $$);
-           remote_sql           
---------------------------------
- "SELECT id FROM udf_test.vals"
+SELECT * FROM pg_temp.remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) IS NULL $$);
+          remote_sql          
+------------------------------
+ SELECT id FROM udf_test.vals
 (1 row)
 
 -- Wait for a lock before loading intarray.
@@ -141,17 +143,17 @@ SELECT pg_advisory_lock(hashtext('intarray'));
 
 CREATE EXTENSION intarray;
 -- Keep unknown functions from known extension local.
-SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE intset(id) = ARRAY[1]');
-           remote_sql           
---------------------------------
- "SELECT id FROM udf_test.vals"
+SELECT * FROM pg_temp.remote_sql('SELECT id FROM udf_vals WHERE intset(id) = ARRAY[1]');
+          remote_sql          
+------------------------------
+ SELECT id FROM udf_test.vals
 (1 row)
 
 -- Keep unmapped operators from known extension local.
-SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE ARRAY[id] @> ARRAY[1]');
-           remote_sql           
---------------------------------
- "SELECT id FROM udf_test.vals"
+SELECT * FROM pg_temp.remote_sql('SELECT id FROM udf_vals WHERE ARRAY[id] @> ARRAY[1]');
+          remote_sql          
+------------------------------
+ SELECT id FROM udf_test.vals
 (1 row)
 
 -- Drop intarray so it doesn't mess with other tests (array_functions.sql).

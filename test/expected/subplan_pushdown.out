@@ -10,6 +10,9 @@
 -- correlated / NOT IN SQL we generate), so the whole test aborts on older
 -- servers rather than carry version-specific expected output.
 SET datestyle = 'ISO';
+\i test/include/normalize.sql
+\set normalize_echo :ECHO
+\set ECHO none
 CREATE SERVER subplan_admin FOREIGN DATA WRAPPER clickhouse_fdw;
 CREATE USER MAPPING FOR CURRENT_USER SERVER subplan_admin;
 SELECT clickhouse_server_version('subplan_admin') AS ch_version \gset
@@ -53,21 +56,15 @@ SET SESSION search_path = subplan_test,public;
 -- ============================================================
 -- 1. Uncorrelated scalar subquery (TPC-H Q22 shape)
 -- ============================================================
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT item_id, price FROM items
 WHERE price > (SELECT avg(price) FROM items)
-ORDER BY item_id;
-                                                             QUERY PLAN                                                             
-------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on subplan_test.items
-   Output: items.item_id, items.price
-   Remote SQL: SELECT item_id, price FROM subplan_test.items WHERE ((price > {p1:Decimal(76, 38)})) ORDER BY item_id ASC NULLS LAST
-   InitPlan expr_1
-     ->  Foreign Scan
-           Output: (avg(items_1.price))
-           Relations: Aggregate on (items)
-           Remote SQL: SELECT avg(price) FROM subplan_test.items
-(8 rows)
+ORDER BY item_id$$);
+                                                      remote_sql                                                      
+----------------------------------------------------------------------------------------------------------------------
+ SELECT item_id, price FROM subplan_test.items WHERE ((price > {p1:Decimal(76, 38)})) ORDER BY item_id ASC NULLS LAST
+ SELECT avg(price) FROM subplan_test.items
+(2 rows)
 
 SELECT item_id, price FROM items
 WHERE price > (SELECT avg(price) FROM items)
@@ -81,22 +78,16 @@ ORDER BY item_id;
 -- ============================================================
 -- 2. Correlated scalar subquery (TPC-H Q2/Q17 shape)
 -- ============================================================
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT s.sale_id, s.amount FROM sales s
 WHERE s.amount > (SELECT 1.5 * avg(s2.amount) FROM sales s2
                   WHERE s2.item_id = s.item_id)
-ORDER BY s.sale_id;
-                                                                                                          QUERY PLAN                                                                                                           
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on subplan_test.sales s
-   Output: s.sale_id, s.amount
-   Remote SQL: SELECT sale_id, amount FROM subplan_test.sales r1 WHERE ((r1.amount > (SELECT (1.5 * avg(q1_1.amount)) FROM subplan_test.sales q1_1 WHERE ((q1_1.item_id = (r1.item_id)))))) ORDER BY r1.sale_id ASC NULLS LAST
-   SubPlan expr_1
-     ->  Foreign Scan
-           Output: ((1.5 * avg(s2.amount)))
-           Relations: Aggregate on (sales s2)
-           Remote SQL: SELECT (1.5 * avg(amount)) FROM subplan_test.sales WHERE ((item_id = {p1:Int32}))
-(8 rows)
+ORDER BY s.sale_id$$);
+                                                                                                   remote_sql                                                                                                    
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ SELECT sale_id, amount FROM subplan_test.sales r1 WHERE ((r1.amount > (SELECT (1.5 * avg(q1_1.amount)) FROM subplan_test.sales q1_1 WHERE ((q1_1.item_id = (r1.item_id)))))) ORDER BY r1.sale_id ASC NULLS LAST
+ SELECT (1.5 * avg(amount)) FROM subplan_test.sales WHERE ((item_id = {p1:Int32}))
+(2 rows)
 
 SELECT s.sale_id, s.amount FROM sales s
 WHERE s.amount > (SELECT 1.5 * avg(s2.amount) FROM sales s2
@@ -111,19 +102,16 @@ ORDER BY s.sale_id;
 -- 3. Correlated scalar against a joined outer (Q2's exact shape:
 --    correlation reaches a DIFFERENT outer table than the compared column)
 -- ============================================================
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT i.item_id, s.amount FROM items i, sales s
 WHERE i.item_id = s.item_id
   AND s.amount = (SELECT max(s2.amount) FROM sales s2
                   WHERE s2.item_id = i.item_id)
-ORDER BY i.item_id;
-                                                                                                                                             QUERY PLAN                                                                                                                                             
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
-   Output: i.item_id, s.amount
-   Relations: (items i) INNER JOIN (sales s)
-   Remote SQL: SELECT r1.item_id, r2.amount FROM  subplan_test.items r1 ALL INNER JOIN subplan_test.sales r2 ON (((r1.item_id = r2.item_id))) WHERE (((SELECT max(q1_1.amount) FROM subplan_test.sales q1_1 WHERE ((q1_1.item_id = (r1.item_id)))) = r2.amount)) ORDER BY r1.item_id ASC NULLS LAST
-(4 rows)
+ORDER BY i.item_id$$);
+                                                                                                                                      remote_sql                                                                                                                                      
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ SELECT r1.item_id, r2.amount FROM  subplan_test.items r1 ALL INNER JOIN subplan_test.sales r2 ON (((r1.item_id = r2.item_id))) WHERE (((SELECT max(q1_1.amount) FROM subplan_test.sales q1_1 WHERE ((q1_1.item_id = (r1.item_id)))) = r2.amount)) ORDER BY r1.item_id ASC NULLS LAST
+(1 row)
 
 SELECT i.item_id, s.amount FROM items i, sales s
 WHERE i.item_id = s.item_id
@@ -143,28 +131,16 @@ ORDER BY i.item_id;
 -- 4. IN subquery with GROUP BY + HAVING (TPC-H Q18 shape)
 --    HAVING blocks semijoin conversion, so this stays a SubPlan.
 -- ============================================================
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT item_id, grp FROM items
 WHERE item_id IN (SELECT item_id FROM sales
                   GROUP BY item_id HAVING sum(amount) > 150.00)
-ORDER BY item_id;
-                                                QUERY PLAN                                                
-----------------------------------------------------------------------------------------------------------
- Merge Join
-   Output: items.item_id, items.grp
-   Inner Unique: true
-   Merge Cond: (items.item_id = sales.item_id)
-   ->  Foreign Scan on subplan_test.items
-         Output: items.item_id, items.grp, items.price, items.qty
-         Remote SQL: SELECT item_id, grp FROM subplan_test.items ORDER BY item_id ASC NULLS LAST
-   ->  GroupAggregate
-         Output: sales.item_id
-         Group Key: sales.item_id
-         Filter: (sum(sales.amount) > 150.00)
-         ->  Foreign Scan on subplan_test.sales
-               Output: sales.sale_id, sales.item_id, sales.amount, sales.region
-               Remote SQL: SELECT item_id, amount FROM subplan_test.sales ORDER BY item_id ASC NULLS LAST
-(14 rows)
+ORDER BY item_id$$);
+                                   remote_sql                                   
+--------------------------------------------------------------------------------
+ SELECT item_id, grp FROM subplan_test.items ORDER BY item_id ASC NULLS LAST
+ SELECT item_id, amount FROM subplan_test.sales ORDER BY item_id ASC NULLS LAST
+(2 rows)
 
 SELECT item_id, grp FROM items
 WHERE item_id IN (SELECT item_id FROM sales
@@ -180,17 +156,14 @@ ORDER BY item_id;
 -- ============================================================
 -- 5. NOT IN (TPC-H Q16 shape): arrives as NOT(ANY-SubPlan)
 -- ============================================================
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT item_id FROM items
 WHERE item_id NOT IN (SELECT item_id FROM sales WHERE region = 'east')
-ORDER BY item_id;
-                                                                                           QUERY PLAN                                                                                            
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
-   Output: items.item_id
-   Relations: (items) LEFT ANTI JOIN (sales)
-   Remote SQL: SELECT r1.item_id FROM  subplan_test.items r1 LEFT ANTI JOIN subplan_test.sales r4 ON (((r1.item_id = r4.item_id)) AND ((r4.region = 'east'))) ORDER BY r1.item_id ASC NULLS LAST
-(4 rows)
+ORDER BY item_id$$);
+                                                                                    remote_sql                                                                                     
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ SELECT r1.item_id FROM  subplan_test.items r1 LEFT ANTI JOIN subplan_test.sales r2 ON (((r1.item_id = r2.item_id)) AND ((r2.region = 'east'))) ORDER BY r1.item_id ASC NULLS LAST
+(1 row)
 
 SELECT item_id FROM items
 WHERE item_id NOT IN (SELECT item_id FROM sales WHERE region = 'east')
@@ -204,23 +177,16 @@ ORDER BY item_id;
 -- ============================================================
 -- 6. Scalar subquery in HAVING (TPC-H Q11 shape)
 -- ============================================================
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT grp, sum(price * qty) AS value FROM items
 GROUP BY grp
 HAVING sum(price * qty) > (SELECT sum(price * qty) * 0.2 FROM items)
-ORDER BY value DESC;
-                                                                                     QUERY PLAN                                                                                      
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
-   Output: items.grp, (sum((items.price * (items.qty)::numeric)))
-   Relations: Aggregate on (items)
-   Remote SQL: SELECT grp, sum((price * qty)) FROM subplan_test.items GROUP BY grp HAVING ((sum((price * qty)) > {p1:Decimal(76, 38)})) ORDER BY sum((price * qty)) DESC NULLS FIRST
-   InitPlan expr_1
-     ->  Foreign Scan
-           Output: ((sum((items_1.price * (items_1.qty)::numeric)) * 0.2))
-           Relations: Aggregate on (items)
-           Remote SQL: SELECT (sum((price * qty)) * 0.2) FROM subplan_test.items
-(9 rows)
+ORDER BY value DESC$$);
+                                                                              remote_sql                                                                               
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ SELECT grp, sum((price * qty)) FROM subplan_test.items GROUP BY grp HAVING ((sum((price * qty)) > {p1:Decimal(76, 38)})) ORDER BY sum((price * qty)) DESC NULLS FIRST
+ SELECT (sum((price * qty)) * 0.2) FROM subplan_test.items
+(2 rows)
 
 SELECT grp, sum(price * qty) AS value FROM items
 GROUP BY grp
@@ -235,27 +201,17 @@ ORDER BY value DESC;
 -- ============================================================
 -- 7. Negative case: nested SubPlan must NOT push down (stays local)
 -- ============================================================
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT item_id FROM items
 WHERE price > (SELECT avg(price) FROM items
                WHERE qty > (SELECT avg(qty) FROM items))
-ORDER BY item_id;
-                                                         QUERY PLAN                                                          
------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on subplan_test.items
-   Output: items.item_id
-   Remote SQL: SELECT item_id FROM subplan_test.items WHERE ((price > {p1:Decimal(76, 38)})) ORDER BY item_id ASC NULLS LAST
-   InitPlan expr_1
-     ->  Foreign Scan
-           Output: (avg(items_2.price))
-           Relations: Aggregate on (items)
-           Remote SQL: SELECT avg(price) FROM subplan_test.items WHERE ((qty > {p1:Decimal(76, 38)}))
-           InitPlan expr_2
-             ->  Foreign Scan
-                   Output: (avg(items_1.qty))
-                   Relations: Aggregate on (items)
-                   Remote SQL: SELECT avg(qty) FROM subplan_test.items
-(13 rows)
+ORDER BY item_id$$);
+                                                  remote_sql                                                   
+---------------------------------------------------------------------------------------------------------------
+ SELECT item_id FROM subplan_test.items WHERE ((price > {p1:Decimal(76, 38)})) ORDER BY item_id ASC NULLS LAST
+ SELECT avg(price) FROM subplan_test.items WHERE ((qty > {p1:Decimal(76, 38)}))
+ SELECT avg(qty) FROM subplan_test.items
+(3 rows)
 
 SELECT item_id FROM items
 WHERE price > (SELECT avg(price) FROM items
@@ -272,22 +228,16 @@ ORDER BY item_id;
 -- 8. Negative case: multi-row correlated scalar (no aggregate) must
 --    NOT push down; zero-row semantics differ between PG and CH.
 -- ============================================================
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT s.sale_id FROM sales s
 WHERE s.amount = (SELECT s2.amount FROM sales s2
                   WHERE s2.sale_id = s.sale_id + 1)
-ORDER BY s.sale_id;
-                                            QUERY PLAN                                            
---------------------------------------------------------------------------------------------------
- Foreign Scan on subplan_test.sales s
-   Output: s.sale_id
-   Filter: (s.amount = (SubPlan expr_1))
-   Remote SQL: SELECT sale_id, amount FROM subplan_test.sales ORDER BY sale_id ASC NULLS LAST
-   SubPlan expr_1
-     ->  Foreign Scan on subplan_test.sales s2
-           Output: s2.amount
-           Remote SQL: SELECT amount FROM subplan_test.sales WHERE ((sale_id = ({p1:Int32} + 1)))
-(8 rows)
+ORDER BY s.sale_id$$);
+                                   remote_sql                                   
+--------------------------------------------------------------------------------
+ SELECT sale_id, amount FROM subplan_test.sales ORDER BY sale_id ASC NULLS LAST
+ SELECT amount FROM subplan_test.sales WHERE ((sale_id = ({p1:Int32} + 1)))
+(2 rows)
 
 -- ============================================================
 -- 9. Identity: the plan-time version probe must connect as the user the
@@ -301,22 +251,16 @@ GRANT USAGE ON SCHEMA subplan_test TO regress_subplan_nomap;
 CREATE VIEW sales_v AS SELECT * FROM sales;
 GRANT SELECT ON sales_v TO regress_subplan_nomap;
 SET ROLE regress_subplan_nomap;
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT v.sale_id, v.amount FROM sales_v v
 WHERE v.amount > (SELECT 1.5 * avg(v2.amount) FROM sales_v v2
                   WHERE v2.item_id = v.item_id)
-ORDER BY v.sale_id;
-                                                                                                          QUERY PLAN                                                                                                           
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on subplan_test.sales
-   Output: sales.sale_id, sales.amount
-   Remote SQL: SELECT sale_id, amount FROM subplan_test.sales r2 WHERE ((r2.amount > (SELECT (1.5 * avg(q1_2.amount)) FROM subplan_test.sales q1_2 WHERE ((q1_2.item_id = (r2.item_id)))))) ORDER BY r2.sale_id ASC NULLS LAST
-   SubPlan expr_1
-     ->  Foreign Scan
-           Output: ((1.5 * avg(sales_1.amount)))
-           Relations: Aggregate on (sales)
-           Remote SQL: SELECT (1.5 * avg(amount)) FROM subplan_test.sales WHERE ((item_id = {p1:Int32}))
-(8 rows)
+ORDER BY v.sale_id$$);
+                                                                                                   remote_sql                                                                                                    
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ SELECT sale_id, amount FROM subplan_test.sales r1 WHERE ((r1.amount > (SELECT (1.5 * avg(q1_1.amount)) FROM subplan_test.sales q1_1 WHERE ((q1_1.item_id = (r1.item_id)))))) ORDER BY r1.sale_id ASC NULLS LAST
+ SELECT (1.5 * avg(amount)) FROM subplan_test.sales WHERE ((item_id = {p1:Int32}))
+(2 rows)
 
 SELECT v.sale_id, v.amount FROM sales_v v
 WHERE v.amount > (SELECT 1.5 * avg(v2.amount) FROM sales_v v2
@@ -352,20 +296,15 @@ CREATE FOREIGN TABLE maybe_null (id int NOT NULL, val int)
 -- Nullable inner column, NOT NULL probe: ships as NOT IN plus the poison
 -- guard (no CASE). Postgres returns no rows because the set holds a NULL,
 -- whereas an unguarded pushdown would return items 4..6
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT item_id FROM items
 WHERE item_id NOT IN (SELECT val FROM maybe_null)
-ORDER BY item_id;
-                                                                                                                           QUERY PLAN                                                                                                                            
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on subplan_test.items
-   Output: items.item_id
-   Remote SQL: SELECT item_id FROM subplan_test.items r1 WHERE ((r1.item_id NOT IN (SELECT q1_1.val FROM subplan_test.maybe_null q1_1) AND NOT EXISTS (SELECT 1 FROM subplan_test.maybe_null q1_1 WHERE (q1_1.val IS NULL)))) ORDER BY r1.item_id ASC NULLS LAST
-   SubPlan any_1
-     ->  Foreign Scan on subplan_test.maybe_null
-           Output: maybe_null.val
-           Remote SQL: SELECT val FROM subplan_test.maybe_null
-(7 rows)
+ORDER BY item_id$$);
+                                                                                                                    remote_sql                                                                                                                     
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ SELECT item_id FROM subplan_test.items r1 WHERE ((r1.item_id NOT IN (SELECT q1_1.val FROM subplan_test.maybe_null q1_1) AND NOT EXISTS (SELECT 1 FROM subplan_test.maybe_null q1_1 WHERE (q1_1.val IS NULL)))) ORDER BY r1.item_id ASC NULLS LAST
+ SELECT val FROM subplan_test.maybe_null
+(2 rows)
 
 SELECT item_id FROM items
 WHERE item_id NOT IN (SELECT val FROM maybe_null)
@@ -377,20 +316,15 @@ ORDER BY item_id;
 -- Nullable probe, NOT NULL inner column: ships as the probe-NULL CASE with
 -- no poison guard (east sales are items {1,2,3,5}, so only val = 7
 -- qualifies; val IS NULL must not)
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT id FROM maybe_null
 WHERE val NOT IN (SELECT item_id FROM sales WHERE region = 'east')
-ORDER BY id;
-                                                                                                                                                               QUERY PLAN                                                                                                                                                                
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on subplan_test.maybe_null
-   Output: maybe_null.id
-   Remote SQL: SELECT id FROM subplan_test.maybe_null r1 WHERE ((CASE WHEN (r1.val) IS NULL THEN NOT EXISTS (SELECT q1_1.item_id FROM subplan_test.sales q1_1 WHERE ((q1_1.region = 'east'))) ELSE (r1.val NOT IN (SELECT q1_1.item_id FROM subplan_test.sales q1_1 WHERE ((q1_1.region = 'east')))) END)) ORDER BY r1.id ASC NULLS LAST
-   SubPlan any_1
-     ->  Foreign Scan on subplan_test.sales
-           Output: sales.item_id
-           Remote SQL: SELECT item_id FROM subplan_test.sales WHERE ((region = 'east'))
-(7 rows)
+ORDER BY id$$);
+                                                                                                                                                        remote_sql                                                                                                                                                         
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ SELECT id FROM subplan_test.maybe_null r1 WHERE ((CASE WHEN (r1.val) IS NULL THEN NOT EXISTS (SELECT q1_1.item_id FROM subplan_test.sales q1_1 WHERE ((q1_1.region = 'east'))) ELSE (r1.val NOT IN (SELECT q1_1.item_id FROM subplan_test.sales q1_1 WHERE ((q1_1.region = 'east')))) END)) ORDER BY r1.id ASC NULLS LAST
+ SELECT item_id FROM subplan_test.sales WHERE ((region = 'east'))
+(2 rows)
 
 SELECT id FROM maybe_null
 WHERE val NOT IN (SELECT item_id FROM sales WHERE region = 'east')
@@ -402,20 +336,15 @@ ORDER BY id;
 
 -- Both sides nullable: the full form, CASE and poison guard together. The set
 -- holds a NULL, so no probe, NULL included, can qualify
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT id FROM maybe_null m
 WHERE m.val NOT IN (SELECT val FROM maybe_null)
-ORDER BY id;
-                                                                                                                                                                            QUERY PLAN                                                                                                                                                                            
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on subplan_test.maybe_null m
-   Output: m.id
-   Remote SQL: SELECT id FROM subplan_test.maybe_null r1 WHERE ((CASE WHEN (r1.val) IS NULL THEN NOT EXISTS (SELECT q1_1.val FROM subplan_test.maybe_null q1_1) ELSE (r1.val NOT IN (SELECT q1_1.val FROM subplan_test.maybe_null q1_1) AND NOT EXISTS (SELECT 1 FROM subplan_test.maybe_null q1_1 WHERE (q1_1.val IS NULL))) END)) ORDER BY r1.id ASC NULLS LAST
-   SubPlan any_1
-     ->  Foreign Scan on subplan_test.maybe_null
-           Output: maybe_null.val
-           Remote SQL: SELECT val FROM subplan_test.maybe_null
-(7 rows)
+ORDER BY id$$);
+                                                                                                                                                                     remote_sql                                                                                                                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ SELECT id FROM subplan_test.maybe_null r1 WHERE ((CASE WHEN (r1.val) IS NULL THEN NOT EXISTS (SELECT q1_1.val FROM subplan_test.maybe_null q1_1) ELSE (r1.val NOT IN (SELECT q1_1.val FROM subplan_test.maybe_null q1_1) AND NOT EXISTS (SELECT 1 FROM subplan_test.maybe_null q1_1 WHERE (q1_1.val IS NULL))) END)) ORDER BY r1.id ASC NULLS LAST
+ SELECT val FROM subplan_test.maybe_null
+(2 rows)
 
 SELECT id FROM maybe_null m
 WHERE m.val NOT IN (SELECT val FROM maybe_null)
@@ -426,17 +355,14 @@ ORDER BY id;
 
 -- Positive IN over the same nullable column diverges only toward FALSE,
 -- which a WHERE treats like the NULL Postgres computes: still ships
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT item_id FROM items
 WHERE item_id IN (SELECT val FROM maybe_null)
-ORDER BY item_id;
-                                                                              QUERY PLAN                                                                               
------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
-   Output: items.item_id
-   Relations: (items) LEFT SEMI JOIN (maybe_null)
-   Remote SQL: SELECT r1.item_id FROM  subplan_test.items r1 LEFT SEMI JOIN subplan_test.maybe_null r3 ON (((r1.item_id = r3.val))) ORDER BY r1.item_id ASC NULLS LAST
-(4 rows)
+ORDER BY item_id$$);
+                                                                       remote_sql                                                                        
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+ SELECT r1.item_id FROM  subplan_test.items r1 LEFT SEMI JOIN subplan_test.maybe_null r2 ON (((r1.item_id = r2.val))) ORDER BY r1.item_id ASC NULLS LAST
+(1 row)
 
 SELECT item_id FROM items
 WHERE item_id IN (SELECT val FROM maybe_null)

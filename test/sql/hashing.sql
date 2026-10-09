@@ -1,4 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+\i test/include/normalize.sql
 
 CREATE SERVER hashing_loopback FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'hashing_test', driver 'binary');
@@ -76,9 +77,9 @@ SELECT id FROM hash_inputs
 WHERE digest(binary_data, 'unsupported') IS NOT NULL;
 
 -- A NULL algorithm is folded away locally because digest() is strict.
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.explain_filter($$EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM hash_inputs
-WHERE digest(binary_data, NULL::text) IS NOT NULL;
+WHERE digest(binary_data, NULL::text) IS NOT NULL$$);
 
 -- Force the expressions into the remote target and verify raw bytea results,
 -- including a value containing NUL and non-UTF-8 bytes.
