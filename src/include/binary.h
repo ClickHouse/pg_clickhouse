@@ -21,6 +21,7 @@
 #include "engine.h"
 #include "pg-clickhouse-decode.h"
 #include "pg-clickhouse-encode.h"
+#include "server_version.h"
 
 typedef struct ch_binary_connection_t ch_binary_connection_t;
 typedef struct ch_binary_response_t ch_binary_response_t;
@@ -41,16 +42,11 @@ extern bool
 ch_binary_is_broken(const ch_binary_connection_t* conn);
 
 /*
- * Read the server version captured during the native-protocol handshake.
- * Writes 0 to all out-params when the version is unavailable.
+ * Read server version captured during native protocol handshake.
+ * Return 0.0.0 when version is unavailable.
  */
-extern void
-ch_binary_server_version(
-    const ch_binary_connection_t* conn,
-    int* major,
-    int* minor,
-    int* patch
-);
+extern ch_server_version
+ch_binary_server_version(const ch_binary_connection_t* conn);
 
 /* SELECT. */
 extern ch_binary_response_t*

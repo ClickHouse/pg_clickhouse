@@ -30,27 +30,7 @@
 
 #include "binary_internal.h"
 #include "kv_list.h"
-
-/*
- * output_format_native_write_json_as_string exists on the server from
- * 24.10 onwards. Sending it as `important` against an older server would
- * fail the query, so gate.
- */
-bool
-server_supports_json_as_string(const chc_client* c) {
-    const chc_server_info* info = chc_client_server_info(c);
-
-    if (!info) {
-        return false;
-    }
-    if (info->version_major > 24) {
-        return true;
-    }
-    if (info->version_major == 24 && info->version_minor >= 10) {
-        return true;
-    }
-    return false;
-}
+#include "server_version.h"
 
 const char*
 ch_binary_exception_message(const chc_exception* ex) {
@@ -111,11 +91,11 @@ ch_binary_drain(ch_binary_connection_t* conn, char** out_msg) {
  */
 chc_query_setting*
 ch_binary_query_settings(
-    const chc_client* c,
+    const ch_binary_connection_t* conn,
     const ch_query* query,
     size_t* n_settings
 ) {
-    bool json_as_string = server_supports_json_as_string(c);
+    bool json_as_string = chfdw_version_ge(ch_binary_server_version(conn), 24, 10);
     size_t n            = (query->settings ? (size_t)query->settings->length : 0) +
                           (json_as_string ? 1 : 0);
 

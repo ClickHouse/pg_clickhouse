@@ -182,8 +182,7 @@ ch_binary_simple_query(
     size_t n_params         = (size_t)(query->num_params > 0 ? query->num_params : 0);
     chc_query_param* params = NULL;
     size_t n_settings;
-    chc_query_setting* settings =
-        ch_binary_query_settings(conn->client, query, &n_settings);
+    chc_query_setting* settings = ch_binary_query_settings(conn, query, &n_settings);
 
     if (n_params) {
         params = palloc0(n_params * sizeof(*params));
