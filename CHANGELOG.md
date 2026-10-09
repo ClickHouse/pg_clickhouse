@@ -40,6 +40,9 @@ All notable changes to this project will be documented in this file. It uses the
     driver connection setup ([#395]).
 *   Added checks to prevent the pushdown of custom functions or
     pg_clickhouse's own local functions ([#397]).
+*   Prevented pushdown of types and operators from extensions without known
+    ClickHouse equivalents, such as [citext] and [intarray] operators, which
+    previously caused ClickHouse syntax errors ([#405]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -58,6 +61,12 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
   [#402]: https://github.com/ClickHouse/pg_clickhouse/pull/402
     "ClickHouse/pg_clickhouse#402 Specify precision for unconstrained numeric casts"
+  [citext]: https://www.postgresql.org/docs/current/citext.html
+    "PostgreSQL Docs: citext"
+  [intarray]: https://www.postgresql.org/docs/current/intarray.html
+    "PostgreSQL Docs: intarray"
+  [#405]: https://github.com/ClickHouse/pg_clickhouse/pull/405
+    "ClickHouse/pg_clickhouse#405 Evaluate unsupported types and operators locally"
 
 ## [v0.11.0] — 2026-09-30
 

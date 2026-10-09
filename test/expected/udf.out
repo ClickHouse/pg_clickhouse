@@ -118,6 +118,20 @@ SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE set_limit(id) = '1' $$
  "SELECT id FROM udf_test.vals"
 (1 row)
 
+-- Keep unknown extension's types and operators local.
+CREATE EXTENSION IF NOT EXISTS citext;
+SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) = '1' $$);
+           remote_sql           
+--------------------------------
+ "SELECT id FROM udf_test.vals"
+(1 row)
+
+SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) IS NULL $$);
+           remote_sql           
+--------------------------------
+ "SELECT id FROM udf_test.vals"
+(1 row)
+
 -- Wait for a lock before loading intarray.
 SELECT pg_advisory_lock(hashtext('intarray'));
  pg_advisory_lock 
@@ -128,6 +142,13 @@ SELECT pg_advisory_lock(hashtext('intarray'));
 CREATE EXTENSION intarray;
 -- Keep unknown functions from known extension local.
 SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE intset(id) = ARRAY[1]');
+           remote_sql           
+--------------------------------
+ "SELECT id FROM udf_test.vals"
+(1 row)
+
+-- Keep unmapped operators from known extension local.
+SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE ARRAY[id] @> ARRAY[1]');
            remote_sql           
 --------------------------------
  "SELECT id FROM udf_test.vals"
