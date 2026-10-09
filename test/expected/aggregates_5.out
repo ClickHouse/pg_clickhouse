@@ -1785,27 +1785,32 @@ DETAIL:  Remote Query: SELECT groupBitXor(cast(duration, 'Nullable(Int32)')) FRO
 (1 row)
 
 -- stddev(numeric), stddev_samp(numeric), stddev_pop(numeric)
-                                                                                  QUERY PLAN                                                                                   
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                               QUERY PLAN                                                                                                               
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev((b)::numeric)), (stddev_samp((b)::numeric)), (stddev_pop((b)::numeric))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(cast(b, 'Nullable(Decimal)')), stddev_samp(cast(b, 'Nullable(Decimal)')), stddev_pop(cast(b, 'Nullable(Decimal)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_pop(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
 (4 rows)
 
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing CAST(b, 'Nullable(Decimal)')
-DETAIL:  Remote Query: SELECT stddev_samp(cast(b, 'Nullable(Decimal)')), stddev_samp(cast(b, 'Nullable(Decimal)')), stddev_pop(cast(b, 'Nullable(Decimal)')) FROM agg_test.agg_numbers
-                                                                                  QUERY PLAN                                                                                   
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+      stddev      |   stddev_samp    |   stddev_pop    
+------------------+------------------+-----------------
+ 151.389360803998 | 151.389360803998 | 131.10703231895
+(1 row)
+
+                                                                                                               QUERY PLAN                                                                                                               
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev((b)::numeric)), (stddev_samp((b)::numeric)), (stddev_pop((b)::numeric))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(cast(b, 'Nullable(Decimal)')), stddev_samp(cast(b, 'Nullable(Decimal)')), stddev_pop(cast(b, 'Nullable(Decimal)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_pop(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
 (4 rows)
 
-ERROR:  pg_clickhouse: Code: 42. DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing CAST(b, 'Nullable(Decimal)'). (NUMBER_OF_ARGUMENTS_DOESNT_MATCH)
-DETAIL:  Remote Query: SELECT stddev_samp(cast(b, 'Nullable(Decimal)')), stddev_samp(cast(b, 'Nullable(Decimal)')), stddev_pop(cast(b, 'Nullable(Decimal)')) FROM agg_test.agg_numbers
-CONTEXT:  HTTP status code: 500
+      stddev      |   stddev_samp    |   stddev_pop    
+------------------+------------------+-----------------
+ 151.389360803998 | 151.389360803998 | 131.10703231895
+(1 row)
+
 -- var_pop(int2), var_samp(int2), variance(int2)
                                      QUERY PLAN                                      
 -------------------------------------------------------------------------------------
@@ -1942,27 +1947,32 @@ CONTEXT:  HTTP status code: 500
 (1 row)
 
 -- var_pop(numeric), var_samp(numeric), variance(numeric)
-                                                                              QUERY PLAN                                                                              
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                          QUERY PLAN                                                                                                           
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop((b)::numeric)), (var_samp((b)::numeric)), (variance((b)::numeric))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(cast(b, 'Nullable(Decimal)')), var_samp(cast(b, 'Nullable(Decimal)')), var_samp(cast(b, 'Nullable(Decimal)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_pop(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
 (4 rows)
 
-ERROR:  pg_clickhouse: DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing CAST(b, 'Nullable(Decimal)')
-DETAIL:  Remote Query: SELECT var_pop(cast(b, 'Nullable(Decimal)')), var_samp(cast(b, 'Nullable(Decimal)')), var_samp(cast(b, 'Nullable(Decimal)')) FROM agg_test.agg_numbers
-                                                                              QUERY PLAN                                                                              
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+     var_pop      |     var_samp     |     variance     
+------------------+------------------+------------------
+ 17189.0539234823 | 22918.7385646431 | 22918.7385646431
+(1 row)
+
+                                                                                                          QUERY PLAN                                                                                                           
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop((b)::numeric)), (var_samp((b)::numeric)), (variance((b)::numeric))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(cast(b, 'Nullable(Decimal)')), var_samp(cast(b, 'Nullable(Decimal)')), var_samp(cast(b, 'Nullable(Decimal)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_pop(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
 (4 rows)
 
-ERROR:  pg_clickhouse: Code: 42. DB::Exception: Decimal data type family must have exactly two arguments: precision and scale: While processing CAST(b, 'Nullable(Decimal)'). (NUMBER_OF_ARGUMENTS_DOESNT_MATCH)
-DETAIL:  Remote Query: SELECT var_pop(cast(b, 'Nullable(Decimal)')), var_samp(cast(b, 'Nullable(Decimal)')), var_samp(cast(b, 'Nullable(Decimal)')) FROM agg_test.agg_numbers
-CONTEXT:  HTTP status code: 500
+     var_pop      |     var_samp     |     variance     
+------------------+------------------+------------------
+ 17189.0539234823 | 22918.7385646431 | 22918.7385646431
+(1 row)
+
 -- any_value pushdown (binary)
                                           QUERY PLAN                                           
 -----------------------------------------------------------------------------------------------
