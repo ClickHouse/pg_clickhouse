@@ -26,6 +26,15 @@ All notable changes to this project will be documented in this file. It uses the
     *   [regr_sxx]
     *   [regr_sxy]
     *   [regr_syy]
+*   Added `IMPORT FOREIGN SCHEMA` support for ClickHouse [DataLakeCatalog]
+    databases, such as mounted Iceberg REST catalogs, which ClickHouse 25.10
+    and later hide from `system.tables` by default.
+*   Added the "local" driver, which runs each query in a new `clickhouse local`
+    process, needing no ClickHouse server. Its `catalog_url` and
+    `catalog_settings` options mount a [DataLakeCatalog], such as an Iceberg
+    REST catalog, for each query. Requires the new
+    `pg_clickhouse.clickhouse_path` parameter and privileges of the
+    `pg_execute_server_program` role.
 
 ### 🚀 Distribution
 
@@ -52,6 +61,8 @@ All notable changes to this project will be documented in this file. It uses the
   [regr_sxx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxx
   [regr_sxy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxy
   [regr_syy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_syy
+  [DataLakeCatalog]: https://clickhouse.com/docs/engines/database-engines/datalakecatalog
+    "ClickHouse Docs: DataLakeCatalog"
   [#397]: https://github.com/ClickHouse/pg_clickhouse/pull/397
     "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
 

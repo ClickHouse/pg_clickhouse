@@ -73,6 +73,7 @@ static const ChFdwOption ch_options[] = {
 static char* ch_session_settings         = NULL;
 static kv_list* ch_session_settings_list = NULL;
 static bool ch_pushdown_regex            = true;
+static char* ch_clickhouse_path          = NULL;
 
 /*
  * Helper functions
@@ -99,6 +100,9 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
     List* options_list = untransformRelOptions(PG_GETARG_DATUM(0));
     Oid catalog        = PG_GETARG_OID(1);
     ListCell* cell;
+    const char* driver = "binary";
+    const char* dbname = DEFAULT_DBNAME;
+    bool catalog_url   = false;
 
     /* Build our options lists if we didn't yet. */
     InitChFdwOptions();
@@ -166,6 +170,28 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
             }
         }
 
+        if (strcmp(def->defname, "driver") == 0) {
+            driver = defGetString(def);
+        } else if (strcmp(def->defname, "dbname") == 0) {
+            dbname = defGetString(def);
+        } else if (strcmp(def->defname, "catalog_url") == 0) {
+            catalog_url = true;
+        } else if (strcmp(def->defname, "catalog_settings") == 0) {
+            ListCell* lc;
+
+            foreach (lc, chfdw_parse_options(defGetString(def))) {
+                const char* name = ((DefElem*)lfirst(lc))->defname;
+
+                if (!chfdw_is_setting_name(name)) {
+                    ereport(
+                        ERROR,
+                        errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
+                        errmsg("invalid ClickHouse setting name \"%s\"", name)
+                    );
+                }
+            }
+        }
+
         if (strcmp(def->defname, "encoding_check") == 0) {
             const char* val = defGetString(def);
             pgch_encoding_check v;
@@ -179,6 +205,25 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
                 );
             }
         }
+    }
+
+    if (catalog_url && strcmp(driver, "local") != 0) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
+            errmsg("option \"catalog_url\" requires driver \"local\"")
+        );
+    }
+    /* Catalog database created by each query cannot replace default database */
+    if (catalog_url && (*dbname == '\0' || strcmp(dbname, DEFAULT_DBNAME) == 0)) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_FDW_INVALID_ATTRIBUTE_VALUE),
+            errmsg(
+                "option \"catalog_url\" requires option \"dbname\" other than "
+                "\"default\""
+            )
+        );
     }
 
     PG_RETURN_VOID();
@@ -199,6 +244,9 @@ InitChFdwOptions(void) {
         { "table_name",              ForeignTableRelationId,  false },
         { "engine",                  ForeignTableRelationId,  false },
         { "driver",                  ForeignServerRelationId, false },
+        { "catalog_url",             ForeignServerRelationId, false },
+        { "catalog_settings",        ForeignServerRelationId, false },
+        { "catalog_settings",        UserMappingRelationId,   false },
         { "encoding_check",          ForeignServerRelationId, true  },
         { "aggregatefunction",       AttributeRelationId,     false },
         { "simpleaggregatefunction", AttributeRelationId,     false },
@@ -559,6 +607,31 @@ chfdw_get_session_settings(void) {
 }
 
 /*
+ * Return the current value of the `clickhouse_path` GUC.
+ */
+const char*
+chfdw_clickhouse_path(void) {
+    return ch_clickhouse_path;
+}
+
+/*
+ * Whether name may appear unquoted in a ClickHouse SET statement or SETTINGS
+ * clause.
+ */
+bool
+chfdw_is_setting_name(const char* name) {
+    if (!isalpha((unsigned char)*name) && *name != '_') {
+        return false;
+    }
+    for (; *name; name++) {
+        if (!isalnum((unsigned char)*name) && *name != '_') {
+            return false;
+        }
+    }
+    return true;
+}
+
+/*
  * Return the current value of the `pushdown_regex` GUC.
  */
 bool
@@ -616,6 +689,18 @@ chfdw_settings_assign_hook(const char* newval, void* extra) {
 }
 
 /*
+ * Accept only an absolute path, so the program run does not depend on PATH.
+ */
+static bool
+chfdw_check_clickhouse_path(char** newval, void** extra, GucSource source) {
+    if (*newval == NULL || **newval == '\0' || is_absolute_path(*newval)) {
+        return true;
+    }
+    GUC_check_errdetail("pg_clickhouse.clickhouse_path must be an absolute path.");
+    return false;
+}
+
+/*
  * Module load callback
  */
 void
@@ -657,6 +742,19 @@ _PG_init(void) {
         PGC_USERSET,
         0,
         NULL,
+        NULL,
+        NULL
+    );
+
+    DefineCustomStringVariable(
+        "pg_clickhouse.clickhouse_path",
+        "Sets the clickhouse executable run by the local driver.",
+        "Absolute path. The local driver is unavailable while unset.",
+        &ch_clickhouse_path,
+        "",
+        PGC_SUSET,
+        0,
+        chfdw_check_clickhouse_path,
         NULL,
         NULL
     );

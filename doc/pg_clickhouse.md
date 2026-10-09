@@ -136,8 +136,15 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 
 The supported options are:
 
-*   `driver`: The ClickHouse connection driver to use, either "binary" or
-    "http". **Required.**
+*   `driver`: The ClickHouse connection driver to use: "binary", "http", or
+    "local". **Required.** The "local" driver runs each query in a new
+    `clickhouse local` process rather than connecting to a server; see
+    [Data Lake Catalogs](#data-lake-catalogs).
+*   `catalog_url`: For the "local" driver, the catalog endpoint each query
+    mounts as a [DataLakeCatalog] database named by `dbname`.
+*   `catalog_settings`: For the "local" driver, [DataLakeCatalog] settings,
+    in the form `name value, name 'value'`, such as
+    `catalog_type 'rest', warehouse 'demo'`.
 *   `compression`: Native-protocol compression for the "binary" driver, one of
     "none", "lz4", or "zstd". Defaults to "lz4". Ignored by the "http" driver.
 *   `dbname`: The ClickHouse database to use upon connecting. Defaults to
@@ -209,6 +216,9 @@ The supported options are:
 
 *   `user`: The name of the ClickHouse user. Defaults to "default".
 *   `password`: The password of the ClickHouse user.
+*   `catalog_settings`: For the "local" driver, [DataLakeCatalog] settings
+    added to and replacing those of the server, such as catalog and object
+    store credentials.
 
 ### ALTER USER MAPPING
 
@@ -327,6 +337,139 @@ Some details to keep in mind:
 >
 > To create objects with different names or all lowercase (and therefore
 > case-insensitive) names, use [CREATE FOREIGN TABLE](#create-foreign-table).
+
+#### Data Lake Catalogs
+
+ClickHouse 25.3 and later can mount an Iceberg REST, Glue, Unity, or other
+catalog as a [DataLakeCatalog] database. ClickHouse talks to the catalog and
+reads table files; pg_clickhouse only talks to ClickHouse.
+
+The "local" driver needs no ClickHouse server. It runs each query in a new
+`clickhouse local` process, which first creates the catalog database from the
+server's `catalog_url` and `catalog_settings` and the user mapping's
+`catalog_settings`, then runs the query:
+
+```sql
+CREATE SERVER lake_srv FOREIGN DATA WRAPPER clickhouse_fdw
+OPTIONS (
+    driver 'local',
+    dbname 'lake',
+    catalog_url 'http://rest-catalog:8181/v1',
+    catalog_settings 'catalog_type rest, warehouse demo'
+);
+
+CREATE USER MAPPING FOR CURRENT_USER SERVER lake_srv
+OPTIONS (catalog_settings 'catalog_credential ''id:secret''');
+```
+
+Then import it like any other database:
+
+```sql
+CREATE SCHEMA lake;
+IMPORT FOREIGN SCHEMA lake FROM SERVER lake_srv INTO lake;
+```
+
+The "local" driver requires:
+
+*   [`pg_clickhouse.clickhouse_path`](#pg_clickhouseclickhouse_path) set to
+    the absolute path of a `clickhouse` executable.
+*   A `dbname` other than "default", naming the catalog database.
+*   Privileges of the `pg_execute_server_program` role for the user running
+    the query, since `clickhouse local` can read files and networks reachable
+    by the PostgreSQL operating system user. Queries by other roles fail, even
+    through views.
+
+It enables the setting the `catalog_type` needs, such as
+`allow_experimental_database_iceberg` for "rest", and supports no `INSERT`.
+Each query starts a process and contacts the catalog again, and import runs
+one query per table. The process runs in the PostgreSQL data directory, which
+must contain any warehouse on the local file system, and writes temporary
+files to its `pgsql_tmp` directory. Canceling a query, or ending a scan early
+with `LIMIT`, kills the process.
+
+To query a catalog mounted on a ClickHouse server instead, create the database
+there and import it through a "binary" or "http" server:
+
+```sql
+SET allow_database_iceberg = 1;
+CREATE DATABASE lake
+ENGINE = DataLakeCatalog('http://rest-catalog:8181/v1')
+SETTINGS catalog_type = 'rest', warehouse = 'demo';
+```
+
+Catalog tables have names of the form `namespace.table`, with nested
+namespaces joined by dots, such as `analytics.events` or `analytics.sub.deep`.
+Import uses that name for both the foreign table and its `table_name` option,
+so queries must double-quote it:
+
+```sql
+SELECT count(*) FROM lake."analytics.events";
+```
+
+`LIMIT TO` and `EXCEPT` take the same double-quoted names, as in
+`LIMIT TO ("analytics.events")`. PostgreSQL parses an unquoted
+`analytics.events` as a schema-qualified name, which matches no table.
+PostgreSQL truncates names longer than 63 bytes, so `LIMIT TO` cannot select
+such tables, and names sharing a 63-byte prefix import only once. Define such
+tables with [CREATE FOREIGN TABLE](#create-foreign-table) and a `table_name`
+option.
+
+Some details to keep in mind:
+
+*   Import lists catalog tables from `system.tables`, setting
+    `show_data_lake_catalogs_in_system_tables` on ClickHouse 25.8 and later,
+    since 25.10 hides catalogs by default. It reads each table's columns with
+    `DESCRIBE TABLE`, which fetches metadata for that table alone, and adds
+    no `engine` option.
+
+*   ClickHouse 25.7 through 26.7 log catalog listing errors without failing
+    the query, so a misconfigured catalog imports no tables and raises no
+    error. Check the ClickHouse server log when import creates nothing. If
+    ClickHouse cannot read one table's metadata, import fails with the
+    ClickHouse error; use `EXCEPT` to skip that table.
+
+*   ClickHouse maps Iceberg types before pg_clickhouse sees them: `date` to
+    `Date32`, `timestamp` to `DateTime64(6)`, `timestamptz` to
+    `DateTime64(6, 'UTC')`, nanosecond timestamps to `DateTime64(9)`, `time`
+    to `Int64`, `binary` and `fixed` to `String` and `FixedString`, `struct` to
+    `Tuple`, and optional fields other than lists and maps to `Nullable`.
+    These then import as described above. Tables with `geometry` or
+    `geography` columns fail to import:
+    ClickHouse rejects them unless `allow_geo_types_in_iceberg` is enabled,
+    and then reports a `Geometry` type pg_clickhouse cannot map.
+
+*   Scans, joins, and aggregates over catalog tables push down subject to the
+    same rules as other foreign tables, including joins between two catalog
+    tables or between a catalog table and a MergeTree table on the same
+    server. A join with a PostgreSQL table runs in PostgreSQL: pg_clickhouse
+    sends the catalog table scan and its pushable `WHERE` conditions to
+    ClickHouse, never the join condition, and PostgreSQL joins the returned
+    rows. Use [EXPLAIN](#explain) to see which parts run in ClickHouse.
+
+*   pg_clickhouse estimates 1,000 rows for every foreign scan, whatever the
+    table size or conditions, and `ANALYZE` collects no sample rows. PostgreSQL
+    therefore plans joins with PostgreSQL tables without knowing how many rows
+    a catalog table returns. To join a selective slice repeatedly, copy it into
+    a PostgreSQL table with `CREATE TABLE ... AS SELECT` and `ANALYZE` that.
+
+*   With a "binary" or "http" server, pg_clickhouse does not block `INSERT`
+    or `COPY FROM` into catalog tables and passes them to ClickHouse, which
+    as of 26.8 rejects inserts into Iceberg tables unless
+    `allow_insert_into_iceberg` is enabled.
+
+*   Each query reads whatever table snapshot ClickHouse resolves. PostgreSQL
+    transaction isolation does not pin catalog snapshots.
+
+> **⚠️ Testing Status**
+>
+> The ClickHouse behavior above was checked against ClickHouse source and with
+> `clickhouse local` 26.8, an Iceberg REST catalog, and local files. Import
+> and queries through the "local" driver were checked with the same
+> `clickhouse local` and catalog on PostgreSQL 19. Import and queries against
+> a ClickHouse server with a mounted catalog, other catalogs and object
+> stores, `Nullable(Tuple)` columns from optional structs on ClickHouse 26.1
+> and later, and snapshot consistency across scans in one query remain
+> untested.
 
 ### CREATE FOREIGN TABLE
 
@@ -964,6 +1107,18 @@ version.
 Note that pg_clickhouse must be loaded before setting
 `pg_clickhouse.session_settings`; either use [shared library preloading] or
 simply use one of the objects in the extension to ensure it loads.
+
+#### `pg_clickhouse.clickhouse_path`
+
+The `pg_clickhouse.clickhouse_path` parameter sets the absolute path of the
+`clickhouse` executable the "local" driver runs. Only superusers may set it;
+the "local" driver is unavailable while it is unset:
+
+```sql
+ALTER SYSTEM SET pg_clickhouse.clickhouse_path = '/usr/bin/clickhouse';
+```
+
+See [Data Lake Catalogs](#data-lake-catalogs) for details.
 
 #### `pg_clickhouse.pushdown_regex`
 
@@ -2108,6 +2263,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: DROP USER MAPPING"
   [IMPORT FOREIGN SCHEMA]: https://www.postgresql.org/docs/current/sql-importforeignschema.html
     "PostgreSQL Docs: IMPORT FOREIGN SCHEMA"
+  [DataLakeCatalog]: https://clickhouse.com/docs/engines/database-engines/datalakecatalog
+    "ClickHouse Docs: DataLakeCatalog"
   [CREATE FOREIGN TABLE]: https://www.postgresql.org/docs/current/sql-createforeigntable.html
     "PostgreSQL Docs: CREATE FOREIGN TABLE"
   [table engine]: https://clickhouse.com/docs/engines/table-engines

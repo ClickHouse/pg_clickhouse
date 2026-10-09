@@ -96,6 +96,12 @@ ch_connection
 chfdw_http_connect(ch_connection_details* details);
 ch_connection
 chfdw_binary_connect(ch_connection_details* details);
+ch_connection
+chfdw_local_connect(
+    ch_connection_details* details,
+    ForeignServer* server,
+    UserMapping* user
+);
 /*
  * Return the ClickHouse server version for the connection bound to the given
  * user mapping, connecting if necessary. Safe to call during planning.
@@ -267,6 +273,10 @@ extern kv_list*
 chfdw_get_session_settings(void);
 bool
 chfdw_pushdown_regex_ok(void);
+const char*
+chfdw_clickhouse_path(void);
+bool
+chfdw_is_setting_name(const char* name);
 
 extern void
 chfdw_extract_options(

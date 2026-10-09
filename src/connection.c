@@ -89,6 +89,8 @@ clickhouse_connect(ForeignServer* server, UserMapping* user) {
         return chfdw_http_connect(&details);
     } else if (strcmp(details.driver, "binary") == 0) {
         return chfdw_binary_connect(&details);
+    } else if (strcmp(details.driver, "local") == 0) {
+        return chfdw_local_connect(&details, server, user);
     } else {
         ereport(
             ERROR,
