@@ -41,6 +41,8 @@ All notable changes to this project will be documented in this file. It uses the
     parsed a different value, such as zero for `1e-10`. They now use the
     shortest text that parses back to the same value. Column values were not
     affected ([#403]).
+*   Fixed ClickHouse type mappings for pushed-down casts and parameters,
+    where previously invalid casts would cause remote query failures ([#401]).
 *   Fixed GCC 15 build failure caused by a `-Wclobbered` error in binary
     driver connection setup ([#395]).
 *   Added checks to prevent the pushdown of custom functions or
@@ -74,6 +76,8 @@ All notable changes to this project will be documented in this file. It uses the
     "PostgreSQL Docs: intarray"
   [#405]: https://github.com/ClickHouse/pg_clickhouse/pull/405
     "ClickHouse/pg_clickhouse#405 Evaluate unsupported types and operators locally"
+  [#401]: https://github.com/ClickHouse/pg_clickhouse/pull/401
+    "ClickHouse/pg_clickhouse#401 Fix temporal, UUID and JSON type mappings"
 
 ## [v0.11.0] — 2026-09-30
 
