@@ -48,6 +48,7 @@
 #include "utils/typcache.h"
 
 #include "fdw.h"
+#include "pg-clickhouse-encode.h"
 
 /* Aggregate OIDs absent from fmgroids.h on all PG versions. */
 #define F_STRING_AGG_TEXT_TEXT 3538
@@ -225,7 +226,7 @@ deparseExpr(Expr* expr, deparse_expr_cxt* context);
 static void
 deparseVar(Var* node, deparse_expr_cxt* context);
 static void
-deparseConst(Const* node, deparse_expr_cxt* context, int showtype);
+deparseConst(Const* node, deparse_expr_cxt* context, bool showtype);
 static void
 deparseParam(Param* node, deparse_expr_cxt* context);
 static void
@@ -1793,63 +1794,15 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
 
     with_typemod = (flags & FORMAT_TYPE_TYPEMOD_GIVEN) != 0 && (typemod >= 0);
 
-    /*
-     * See if we want to special-case the output for certain built-in types.
-     * Note that these special cases should all correspond to special
-     * productions in gram.y, to ensure that the type name will be taken as a
-     * system type, not a user type of the same name.
-     *
-     * If we do not provide a special-case output here, the type name will be
-     * handled the same way as a user type name --- in particular, it will be
-     * double-quoted if it matches any lexer keyword. This behavior is
-     * essential for some cases, such as types "bit" and "char".
-     */
-    buf = NULL; /* flag for no special case */
-
     switch (type_oid) {
-    case BOOLOID:
-        buf = pstrdup("Boolean");
-        break;
-
     case BPCHAROID:
+    case VARCHAROID:
         if (with_typemod) {
             buf = printTypmod("FixedString", typemod, typeform->typmodout);
-        } else if ((flags & FORMAT_TYPE_TYPEMOD_GIVEN) != 0) {
-            /*
-             * bpchar with typmod -1 is not the same as CHARACTER, which
-             * means CHARACTER(1) per SQL spec. Report it as bpchar so
-             * that parser will not assign a bogus typmod.
-             */
         } else {
             buf = pstrdup("String");
         }
         break;
-
-    case FLOAT4OID:
-        buf = pstrdup("Float32");
-        break;
-
-    case FLOAT8OID:
-        buf = pstrdup("Float64");
-        break;
-
-    case INT2OID:
-        buf = pstrdup("Int16");
-        break;
-
-    case INT4OID:
-        buf = pstrdup("Int32");
-        break;
-
-    case INT8OID:
-        buf = pstrdup("Int64");
-        break;
-
-#if PG_VERSION_NUM >= 190000
-    case OID8OID:
-        buf = pstrdup("UInt64");
-        break;
-#endif
 
     case NUMERICOID:
         if (with_typemod) {
@@ -1872,41 +1825,9 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
         }
         break;
 
-    case TIMESTAMPTZOID:
-    case TIMESTAMPOID:
-        buf = pstrdup("DateTime");
+    default:
+        buf = pgch_ch_type_for(type_oid, with_typemod ? typemod : -1, true, NULL);
         break;
-    case DATEOID:
-        buf = pstrdup("Date");
-        break;
-
-    case VARCHAROID:
-        if (with_typemod) {
-            buf = printTypmod("FixedString", typemod, typeform->typmodout);
-        } else {
-            buf = pstrdup("String");
-        }
-        break;
-    case TEXTOID:
-        buf = pstrdup("String");
-        break;
-    }
-
-    if (buf == NULL) {
-        CustomObjectDef* cdef;
-        char* typname;
-
-        cdef = chfdw_check_for_custom_type(type_oid);
-        if (cdef && cdef->custom_name[0] != '\0') {
-            buf = pstrdup(cdef->custom_name);
-        } else {
-            typname = NameStr(typeform->typname);
-            buf     = quote_qualified_identifier(NULL, typname);
-
-            if (with_typemod) {
-                buf = printTypmod(buf, typemod, typeform->typmodout);
-            }
-        }
     }
 
     if (is_array) {
@@ -1918,26 +1839,10 @@ ch_format_type_extended(Oid type_oid, int32 typemod, uint16 flags) {
     return buf;
 }
 
-/*
- * Convert type OID + typmod info into a type name we can ship to the remote
- * server. Someplace else had better have verified that this type name is
- * expected to be known on the remote end.
- *
- * This is almost just format_type_with_typemod(), except that if left to its
- * own devices, that function will make schema-qualification decisions based
- * on the local search_path, which is wrong. We must schema-qualify all
- * type names that are not in pg_catalog. We assume here that built-in types
- * are all in pg_catalog and need not be qualified; otherwise, qualify.
- */
+/* Convert type OID + typmod info into a ClickHouse type name */
 static char*
 deparse_type_name(Oid type_oid, int32 typemod) {
-    uint16 flags = FORMAT_TYPE_TYPEMOD_GIVEN;
-
-    if (!chfdw_is_builtin(type_oid)) {
-        flags |= FORMAT_TYPE_FORCE_QUALIFY;
-    }
-
-    return ch_format_type_extended(type_oid, typemod, flags);
+    return ch_format_type_extended(type_oid, typemod, FORMAT_TYPE_TYPEMOD_GIVEN);
 }
 
 /*
@@ -2919,7 +2824,7 @@ deparseExpr(Expr* node, deparse_expr_cxt* context) {
         deparseVar((Var*)node, context);
         break;
     case T_Const:
-        deparseConst((Const*)node, context, 0);
+        deparseConst((Const*)node, context, false);
         break;
     case T_Param:
         deparseParam((Param*)node, context);
@@ -3395,12 +3300,12 @@ chfdw_array_to_ch_literal(Datum arr) {
  * Deparse given constant value into context->buf.
  *
  * This function has to be kept in sync with ruleutils.c's get_const_expr.
- * As for that function, showtype can be -1 to never show "::typename" decoration,
- * or +1 to always show it, or 0 to show it only if the constant wouldn't be assumed
- * to be the right type by default.
+ * As for that function, showtype determines whether to always show "::typename"
+ * decoration or only if the constant wouldn't be assumed to be the right type
+ * by default.
  */
 static void
-deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
+deparseConst(Const* node, deparse_expr_cxt* context, bool showtype) {
     StringInfo buf = context->buf;
     Oid typoutput;
     bool typIsVarlena;
@@ -3411,11 +3316,16 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
         return;
     }
 
-    if (showtype > 0) {
-        appendStringInfoString(buf, "cast(");
+    getTypeOutputInfo(node->consttype, &typoutput, &typIsVarlena);
+
+    /* Bare literal would parse in column timezone, not UTC */
+    if (!showtype && typoutput == F_TIMESTAMPTZ_OUT) {
+        showtype = true;
     }
 
-    getTypeOutputInfo(node->consttype, &typoutput, &typIsVarlena);
+    if (showtype) {
+        appendStringInfoString(buf, "cast(");
+    }
 
     if (typoutput == F_TIMESTAMPTZ_OUT || typoutput == F_TIMESTAMP_OUT) {
         char ts[MAXDATELEN + 1];
@@ -3497,7 +3407,7 @@ deparseConst(Const* node, deparse_expr_cxt* context, int showtype) {
     }
 
 cleanup:
-    if (showtype > 0) {
+    if (showtype) {
         appendStringInfo(
             buf, " as %s)", deparse_type_name(node->consttype, node->consttypmod)
         );
@@ -4355,9 +4265,11 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
 
         appendStringInfoString(buf, "cast(");
         deparseExpr((Expr*)linitial(node->args), context);
-        appendStringInfo(
-            buf, ", 'Nullable(%s)')", deparse_type_name(rettype, coercedTypmod)
+        appendStringInfoString(buf, ", ");
+        deparseStringLiteral(
+            buf, psprintf("Nullable(%s)", deparse_type_name(rettype, coercedTypmod))
         );
+        appendStringInfoChar(buf, ')');
         return;
     }
 
@@ -5617,7 +5529,9 @@ deparseArrayExpr(ArrayExpr* node, deparse_expr_cxt* context) {
 
     /* If the array is empty, we need an explicit cast to the array type. */
     if (node->elements == NIL) {
-        appendStringInfo(buf, ", '%s')", deparse_type_name(node->array_typeid, -1));
+        appendStringInfoString(buf, ", ");
+        deparseStringLiteral(buf, deparse_type_name(node->array_typeid, -1));
+        appendStringInfoChar(buf, ')');
     }
 }
 
@@ -6363,7 +6277,7 @@ deparseRowExpr(RowExpr* node, deparse_expr_cxt* context) {
 
         first = false;
         if (IsA(lfirst(lc), Const)) {
-            deparseConst((Const*)lfirst(lc), context, 1);
+            deparseConst((Const*)lfirst(lc), context, true);
         } else {
             deparseExpr(lfirst(lc), context);
         }
@@ -6689,7 +6603,7 @@ deparseSortGroupClause(
          * BY 2", which will be misconstrued as a column position rather than
          * a constant.
          */
-        deparseConst((Const*)expr, context, 1);
+        deparseConst((Const*)expr, context, true);
     } else if (!expr || IsA(expr, Var) || context->no_sort_parens) {
         deparseExpr(expr, context);
     } else {

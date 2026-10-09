@@ -36,6 +36,20 @@ CALL clickhouse_perform('param_admin', $$
            ['foo']
     FROM numbers(1, 110)
 $$);
+CALL clickhouse_perform('param_admin', $$
+    CREATE TABLE param_test.typed (
+        id  Int,
+        u   UUID,
+        ts  DateTime64(3, 'UTC'),
+        lts DateTime64(3),
+        d   Date32
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('param_admin', $$
+    INSERT INTO param_test.typed VALUES
+        (1, '188dff2f-0205-4912-8210-2214e84482cd', '2026-09-28 23:59:59.500', '2026-09-28 23:59:59.500', '1960-01-01'),
+        (2, '00000000-0000-0000-0000-000000000002', '2026-09-28 23:59:59.300', '2026-09-28 23:59:59.300', '2026-09-29')
+$$);
 -- ===================================================================
 -- binary foreign tables
 -- ===================================================================
@@ -121,12 +135,12 @@ RESET enable_sort;
 -- subquery using immutable function (can be sent to remote)
 PREPARE st3(int) AS SELECT * FROM bin_test.ft1 t1 WHERE t1.c1 < $2 AND t1.c3 IN (SELECT c3 FROM bin_test.ft2 t2 WHERE c1 > $1 AND date(c5) = date('1970-01-17'::timestamptz)) ORDER BY c1;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st3(10, 20);
-                                                                                                                                     QUERY PLAN                                                                                                                                      
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                    QUERY PLAN                                                                                                                                                     
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
    Relations: (ft1 t1) LEFT SEMI JOIN (ft2 t2)
-   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((date(r3.c5) = date('1970-01-17 08:00:00'))) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
+   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((date(r3.c5) = date(cast('1970-01-17 08:00:00' as DateTime64(6, 'UTC'))))) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
 (4 rows)
 
 EXECUTE st3(10, 20);
@@ -318,6 +332,93 @@ SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4);
   4 |  4
 (1 row)
 
+-- UUID, fractional timestamp, and pre-1970 date parameters
+CREATE FOREIGN TABLE bin_test.typed (
+	id int NOT NULL,
+	u uuid,
+	ts timestamptz,
+	lts timestamp,
+	d date
+) SERVER param_bin_svr OPTIONS(
+    database 'param_test',
+    table_name 'typed'
+);
+SET plan_cache_mode = force_generic_plan;
+PREPARE st8(uuid) AS SELECT id FROM bin_test.typed WHERE u = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st8('188dff2f-0205-4912-8210-2214e84482cd');
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan on bin_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((u = {p1:UUID}))
+(3 rows)
+
+EXECUTE st8('188dff2f-0205-4912-8210-2214e84482cd');
+ id 
+----
+  1
+(1 row)
+
+PREPARE st9(timestamptz) AS SELECT id FROM bin_test.typed WHERE ts <= $1 ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st9('2026-09-28 23:59:59.999999+00');
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on bin_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((ts <= {p1:DateTime64(6, 'UTC')})) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+EXECUTE st9('2026-09-28 23:59:59.999999+00');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st9('2026-09-28 23:59:59.4+00');
+ id 
+----
+  2
+(1 row)
+
+PREPARE st10(timestamp) AS SELECT id FROM bin_test.typed WHERE lts <= $1 ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st10('2026-09-28 23:59:59.999999');
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Foreign Scan on bin_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((lts <= {p1:DateTime64(6)})) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+EXECUTE st10('2026-09-28 23:59:59.999999');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st10('2026-09-28 23:59:59.4');
+ id 
+----
+  2
+(1 row)
+
+PREPARE st11(date) AS SELECT id FROM bin_test.typed WHERE d = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st11('1960-01-01');
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on bin_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((d = {p1:Date32}))
+(3 rows)
+
+EXECUTE st11('1960-01-01');
+ id 
+----
+  1
+(1 row)
+
+RESET plan_cache_mode;
 -- cleanup
 DEALLOCATE st1;
 DEALLOCATE st2;
@@ -326,6 +427,10 @@ DEALLOCATE st4;
 DEALLOCATE st5;
 DEALLOCATE st6;
 DEALLOCATE st7;
+DEALLOCATE st8;
+DEALLOCATE st9;
+DEALLOCATE st10;
+DEALLOCATE st11;
 -- ===================================================================
 -- http foreign tables
 -- ===================================================================
@@ -411,12 +516,12 @@ RESET enable_sort;
 -- subquery using immutable function (can be sent to remote)
 PREPARE st3(int) AS SELECT * FROM http_test.ft1 t1 WHERE t1.c1 < $2 AND t1.c3 IN (SELECT c3 FROM http_test.ft2 t2 WHERE c1 > $1 AND date(c5) = date('1970-01-17'::timestamptz)) ORDER BY c1;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st3(10, 20);
-                                                                                                                                     QUERY PLAN                                                                                                                                      
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                    QUERY PLAN                                                                                                                                                     
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
    Relations: (ft1 t1) LEFT SEMI JOIN (ft2 t2)
-   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((date(r3.c5) = date('1970-01-17 08:00:00'))) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
+   Remote SQL: SELECT r1.c1, r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8 FROM  param_test.ft1 r1 LEFT SEMI JOIN param_test.ft1 r3 ON (((r3.c1 > 10)) AND ((date(r3.c5) = date(cast('1970-01-17 08:00:00' as DateTime64(6, 'UTC'))))) AND ((r1.c3 = r3.c3))) WHERE ((r1.c1 < 20)) ORDER BY r1.c1 ASC NULLS LAST
 (4 rows)
 
 EXECUTE st3(10, 20);
@@ -608,6 +713,93 @@ SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4);
   4 |  4
 (1 row)
 
+-- UUID, fractional timestamp, and pre-1970 date parameters
+CREATE FOREIGN TABLE http_test.typed (
+	id int NOT NULL,
+	u uuid,
+	ts timestamptz,
+	lts timestamp,
+	d date
+) SERVER param_http_svr OPTIONS(
+    database 'param_test',
+    table_name 'typed'
+);
+SET plan_cache_mode = force_generic_plan;
+PREPARE st8(uuid) AS SELECT id FROM http_test.typed WHERE u = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st8('188dff2f-0205-4912-8210-2214e84482cd');
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan on http_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((u = {p1:UUID}))
+(3 rows)
+
+EXECUTE st8('188dff2f-0205-4912-8210-2214e84482cd');
+ id 
+----
+  1
+(1 row)
+
+PREPARE st9(timestamptz) AS SELECT id FROM http_test.typed WHERE ts <= $1 ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st9('2026-09-28 23:59:59.999999+00');
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on http_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((ts <= {p1:DateTime64(6, 'UTC')})) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+EXECUTE st9('2026-09-28 23:59:59.999999+00');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st9('2026-09-28 23:59:59.4+00');
+ id 
+----
+  2
+(1 row)
+
+PREPARE st10(timestamp) AS SELECT id FROM http_test.typed WHERE lts <= $1 ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st10('2026-09-28 23:59:59.999999');
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Foreign Scan on http_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((lts <= {p1:DateTime64(6)})) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+EXECUTE st10('2026-09-28 23:59:59.999999');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st10('2026-09-28 23:59:59.4');
+ id 
+----
+  2
+(1 row)
+
+PREPARE st11(date) AS SELECT id FROM http_test.typed WHERE d = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st11('1960-01-01');
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on http_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((d = {p1:Date32}))
+(3 rows)
+
+EXECUTE st11('1960-01-01');
+ id 
+----
+  1
+(1 row)
+
+RESET plan_cache_mode;
 -- cleanup
 DEALLOCATE st1;
 DEALLOCATE st2;
@@ -616,14 +808,20 @@ DEALLOCATE st4;
 DEALLOCATE st5;
 DEALLOCATE st6;
 DEALLOCATE st7;
+DEALLOCATE st8;
+DEALLOCATE st9;
+DEALLOCATE st10;
+DEALLOCATE st11;
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER param_bin_svr;
 DROP SERVER param_bin_svr CASCADE;
-NOTICE:  drop cascades to 2 other objects
+NOTICE:  drop cascades to 3 other objects
 DETAIL:  drop cascades to foreign table bin_test.ft1
 drop cascades to foreign table bin_test.ft2
+drop cascades to foreign table bin_test.typed
 DROP USER MAPPING FOR CURRENT_USER SERVER param_http_svr;
 DROP SERVER param_http_svr CASCADE;
-NOTICE:  drop cascades to 2 other objects
+NOTICE:  drop cascades to 3 other objects
 DETAIL:  drop cascades to foreign table http_test.ft1
 drop cascades to foreign table http_test.ft2
+drop cascades to foreign table http_test.typed

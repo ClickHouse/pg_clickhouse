@@ -34,6 +34,9 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### 🐞 Bug Fixes
 
+*   Fixed ClickHouse type mappings for pushed-down casts and parameters,
+    preserving timestamp precision and UTC semantics for `timestamptz`
+    ([#401]).
 *   Fixed GCC 15 build failure caused by a `-Wclobbered` error in binary
     driver connection setup ([#395]).
 *   Added checks to prevent the pushdown of custom functions or
@@ -54,6 +57,8 @@ All notable changes to this project will be documented in this file. It uses the
   [regr_syy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_syy
   [#397]: https://github.com/ClickHouse/pg_clickhouse/pull/397
     "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
+  [#401]: https://github.com/ClickHouse/pg_clickhouse/pull/401
+    "ClickHouse/pg_clickhouse#401 Fix temporal, UUID and JSON type mappings"
 
 ## [v0.11.0] — 2026-09-30
 
