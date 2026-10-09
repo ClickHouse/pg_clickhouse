@@ -36,6 +36,13 @@ CALL clickhouse_perform('param_admin', $$
            ['foo']
     FROM numbers(1, 110)
 $$);
+CALL clickhouse_perform('param_admin', $$
+    CREATE TABLE param_test.typed (id Int, f Float64)
+    ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('param_admin', $$
+    INSERT INTO param_test.typed VALUES (1, 1e-10), (2, 0.5)
+$$);
 -- ===================================================================
 -- binary foreign tables
 -- ===================================================================
@@ -318,6 +325,61 @@ SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4);
   4 |  4
 (1 row)
 
+CREATE FOREIGN TABLE bin_test.typed (
+	id int NOT NULL,
+	f float8
+) SERVER param_bin_svr OPTIONS(
+    database 'param_test',
+    table_name 'typed'
+);
+SET plan_cache_mode = force_generic_plan;
+PREPARE st14(float8) AS SELECT id FROM bin_test.typed WHERE f = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st14(1e-10);
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on bin_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((f = {p1:Float64}))
+(3 rows)
+
+EXECUTE st14(1e-10);
+ id 
+----
+  1
+(1 row)
+
+PREPARE st15(float8) AS SELECT id FROM bin_test.typed WHERE f > $1 ORDER BY id;
+EXECUTE st15('-Infinity');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st15('-0');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st15(0.25);
+ id 
+----
+  2
+(1 row)
+
+EXECUTE st15('Infinity');
+ id 
+----
+(0 rows)
+
+EXECUTE st15('NaN');
+ id 
+----
+(0 rows)
+
+RESET plan_cache_mode;
 -- cleanup
 DEALLOCATE st1;
 DEALLOCATE st2;
@@ -326,6 +388,8 @@ DEALLOCATE st4;
 DEALLOCATE st5;
 DEALLOCATE st6;
 DEALLOCATE st7;
+DEALLOCATE st14;
+DEALLOCATE st15;
 -- ===================================================================
 -- http foreign tables
 -- ===================================================================
@@ -608,6 +672,61 @@ SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4);
   4 |  4
 (1 row)
 
+CREATE FOREIGN TABLE http_test.typed (
+	id int NOT NULL,
+	f float8
+) SERVER param_http_svr OPTIONS(
+    database 'param_test',
+    table_name 'typed'
+);
+SET plan_cache_mode = force_generic_plan;
+PREPARE st14(float8) AS SELECT id FROM http_test.typed WHERE f = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st14(1e-10);
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on http_test.typed
+   Output: id
+   Remote SQL: SELECT id FROM param_test.typed WHERE ((f = {p1:Float64}))
+(3 rows)
+
+EXECUTE st14(1e-10);
+ id 
+----
+  1
+(1 row)
+
+PREPARE st15(float8) AS SELECT id FROM http_test.typed WHERE f > $1 ORDER BY id;
+EXECUTE st15('-Infinity');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st15('-0');
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXECUTE st15(0.25);
+ id 
+----
+  2
+(1 row)
+
+EXECUTE st15('Infinity');
+ id 
+----
+(0 rows)
+
+EXECUTE st15('NaN');
+ id 
+----
+(0 rows)
+
+RESET plan_cache_mode;
 -- cleanup
 DEALLOCATE st1;
 DEALLOCATE st2;
@@ -616,14 +735,18 @@ DEALLOCATE st4;
 DEALLOCATE st5;
 DEALLOCATE st6;
 DEALLOCATE st7;
+DEALLOCATE st14;
+DEALLOCATE st15;
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER param_bin_svr;
 DROP SERVER param_bin_svr CASCADE;
-NOTICE:  drop cascades to 2 other objects
+NOTICE:  drop cascades to 3 other objects
 DETAIL:  drop cascades to foreign table bin_test.ft1
 drop cascades to foreign table bin_test.ft2
+drop cascades to foreign table bin_test.typed
 DROP USER MAPPING FOR CURRENT_USER SERVER param_http_svr;
 DROP SERVER param_http_svr CASCADE;
-NOTICE:  drop cascades to 2 other objects
+NOTICE:  drop cascades to 3 other objects
 DETAIL:  drop cascades to foreign table http_test.ft1
 drop cascades to foreign table http_test.ft2
+drop cascades to foreign table http_test.typed

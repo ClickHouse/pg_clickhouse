@@ -41,6 +41,14 @@ CALL clickhouse_perform('param_admin', $$
     FROM numbers(1, 110)
 $$);
 
+CALL clickhouse_perform('param_admin', $$
+    CREATE TABLE param_test.typed (id Int, f Float64)
+    ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('param_admin', $$
+    INSERT INTO param_test.typed VALUES (1, 1e-10), (2, 0.5)
+$$);
+
 -- ===================================================================
 -- binary foreign tables
 -- ===================================================================
@@ -135,6 +143,25 @@ ALTER FOREIGN TABLE bin_test.ft1 OPTIONS (SET table_name 'ft1');
 EXPLAIN (VERBOSE, COSTS OFF) SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4);
 SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4);
 
+CREATE FOREIGN TABLE bin_test.typed (
+	id int NOT NULL,
+	f float8
+) SERVER param_bin_svr OPTIONS(
+    database 'param_test',
+    table_name 'typed'
+);
+SET plan_cache_mode = force_generic_plan;
+PREPARE st14(float8) AS SELECT id FROM bin_test.typed WHERE f = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st14(1e-10);
+EXECUTE st14(1e-10);
+PREPARE st15(float8) AS SELECT id FROM bin_test.typed WHERE f > $1 ORDER BY id;
+EXECUTE st15('-Infinity');
+EXECUTE st15('-0');
+EXECUTE st15(0.25);
+EXECUTE st15('Infinity');
+EXECUTE st15('NaN');
+RESET plan_cache_mode;
+
 -- cleanup
 DEALLOCATE st1;
 DEALLOCATE st2;
@@ -143,6 +170,8 @@ DEALLOCATE st4;
 DEALLOCATE st5;
 DEALLOCATE st6;
 DEALLOCATE st7;
+DEALLOCATE st14;
+DEALLOCATE st15;
 
 -- ===================================================================
 -- http foreign tables
@@ -238,6 +267,25 @@ ALTER FOREIGN TABLE http_test.ft1 OPTIONS (SET table_name 'ft1');
 EXPLAIN (VERBOSE, COSTS OFF) SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4);
 SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4);
 
+CREATE FOREIGN TABLE http_test.typed (
+	id int NOT NULL,
+	f float8
+) SERVER param_http_svr OPTIONS(
+    database 'param_test',
+    table_name 'typed'
+);
+SET plan_cache_mode = force_generic_plan;
+PREPARE st14(float8) AS SELECT id FROM http_test.typed WHERE f = $1;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st14(1e-10);
+EXECUTE st14(1e-10);
+PREPARE st15(float8) AS SELECT id FROM http_test.typed WHERE f > $1 ORDER BY id;
+EXECUTE st15('-Infinity');
+EXECUTE st15('-0');
+EXECUTE st15(0.25);
+EXECUTE st15('Infinity');
+EXECUTE st15('NaN');
+RESET plan_cache_mode;
+
 -- cleanup
 DEALLOCATE st1;
 DEALLOCATE st2;
@@ -246,6 +294,8 @@ DEALLOCATE st4;
 DEALLOCATE st5;
 DEALLOCATE st6;
 DEALLOCATE st7;
+DEALLOCATE st14;
+DEALLOCATE st15;
 
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER param_bin_svr;
