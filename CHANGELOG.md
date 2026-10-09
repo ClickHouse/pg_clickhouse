@@ -115,6 +115,15 @@ pg_clickhouse v0.11 will get its benefits on reload without needing to
     error. `UPDATE` requires ClickHouse 25.7+ ([#458]).
 *   Added support for `TRUNCATE` on foreign tables. Sends one ClickHouse
     `TRUNCATE TABLE` statement per table ([#463]).
+*   Added `IMPORT FOREIGN SCHEMA` support for ClickHouse [DataLakeCatalog]
+    databases, such as mounted Iceberg REST catalogs, which ClickHouse 25.10
+    and later hide from `system.tables` by default.
+*   Added the "local" driver, which runs each query in a new `clickhouse local`
+    process, needing no ClickHouse server. Its `catalog_url` and
+    `catalog_settings` options mount a [DataLakeCatalog], such as an Iceberg
+    REST catalog, for each query. Requires the new
+    `pg_clickhouse.clickhouse_path` parameter and privileges of the
+    `pg_execute_server_program` role.
 
 ### 🚀 Distribution
 
@@ -238,6 +247,8 @@ pg_clickhouse v0.11 will get its benefits on reload without needing to
     "PostgreSQL Docs: intarray"
   [#395]: https://github.com/ClickHouse/pg_clickhouse/pull/395
     "ClickHouse/pg_clickhouse#395 Fix gcc15 Wclobbered warning"
+  [DataLakeCatalog]: https://clickhouse.com/docs/engines/database-engines/datalakecatalog
+    "ClickHouse Docs: DataLakeCatalog"
   [#397]: https://github.com/ClickHouse/pg_clickhouse/pull/397
     "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
   [#401]: https://github.com/ClickHouse/pg_clickhouse/pull/401

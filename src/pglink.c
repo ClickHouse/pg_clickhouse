@@ -1091,18 +1091,51 @@ chfdw_run_text_query(UserMapping* user, const char* sql, int ncols) {
     return rows;
 }
 
-List*
-chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server) {
-    UserMapping* user = GetUserMapping(GetUserId(), server->serverid);
-    List* result      = NIL;
-    List* tables      = chfdw_run_text_query(
+/*
+ * DataLakeCatalog databases list "namespace.table" names from a remote
+ * catalog. Each system.columns query resolves metadata of every catalog table,
+ * so DESCRIBE catalog tables one at a time instead.
+ */
+static bool
+is_lake_catalog(UserMapping* user, const char* database, const char* settings) {
+    List* rows = chfdw_run_text_query(
         user,
         psprintf(
-            "SELECT name, engine, engine_full "
+            "SELECT engine FROM system.databases WHERE name = %s%s",
+            ch_quote_literal(database),
+            settings
+        ),
+        1
+    );
+
+    return rows != NIL && strcmp(((char**)linitial(rows))[0], "DataLakeCatalog") == 0;
+}
+
+List*
+chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server) {
+    UserMapping* user         = GetUserMapping(GetUserId(), server->serverid);
+    List* result              = NIL;
+    ch_server_version version = chfdw_get_server_version(user);
+
+    /* 25.10 hides DataLakeCatalog databases from system tables by default */
+    const char* lake_settings =
+        chfdw_version_ge(version, 25, 8)
+            ? " SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+            : "";
+    bool lake = chfdw_version_ge(version, 25, 3) &&
+                is_lake_catalog(user, stmt->remote_schema, lake_settings);
+
+    /* Selecting engine would resolve metadata of every catalog table */
+    List* tables = chfdw_run_text_query(
+        user,
+        psprintf(
+            "SELECT name, %s "
             "FROM system.tables "
             "WHERE name NOT LIKE '.inner%%' "
-            "AND database = %s",
-            ch_quote_literal(stmt->remote_schema)
+            "AND database = %s%s",
+            lake ? "'', ''" : "engine, engine_full",
+            ch_quote_literal(stmt->remote_schema),
+            lake ? lake_settings : ""
         ),
         3
     );
@@ -1159,16 +1192,22 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
             quote_identifier(table_name)
         );
 
+        /* Quote as deparseRelation does, so import resolves what scans query */
         List* columns = chfdw_run_text_query(
             user,
-            psprintf(
-                "SELECT name, type "
-                "FROM system.columns "
-                "WHERE database = %s "
-                "AND table = %s",
-                ch_quote_literal(stmt->remote_schema),
-                ch_quote_literal(table_name)
-            ),
+            lake ? psprintf(
+                       "DESCRIBE TABLE %s.%s SETTINGS describe_compact_output = 1",
+                       quote_identifier(stmt->remote_schema),
+                       quote_identifier(table_name)
+                   )
+                 : psprintf(
+                       "SELECT name, type "
+                       "FROM system.columns "
+                       "WHERE database = %s "
+                       "AND table = %s",
+                       ch_quote_literal(stmt->remote_schema),
+                       ch_quote_literal(table_name)
+                   ),
             2
         );
         ListCell* clc;
@@ -1251,7 +1290,7 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
                     break;
                 }
             }
-        } else if (engine) {
+        } else if (engine && *engine) {
             appendStringInfo(&buf, ", engine %s", quote_literal_cstr(engine));
         }
 
