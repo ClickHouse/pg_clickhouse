@@ -425,10 +425,13 @@ again:
  */
 extern char*
 chfdw_datum_to_ch_literal(Datum value, Oid type) {
+    StringInfoData buf;
+
     if (type_is_array(type)) {
         return chfdw_array_to_ch_literal(value);
     }
 
+    initStringInfo(&buf);
     switch (type) {
     case BOOLOID:
     case INT2OID:
@@ -437,9 +440,11 @@ chfdw_datum_to_ch_literal(Datum value, Oid type) {
     case INT8OID:
         return psprintf(INT64_FORMAT, DatumGetInt64(value));
     case FLOAT4OID:
-        return psprintf("%f", DatumGetFloat4(value));
+        chfdw_append_float_literal(&buf, DatumGetFloat4(value));
+        return buf.data;
     case FLOAT8OID:
-        return psprintf("%f", DatumGetFloat8(value));
+        chfdw_append_float_literal(&buf, DatumGetFloat8(value));
+        return buf.data;
     case NUMERICOID:
         return DatumGetCString(DirectFunctionCall1(numeric_out, value));
     case BPCHAROID:

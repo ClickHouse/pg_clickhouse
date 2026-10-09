@@ -36,6 +36,11 @@ All notable changes to this project will be documented in this file. It uses the
 
 *   Fixed unconstrained numeric casts and parameters to use Decimal(76, 38),
     widening Float32 before casting to preserve fractional values ([#402]).
+*   Fixed precision loss in `float4` and `float8` query parameters sent to
+    ClickHouse. They were formatted with six decimal places, so ClickHouse
+    parsed a different value, such as zero for `1e-10`. They now use the
+    shortest text that parses back to the same value. Column values were not
+    affected ([#403]).
 *   Fixed GCC 15 build failure caused by a `-Wclobbered` error in binary
     driver connection setup ([#395]).
 *   Added checks to prevent the pushdown of custom functions or
@@ -61,6 +66,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
   [#402]: https://github.com/ClickHouse/pg_clickhouse/pull/402
     "ClickHouse/pg_clickhouse#402 Specify precision for unconstrained numeric casts"
+  [#403]: https://github.com/ClickHouse/pg_clickhouse/pull/403
+    "ClickHouse/pg_clickhouse#403 Preserve floating-point parameter precision"
   [citext]: https://www.postgresql.org/docs/current/citext.html
     "PostgreSQL Docs: citext"
   [intarray]: https://www.postgresql.org/docs/current/intarray.html
