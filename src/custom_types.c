@@ -779,6 +779,22 @@ chfdw_check_for_custom_type(Oid typeoid) {
 
     entry = hash_search(custom_objects_cache, (void*)&typeoid, HASH_FIND, NULL);
     if (!entry) {
+        /* Check elemoid's extension instead, pre 17 array type lacks extension */
+        Oid elemoid = get_element_type(typeoid);
+        Oid extoid  = getExtensionOfObject(
+            TypeRelationId, OidIsValid(elemoid) ? elemoid : typeoid
+        );
+        char* extname = get_extension_name(extoid);
+
+        if (extname) {
+            bool known = STR_EQUAL(extname, "hstore");
+
+            pfree(extname);
+            if (!known) {
+                return NULL;
+            }
+        }
+
         entry = hash_search(custom_objects_cache, (void*)&typeoid, HASH_ENTER, NULL);
         init_custom_entry(entry);
     }
@@ -875,19 +891,22 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
         if (ctype != CF_USUAL) {
             entry->cf_type = ctype;
         } else {
-            Oid extoid    = getExtensionOfObject(OperatorRelationId, opoid);
-            char* extname = get_extension_name(extoid);
+            Oid extoid          = getExtensionOfObject(OperatorRelationId, opoid);
+            char* extname       = get_extension_name(extoid);
+            const char* oprname = NameStr(form->oprname);
 
+            if (extname && STR_EQUAL(extname, "hstore") && STR_EQUAL(oprname, "->")) {
+                entry->cf_type = CF_HSTORE_FETCHVAL;
+            } else if (
+                extname && STR_EQUAL(extname, "re2") && STR_EQUAL(oprname, "@~")
+            ) {
+                entry->cf_type = CF_RE2_MATCH;
+            } else {
+                /* Unknown or user defined operator */
+                hash_search(custom_objects_cache, (void*)&opoid, HASH_REMOVE, NULL);
+                entry = NULL;
+            }
             if (extname) {
-                if (STR_EQUAL(extname, "hstore")) {
-                    if (form && strcmp(NameStr(form->oprname), "->") == 0) {
-                        entry->cf_type = CF_HSTORE_FETCHVAL;
-                    }
-                } else if (STR_EQUAL(extname, "re2")) {
-                    if (form && strcmp(NameStr(form->oprname), "@~") == 0) {
-                        entry->cf_type = CF_RE2_MATCH;
-                    }
-                }
                 pfree(extname);
             }
         }
