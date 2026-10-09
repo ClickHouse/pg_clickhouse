@@ -667,12 +667,7 @@ binary_is_broken(const void* conn) {
 
 static ch_server_version
 binary_server_version(void* conn) {
-    ch_server_version v = { 0, 0, 0 };
-
-    ch_binary_server_version(
-        (ch_binary_connection_t*)conn, &v.major, &v.minor, &v.patch
-    );
-    return v;
+    return ch_binary_server_version((ch_binary_connection_t*)conn);
 }
 
 static void

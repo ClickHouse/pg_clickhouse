@@ -104,7 +104,7 @@ ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query) {
 
         size_t n_settings;
         chc_query_setting* settings =
-            ch_binary_query_settings(conn->client, query, &n_settings);
+            ch_binary_query_settings(conn, query, &n_settings);
         chc_query_opts insert_opts = {
             .settings   = settings,
             .n_settings = n_settings,
