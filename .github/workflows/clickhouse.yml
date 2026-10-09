@@ -1,38 +1,24 @@
 name: 🏠 ClickHouse CI
 on:
-  push:
-    branches: [main, wip/**]
-  pull_request:
-  schedule:
-    - cron: "0 13 10 * *" # Monthly at 13:00 on the tenth
+  workflow_call:
+    inputs:
+      ch: { type: string, required: true, description: JSON list of releases }
 permissions:
   contents: read
 
 jobs:
   build:
-    env: { pg: 19 }
+    env: { pg: 19, COVERAGE: 1, GCOV_PREFIX: /tmp/gcov }
     strategy:
       fail-fast: false
       matrix:
-        # Test latest version and all LTS releases.
-        # Keep in sync with dev/docker-compose.yml.
-        # .github/ubuntu/ch-versions --lts --latest-stable --earliest 23  --prefix '          - ' | pbcopy
-        ch:
-          - 26.9.2.8-stable
-          - 26.8.11.7-lts
-          - 26.3.33.24-lts
-          - 25.8.33.6-lts
-          - 25.3.14.14-lts
-          - 24.8.14.39-lts
-          - 24.3.18.7-lts
-          - 23.8.16.40-lts
-          - 23.3.22.3-lts
+        ch: ${{ fromJSON(inputs.ch) }}
     name: 🏠 ClickHouse ${{ matrix.ch }}
     runs-on: ubuntu-latest
     container: pgxn/pgxn-tools
     steps:
       - name: Start Postgres
-        run: pg-start ${{ env.pg }} libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev libre2-dev libicu-dev
+        run: pg-start ${{ env.pg }} libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev libre2-dev libicu-dev lcov
       - name: Install Extensions
         run: pgxn install re2
       - name: Checkout the Repository
@@ -41,6 +27,8 @@ jobs:
       - name: Start ClickHouse
         env: { CH_RELEASE: "${{ matrix.ch }}" }
         run: .github/ubuntu/clickhouse.sh
+      - name: Prepare Coverage
+        run: ci/coverage.sh prepare
       - name: Test
         id: test
         run: pg-build-test
@@ -52,3 +40,20 @@ jobs:
           path: |
             regression.diffs
             results
+      - name: Stop Postgres
+        if: ${{ !cancelled() }}
+        run: ci/coverage.sh stop
+      - name: Collect Coverage
+        if: ${{ !cancelled() }}
+        env:
+          LANE: ch${{ matrix.ch }}
+          RUNS: default=${{ steps.test.outcome }}
+        run: make coverage-lcov
+      - name: Upload Coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-ch${{ matrix.ch }}
+          path: coverage
+          if-no-files-found: error
+          overwrite: true

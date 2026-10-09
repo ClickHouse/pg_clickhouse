@@ -1,10 +1,8 @@
 name: 🐘 Postgres CI
 on:
-  push:
-    branches: [main, wip/**]
-  pull_request:
-  schedule:
-    - cron: "0 12 10 * *" # Monthly at noon on the tenth
+  workflow_call:
+    inputs:
+      pg: { type: string, required: true, description: JSON list of majors }
 permissions:
   contents: read
 
@@ -13,16 +11,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pg: [19, 18, 17, 16, 15, 14]
+        pg: ${{ fromJSON(inputs.pg) }}
         os:
           - { icon: 🐧, arch: amd64, on: ubuntu-latest }
           # - { icon: 🐧, arch: arm64, on: ubuntu-24.04-arm } # XXX
     name: 🐘 PostgreSQL ${{ matrix.pg }} ${{ matrix.os.icon }} ${{ matrix.os.arch }}
     runs-on: ${{ matrix.os.on }}
     container: pgxn/pgxn-tools
+    env: { COVERAGE: 1, GCOV_PREFIX: /tmp/gcov }
     steps:
       - name: Start Postgres ${{ matrix.pg }}
-        run: pg-start ${{ matrix.pg }} libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev libre2-dev libicu-dev
+        run: pg-start ${{ matrix.pg }} libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev libre2-dev libicu-dev lcov
       - name: Install Extensions
         run: pgxn install re2
       - name: Checkout the Repository
@@ -30,10 +29,31 @@ jobs:
         with: { submodules: recursive }
       - name: Start ClickHouse
         run: .github/ubuntu/clickhouse.sh
+      - name: Prepare Coverage
+        run: ci/coverage.sh prepare
       - name: Test
+        id: test
         run: pg-build-test
       - name: Test SQL_ASCII
+        id: ascii
         env:
           REGRESS_OPTS: --no-locale --encoding=SQL_ASCII
           TESTS: test/sql/encoding.sql
         run: pg-build-test
+      - name: Stop Postgres
+        if: ${{ !cancelled() }}
+        run: ci/coverage.sh stop
+      - name: Collect Coverage
+        if: ${{ !cancelled() }}
+        env:
+          LANE: pg${{ matrix.pg }}
+          RUNS: default=${{ steps.test.outcome }} SQL_ASCII=${{ steps.ascii.outcome }}
+        run: make coverage-lcov
+      - name: Upload Coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-pg${{ matrix.pg }}
+          path: coverage
+          if-no-files-found: error
+          overwrite: true

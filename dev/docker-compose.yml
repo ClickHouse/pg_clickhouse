@@ -3,7 +3,7 @@
 # databases servers are on their usual ports and trust local connections
 # without passwords.
 #
-# Keep in sync with .github/workflows/clickhouse.yml
+# Keep in sync with .github/workflows/ci.yml
 
 networks:
   default:

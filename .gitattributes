@@ -3,3 +3,4 @@
 .github export-ignore
 .gitmodules export-ignore
 dev export-ignore
+ci export-ignore

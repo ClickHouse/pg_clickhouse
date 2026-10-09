@@ -23,3 +23,6 @@ compile_commands.json
 log/
 /test/schedule
 .DS_Store
+*.gcno
+*.gcda
+/coverage/

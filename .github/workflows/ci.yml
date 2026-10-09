@@ -1,0 +1,90 @@
+name: 🧪 CI
+on:
+  push:
+    branches: [main, wip/**]
+  pull_request:
+  schedule:
+    - cron: "0 12 10 * *" # Monthly at noon on the tenth
+permissions:
+  contents: read
+
+jobs:
+  # Jobs cannot read another job's matrix, so test matrices and coverage merge
+  # all take lanes from these outputs
+  lanes:
+    name: 🧭 Lanes
+    runs-on: ubuntu-latest
+    outputs:
+      pg: "[19, 18, 17, 16, 15, 14]"
+      # Test latest version and all LTS releases.
+      # Keep in sync with dev/docker-compose.yml.
+      # .github/ubuntu/ch-versions --lts --latest-stable --earliest 23 | jq -R . | jq -s .
+      ch: >-
+        [
+          "26.9.2.8-stable",
+          "26.8.11.7-lts",
+          "26.3.33.24-lts",
+          "25.8.33.6-lts",
+          "25.3.14.14-lts",
+          "24.8.14.39-lts",
+          "24.3.18.7-lts",
+          "23.8.16.40-lts",
+          "23.3.22.3-lts"
+        ]
+    steps:
+      - run: echo "Lanes are this job's outputs"
+
+  postgres:
+    name: 🐘 Postgres
+    needs: lanes
+    uses: ./.github/workflows/postgres.yml
+    with: { pg: "${{ needs.lanes.outputs.pg }}" }
+
+  clickhouse:
+    name: 🏠 ClickHouse
+    needs: lanes
+    uses: ./.github/workflows/clickhouse.yml
+    with: { ch: "${{ needs.lanes.outputs.ch }}" }
+
+  coverage:
+    name: 📊 Coverage
+    needs: [lanes, postgres, clickhouse]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    env:
+      # Missed src/ line ceiling, set from measured baseline, then ratchet down
+      MAX_MISSED_LINES: ""
+    steps:
+      - name: Checkout the Repository
+        uses: actions/checkout@v7
+        with: { submodules: recursive }
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends lcov
+      - name: Download Lane Coverage
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with: { pattern: coverage-*, path: lanes }
+      - name: Merge Coverage
+        env:
+          PG: ${{ join(fromJSON(needs.lanes.outputs.pg), ' ') }}
+          CH: ${{ join(fromJSON(needs.lanes.outputs.ch), ' ') }}
+        run: |
+          set --
+          for v in $PG; do set -- "$@" "coverage-pg$v"; done
+          for v in $CH; do set -- "$@" "coverage-ch$v"; done
+          mkdir -p coverage
+          ci/test_inventory.sh > coverage/test_inventory.txt
+          ci/coverage.sh merge coverage lanes "$@"
+      - name: Upload Merged Coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: merged-coverage
+          path: coverage
+          if-no-files-found: error
+          overwrite: true
+      - name: Require Every Lane
+        env:
+          POSTGRES: ${{ needs.postgres.result }}
+          CLICKHOUSE: ${{ needs.clickhouse.result }}
+        run: test "$POSTGRES" = success && test "$CLICKHOUSE" = success
