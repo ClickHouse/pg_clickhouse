@@ -57,11 +57,11 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT item_id, price FROM items
 WHERE price > (SELECT avg(price) FROM items)
 ORDER BY item_id;
-                                                         QUERY PLAN                                                         
-----------------------------------------------------------------------------------------------------------------------------
+                                                             QUERY PLAN                                                             
+------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on subplan_test.items
    Output: items.item_id, items.price
-   Remote SQL: SELECT item_id, price FROM subplan_test.items WHERE ((price > {p1:Decimal})) ORDER BY item_id ASC NULLS LAST
+   Remote SQL: SELECT item_id, price FROM subplan_test.items WHERE ((price > {p1:Decimal(76, 38)})) ORDER BY item_id ASC NULLS LAST
    InitPlan 1
      ->  Foreign Scan
            Output: (avg(items_1.price))
@@ -212,12 +212,12 @@ SELECT grp, sum(price * qty) AS value FROM items
 GROUP BY grp
 HAVING sum(price * qty) > (SELECT sum(price * qty) * 0.2 FROM items)
 ORDER BY value DESC;
-                                                                                 QUERY PLAN                                                                                  
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                     QUERY PLAN                                                                                      
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: items.grp, (sum((items.price * (items.qty)::numeric)))
    Relations: Aggregate on (items)
-   Remote SQL: SELECT grp, sum((price * qty)) FROM subplan_test.items GROUP BY grp HAVING ((sum((price * qty)) > {p1:Decimal})) ORDER BY sum((price * qty)) DESC NULLS FIRST
+   Remote SQL: SELECT grp, sum((price * qty)) FROM subplan_test.items GROUP BY grp HAVING ((sum((price * qty)) > {p1:Decimal(76, 38)})) ORDER BY sum((price * qty)) DESC NULLS FIRST
    InitPlan 1
      ->  Foreign Scan
            Output: ((sum((items_1.price * (items_1.qty)::numeric)) * 0.2))
@@ -243,16 +243,16 @@ SELECT item_id FROM items
 WHERE price > (SELECT avg(price) FROM items
                WHERE qty > (SELECT avg(qty) FROM items))
 ORDER BY item_id;
-                                                     QUERY PLAN                                                      
----------------------------------------------------------------------------------------------------------------------
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on subplan_test.items
    Output: items.item_id
-   Remote SQL: SELECT item_id FROM subplan_test.items WHERE ((price > {p1:Decimal})) ORDER BY item_id ASC NULLS LAST
+   Remote SQL: SELECT item_id FROM subplan_test.items WHERE ((price > {p1:Decimal(76, 38)})) ORDER BY item_id ASC NULLS LAST
    InitPlan 2
      ->  Foreign Scan
            Output: (avg(items_2.price))
            Relations: Aggregate on (items)
-           Remote SQL: SELECT avg(price) FROM subplan_test.items WHERE ((qty > {p1:Decimal}))
+           Remote SQL: SELECT avg(price) FROM subplan_test.items WHERE ((qty > {p1:Decimal(76, 38)}))
            InitPlan 1
              ->  Foreign Scan
                    Output: (avg(items_1.qty))
