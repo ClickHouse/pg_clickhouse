@@ -1654,12 +1654,8 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < statement_timestamp();
 (3 rows)
 
 SELECT * FROM t1 WHERE c < statement_timestamp() ORDER BY a LIMIT 2;
- a | b |          c          
----+---+---------------------
- 1 | 1 | 2019-01-01 02:00:00
- 2 | 2 | 2019-01-02 02:00:00
-(2 rows)
-
+ERROR:  pg_clickhouse: DB::Exception: Function with name `nowInBlock64` does not exist. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
+DETAIL:  Remote Query: SELECT a, b, c FROM functions_test.t1 WHERE ((c < nowInBlock64(6, 'America/Los_Angeles'))) ORDER BY a ASC NULLS LAST LIMIT 2
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < transaction_timestamp();
                                                 QUERY PLAN                                                
 ----------------------------------------------------------------------------------------------------------
@@ -1669,12 +1665,8 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < transaction_timestamp();
 (3 rows)
 
 SELECT * FROM t1 WHERE c < transaction_timestamp() ORDER BY a LIMIT 2;
- a | b |          c          
----+---+---------------------
- 1 | 1 | 2019-01-01 02:00:00
- 2 | 2 | 2019-01-02 02:00:00
-(2 rows)
-
+ERROR:  pg_clickhouse: DB::Exception: Function with name `nowInBlock64` does not exist. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
+DETAIL:  Remote Query: SELECT a, b, c FROM functions_test.t1 WHERE ((c < nowInBlock64(6, 'America/Los_Angeles'))) ORDER BY a ASC NULLS LAST LIMIT 2
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < clock_timestamp();
                                                 QUERY PLAN                                                
 ----------------------------------------------------------------------------------------------------------
@@ -1684,12 +1676,8 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < clock_timestamp();
 (3 rows)
 
 SELECT * FROM t1 WHERE c < clock_timestamp() ORDER BY a LIMIT 2;
- a | b |          c          
----+---+---------------------
- 1 | 1 | 2019-01-01 02:00:00
- 2 | 2 | 2019-01-02 02:00:00
-(2 rows)
-
+ERROR:  pg_clickhouse: DB::Exception: Function with name `nowInBlock64` does not exist. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
+DETAIL:  Remote Query: SELECT a, b, c FROM functions_test.t1 WHERE ((c < nowInBlock64(6, 'America/Los_Angeles'))) ORDER BY a ASC NULLS LAST LIMIT 2
 -- Check SQL Value functions.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < CURRENT_DATE;
                                               QUERY PLAN                                              
@@ -2401,6 +2389,39 @@ SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
 ---
 (0 rows)
 
+-- round() pushes down over an aggregate.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(avg(f64)), avg(f64) FROM t6;
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan
+   Output: (round(avg(f64))), (avg(f64))
+   Relations: Aggregate on (t6)
+   Remote SQL: SELECT round(avg(f64)), avg(f64) FROM functions_test.t6
+(4 rows)
+
+SELECT round(avg(f64)), avg(f64) FROM t6;
+   round   |       avg       
+-----------+-----------------
+ 954335170 | 954335169.54835
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
+                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (round(avg((f64)::numeric), 4)), (avg((f64)::numeric))
+   Relations: Aggregate on (t6)
+   Remote SQL: SELECT round(avg(cast(f64, 'Nullable(Decimal(76, 38))')), 4), avg(cast(f64, 'Nullable(Decimal(76, 38))')) FROM functions_test.t6
+(4 rows)
+
+SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
+     round      |       avg       
+----------------+-----------------
+ 954335169.5484 | 954335169.54835
+(1 row)
+
 -- Trig functions push down at f64 = 0 where PG and CH agree exactly.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT i64 FROM t6 WHERE i64 = 0 AND sin(f64) = 0;
@@ -2949,7 +2970,7 @@ WHERE encode(val::bytea, 'base64url') IN (
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 CALL clickhouse_perform('functions_admin', 'DROP DATABASE functions_test');
 DROP SERVER functions_loopback CASCADE;
-NOTICE:  drop cascades to 11 other objects
+NOTICE:  drop cascades to 10 other objects
 DETAIL:  drop cascades to foreign table t1
 drop cascades to foreign table t2
 drop cascades to foreign table t3
@@ -2960,4 +2981,3 @@ drop cascades to foreign table t6
 drop cascades to foreign table t7
 drop cascades to foreign table t8
 drop cascades to foreign table t9
-drop cascades to foreign table times

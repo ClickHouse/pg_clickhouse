@@ -1614,6 +1614,35 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  68756.2156939293
 (1 row)
 
+-- round() pushes down on 26.9+
+                                                           QUERY PLAN                                                            
+---------------------------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: round(regr_syy((b)::double precision, (a)::double precision)), regr_syy((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+ round |     regr_syy     
+-------+------------------
+ 68756 | 68756.2156939293
+(1 row)
+
+                                                                        QUERY PLAN                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: round((regr_syy((b)::double precision, (a)::double precision))::numeric, 4), (regr_syy((b)::double precision, (a)::double precision))::numeric
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers
+(5 rows)
+
+   round    |     regr_syy     
+------------+------------------
+ 68756.2157 | 68756.2156939293
+(1 row)
+
 -- corr(int, float) corr(float, int)
                                                       QUERY PLAN                                                      
 ----------------------------------------------------------------------------------------------------------------------
@@ -1641,7 +1670,7 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  0.1396345165178734 | 0.1396345165178734
 (1 row)
 
--- corr(int, float) corr(float, int)
+-- covar_pop(int, float) covar_pop(float, int) covar_samp(int, float) covar_samp(float, int)
                                                            QUERY PLAN                                                            
 ---------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan

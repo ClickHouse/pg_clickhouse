@@ -931,7 +931,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT ltrim(val, 'av') AS a, btrim(val, '1l2') AS 
 (4 rows)
 
 SELECT ltrim(val, 'av') AS a, btrim(val, '1l2') AS b, rtrim(val, 'l1') AS c FROM t4 GROUP BY a,b,c ORDER BY a;
-ERROR:  pg_clickhouse: DB::Exception: Syntax error: failed at position 17 (','): , 'av'), trimBoth(val, '1l2'), rtrim(val, 'l1') FROM functions_test.t4 GROUP BY (ltrim(val, 'av')), (trimBoth(val, '1l2')), (rtrim(val, 'l1')) ORDER BY ltrim(va. Expected one of: token sequence, Dot, token, ClosingRoundBracket, OR, AND, IS NOT DISTINCT FROM, IS NULL, IS NOT NULL, BETWEEN, NOT BETWEEN, LIKE, ILIKE, NOT LIKE, NOT ILIKE, REGEXP, IN, NOT IN, GLOBAL IN, GLOBAL NOT IN, MOD, DIV, alias, AS, identifier
+ERROR:  pg_clickhouse: DB::Exception: Syntax error: failed at position 17 (','): , 'av'), trimBoth(val, '1l2'), rtrim(val, 'l1') FROM functions_test.t4 GROUP BY (ltrim(val, 'av')), (trimBoth(val, '1l2')), (rtrim(val, 'l1')) ORDER BY ltrim(va. Expected one of: token, Dot, ClosingRoundBracket, OR, AND, IS NOT DISTINCT FROM, IS NULL, IS NOT NULL, BETWEEN, NOT BETWEEN, LIKE, ILIKE, NOT LIKE, NOT ILIKE, REGEXP, IN, NOT IN, GLOBAL IN, GLOBAL NOT IN, MOD, DIV, alias, AS, identifier
 DETAIL:  Remote Query: SELECT ltrim(val, 'av'), trimBoth(val, '1l2'), rtrim(val, 'l1') FROM functions_test.t4 GROUP BY (ltrim(val, 'av')), (trimBoth(val, '1l2')), (rtrim(val, 'l1')) ORDER BY ltrim(val, 'av') ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF) SELECT strpos(val, 'val') AS a FROM t4 GROUP BY a ORDER BY a;
                                                                         QUERY PLAN                                                                         
@@ -1654,7 +1654,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < statement_timestamp();
 (3 rows)
 
 SELECT * FROM t1 WHERE c < statement_timestamp() ORDER BY a LIMIT 2;
-ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exist. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
+ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exists. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
 DETAIL:  Remote Query: SELECT a, b, c FROM functions_test.t1 WHERE ((c < nowInBlock64(6, 'America/Los_Angeles'))) ORDER BY a ASC NULLS LAST LIMIT 2
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < transaction_timestamp();
                                                 QUERY PLAN                                                
@@ -1665,7 +1665,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < transaction_timestamp();
 (3 rows)
 
 SELECT * FROM t1 WHERE c < transaction_timestamp() ORDER BY a LIMIT 2;
-ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exist. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
+ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exists. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
 DETAIL:  Remote Query: SELECT a, b, c FROM functions_test.t1 WHERE ((c < nowInBlock64(6, 'America/Los_Angeles'))) ORDER BY a ASC NULLS LAST LIMIT 2
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < clock_timestamp();
                                                 QUERY PLAN                                                
@@ -1676,7 +1676,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < clock_timestamp();
 (3 rows)
 
 SELECT * FROM t1 WHERE c < clock_timestamp() ORDER BY a LIMIT 2;
-ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exist. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
+ERROR:  pg_clickhouse: DB::Exception: Function with name 'nowInBlock64' does not exists. In scope SELECT a, b, c FROM functions_test.t1 WHERE c < nowInBlock64(6, 'America/Los_Angeles') ORDER BY a ASC NULLS LAST LIMIT 2. Maybe you meant: ['nowInBlock']
 DETAIL:  Remote Query: SELECT a, b, c FROM functions_test.t1 WHERE ((c < nowInBlock64(6, 'America/Los_Angeles'))) ORDER BY a ASC NULLS LAST LIMIT 2
 -- Check SQL Value functions.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM t1 WHERE c < CURRENT_DATE;
@@ -1963,12 +1963,8 @@ SELECT * FROM t4 WHERE levenshtein(val, 'val1') <= 1;
 (3 rows)
 
 SELECT * FROM t4 WHERE levenshtein(val, 'val1') <= 1;
- val  
-------
- val1
- val2
-(2 rows)
-
+ERROR:  pg_clickhouse: DB::Exception: Function with name 'editDistanceUTF8' does not exists. In scope SELECT val FROM functions_test.t4 WHERE editDistanceUTF8(val, 'val1') <= 1. Maybe you meant: ['editDistance','ngramDistanceUTF8']
+DETAIL:  Remote Query: SELECT val FROM functions_test.t4 WHERE ((editDistanceUTF8(val, 'val1') <= 1))
 -- 5-arg levenshtein (custom costs) evaluates locally.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t4 WHERE levenshtein(val, 'val1', 1, 1, 2) <= 1;
@@ -2388,6 +2384,39 @@ SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
  a 
 ---
 (0 rows)
+
+-- round() pushes down over an aggregate.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(avg(f64)), avg(f64) FROM t6;
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan
+   Output: (round(avg(f64))), (avg(f64))
+   Relations: Aggregate on (t6)
+   Remote SQL: SELECT round(avg(f64)), avg(f64) FROM functions_test.t6
+(4 rows)
+
+SELECT round(avg(f64)), avg(f64) FROM t6;
+   round   |       avg       
+-----------+-----------------
+ 954335170 | 954335169.54835
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
+                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (round(avg((f64)::numeric), 4)), (avg((f64)::numeric))
+   Relations: Aggregate on (t6)
+   Remote SQL: SELECT round(avg(cast(f64, 'Nullable(Decimal(76, 38))')), 4), avg(cast(f64, 'Nullable(Decimal(76, 38))')) FROM functions_test.t6
+(4 rows)
+
+SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
+     round      |       avg       
+----------------+-----------------
+ 954335169.5484 | 954335169.54835
+(1 row)
 
 -- Trig functions push down at f64 = 0 where PG and CH agree exactly.
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -2907,18 +2936,8 @@ SELECT encode(val::bytea, 'base64url') AS b FROM t4 GROUP BY b ORDER BY b;
 (4 rows)
 
 SELECT encode(val::bytea, 'base64url') AS b FROM t4 GROUP BY b ORDER BY b;
-                                        b                                         
-----------------------------------------------------------------------------------
- TWl4ZWQ
- VkFMMw
- YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
- YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
- aGVsbG8
- dmFsMQ
- dmFsMg
- zqnOsc6y
-(8 rows)
-
+ERROR:  pg_clickhouse: DB::Exception: Function with name 'base64URLEncode' does not exists. In scope SELECT base64URLEncode(CAST(val, 'String')) FROM functions_test.t4 GROUP BY base64URLEncode(CAST(val, 'String')) ORDER BY base64URLEncode(CAST(val, 'String')) ASC NULLS LAST. Maybe you meant: ['base64Encode','base64Decode']
+DETAIL:  Remote Query: SELECT base64URLEncode(CAST(val AS String)) FROM functions_test.t4 GROUP BY (base64URLEncode(CAST(val AS String))) ORDER BY base64URLEncode(CAST(val AS String)) ASC NULLS LAST
 -- The 60-byte input crosses base64's 76-char line break boundary, exercising
 -- that base64url emits no newline; matching against PG's own output of the same
 -- bytes confirms they agree byte-for-byte.
@@ -2927,12 +2946,8 @@ WHERE encode(val::bytea, 'base64url') IN (
     encode(repeat('a', 57)::bytea, 'base64url'),
     encode(repeat('a', 60)::bytea, 'base64url')
 ) ORDER BY n;
- n  
-----
- 57
- 60
-(2 rows)
-
+ERROR:  pg_clickhouse: DB::Exception: Function with name 'base64URLEncode' does not exists. In scope SELECT val FROM functions_test.t4 WHERE base64URLEncode(CAST(val, 'String')) IN ('YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh', 'YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh') ORDER BY length(val) ASC NULLS LAST. Maybe you meant: ['base64Encode','base64Decode']
+DETAIL:  Remote Query: SELECT val FROM functions_test.t4 WHERE ((base64URLEncode(CAST(val AS String)) IN ('YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh','YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh'))) ORDER BY length(val) ASC NULLS LAST
 \endif
 DROP USER MAPPING FOR CURRENT_USER SERVER functions_loopback;
 CALL clickhouse_perform('functions_admin', 'DROP DATABASE functions_test');

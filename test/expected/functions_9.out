@@ -931,7 +931,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT ltrim(val, 'av') AS a, btrim(val, '1l2') AS 
 (4 rows)
 
 SELECT ltrim(val, 'av') AS a, btrim(val, '1l2') AS b, rtrim(val, 'l1') AS c FROM t4 GROUP BY a,b,c ORDER BY a;
-ERROR:  pg_clickhouse: DB::Exception: Syntax error: failed at position 17 (','): , 'av'), trimBoth(val, '1l2'), rtrim(val, 'l1') FROM functions_test.t4 GROUP BY (ltrim(val, 'av')), (trimBoth(val, '1l2')), (rtrim(val, 'l1')) ORDER BY ltrim(va. Expected one of: token, Dot, ClosingRoundBracket, OR, AND, IS NOT DISTINCT FROM, IS NULL, IS NOT NULL, BETWEEN, NOT BETWEEN, LIKE, ILIKE, NOT LIKE, NOT ILIKE, REGEXP, IN, NOT IN, GLOBAL IN, GLOBAL NOT IN, MOD, DIV, alias, AS, identifier
+ERROR:  pg_clickhouse: DB::Exception: Syntax error: failed at position 17 (','): , 'av'), trimBoth(val, '1l2'), rtrim(val, 'l1') FROM functions_test.t4 GROUP BY (ltrim(val, 'av')), (trimBoth(val, '1l2')), (rtrim(val, 'l1')) ORDER BY ltrim(va. Expected one of: token, Dot, ClosingRoundBracket, OR, AND, BETWEEN, NOT BETWEEN, LIKE, ILIKE, NOT LIKE, NOT ILIKE, REGEXP, IN, NOT IN, GLOBAL IN, GLOBAL NOT IN, MOD, DIV, IS NULL, IS NOT NULL, alias, AS, identifier
 DETAIL:  Remote Query: SELECT ltrim(val, 'av'), trimBoth(val, '1l2'), rtrim(val, 'l1') FROM functions_test.t4 GROUP BY (ltrim(val, 'av')), (trimBoth(val, '1l2')), (rtrim(val, 'l1')) ORDER BY ltrim(val, 'av') ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF) SELECT strpos(val, 'val') AS a FROM t4 GROUP BY a ORDER BY a;
                                                                         QUERY PLAN                                                                         
@@ -1943,12 +1943,8 @@ SELECT * FROM t4 WHERE soundex(val) = 'V400';
 (3 rows)
 
 SELECT * FROM t4 WHERE soundex(val) = 'V400';
- val  
-------
- val1
- val2
-(2 rows)
-
+ERROR:  pg_clickhouse: DB::Exception: Unknown function soundex. Maybe you meant: ['round','unhex']: While processing soundex(val) = 'V400'
+DETAIL:  Remote Query: SELECT val FROM functions_test.t4 WHERE ((soundex(val) = 'V400'))
 -- 2-arg levenshtein pushes down as editDistanceUTF8.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t4 WHERE levenshtein(val, 'val1') <= 1;
@@ -2137,11 +2133,8 @@ SELECT val FROM t4 WHERE bit_count(val::bytea) = 21 ORDER BY val;
 (3 rows)
 
 SELECT val FROM t4 WHERE bit_count(val::bytea) = 21 ORDER BY val;
-  val  
--------
- hello
-(1 row)
-
+ERROR:  pg_clickhouse: DB::Exception: Illegal type String of argument of function bitCount: While processing bitCount(CAST(val, 'String')) = 21
+DETAIL:  Remote Query: SELECT val FROM functions_test.t4 WHERE ((bitCount(CAST(val AS String)) = 21)) ORDER BY val ASC NULLS LAST
 \endif
 -- mod(int, int) pushes down as modulo.
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -2204,13 +2197,8 @@ SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
 (3 rows)
 
 SELECT a FROM t3 WHERE mod(a::numeric, 3::numeric) = 0 ORDER BY a;
- a 
----
- 3
- 6
- 9
-(3 rows)
-
+ERROR:  pg_clickhouse: DB::Exception: Illegal types Decimal(76, 38) and UInt8 of arguments of function modulo: While processing (CAST(a, 'Nullable(Decimal(76, 38))') % 3) = 0
+DETAIL:  Remote Query: SELECT a FROM functions_test.t3 WHERE ((modulo(cast(a, 'Nullable(Decimal(76, 38))'), 3) = 0)) ORDER BY a ASC NULLS LAST
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE pow(a::numeric, 2::numeric) = 25;
                            QUERY PLAN                           
@@ -2381,6 +2369,39 @@ SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
  a 
 ---
 (0 rows)
+
+-- round() pushes down over an aggregate.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(avg(f64)), avg(f64) FROM t6;
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan
+   Output: (round(avg(f64))), (avg(f64))
+   Relations: Aggregate on (t6)
+   Remote SQL: SELECT round(avg(f64)), avg(f64) FROM functions_test.t6
+(4 rows)
+
+SELECT round(avg(f64)), avg(f64) FROM t6;
+   round   |       avg       
+-----------+-----------------
+ 954335170 | 954335169.54835
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
+                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (round(avg((f64)::numeric), 4)), (avg((f64)::numeric))
+   Relations: Aggregate on (t6)
+   Remote SQL: SELECT round(avg(cast(f64, 'Nullable(Decimal(76, 38))')), 4), avg(cast(f64, 'Nullable(Decimal(76, 38))')) FROM functions_test.t6
+(4 rows)
+
+SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
+     round      |       avg       
+----------------+-----------------
+ 954335169.5484 | 954335169.54835
+(1 row)
 
 -- Trig functions push down at f64 = 0 where PG and CH agree exactly.
 EXPLAIN (VERBOSE, COSTS OFF)
