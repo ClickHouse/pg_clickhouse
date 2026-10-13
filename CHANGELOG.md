@@ -63,6 +63,9 @@ All notable changes to this project will be documented in this file. It uses the
 *   Prevented pushdown of types and operators from extensions without known
     ClickHouse equivalents, such as [citext] and [intarray] operators, which
     previously caused ClickHouse syntax errors ([#405]).
+*   Fixed interval parameters in datetime arithmetic, such as `ts + $1`,
+    which failed once prepared statements switched to generic plans. Other
+    expressions using interval parameters now evaluate locally ([#406]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -97,6 +100,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#405 Evaluate unsupported types and operators locally"
   [#401]: https://github.com/ClickHouse/pg_clickhouse/pull/401
     "ClickHouse/pg_clickhouse#401 Fix temporal, UUID and JSON type mappings"
+  [#406]: https://github.com/ClickHouse/pg_clickhouse/pull/406
+    "ClickHouse/pg_clickhouse#406 Fix interval parameters in datetime arithmetic"
 
 ## [v0.11.0] — 2026-09-30
 

@@ -185,6 +185,15 @@ EXECUTE st10('2026-09-28 23:59:59.4');
 PREPARE st11(date) AS SELECT id FROM bin_test.mixed WHERE d = $1;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st11('1960-01-01');
 EXECUTE st11('1960-01-01');
+PREPARE st12(interval) AS SELECT id FROM bin_test.mixed WHERE ts + $1 >= '2026-10-29 00:00:00+00' ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st12('1 month 0.5 seconds');
+EXECUTE st12('1 month 0.5 seconds');
+EXECUTE st12('1 month 1 day');
+PREPARE st13(interval) AS SELECT id FROM bin_test.mixed WHERE d - $1 >= '1959-12-31' ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st13('1 day 1 microsecond');
+EXECUTE st13('1 day 1 microsecond');
+EXECUTE st13('1 day');
+EXECUTE st13('-1 year');
 
 CREATE FOREIGN TABLE bin_test.typed (
 	id int NOT NULL,
@@ -219,6 +228,8 @@ DEALLOCATE st8;
 DEALLOCATE st9;
 DEALLOCATE st10;
 DEALLOCATE st11;
+DEALLOCATE st12;
+DEALLOCATE st13;
 DEALLOCATE st14;
 DEALLOCATE st15;
 DEALLOCATE st16;
@@ -343,6 +354,15 @@ EXECUTE st10('2026-09-28 23:59:59.4');
 PREPARE st11(date) AS SELECT id FROM http_test.mixed WHERE d = $1;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st11('1960-01-01');
 EXECUTE st11('1960-01-01');
+PREPARE st12(interval) AS SELECT id FROM http_test.mixed WHERE ts + $1 >= '2026-10-29 00:00:00+00' ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st12('1 month 0.5 seconds');
+EXECUTE st12('1 month 0.5 seconds');
+EXECUTE st12('1 month 1 day');
+PREPARE st13(interval) AS SELECT id FROM http_test.mixed WHERE d - $1 >= '1959-12-31' ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st13('1 day 1 microsecond');
+EXECUTE st13('1 day 1 microsecond');
+EXECUTE st13('1 day');
+EXECUTE st13('-1 year');
 
 CREATE FOREIGN TABLE http_test.typed (
 	id int NOT NULL,
@@ -377,6 +397,8 @@ DEALLOCATE st8;
 DEALLOCATE st9;
 DEALLOCATE st10;
 DEALLOCATE st11;
+DEALLOCATE st12;
+DEALLOCATE st13;
 DEALLOCATE st14;
 DEALLOCATE st15;
 DEALLOCATE st16;
