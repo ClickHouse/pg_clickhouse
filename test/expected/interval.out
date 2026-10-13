@@ -151,6 +151,115 @@ EXPLAIN (verbose, COSTS OFF)
   4 | Thu Sep 03 16:59:59.999967 2026 PDT
 (4 rows)
 
+-- ClickHouse compares interval counts without their units, so keep local.
+EXPLAIN (verbose, COSTS OFF)
+ SELECT id
+   FROM ival_bin.intervals
+  WHERE hours > '1 hour'
+  ORDER BY id;
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Foreign Scan on ival_bin.intervals
+   Output: id
+   Filter: (intervals.hours > '01:00:00'::interval)
+   Remote SQL: SELECT id, hours FROM interval_test.intervals ORDER BY id ASC NULLS LAST
+(4 rows)
+
+ SELECT id
+   FROM ival_bin.intervals
+  WHERE hours > '1 hour'
+  ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+  4
+(4 rows)
+
+EXPLAIN (verbose, COSTS OFF)
+ SELECT id
+   FROM ival_bin.intervals
+  WHERE hours::interval hour > '1 hour'
+  ORDER BY id;
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Foreign Scan on ival_bin.intervals
+   Output: id
+   Filter: ((intervals.hours)::interval hour > '01:00:00'::interval)
+   Remote SQL: SELECT id, hours FROM interval_test.intervals ORDER BY id ASC NULLS LAST
+(4 rows)
+
+ SELECT id
+   FROM ival_bin.intervals
+  WHERE hours::interval hour > '1 hour'
+  ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+  4
+(4 rows)
+
+EXPLAIN (verbose, COSTS OFF)
+ SELECT sum(hours) FROM ival_bin.intervals;
+                                                   QUERY PLAN                                                   
+----------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: sum(hours)
+   ->  Foreign Scan on ival_bin.intervals
+         Output: id, base, nanos, micros, millis, seconds, minutes, hours, days, weeks, months, quarters, years
+         Remote SQL: SELECT hours FROM interval_test.intervals
+(5 rows)
+
+ SELECT sum(hours) FROM ival_bin.intervals;
+    sum    
+-----------
+ 117:00:00
+(1 row)
+
+-- Datetime arithmetic and min/max keep units.
+EXPLAIN (verbose, COSTS OFF)
+ SELECT id, base + months
+   FROM ival_bin.intervals
+  WHERE base - days < base
+  ORDER BY id;
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on ival_bin.intervals
+   Output: id, (base + months)
+   Remote SQL: SELECT id, base, months FROM interval_test.intervals WHERE (((base - days) < base)) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+ SELECT id, base + months
+   FROM ival_bin.intervals
+  WHERE base - days < base
+  ORDER BY id;
+ id |           ?column?           
+----+------------------------------
+  1 | Thu Feb 28 17:00:00 2030 PST
+  2 | Thu Jun 01 17:00:00 2028 PDT
+  3 | Fri Jun 02 17:00:00 2028 PDT
+  4 | Sun Jun 03 17:00:00 2029 PDT
+(4 rows)
+
+EXPLAIN (verbose, COSTS OFF)
+ SELECT min(hours), max(months) FROM ival_bin.intervals;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Foreign Scan
+   Output: (min(hours)), (max(months))
+   Relations: Aggregate on (intervals)
+   Remote SQL: SELECT min(hours), max(months) FROM interval_test.intervals
+(4 rows)
+
+ SELECT min(hours), max(months) FROM ival_bin.intervals;
+   min    |      max       
+----------+----------------
+ 21:00:00 | 3 years 6 mons
+(1 row)
+
 -- Now try BIGINTS.
 CREATE FOREIGN TABLE ival_bin.int_intervals (
     id       INT         NOT NULL,

@@ -74,6 +74,8 @@ typedef struct foreign_glob_cxt {
                              * SubPlan's Query; relaxes upper-rel-only
                              * checks (e.g. bare aggregates are legal in a
                              * scalar subquery) and forbids nesting */
+    bool interval_ok;       /* next node may be interval: top level,
+                             * datetime +/- interval and min/max args */
 } foreign_glob_cxt;
 
 /*
@@ -426,6 +428,7 @@ chfdw_is_foreign_expr(
     glob_cxt.root                    = root;
     glob_cxt.foreignrel              = baserel;
     glob_cxt.subquery_scope          = false;
+    glob_cxt.interval_ok             = true;
     glob_cxt.foreignrel->fdw_private = fpinfo;
 
     /*
@@ -878,6 +881,15 @@ classify_notin_subplan(SubPlan* subplan, PlannerInfo* root, Relids relids) {
     return NOTIN_SHIP_NONE;
 }
 
+/* Datetime +/- interval, which ClickHouse applies in interval's own unit */
+static bool
+is_datetime_interval_op(OpExpr* oe) {
+    CustomObjectDef* cdef = chfdw_check_for_custom_operator(oe->opno, NULL);
+
+    return cdef && (cdef->cf_type == CF_DATETIME_PL_INTERVAL ||
+                    cdef->cf_type == CF_DATETIME_MI_INTERVAL);
+}
+
 /*
  * Check if expression is safe to execute remotely, and return true if so.
  *
@@ -896,8 +908,11 @@ classify_notin_subplan(SubPlan* subplan, PlannerInfo* root, Relids relids) {
  */
 static bool
 foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
-    bool check_type = true;
+    bool check_type  = true;
+    bool interval_ok = glob_cxt->interval_ok;
     CHFdwRelationInfo* fpinfo;
+
+    glob_cxt->interval_ok = false;
 
     /* Need do nothing for empty subexpressions */
     if (node == NULL) {
@@ -1062,6 +1077,17 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
          */
         if (!chfdw_is_shippable(node, oe->opno, OperatorRelationId, fpinfo, NULL)) {
             return false;
+        }
+
+        if (is_datetime_interval_op(oe)) {
+            if (!foreign_expr_walker(linitial(oe->args), glob_cxt, EXPR_CTX_EXACT)) {
+                return false;
+            }
+            glob_cxt->interval_ok = true;
+            if (!foreign_expr_walker(lsecond(oe->args), glob_cxt, EXPR_CTX_EXACT)) {
+                return false;
+            }
+            break;
         }
 
         /*
@@ -1232,6 +1258,8 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
                 n = (Node*)tle->expr;
             }
 
+            glob_cxt->interval_ok =
+                agg->aggfnoid == F_MIN_INTERVAL || agg->aggfnoid == F_MAX_INTERVAL;
             if (!foreign_expr_walker(n, glob_cxt, EXPR_CTX_EXACT)) {
                 return false;
             }
@@ -1361,6 +1389,14 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
      */
     if (check_type &&
         !chfdw_is_shippable(node, exprType(node), TypeRelationId, fpinfo, NULL)) {
+        return false;
+    }
+
+    /*
+     * ClickHouse interval values count units of their type, which the planner
+     * does not know, so comparisons and arithmetic would mix units
+     */
+    if (check_type && !interval_ok && exprType(node) == INTERVALOID) {
         return false;
     }
 

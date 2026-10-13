@@ -92,6 +92,51 @@ EXPLAIN (verbose, COSTS OFF)
   WHERE base - nanos < base
   ORDER BY id;
 
+-- ClickHouse compares interval counts without their units, so keep local.
+EXPLAIN (verbose, COSTS OFF)
+ SELECT id
+   FROM ival_bin.intervals
+  WHERE hours > '1 hour'
+  ORDER BY id;
+
+ SELECT id
+   FROM ival_bin.intervals
+  WHERE hours > '1 hour'
+  ORDER BY id;
+
+EXPLAIN (verbose, COSTS OFF)
+ SELECT id
+   FROM ival_bin.intervals
+  WHERE hours::interval hour > '1 hour'
+  ORDER BY id;
+
+ SELECT id
+   FROM ival_bin.intervals
+  WHERE hours::interval hour > '1 hour'
+  ORDER BY id;
+
+EXPLAIN (verbose, COSTS OFF)
+ SELECT sum(hours) FROM ival_bin.intervals;
+
+ SELECT sum(hours) FROM ival_bin.intervals;
+
+-- Datetime arithmetic and min/max keep units.
+EXPLAIN (verbose, COSTS OFF)
+ SELECT id, base + months
+   FROM ival_bin.intervals
+  WHERE base - days < base
+  ORDER BY id;
+
+ SELECT id, base + months
+   FROM ival_bin.intervals
+  WHERE base - days < base
+  ORDER BY id;
+
+EXPLAIN (verbose, COSTS OFF)
+ SELECT min(hours), max(months) FROM ival_bin.intervals;
+
+ SELECT min(hours), max(months) FROM ival_bin.intervals;
+
 -- Now try BIGINTS.
 CREATE FOREIGN TABLE ival_bin.int_intervals (
     id       INT         NOT NULL,

@@ -50,6 +50,10 @@ All notable changes to this project will be documented in this file. It uses the
 *   Prevented pushdown of types and operators from extensions without known
     ClickHouse equivalents, such as [citext] and [intarray] operators, which
     previously caused ClickHouse syntax errors ([#405]).
+*   Fixed wrong results when filtering interval columns, such as
+    `hours > '1 hour'`, which compared a count of hours to a count of
+    seconds. Interval values now push down only in datetime arithmetic and
+    `min()`/`max()`; other interval expressions evaluate locally ([#408]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -78,6 +82,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#405 Evaluate unsupported types and operators locally"
   [#401]: https://github.com/ClickHouse/pg_clickhouse/pull/401
     "ClickHouse/pg_clickhouse#401 Fix temporal, UUID and JSON type mappings"
+  [#408]: https://github.com/ClickHouse/pg_clickhouse/pull/408
+    "ClickHouse/pg_clickhouse#408 Evaluate interval comparisons locally"
 
 ## [v0.11.0] — 2026-09-30
 
