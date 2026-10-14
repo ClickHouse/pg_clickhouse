@@ -6,7 +6,12 @@ SELECT NOT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = 'vector') A
 
 -- Read and write pgvector vector columns stored in ClickHouse float arrays,
 -- and push down vector constants, parameters, and equality.
+-- Concurrent tests create pgvector; serialize and silence "already exists"
+SET client_min_messages = warning;
+SELECT pg_advisory_lock(hashtext('vector'));
 CREATE EXTENSION IF NOT EXISTS vector;
+SELECT pg_advisory_unlock(hashtext('vector'));
+RESET client_min_messages;
 
 CREATE SERVER vector_types_bin FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'vector_types_test', driver 'binary');

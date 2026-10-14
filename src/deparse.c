@@ -278,6 +278,10 @@ deparseSelectSql(
 );
 static void
 appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* context);
+static bool
+is_vector_neg_ip(Expr* expr);
+static bool
+server_version_ge(PlannerInfo* root, RelOptInfo* foreignrel, int major, int minor);
 static void
 appendLimitClause(deparse_expr_cxt* context);
 static void
@@ -1045,6 +1049,12 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
         if (!foreign_expr_walker((Node*)fe->args, glob_cxt, EXPR_CTX_EXACT)) {
             return false;
         }
+
+        /* ClickHouse dotProduct accepts arrays starting in 23.8 */
+        if (cdef && cdef->cf_type == CF_VECTOR_DOT &&
+            !server_version_ge(glob_cxt->root, glob_cxt->foreignrel, 23, 8)) {
+            return false;
+        }
     } break;
     case T_SQLValueFunction:
         /* All handled by deparseSQLValueFunction(). */
@@ -1068,6 +1078,12 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
          * Recurse to input subexpressions.
          */
         if (!foreign_expr_walker((Node*)oe->args, glob_cxt, EXPR_CTX_EXACT)) {
+            return false;
+        }
+
+        /* ClickHouse dotProduct accepts arrays starting in 23.8 */
+        if (is_vector_neg_ip((Expr*)node) &&
+            !server_version_ge(glob_cxt->root, glob_cxt->foreignrel, 23, 8)) {
             return false;
         }
     } break;
@@ -4869,6 +4885,40 @@ findFunction(Oid typoid, char* name) {
 }
 
 /*
+ * Deparse a pgvector distance operator to the ClickHouse distance function.
+ * For <#>, emit dotProduct without the negation; callers negate or reverse
+ * the sort direction.
+ */
+static void
+deparseVectorDistance(
+    custom_object_type cf_type,
+    OpExpr* node,
+    deparse_expr_cxt* context
+) {
+    StringInfo buf = context->buf;
+
+    switch (cf_type) {
+    case CF_VECTOR_L2:
+        appendStringInfoString(buf, "L2Distance(");
+        break;
+    case CF_VECTOR_COSINE:
+        appendStringInfoString(buf, "cosineDistance(");
+        break;
+    case CF_VECTOR_L1:
+        appendStringInfoString(buf, "L1Distance(");
+        break;
+    default:
+        Assert(cf_type == CF_VECTOR_NEG_IP);
+        appendStringInfoString(buf, "dotProduct(");
+        break;
+    }
+    deparseExpr(linitial(node->args), context);
+    appendStringInfoString(buf, ", ");
+    deparseExpr(lsecond(node->args), context);
+    appendStringInfoChar(buf, ')');
+}
+
+/*
  * Deparse given operator expression. To avoid problems around priority of
  * operations, we always parenthesize the arguments.
  */
@@ -4936,6 +4986,17 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             );
             goto cleanup;
         } break;
+        case CF_VECTOR_L2:
+        case CF_VECTOR_COSINE:
+        case CF_VECTOR_L1:
+            deparseVectorDistance(cdef->cf_type, node, context);
+            goto cleanup;
+        case CF_VECTOR_NEG_IP:
+            /* pgvector's <#> is the negative inner product */
+            appendStringInfoString(buf, "(-");
+            deparseVectorDistance(cdef->cf_type, node, context);
+            appendStringInfoChar(buf, ')');
+            goto cleanup;
         case CF_HSTORE_FETCHVAL: {
             Expr* arg1 = linitial(node->args);
             Expr* arg2 = list_nth(node->args, 1);
@@ -6487,17 +6548,21 @@ appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* conte
 
         Assert(em_expr != NULL);
 
-        appendStringInfoString(buf, delim);
-        deparseExpr(em_expr, context);
 #if PG_VERSION_NUM >= 180000
-        if (pathkey->pk_cmptype == BTLessStrategyNumber)
+        bool asc = pathkey->pk_cmptype == BTLessStrategyNumber;
 #else
-        if (pathkey->pk_strategy == BTLessStrategyNumber)
+        bool asc = pathkey->pk_strategy == BTLessStrategyNumber;
 #endif
-            appendStringInfoString(buf, " ASC");
-        else {
-            appendStringInfoString(buf, " DESC");
+
+        appendStringInfoString(buf, delim);
+        if (is_vector_neg_ip(em_expr)) {
+            /* Sort <#> as dotProduct in reverse, the form vector indexes serve */
+            deparseVectorDistance(CF_VECTOR_NEG_IP, (OpExpr*)em_expr, context);
+            asc = !asc;
+        } else {
+            deparseExpr(em_expr, context);
         }
+        appendStringInfoString(buf, asc ? " ASC" : " DESC");
 
         if (pathkey->pk_nulls_first) {
             appendStringInfoString(buf, " NULLS FIRST");
@@ -6507,6 +6572,20 @@ appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* conte
 
         delim = ", ";
     }
+}
+
+/*
+ * Return true if expr is pgvector's <#> negative inner product operator.
+ */
+static bool
+is_vector_neg_ip(Expr* expr) {
+    if (!IsA(expr, OpExpr)) {
+        return false;
+    }
+
+    CustomObjectDef* cdef =
+        chfdw_check_for_custom_operator(((OpExpr*)expr)->opno, NULL);
+    return cdef != NULL && cdef->cf_type == CF_VECTOR_NEG_IP;
 }
 
 /*

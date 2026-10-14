@@ -666,6 +666,46 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     }
 }
 
+/*
+ * Map a pgvector function on vector arguments to its ClickHouse function.
+ * Returns false for functions without an equivalent, and for the halfvec and
+ * sparsevec functions that share their names.
+ */
+static bool
+pgvector_function(Form_pg_proc procform, CustomObjectDef* entry) {
+    const char* proname = NameStr(procform->proname);
+    const char* ch_name = NULL;
+
+    for (int i = 0; i < procform->pronargs; i++) {
+        if (!chfdw_is_pgvector_type(procform->proargtypes.values[i])) {
+            return false;
+        }
+    }
+
+    entry->cf_type = CF_CH_FUNCTION;
+    if (procform->pronargs == 2) {
+        if (STR_EQUAL(proname, "l2_distance")) {
+            ch_name = "L2Distance";
+        } else if (STR_EQUAL(proname, "cosine_distance")) {
+            ch_name = "cosineDistance";
+        } else if (STR_EQUAL(proname, "l1_distance")) {
+            ch_name = "L1Distance";
+        } else if (STR_EQUAL(proname, "inner_product")) {
+            /* Requires a ClickHouse version whose dotProduct takes arrays */
+            entry->cf_type = CF_VECTOR_DOT;
+            ch_name        = "dotProduct";
+        }
+    } else if (procform->pronargs == 1 && STR_EQUAL(proname, "vector_dims")) {
+        ch_name = "length";
+    }
+
+    if (!ch_name) {
+        return false;
+    }
+    strlcpy(entry->custom_name, ch_name, NAMEDATALEN);
+    return true;
+}
+
 CustomObjectDef*
 chfdw_check_for_custom_function(Oid funcid) {
     CustomObjectDef* entry;
@@ -719,6 +759,15 @@ chfdw_check_for_custom_function(Oid funcid) {
                 /* pg_re2: 1:1 pushdown to ClickHouse RE2 functions. */
                 entry->cf_type = CF_CH_FUNCTION;
                 strlcpy(entry->custom_name, re2_func_name(proname), NAMEDATALEN);
+            } else if (STR_EQUAL(extname, "vector")) {
+                if (!pgvector_function(procform, entry)) {
+                    ReleaseSysCache(proctup);
+                    pfree(extname);
+                    hash_search(
+                        custom_objects_cache, (void*)&funcid, HASH_REMOVE, NULL
+                    );
+                    return NULL;
+                }
             } else if (STR_EQUAL(extname, "fuzzystrmatch")) {
                 if (STR_EQUAL(proname, "levenshtein") && procform->pronargs == 2) {
                     strcpy(entry->custom_name, "editDistanceUTF8");
@@ -863,6 +912,29 @@ classify_builtin_operator(Oid opoid) {
     }
 }
 
+/*
+ * Map a pgvector operator name to its custom_object_type. Returns false for
+ * operators without a ClickHouse equivalent.
+ */
+static bool
+pgvector_operator_type(const char* oprname, custom_object_type* ctype) {
+    if (STR_EQUAL(oprname, "=") || STR_EQUAL(oprname, "<>")) {
+        /* ClickHouse compares Array(Float32) values element-wise. */
+        *ctype = CF_USUAL;
+    } else if (STR_EQUAL(oprname, "<->")) {
+        *ctype = CF_VECTOR_L2;
+    } else if (STR_EQUAL(oprname, "<=>")) {
+        *ctype = CF_VECTOR_COSINE;
+    } else if (STR_EQUAL(oprname, "<#>")) {
+        *ctype = CF_VECTOR_NEG_IP;
+    } else if (STR_EQUAL(oprname, "<+>")) {
+        *ctype = CF_VECTOR_L1;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 CustomObjectDef*
 chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
     HeapTuple tuple = NULL;
@@ -910,12 +982,11 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
                 entry->cf_type = CF_RE2_MATCH;
             } else if (
                 extname && STR_EQUAL(extname, "vector") &&
-                (STR_EQUAL(oprname, "=") || STR_EQUAL(oprname, "<>")) &&
+                pgvector_operator_type(oprname, &ctype) &&
                 chfdw_is_pgvector_type(form->oprleft) &&
                 chfdw_is_pgvector_type(form->oprright)
             ) {
-                /* ClickHouse compares Array(Float32) values element-wise. */
-                entry->cf_type = CF_USUAL;
+                entry->cf_type = ctype;
             } else {
                 /* Unknown or user defined operator */
                 hash_search(custom_objects_cache, (void*)&opoid, HASH_REMOVE, NULL);

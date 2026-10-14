@@ -338,6 +338,19 @@ timezone.sql
  25.8+      | timezone.out
  23-25.7    | timezone_1.out
 
+vector_pushdown.sql
+-------------------
+
+ Postgres | File
+----------|---------------------
+ 14-19    | vector_pushdown.out
+
+ ClickHouse | pgvector  | File
+------------|-----------|-----------------------
+ 23.8+      | installed | vector_pushdown.out
+ 23.3       | installed | vector_pushdown_1.out
+ any        | absent    | vector_pushdown_2.out
+
 vector_types.sql
 ----------------
 

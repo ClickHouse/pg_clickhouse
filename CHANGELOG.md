@@ -31,7 +31,14 @@ All notable changes to this project will be documented in this file. It uses the
     reads, inserts, and `COPY`. pgvector is not required; pg_clickhouse
     recognizes its `vector` type when installed. `vector` constants and
     parameters push down as `Array(Float32)`, as do the pgvector `=` and `<>`
-    operators ([#410]).
+    operators. Thanks to Kaushik Iska for the PR ([#410])!
+*   Added pushdown of the [pgvector] distance operators `<->`, `<=>`, `<#>`,
+    and `<+>`, and the `l2_distance`, `cosine_distance`, `inner_product`,
+    `l1_distance`, and `vector_dims` functions, so that nearest-neighbor
+    queries sort and limit in ClickHouse. `<#>` sorts as `dotProduct(...)
+    DESC`, the form ClickHouse vector similarity indexes serve, and
+    requires ClickHouse 23.8 or later. Thanks to Kaushik Iska for the PR
+    ([#411])!
 
 ### 🚀 Distribution
 
@@ -78,6 +85,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#403 Preserve floating-point parameter precision"
   [#410]: https://github.com/ClickHouse/pg_clickhouse/pull/410
     "ClickHouse/pg_clickhouse#410 Read and write pgvector vectors"
+  [#411]: https://github.com/ClickHouse/pg_clickhouse/pull/411
+    "ClickHouse/pg_clickhouse#411 Push down pgvector distance operators and functions"
   [pgvector]: https://github.com/pgvector/pgvector
     "pgvector: Open-source vector similarity search for Postgres"
   [citext]: https://www.postgresql.org/docs/current/citext.html

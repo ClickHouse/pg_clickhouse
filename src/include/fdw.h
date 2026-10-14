@@ -424,6 +424,11 @@ typedef enum {
     CF_DIGEST,                 /* pgcrypto digest(data, algorithm) → hash function */
     CF_REGR_AGG,               /* regr_*() aggregates → to 26.9+ */
     CF_PGVECTOR,               /* pgvector vector type → Array(Float32) */
+    CF_VECTOR_L2,              /* pgvector <-> → L2Distance */
+    CF_VECTOR_COSINE,          /* pgvector <=> → cosineDistance */
+    CF_VECTOR_NEG_IP,          /* pgvector <#> → -dotProduct */
+    CF_VECTOR_L1,              /* pgvector <+> → L1Distance */
+    CF_VECTOR_DOT,             /* pgvector inner_product → dotProduct */
 } custom_object_type;
 
 typedef enum {

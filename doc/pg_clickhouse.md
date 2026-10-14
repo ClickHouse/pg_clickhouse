@@ -1135,7 +1135,7 @@ or `bigint` to read and write counts of their units. For example, an
 `IntervalNanosecond` to `bigint` preserves nanoseconds, while mapping to
 `interval` truncates to microseconds.
 
-### pgvector
+### Vector Types
 
 When the [pgvector] extension is installed, declare ClickHouse float array
 columns as `vector` to read and write them as pgvector values:
@@ -1814,16 +1814,53 @@ Two [fuzzystrmatch] functions push down to ClickHouse:
 
 #### pgvector
 
-These [pgvector] operators on the `vector` type push down to ClickHouse
-array comparisons:
+These [pgvector] operators and functions on the `vector` type push down to
+ClickHouse:
 
+*   `<->`, `l2_distance`: [L2Distance](https://clickhouse.com/docs/sql-reference/functions/distance-functions#L2Distance)
+*   `<=>`, `cosine_distance`: [cosineDistance](https://clickhouse.com/docs/sql-reference/functions/distance-functions#cosineDistance)
+*   `<#>`: negated [dotProduct](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayDotProduct)
+*   `inner_product`: [dotProduct](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayDotProduct)
+*   `<+>`, `l1_distance`: [L1Distance](https://clickhouse.com/docs/sql-reference/functions/distance-functions#L1Distance)
+*   `vector_dims`: [length](https://clickhouse.com/docs/sql-reference/functions/array-functions#length)
 *   `=`: [equals](https://clickhouse.com/docs/sql-reference/operators#equals)
 *   `<>`: [notEquals](https://clickhouse.com/docs/sql-reference/operators#notEquals)
 
+A nearest-neighbor query pushes its distance sort and `LIMIT` to ClickHouse,
+along with any `WHERE` conditions:
+
+```pgsql
+SELECT id FROM items
+ WHERE category = 'footwear'
+ ORDER BY embedding <=> '[0.12, 0.03, 0.4]'
+ LIMIT 10;
+```
+
+`EXPLAIN (VERBOSE)` shows the remote query:
+
+```sql
+SELECT id, embedding FROM items WHERE ((category = 'footwear'))
+ORDER BY cosineDistance(embedding, cast([0.12,0.03,0.4] as Array(Float32))) ASC NULLS LAST
+LIMIT 10
+```
+
+pgvector's `<#>` returns the negative inner product, so pg_clickhouse sorts
+it as `dotProduct(...) DESC`, the form ClickHouse vector similarity indexes
+serve. `<#>` and `inner_product` require ClickHouse 23.8 or later, where
+`dotProduct` accepts arrays; earlier versions evaluate them in Postgres.
+ClickHouse computes distances of `Array(Float32)` columns in `Float32`, as
+pgvector does.
+
+A tiebreaker, such as `ORDER BY embedding <=> '[...]', id`, also pushes
+down, but ClickHouse does not use a vector similarity index for a sort with
+more than one key.
+
 pg_clickhouse casts `vector` constants to `Array(Float32)`, so equality
 compares the same `Float32` values ClickHouse stores in `Array(Float32)`
-columns. See [pgvector](#pgvector) under Data Types for supported column
-types.
+columns. `vector_norm`, `l2_normalize`, `subvector`, and other pgvector
+functions do not push down: ClickHouse's equivalents differ for zero
+vectors, negative offsets, or older versions. See [Vector Types](#vector-types)
+under Data Types for supported column types.
 
 #### pgcyrpto
 
