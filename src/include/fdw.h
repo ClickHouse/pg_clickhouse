@@ -532,6 +532,10 @@ chfdw_run_text_query(UserMapping* user, const char* sql, int ncols);
 extern chfdw_vector_metric
 chfdw_vector_metric_from_ch(const char* name);
 
+/* vector_ddl.c */
+extern void
+chfdw_install_vector_ddl_hook(void);
+
 /* vector_plan.c */
 struct ExplainState;
 extern List*

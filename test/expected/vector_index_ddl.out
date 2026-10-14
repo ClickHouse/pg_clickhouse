@@ -1,0 +1,163 @@
+SELECT NOT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = 'vector') AS no_vector \gset
+\if :no_vector
+\echo 'SKIP: vector extension not available'
+\quit
+\endif
+-- Create, rebuild, and drop ClickHouse vector similarity indexes with
+-- CREATE INDEX ... USING clickhouse, REINDEX, and DROP INDEX.
+SET client_min_messages = warning;
+SELECT pg_advisory_lock(hashtext('vector'));
+ pg_advisory_lock 
+------------------
+ 
+(1 row)
+
+CREATE EXTENSION IF NOT EXISTS vector;
+SELECT pg_advisory_unlock(hashtext('vector'));
+ pg_advisory_unlock 
+--------------------
+ t
+(1 row)
+
+RESET client_min_messages;
+CREATE SERVER vector_index_ddl_svr FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR PUBLIC SERVER vector_index_ddl_svr;
+\set ECHO errors
+\if :old_ch
+\echo 'SKIP: vector similarity indexes require ClickHouse 25.8'
+\quit
+\endif
+CALL clickhouse_perform('vector_index_ddl_svr', 'DROP DATABASE IF EXISTS vector_index_ddl_test');
+CALL clickhouse_perform('vector_index_ddl_svr', 'CREATE DATABASE vector_index_ddl_test');
+CALL clickhouse_perform('vector_index_ddl_svr', $$
+    CREATE TABLE vector_index_ddl_test.docs (id Int32, v Array(Float32)) ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('vector_index_ddl_svr', $$
+    INSERT INTO vector_index_ddl_test.docs SELECT number, [sin(number), cos(number)] FROM numbers(100)
+$$);
+CREATE FOREIGN TABLE ddl_docs (id int, v vector(2))
+    SERVER vector_index_ddl_svr OPTIONS (database 'vector_index_ddl_test', table_name 'docs');
+CREATE VIEW ch_indexes AS SELECT * FROM clickhouse_query('vector_index_ddl_svr', $$
+    SELECT name, type_full FROM system.data_skipping_indices WHERE database = 'vector_index_ddl_test'
+$$) AS t(name text, type_full text);
+-- The operator class picks the metric, WITH the build options, and the column
+-- type the dimensions. Other columns are ignored: ClickHouse filters on any.
+CREATE INDEX ddl_docs_v ON ddl_docs USING clickhouse (id, v vector_cosine_ops)
+    WITH (quantization = 'f32', m = 16, ef_construction = 64);
+NOTICE:  pg_clickhouse: ignoring non-vector index column
+SELECT * FROM ch_indexes;
+    name    |                           type_full                           
+------------+---------------------------------------------------------------
+ ddl_docs_v | vector_similarity('hnsw', 'cosineDistance', 2, 'f32', 16, 64)
+(1 row)
+
+EXPLAIN (COSTS OFF) SELECT id FROM ddl_docs ORDER BY v <=> '[1,0]' LIMIT 3;
+              QUERY PLAN              
+--------------------------------------
+ Foreign Scan on ddl_docs
+   Vector Search: cosineDistance on v
+   Vector Index: ddl_docs_v
+(3 rows)
+
+CREATE INDEX IF NOT EXISTS ddl_docs_v ON ddl_docs USING clickhouse (v vector_cosine_ops);
+NOTICE:  pg_clickhouse: index "ddl_docs_v" already exists, skipping
+-- Only the table owner may index it, and only with USING clickhouse.
+CREATE INDEX ON ddl_docs (v);
+ERROR:  pg_clickhouse: cannot create a btree index on foreign table "ddl_docs"
+HINT:  Use CREATE INDEX ... USING clickhouse (column vector_cosine_ops).
+CREATE INDEX ON ddl_docs USING clickhouse (nope vector_l2_ops);
+ERROR:  column "nope" of relation "ddl_docs" does not exist
+CREATE ROLE vector_index_ddl_other;
+SET ROLE vector_index_ddl_other;
+CREATE INDEX ddl_docs_l2 ON ddl_docs USING clickhouse (v vector_l2_ops);
+ERROR:  must be owner of foreign table ddl_docs
+RESET ROLE;
+DROP ROLE vector_index_ddl_other;
+-- REINDEX rebuilds the index in every part, through a ClickHouse mutation.
+REINDEX INDEX ddl_docs_v;
+CREATE INDEX ddl_docs_v2 ON ddl_docs USING clickhouse (v vector_l2_ops) WITH (materialize = false);
+REINDEX TABLE ddl_docs;
+SELECT command FROM clickhouse_query('vector_index_ddl_svr', $$
+    SELECT command FROM system.mutations WHERE database = 'vector_index_ddl_test' ORDER BY create_time
+$$) AS t(command text);
+             command             
+---------------------------------
+ (MATERIALIZE INDEX ddl_docs_v)
+ (MATERIALIZE INDEX ddl_docs_v)
+ (MATERIALIZE INDEX ddl_docs_v)
+ (MATERIALIZE INDEX ddl_docs_v2)
+(4 rows)
+
+DROP INDEX ddl_docs_v2;
+-- Reject a mixed DROP before changing ClickHouse, in either name order.
+CREATE TABLE ddl_local (id int);
+CREATE INDEX ddl_local_idx ON ddl_local (id);
+DROP INDEX ddl_docs_v, ddl_local_idx;
+ERROR:  pg_clickhouse: cannot drop ClickHouse and other indexes together
+DROP INDEX ddl_local_idx, ddl_docs_v;
+ERROR:  pg_clickhouse: cannot drop ClickHouse and other indexes together
+SELECT name FROM ch_indexes;
+    name    
+------------
+ ddl_docs_v
+(1 row)
+
+SELECT to_regclass('ddl_local_idx') IS NOT NULL AS local_index_exists;
+ local_index_exists 
+--------------------
+ t
+(1 row)
+
+DROP TABLE ddl_local;
+-- ClickHouse reads a backslash in a quoted name as an escape.
+CREATE INDEX "ddl\idx" ON ddl_docs USING clickhouse (v vector_l2_ops) WITH (materialize = false);
+SELECT name FROM ch_indexes WHERE name LIKE '%\\%';
+  name   
+---------
+ ddl\idx
+(1 row)
+
+DROP INDEX "ddl\idx";
+SELECT count(*) FROM ch_indexes WHERE name LIKE '%\\%';
+ count 
+-------
+     0
+(1 row)
+
+-- A missing schema is reported, or skipped, as Postgres does.
+DROP INDEX IF EXISTS ddl_no_schema.ddl_docs_v;
+NOTICE:  schema "ddl_no_schema" does not exist, skipping
+DROP INDEX ddl_no_schema.ddl_docs_v;
+ERROR:  schema "ddl_no_schema" does not exist
+-- An index name on two remote tables does not say which to drop, but two foreign
+-- tables of one remote table share their indexes.
+CALL clickhouse_perform('vector_index_ddl_svr', $$
+    CREATE TABLE vector_index_ddl_test.docs2 (id Int32, v Array(Float32)) ENGINE = MergeTree ORDER BY id
+$$);
+CREATE FOREIGN TABLE ddl_docs2 (id int, v vector(2))
+    SERVER vector_index_ddl_svr OPTIONS (database 'vector_index_ddl_test', table_name 'docs2');
+CREATE INDEX ddl_docs_v ON ddl_docs2 USING clickhouse (v vector_l2_ops);
+DROP INDEX ddl_docs_v;
+ERROR:  pg_clickhouse: index "ddl_docs_v" exists on foreign tables "ddl_docs" and "ddl_docs2"
+HINT:  Give the indexes distinct names.
+REINDEX INDEX ddl_docs_v;
+ERROR:  pg_clickhouse: index "ddl_docs_v" exists on foreign tables "ddl_docs" and "ddl_docs2"
+HINT:  Give the indexes distinct names.
+DROP FOREIGN TABLE ddl_docs2;
+CREATE FOREIGN TABLE ddl_docs_dup (id int, v vector(2))
+    SERVER vector_index_ddl_svr OPTIONS (database 'vector_index_ddl_test', table_name 'docs');
+REINDEX INDEX ddl_docs_v;
+DROP FOREIGN TABLE ddl_docs_dup;
+DROP INDEX ddl_docs_v;
+SELECT count(*) FROM ch_indexes;
+ count 
+-------
+     1
+(1 row)
+
+DROP VIEW ch_indexes;
+CALL clickhouse_perform('vector_index_ddl_svr', 'DROP DATABASE vector_index_ddl_test');
+DROP SERVER vector_index_ddl_svr CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to user mapping for public on server vector_index_ddl_svr
+drop cascades to foreign table ddl_docs

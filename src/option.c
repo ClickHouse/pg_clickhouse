@@ -720,4 +720,6 @@ _PG_init(void) {
 #if PG_VERSION_NUM >= 150000
     MarkGUCPrefixReserved("pg_clickhouse");
 #endif
+
+    chfdw_install_vector_ddl_hook();
 }
