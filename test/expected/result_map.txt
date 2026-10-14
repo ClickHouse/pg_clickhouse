@@ -362,6 +362,19 @@ vector_index_ddl.sql
  23.3-25.3  | installed | vector_index_ddl_1.out
  any        | absent    | vector_index_ddl_2.out
 
+vector_qbit.sql
+---------------
+
+ Postgres | File
+----------|-----------------
+ 14-19    | vector_qbit.out
+
+ ClickHouse | pgvector  | File
+------------|-----------|-------------------
+ 26.3+      | installed | vector_qbit.out
+ 23.3-25.8  | any       | vector_qbit_1.out
+ any        | absent    | vector_qbit_1.out
+
 vector_index_use.sql
 --------------------
 

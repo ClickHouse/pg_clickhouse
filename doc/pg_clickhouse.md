@@ -1074,9 +1074,10 @@ SET pg_clickhouse.explain_remote = 'true';
 #### `pg_clickhouse.vector_metadata_ttl`
 
 The `pg_clickhouse.vector_metadata_ttl` parameter sets how long, in seconds,
-pg_clickhouse caches the vector similarity index definitions it reads from
-ClickHouse. It defaults to `60`. Set it to `0` to read them for every query,
-or call [`clickhouse_refresh_vector_metadata()`](#clickhouse_refresh_vector_metadata) to
+pg_clickhouse caches the vector similarity index definitions and QBit column
+types it reads from ClickHouse. It defaults to `60`. Set it to `0` to read them
+for every query, or call
+[`clickhouse_refresh_vector_metadata()`](#clickhouse_refresh_vector_metadata) to
 clear the cache sooner.
 
 ### ALTER ROLE
@@ -1192,6 +1193,7 @@ conversion rules.
 | Nullable(T)                  | T                           |                                           | Column imports without NOT NULL                      |
 | Point                        | point                       |                                           |                                                      |
 | Polygon                      | polygon[]                   |                                           |                                                      |
+| QBit(T,N)                    | T[]                         |                                           | Transposes N elements to and from bit planes         |
 | Ring                         | polygon                     | lseg                                      | lseg requires two points                             |
 | SimpleAggregateFunction(f,T) | T                           |                                           | Stores values as T                                   |
 | String                       | text                        | bytea; input-compatible types             | bytea keeps raw bytes                                |
@@ -1254,6 +1256,36 @@ CREATE FOREIGN TABLE items (
 | `Array(Float32)`  | `vector(n)` | Lossless                                                 |
 | `Array(Float64)`  | `vector(n)` | Reads round to `real`; writes are exact                  |
 | `Array(BFloat16)` | `vector(n)` | Reads are exact; writes truncate to the bfloat16 mantissa |
+
+### QBit
+
+ClickHouse 25.10 and later can store vectors bit-sliced in [QBit] columns,
+so that a search can read only the leading bits of each element.
+pg_clickhouse reads and writes `QBit(Float32, n)` and `QBit(BFloat16, n)`
+columns as `real[]`, and `QBit(Float64, n)` columns as `double precision[]`.
+`IMPORT FOREIGN SCHEMA` declares them the same way.
+
+ClickHouse distance functions such as `L2Distance` don't accept QBit, so
+search QBit columns with the `*Transposed` [custom
+functions](#custom-functions). Their last argument sets how many bits of
+each element to read:
+
+```pgsql
+SELECT id FROM docs
+ ORDER BY L2DistanceTransposed(embedding, '{0.1,0.2,0.3}'::real[], 16)
+ LIMIT 10;
+```
+
+A `vector(n)` column over a `QBit(Float32, n)` or `QBit(Float64, n)` column
+also works with the pgvector operators `<->`, `<=>`, and `<#>` and their
+functions. pg_clickhouse reads the column types from ClickHouse when it plans
+such a query, and caches them with the [vector index
+metadata](#pg_clickhousevector_metadata_ttl). It pushes the distances down
+as the transposed functions reading every bit, which compute the same
+values. Postgres computes the other distances on QBit columns: `<+>`, since
+`L1Distance` has no transposed form; `<#>` on ClickHouse versions without
+`dotProductTransposed`; and any distance on a `QBit(BFloat16, n)` column,
+for which ClickHouse rounds the query vector to `BFloat16`.
 
 ### BYTEA
 
@@ -1935,6 +1967,10 @@ pushdown for select ClickHouse functions with no PostgreSQL equivalents. If
 any of these functions cannot be pushed down they will raise an exception.
 
 *   [dictGet](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull)
+*   `L2DistanceTransposed`, `cosineDistanceTransposed`, and
+    `dotProductTransposed`, for [QBit](#qbit) columns. ClickHouse also
+    computes their values when a query sorts by them. ClickHouse 26.3 lacks
+    `dotProductTransposed`.
 
 ### Extension Pushdown
 
@@ -2067,6 +2103,23 @@ tables in the schemas on the `search_path`. They also find indexes created
 directly in ClickHouse, once pg_clickhouse refreshes its cache of index
 definitions; see [`pg_clickhouse.vector_metadata_ttl`]. They fail if indexes
 on two different remote tables have the same name.
+
+ClickHouse 26.8 and later can also store a vector column with an
+experimental quantized codec, which shrinks the column while reads still
+return exact values. ClickHouse can't add or change the codec once the
+table exists, so create the table with it, for example through
+`clickhouse_perform()`:
+
+```pgsql
+SET pg_clickhouse.session_settings = 'enable_quantized_codec 1';
+CALL clickhouse_perform('ch', $$
+    CREATE TABLE items (id Int64, embedding Array(Float32) CODEC(Quantized('int8', 768)))
+    ENGINE = MergeTree ORDER BY id
+$$);
+```
+
+Then set `vector_search_use_quantized_codes 1` in the foreign table's
+`settings` option to have vector index searches read the quantized codes.
 
 ##### Vector Index Use
 
@@ -2523,6 +2576,7 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: intarray"
   [fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html
     "PostgreSQL Docs: fuzzystrmatch"
+  [QBit]: https://clickhouse.com/docs/sql-reference/data-types/qbit
   [pgvector]: https://github.com/pgvector/pgvector
     "pgvector: Open-source vector similarity search for Postgres"
   [vector similarity index]: https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/annindexes

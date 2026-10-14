@@ -17,3 +17,16 @@ CREATE FUNCTION clickhouse_vector_indexes(
 ) RETURNS SETOF RECORD
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
+
+-- Create error-raising QBit distance functions to push down to ClickHouse.
+CREATE FUNCTION L2DistanceTransposed("any", "any", INT) RETURNS FLOAT8
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION cosineDistanceTransposed("any", "any", INT) RETURNS FLOAT8
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION dotProductTransposed("any", "any", INT) RETURNS FLOAT8
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C IMMUTABLE STRICT;

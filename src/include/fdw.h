@@ -224,6 +224,10 @@ typedef struct CHFdwRelationInfo {
      * escaped.
      */
     char ch_table_sign_field[CH_ESCAPED_NAMEDATALEN];
+
+    /* Element bits of QBit columns by attnum, NULL until chfdw_qbit_bits() */
+    int* qbit_bits;
+    bool qbit_dot; /* ClickHouse has dotProductTransposed() */
 } CHFdwRelationInfo;
 
 /* in fdw.c */
@@ -515,9 +519,17 @@ typedef struct VectorIndexInfo {
     chfdw_vector_metric metric;
 } VectorIndexInfo;
 
+/* A QBit column of a remote table, which no vector index supports */
+typedef struct VectorQBitInfo {
+    char* column;
+    int bits; /* of each element */
+} VectorQBitInfo;
+
 typedef struct VectorTableMeta {
-    List* indexes;   /* of VectorIndexInfo* */
-    int64 limit_cap; /* max_limit_for_vector_search_queries, or -1 */
+    List* indexes;       /* of VectorIndexInfo* */
+    List* qbits;         /* of VectorQBitInfo* */
+    int64 limit_cap;     /* max_limit_for_vector_search_queries, or -1 */
+    bool dot_transposed; /* ClickHouse has dotProductTransposed() */
 } VectorTableMeta;
 
 extern const VectorTableMeta*
@@ -528,6 +540,8 @@ extern bool
 chfdw_is_clickhouse_table(Oid relid);
 extern chfdw_vector_metric
 chfdw_vector_metric_from_ch(const char* name);
+extern int
+chfdw_qbit_bits(PlannerInfo* root, Var* var, bool* dot);
 
 /* vector_ddl.c */
 extern void
