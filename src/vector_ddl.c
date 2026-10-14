@@ -41,8 +41,8 @@
 static ProcessUtility_hook_type prev_utility_hook = NULL;
 
 /* Return true if relid is a foreign table of a clickhouse_fdw server */
-static bool
-is_clickhouse_table(Oid relid) {
+bool
+chfdw_is_clickhouse_table(Oid relid) {
     if (!OidIsValid(relid) || get_rel_relkind(relid) != RELKIND_FOREIGN_TABLE) {
         return false;
     }
@@ -215,7 +215,7 @@ lookup_index(RangeVar* rv) {
             /* Lock before reading the table, which a concurrent DROP may remove */
             LockRelationOid(relid, AccessShareLock);
             if (SearchSysCacheExists1(RELOID, ObjectIdGetDatum(relid)) &&
-                is_clickhouse_table(relid) && has_user_mapping(relid) &&
+                chfdw_is_clickhouse_table(relid) && has_user_mapping(relid) &&
                 has_index(relid, rv->relname)) {
                 if (OidIsValid(found) && same_remote_table(found, relid)) {
                     /* The same index through another foreign table */
@@ -428,7 +428,7 @@ vector_index_utility(Node* parsetree) {
         IndexStmt* stmt = (IndexStmt*)parsetree;
         Oid relid = RangeVarGetRelid(stmt->relation, ShareUpdateExclusiveLock, true);
 
-        if (!is_clickhouse_table(relid)) {
+        if (!chfdw_is_clickhouse_table(relid)) {
             return false;
         }
         create_index(stmt, relid);
@@ -495,7 +495,7 @@ vector_index_utility(Node* parsetree) {
             return true;
         }
         if (stmt->kind == REINDEX_OBJECT_TABLE &&
-            is_clickhouse_table(
+            chfdw_is_clickhouse_table(
                 relid = RangeVarGetRelid(stmt->relation, NoLock, true)
             )) {
             check_owner(relid);
