@@ -281,6 +281,18 @@ static void
 appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* context);
 static bool
 is_vector_neg_ip(Expr* expr);
+static const char*
+vector_distance_func(Expr* expr);
+static int
+qbit_distance(
+    PlannerInfo* root,
+    Relids relids,
+    const char* func,
+    List* args,
+    bool* swap
+);
+static void
+deparseVectorDistance(const char* func, List* args, deparse_expr_cxt* context);
 static bool
 server_version_ge(PlannerInfo* root, RelOptInfo* foreignrel, int major, int minor);
 static void
@@ -899,6 +911,26 @@ is_interval_param_op(OpExpr* oe) {
 }
 
 /*
+ * Return false for a pgvector distance on a QBit column that ClickHouse
+ * cannot compute, so that Postgres computes it from the column's values.
+ */
+static bool
+shippable_qbit_distance(Expr* expr, foreign_glob_cxt* glob_cxt) {
+    const char* func = vector_distance_func(expr);
+    bool swap;
+
+    if (!func) {
+        return true;
+    }
+
+    /* A SubPlan's own columns are all those of its query level */
+    List* args    = IsA(expr, OpExpr) ? ((OpExpr*)expr)->args : ((FuncExpr*)expr)->args;
+    Relids relids = glob_cxt->subquery_scope ? NULL : glob_cxt->relids;
+
+    return qbit_distance(glob_cxt->root, relids, func, args, &swap) >= 0;
+}
+
+/*
  * Check if expression is safe to execute remotely, and return true if so.
  *
  * We must check that the expression contains only node types we can deparse,
@@ -1079,6 +1111,10 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             !server_version_ge(glob_cxt->root, glob_cxt->foreignrel, 23, 8)) {
             return false;
         }
+
+        if (!shippable_qbit_distance((Expr*)fe, glob_cxt)) {
+            return false;
+        }
     } break;
     case T_SQLValueFunction:
         /* All handled by deparseSQLValueFunction(). */
@@ -1115,6 +1151,10 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
         /* ClickHouse dotProduct accepts arrays starting in 23.8 */
         if (is_vector_neg_ip((Expr*)node) &&
             !server_version_ge(glob_cxt->root, glob_cxt->foreignrel, 23, 8)) {
+            return false;
+        }
+
+        if (!shippable_qbit_distance((Expr*)oe, glob_cxt)) {
             return false;
         }
     } break;
@@ -2128,9 +2168,9 @@ deparseSelectSql(
         deparseSubqueryTargetList(context);
     } else if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel) || tlist != NIL) {
         /*
-         * For a join or upper relation, or a base relation sorted by a vector
-         * distance, the input tlist gives the list of columns required to be
-         * fetched from the foreign server.
+         * For a join or upper relation, or a base relation sorted by a value
+         * ClickHouse computes, the input tlist gives the list of columns
+         * required to be fetched from the foreign server.
          */
         deparseExplicitTargetList(tlist, retrieved_attrs, context);
     } else {
@@ -4404,6 +4444,14 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
         return;
     }
 
+    /* A pgvector distance function, which a QBit column transposes */
+    const char* distance = vector_distance_func((Expr*)node);
+
+    if (distance) {
+        deparseVectorDistance(distance, node->args, context);
+        return;
+    }
+
     /*
      * Normal function: display as proname(args). CF_ARRAY_SORT_DESC name
      * depends on boolean arg, resolve before printing.
@@ -4782,14 +4830,25 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
     appendStringInfoChar(buf, '(');
     old_cdef = context->func;
 
-    /* ... and all the arguments */
+    /*
+     * ... and all the arguments. The bits argument of the QBit distance
+     * functions must be a UInt8 constant, not the Int32 of a parameter.
+     */
+    size_t namelen = cdef ? strlen(cdef->custom_name) : 0;
+    bool qbit =
+        namelen > 10 && strcmp(cdef->custom_name + namelen - 10, "Transposed") == 0;
+
     first = true;
     foreach (arg, node->args) {
+        bool bits = qbit && foreach_current_index(arg) == 2 && !IsA(lfirst(arg), Const);
+
         if (!first) {
             appendStringInfoString(buf, ", ");
         }
 
+        appendStringInfoString(buf, bits ? "toUInt8(" : "");
         deparseExpr((Expr*)lfirst(arg), context);
+        appendStringInfoString(buf, bits ? ")" : "");
         first = false;
     }
 
@@ -4983,36 +5042,32 @@ findFunction(Oid typoid, char* name) {
 }
 
 /*
- * Deparse a pgvector distance operator to the ClickHouse distance function.
- * For <#>, emit dotProduct without the negation; callers negate or reverse
- * the sort direction.
+ * Deparse a pgvector distance with arguments args as ClickHouse distance
+ * function func. For <#>, func is dotProduct, without the negation; callers
+ * negate or reverse the sort direction. On a QBit column, use the transposed
+ * function, which takes the column first and the bits of each element to
+ * read: all of them, for the exact distance.
  */
 static void
-deparseVectorDistance(
-    custom_object_type cf_type,
-    OpExpr* node,
-    deparse_expr_cxt* context
-) {
+deparseVectorDistance(const char* func, List* args, deparse_expr_cxt* context) {
     StringInfo buf = context->buf;
+    bool swap;
+    int bits = qbit_distance(
+        context->root,
+        context->subplan ? NULL : context->scanrel->relids,
+        func,
+        args,
+        &swap
+    );
 
-    switch (cf_type) {
-    case CF_VECTOR_L2:
-        appendStringInfoString(buf, "L2Distance(");
-        break;
-    case CF_VECTOR_COSINE:
-        appendStringInfoString(buf, "cosineDistance(");
-        break;
-    case CF_VECTOR_L1:
-        appendStringInfoString(buf, "L1Distance(");
-        break;
-    default:
-        Assert(cf_type == CF_VECTOR_NEG_IP);
-        appendStringInfoString(buf, "dotProduct(");
-        break;
-    }
-    deparseExpr(linitial(node->args), context);
+    Assert(bits >= 0);
+    appendStringInfo(buf, "%s%s(", func, bits > 0 ? "Transposed" : "");
+    deparseExpr(bits > 0 && swap ? lsecond(args) : linitial(args), context);
     appendStringInfoString(buf, ", ");
-    deparseExpr(lsecond(node->args), context);
+    deparseExpr(bits > 0 && swap ? linitial(args) : lsecond(args), context);
+    if (bits > 0) {
+        appendStringInfo(buf, ", %d", bits);
+    }
     appendStringInfoChar(buf, ')');
 }
 
@@ -5087,12 +5142,14 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
         case CF_VECTOR_L2:
         case CF_VECTOR_COSINE:
         case CF_VECTOR_L1:
-            deparseVectorDistance(cdef->cf_type, node, context);
+            deparseVectorDistance(
+                vector_distance_func((Expr*)node), node->args, context
+            );
             goto cleanup;
         case CF_VECTOR_NEG_IP:
             /* pgvector's <#> is the negative inner product */
             appendStringInfoString(buf, "(-");
-            deparseVectorDistance(cdef->cf_type, node, context);
+            deparseVectorDistance("dotProduct", node->args, context);
             appendStringInfoChar(buf, ')');
             goto cleanup;
         case CF_HSTORE_FETCHVAL: {
@@ -6655,7 +6712,7 @@ appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* conte
         appendStringInfoString(buf, delim);
         if (is_vector_neg_ip(em_expr)) {
             /* Sort <#> as dotProduct in reverse, the form vector indexes serve */
-            deparseVectorDistance(CF_VECTOR_NEG_IP, (OpExpr*)em_expr, context);
+            deparseVectorDistance("dotProduct", ((OpExpr*)em_expr)->args, context);
             asc = !asc;
         } else {
             deparseExpr(em_expr, context);
@@ -6684,6 +6741,86 @@ is_vector_neg_ip(Expr* expr) {
     CustomObjectDef* cdef =
         chfdw_check_for_custom_operator(((OpExpr*)expr)->opno, NULL);
     return cdef != NULL && cdef->cf_type == CF_VECTOR_NEG_IP;
+}
+
+/*
+ * Return the ClickHouse distance function of a pgvector distance operator or
+ * function, or NULL. Returns dotProduct for <#>, the negative inner product.
+ */
+static const char*
+vector_distance_func(Expr* expr) {
+    if (IsA(expr, OpExpr)) {
+        CustomObjectDef* cdef =
+            chfdw_check_for_custom_operator(((OpExpr*)expr)->opno, NULL);
+
+        switch (cdef ? cdef->cf_type : CF_USUAL) {
+        case CF_VECTOR_L2:
+            return "L2Distance";
+        case CF_VECTOR_COSINE:
+            return "cosineDistance";
+        case CF_VECTOR_L1:
+            return "L1Distance";
+        case CF_VECTOR_NEG_IP:
+            return "dotProduct";
+        default:
+            return NULL;
+        }
+    }
+
+    FuncExpr* fe = (FuncExpr*)expr;
+
+    if (!IsA(expr, FuncExpr) || list_length(fe->args) != 2 ||
+        !chfdw_is_pgvector_type(exprType(linitial(fe->args)))) {
+        return NULL;
+    }
+
+    CustomObjectDef* cdef = chfdw_check_for_custom_function(fe->funcid);
+
+    return cdef && (cdef->cf_type == CF_CH_FUNCTION || cdef->cf_type == CF_VECTOR_DOT)
+               ? cdef->custom_name
+               : NULL;
+}
+
+/*
+ * Return the element bits of the QBit column among args, the arguments of a
+ * pgvector distance that deparses to ClickHouse function func, and set *swap
+ * when the column is the second argument. Consider columns of relids only, or
+ * any column of root when relids is NULL. ClickHouse distance functions don't
+ * accept QBit, but their transposed forms do, for one QBit column. Returns 0
+ * without a QBit column and -1 when ClickHouse cannot compute the pgvector
+ * distance: L1Distance has no transposed form, dotProductTransposed() is new,
+ * and a BFloat16 QBit rounds the query vector to BFloat16.
+ */
+static int
+qbit_distance(
+    PlannerInfo* root,
+    Relids relids,
+    const char* func,
+    List* args,
+    bool* swap
+) {
+    int bits[2] = { 0, 0 };
+    bool dot    = false;
+
+    for (int i = 0; i < 2; i++) {
+        Node* arg = strip_implicit_coercions(list_nth(args, i));
+
+        bool has_dot = false;
+
+        if (IsA(arg, Var) && (!relids || bms_is_member(((Var*)arg)->varno, relids))) {
+            bits[i] = chfdw_qbit_bits(root, (Var*)arg, &has_dot);
+        }
+        dot = dot || has_dot;
+    }
+    *swap = bits[0] == 0;
+    if (bits[0] == 0 && bits[1] == 0) {
+        return 0;
+    }
+    if ((bits[0] && bits[1]) || bits[0] + bits[1] == 16 ||
+        strcmp(func, "L1Distance") == 0 || (strcmp(func, "dotProduct") == 0 && !dot)) {
+        return -1;
+    }
+    return bits[0] + bits[1];
 }
 
 /*

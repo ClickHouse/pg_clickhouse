@@ -150,6 +150,7 @@ fallback_reason(
     bool has_limit,
     Oid relid,
     const char* column,
+    bool qbit,
     chfdw_vector_metric metric,
     bool index_asc,
     const char** index_name,
@@ -166,6 +167,9 @@ fallback_reason(
 
     if (path->path.pathkeys == NIL) {
         return "the ORDER BY cannot be pushed down, so Postgres sorts every row";
+    }
+    if (qbit) {
+        return "QBit columns cannot have vector indexes";
     }
     if (!user) {
         return NULL;
@@ -270,9 +274,28 @@ chfdw_vector_plan_info(
     const char* column = chfdw_get_custom_column_info(relid, var->varattno)->colname;
     const char* index  = "";
     bool warn          = true;
+    bool dot;
+    bool qbit          = chfdw_qbit_bits(root, var, &dot) > 0;
     const char* reason = fallback_reason(
-        root, rel, path, has_limit, relid, column, metric, index_asc, &index, &warn
+        root,
+        rel,
+        path,
+        has_limit,
+        relid,
+        column,
+        qbit,
+        metric,
+        index_asc,
+        &index,
+        &warn
     );
+
+    /* A pushed down distance on a QBit column uses the transposed function */
+    const char* func = metrics[metric].func;
+
+    if (qbit && path->path.pathkeys != NIL) {
+        func = psprintf("%sTransposed", func);
+    }
 
     if (reason && warn && chfdw_vector_planner_warnings()) {
         ereport(
@@ -291,7 +314,7 @@ chfdw_vector_plan_info(
     }
 
     return list_make4(
-        makeString(pstrdup(metrics[metric].func)),
+        makeString(pstrdup(func)),
         makeString(pstrdup(column)),
         makeString(pstrdup(index)),
         makeString(pstrdup(reason ? reason : ""))

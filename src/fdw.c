@@ -838,12 +838,32 @@ replace_windowfuncs_mutator(Node* node, WindowFuncSubstState* state) {
     return expression_tree_mutator(node, replace_windowfuncs_mutator_callback, state);
 }
 
+/* Return true if node calls a function only ClickHouse can run */
+static bool
+calls_push_only_function(Node* node, void* context) {
+    if (node == NULL) {
+        return false;
+    }
+    if (IsA(node, FuncExpr)) {
+        FmgrInfo finfo;
+
+        fmgr_info(((FuncExpr*)node)->funcid, &finfo);
+        if (finfo.fn_addr == clickhouse_push_fail) {
+            return true;
+        }
+    }
+    return expression_tree_walker(node, calls_push_only_function, context);
+}
+
 /*
- * Return true if ClickHouse should return the value of a sort expression, a
- * pgvector distance, which ClickHouse computes as pgvector does up to float
- * rounding. Fetching the vectors instead would make ClickHouse read them,
- * which a vector index search otherwise avoids. Other sort expressions stay
- * local, since ClickHouse sorts by approximations of some, such as to_char().
+ * Return true if ClickHouse should return the value of a sort expression.
+ * That's a pgvector distance, which ClickHouse computes as pgvector does up
+ * to float rounding: fetching the vectors instead would make ClickHouse read
+ * them, which a vector index search otherwise avoids. It's also an
+ * expression with a function only ClickHouse can run, such as
+ * L2DistanceTransposed(), which Postgres cannot compute at all. Other sort
+ * expressions stay local, since ClickHouse sorts by approximations of some,
+ * such as to_char().
  */
 static bool
 remote_sort_value(Expr* expr) {
@@ -867,7 +887,7 @@ remote_sort_value(Expr* expr) {
             break;
         }
     }
-    return false;
+    return calls_push_only_function(node, NULL);
 }
 
 /*
