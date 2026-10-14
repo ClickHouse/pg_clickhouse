@@ -496,6 +496,8 @@ extern bool
 chfdw_is_pgvector_type(Oid typid);
 extern void
 chfdw_append_vector_literal(StringInfo buf, Datum value);
+extern char*
+chfdw_pgvector_type_decl(int dims);
 
 /* vector_meta.c */
 typedef enum {

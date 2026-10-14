@@ -54,6 +54,18 @@ $$) line WHERE line LIKE '%Name: ddl_docs_v%';
 RESET pg_clickhouse.explain_remote;
 CREATE INDEX IF NOT EXISTS ddl_docs_v ON ddl_docs USING clickhouse (v vector_cosine_ops);
 
+-- IMPORT FOREIGN SCHEMA keeps float arrays as arrays unless vector_columns is
+-- indexed, which maps each vector-indexed array to vector(n) with a NOTICE.
+CREATE SCHEMA ddl_import;
+CREATE SCHEMA ddl_import_raw;
+IMPORT FOREIGN SCHEMA vector_index_ddl_test FROM SERVER vector_index_ddl_svr INTO ddl_import
+    OPTIONS (vector_columns 'indexed');
+IMPORT FOREIGN SCHEMA vector_index_ddl_test FROM SERVER vector_index_ddl_svr INTO ddl_import_raw;
+SELECT attrelid::regclass, attname, format_type(atttypid, atttypmod) FROM pg_attribute
+ WHERE attrelid IN ('ddl_import.docs'::regclass, 'ddl_import_raw.docs'::regclass) AND attnum > 0
+ ORDER BY 1, attnum;
+DROP SCHEMA ddl_import, ddl_import_raw CASCADE;
+
 -- Only the table owner may index it, and only with USING clickhouse.
 CREATE INDEX ON ddl_docs (v);
 CREATE INDEX ON ddl_docs USING clickhouse (nope vector_l2_ops);
@@ -119,6 +131,12 @@ CREATE FOREIGN TABLE ddl_quoted (id int, v vector(2) OPTIONS (column_name 'my v'
     SERVER vector_index_ddl_svr OPTIONS (database 'vector_index_ddl_test', table_name 'docs');
 CREATE INDEX ON ddl_quoted USING clickhouse (v vector_l2_ops) WITH (materialize = false);
 EXPLAIN (COSTS OFF) SELECT id FROM ddl_quoted ORDER BY v <-> '[1,0]' LIMIT 3;
+CREATE SCHEMA ddl_import_q;
+IMPORT FOREIGN SCHEMA vector_index_ddl_test LIMIT TO (docs) FROM SERVER vector_index_ddl_svr
+    INTO ddl_import_q OPTIONS (vector_columns 'indexed');
+SELECT attname, format_type(atttypid, atttypmod) FROM pg_attribute
+ WHERE attrelid = 'ddl_import_q.docs'::regclass AND attnum > 0 ORDER BY attnum;
+DROP SCHEMA ddl_import_q CASCADE;
 
 -- A mutation still building one index is not pending for an index whose name it
 -- starts with. This one fails on the new column's empty arrays and stays pending.

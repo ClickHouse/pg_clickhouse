@@ -3,6 +3,8 @@
 #include "access/htup_details.h"
 #include "access/tupdesc.h"
 #include "catalog/pg_type_d.h"
+#include "commands/defrem.h"
+#include "commands/extension.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
@@ -1121,7 +1123,37 @@ List*
 chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server) {
     UserMapping* user = GetUserMapping(GetUserId(), server->serverid);
     List* result      = NIL;
-    List* tables      = chfdw_run_text_query(
+
+    /* vector_columns 'indexed' imports vector-indexed arrays as vector(n) */
+    bool vectors = false;
+    ListCell* olc;
+
+    foreach (olc, stmt->options) {
+        DefElem* def = lfirst(olc);
+
+        if (strcmp(def->defname, "vector_columns") == 0) {
+            char* val = defGetString(def);
+
+            vectors = strcmp(val, "indexed") == 0;
+            if (!vectors && strcmp(val, "none") != 0) {
+                ereport(
+                    ERROR,
+                    errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                    errmsg("invalid value for option \"vector_columns\": \"%s\"", val),
+                    errhint("Valid values are \"none\" and \"indexed\".")
+                );
+            }
+            if (vectors && !OidIsValid(get_extension_oid("vector", true))) {
+                ereport(
+                    ERROR,
+                    errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                    errmsg("vector_columns 'indexed' requires the pgvector extension")
+                );
+            }
+        }
+    }
+
+    List* tables = chfdw_run_text_query(
         user,
         psprintf(
             "SELECT name, engine, engine_full "
@@ -1188,14 +1220,21 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
         List* columns = chfdw_run_text_query(
             user,
             psprintf(
-                "SELECT name, type "
-                "FROM system.columns "
-                "WHERE database = %s "
-                "AND table = %s",
+                "SELECT c.name, c.type, "
+                "toString(if(startsWith(c.type, 'Array('), ifNull(i.dims, 0), 0)) "
+                "FROM system.columns AS c LEFT JOIN ("
+                "SELECT replaceRegexpAll(expr, '^`|`$', '') AS col, "
+                "toUInt32OrZero(extract(any(type_full), '^[^,]+,[^,]+, *([0-9]+)')) "
+                "AS dims FROM system.data_skipping_indices "
+                "WHERE database = %s AND table = %s AND type = 'vector_similarity' "
+                "GROUP BY col) AS i ON c.name = i.col "
+                "WHERE c.database = %s AND c.table = %s ORDER BY c.position",
+                ch_quote_literal(stmt->remote_schema),
+                ch_quote_literal(table_name),
                 ch_quote_literal(stmt->remote_schema),
                 ch_quote_literal(table_name)
             ),
-            2
+            3
         );
         ListCell* clc;
 
@@ -1204,8 +1243,26 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
             List* options    = NIL;
             bool is_nullable = false;
             char* colname    = column[0];
+            char* chtype     = column[1];
             char* remote_type =
-                parse_type(table_name, colname, column[1], &is_nullable, &options);
+                parse_type(table_name, colname, chtype, &is_nullable, &options);
+            int dims = pg_strtoint32(column[2]);
+            char* vector_decl =
+                vectors && dims > 0 ? chfdw_pgvector_type_decl(dims) : NULL;
+
+            if (vector_decl) {
+                ereport(
+                    NOTICE,
+                    errmsg(
+                        "importing column \"%s.%s\" of type %s as %s",
+                        table_name,
+                        colname,
+                        chtype,
+                        vector_decl
+                    )
+                );
+                remote_type = vector_decl;
+            }
 
             /* Preserve remote names that exceed PostgreSQL's identifier limit. */
             if (strlen(colname) >= NAMEDATALEN) {
