@@ -326,6 +326,8 @@ deparseCoalesceExpr(CoalesceExpr* node, deparse_expr_cxt* context);
 static void
 deparseMinMaxExpr(MinMaxExpr* node, deparse_expr_cxt* context);
 static void
+deparseOrderKey(Expr* expr, deparse_expr_cxt* context);
+static void
 deparseRowExpr(RowExpr* node, deparse_expr_cxt* context);
 static void
 deparseNullIfExpr(NullIfExpr* node, deparse_expr_cxt* context);
@@ -1308,6 +1310,10 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
     case T_MinMaxExpr: {
         MinMaxExpr* me = (MinMaxExpr*)node;
 
+        /* greatest/least compare UUID in ClickHouse order */
+        if (getBaseType(me->minmaxtype) == UUIDOID) {
+            return false;
+        }
         if (!foreign_expr_walker((Node*)me->args, glob_cxt, EXPR_CTX_EXACT)) {
             return false;
         }
@@ -5036,6 +5042,9 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
         appendStringInfo(buf, "to%s", s);
     }
 
+    bool order_args = form->oprcode == F_UUID_LT || form->oprcode == F_UUID_LE ||
+                      form->oprcode == F_UUID_GT || form->oprcode == F_UUID_GE;
+
     /* Always parenthesize the expression. */
     appendStringInfoChar(buf, '(');
 
@@ -5055,7 +5064,11 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             goto cleanup;
         }
 
-        deparseExpr(lfirst(arg), context);
+        if (order_args) {
+            deparseOrderKey(lfirst(arg), context);
+        } else {
+            deparseExpr(lfirst(arg), context);
+        }
         appendStringInfoChar(buf, ' ');
     }
 
@@ -5095,7 +5108,11 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
     if (oprkind == 'l' || oprkind == 'b') {
         arg = list_tail(node->args);
         appendStringInfoChar(buf, ' ');
-        deparseExpr(lfirst(arg), context);
+        if (order_args) {
+            deparseOrderKey(lfirst(arg), context);
+        } else {
+            deparseExpr(lfirst(arg), context);
+        }
     }
 
     appendStringInfoChar(buf, ')');
@@ -6119,7 +6136,7 @@ deparseWindowFunc(WindowFunc* node, deparse_expr_cxt* context) {
                 appendStringInfoString(buf, ", ");
             }
             first = false;
-            deparseExpr((Expr*)tle->expr, context);
+            deparseOrderKey((Expr*)tle->expr, context);
 
             /* Determine sort direction from the sort operator */
             typentry = lookup_type_cache(
@@ -6392,6 +6409,30 @@ deparseMinMaxExpr(MinMaxExpr* node, deparse_expr_cxt* context) {
 }
 
 /*
+ * ClickHouse compares UUID by its second half first, Postgres by bytes.
+ * Compare as UInt128 to match Postgres, toUInt128(UUID) needs 23.8
+ */
+static void
+deparseOrderKey(Expr* expr, deparse_expr_cxt* context) {
+    StringInfo buf = context->buf;
+
+    if (getBaseType(exprType((Node*)expr)) != UUIDOID) {
+        deparseExpr(expr, context);
+        return;
+    }
+
+    bool to_int = server_version_ge(context->root, context->scanrel, 23, 8);
+    appendStringInfoString(buf, to_int ? "toUInt128(" : "UUIDStringToNum(toString(");
+    /* Cast literal, toUInt128 would parse bare string as number */
+    if (IsA(expr, Const)) {
+        deparseConst((Const*)expr, context, true);
+    } else {
+        deparseExpr(expr, context);
+    }
+    appendStringInfoString(buf, to_int ? ")" : "))");
+}
+
+/*
  * Deparse GROUP BY clause.
  */
 static void
@@ -6478,7 +6519,7 @@ appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* conte
         Assert(em_expr != NULL);
 
         appendStringInfoString(buf, delim);
-        deparseExpr(em_expr, context);
+        deparseOrderKey(em_expr, context);
 #if PG_VERSION_NUM >= 180000
         if (pathkey->pk_cmptype == BTLessStrategyNumber)
 #else

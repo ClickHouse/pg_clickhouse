@@ -50,6 +50,10 @@ All notable changes to this project will be documented in this file. It uses the
 *   Prevented pushdown of types and operators from extensions without known
     ClickHouse equivalents, such as [citext] and [intarray] operators, which
     previously caused ClickHouse syntax errors ([#405]).
+*   Fixed pushed-down `uuid` ordering and `<`, `<=`, `>`, `>=` comparisons,
+    which ClickHouse evaluated by the second half of the UUID first, so
+    time-ordered UUIDv7 values sorted out of order. `greatest` and `least` on
+    `uuid` now evaluate locally.
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
