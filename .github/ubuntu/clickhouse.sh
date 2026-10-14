@@ -46,3 +46,5 @@ fi
 
 printf "~~~~ Starting ClickHouse %s ~~~~\n" "$CH_VERSION"
 /etc/init.d/clickhouse-server start
+
+"$(dirname "$0")/lake.sh"

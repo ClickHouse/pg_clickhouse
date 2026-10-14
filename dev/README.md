@@ -5,10 +5,10 @@ development of pg_clickhouse.
 
 *   `bear.json`: [Bear Configuration](#bear-configuration)
 *   `bear.yml`: [Bear Configuration](#bear-configuration)
-*   `choci`: [Run ClickHouse Server](#run-local-clickhouse-server)
+*   `choci`: [Run Docker ClickHouse Server](#run-docker-clickhouse-server)
 *   `configs`: Configuration files for `choci` and `runch`
 *   `README.md`: This file
-*   `runch`: [Run ClickHouse Server](#run-clickhouse-server)
+*   `runch`: [Run Local ClickHouse Server](#run-local-clickhouse-server)
 *   [`tpch`]: [TPC-H Benchmark Scripts](./tpch/README.md)
 *   `type_table.awk`: [Data Type Table](#data-type-table)
 
@@ -41,7 +41,7 @@ Use `choci` to run a specific version of ClickHouse in an OCI (Docker)
 container. For a complete list of commands, run:
 
 ```sh
-choci help
+./dev/choci help
 ```
 
 `choci` relies on [docker] to start or stop a ClickHouse server with the
@@ -56,6 +56,31 @@ make installcheck
 ```
 
 Specify any tag supported by the [Docker image]. Defaults to `latest`.
+
+For ClickHouse 26.3+, `choci start` also seeds an Iceberg warehouse and starts
+a Python container serving its REST catalog on port 8181 inside ClickHouse's
+network namespace. It waits for both services to accept requests. `choci stop`
+removes both containers and their warehouse.
+
+Build and [install](../README.md#compile-from-source) this checkout, then use a
+running PostgreSQL instance you can connect to as a superuser. From repo root,
+run catalog import tests with:
+
+```sh
+./dev/choci start 26.3
+make installcheck TESTS=test/sql/import_lake.sql
+./dev/choci stop
+```
+
+`runch start` does the same for a native server, seeding the warehouse under
+its `user_files` directory and serving the catalog with host Python 3.10+.
+`runch stop` stops the catalog:
+
+```sh
+./dev/runch start 26.3
+make installcheck TESTS=test/sql/import_lake.sql
+./dev/runch stop
+```
 
 ## Data Type Table
 

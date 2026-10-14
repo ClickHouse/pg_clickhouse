@@ -34,11 +34,27 @@ cfg_file() {
     esac
 }
 stop() {
-    cid="$(docker ps -aq --filter "name=$name")"
+    docker rm -f "$name-lake" > /dev/null 2>&1 || true
+    cid="$(docker ps -aq --filter "name=^/?${name}$")"
     if [ -n "$cid" ]; then
         printf 'Stopping ClickHouse instance %s...\n' "$cid"
-        docker rm -f "$cid"
+        docker rm -fv "$cid"
     fi
+}
+
+wait_for() {
+    container="$1"
+    shift
+    retries=30
+    until docker exec "$container" "$@" > /dev/null 2>&1; do
+        retries=$((retries - 1))
+        if [ "$retries" -eq 0 ]; then
+            printf 'Timed out waiting for %s\n' "$container" >&2
+            docker logs --tail 25 "$container" >&2
+            return 1
+        fi
+        sleep 1
+    done
 }
 
 case "$1" in
@@ -55,7 +71,18 @@ case "$1" in
             --name "$name" \
             --ulimit nofile=262144:262144 \
              -v "$dir/configs/$cfg_base.yaml:/etc/clickhouse-server/users.d/$cfg_base.yaml" \
+             -v "$dir/../test/lake:/pg_clickhouse_lake:ro" \
+             -v /var/lib/clickhouse/user_files/pg_clickhouse_lake \
              -d "$image:$version"
+        wait_for "$name" clickhouse client --connect_timeout 1 --receive_timeout 1 --query 'SELECT 1'
+        # seed.sh exits 77 when ClickHouse is too old
+        docker exec "$name" sh /pg_clickhouse_lake/seed.sh /var/lib/clickhouse/user_files/pg_clickhouse_lake ||
+            exit $(($? != 77))
+        docker run -d --name "$name-lake" \
+            --network "container:$name" --volumes-from "$name:ro" \
+            python:3.14-alpine python3 -I /pg_clickhouse_lake/catalog.py \
+            8181 /var/lib/clickhouse/user_files/pg_clickhouse_lake
+        wait_for "$name-lake" wget -q -T 1 -O /dev/null http://127.0.0.1:8181/v1/config
         ;;
     download)
         version="${2:-latest}"
