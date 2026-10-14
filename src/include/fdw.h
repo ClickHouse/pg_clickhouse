@@ -423,6 +423,7 @@ typedef enum {
     CF_ENCODE,                 /* encode(bytea, fmt) → hex/base64 family */
     CF_DIGEST,                 /* pgcrypto digest(data, algorithm) → hash function */
     CF_REGR_AGG,               /* regr_*() aggregates → to 26.9+ */
+    CF_PGVECTOR,               /* pgvector vector type → Array(Float32) */
 } custom_object_type;
 
 typedef enum {
@@ -464,6 +465,12 @@ extern CustomColumnInfo*
 chfdw_get_custom_column_info(Oid relid, uint16 varattno);
 extern CustomObjectDef*
 chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form);
+
+/* vector.c */
+extern bool
+chfdw_is_pgvector_type(Oid typid);
+extern void
+chfdw_append_vector_literal(StringInfo buf, Datum value);
 
 /* Encode as ClickHouse literal text into buf, which needs MAXDATELEN + 1 bytes */
 extern void

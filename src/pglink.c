@@ -501,6 +501,10 @@ chfdw_datum_to_ch_literal(Datum value, Oid type) {
         return pstrdup(ts);
     }
     default:
+        if (chfdw_is_pgvector_type(type)) {
+            chfdw_append_vector_literal(&buf, value);
+            return buf.data;
+        }
         ereport(
             ERROR,
             errcode(ERRCODE_FDW_INVALID_DATA_TYPE),

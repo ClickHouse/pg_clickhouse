@@ -1,0 +1,261 @@
+SELECT NOT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = 'vector') AS no_vector \gset
+\if :no_vector
+\echo 'SKIP: vector extension not available'
+\quit
+\endif
+-- Read and write pgvector vector columns stored in ClickHouse float arrays,
+-- and push down vector constants, parameters, and equality.
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE SERVER vector_types_bin FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'vector_types_test', driver 'binary');
+CREATE SERVER vector_types_http FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'vector_types_test', driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER vector_types_bin;
+CREATE USER MAPPING FOR CURRENT_USER SERVER vector_types_http;
+CREATE SERVER vector_types_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER vector_types_admin;
+CALL clickhouse_perform('vector_types_admin', 'DROP DATABASE IF EXISTS vector_types_test');
+CALL clickhouse_perform('vector_types_admin', 'CREATE DATABASE vector_types_test');
+CALL clickhouse_perform('vector_types_admin', $$
+    CREATE TABLE vector_types_test.items (
+        id  Int32,
+        f32 Array(Float32),
+        f64 Array(Float64)
+    ) ENGINE = MergeTree ORDER BY (id);
+$$);
+CREATE FOREIGN TABLE items_bin (
+    id  int NOT NULL,
+    f32 vector(3) NOT NULL,
+    f64 vector(3) NOT NULL
+) SERVER vector_types_bin OPTIONS (table_name 'items');
+CREATE FOREIGN TABLE items_http (
+    id  int NOT NULL,
+    f32 vector(3) NOT NULL,
+    f64 vector(3) NOT NULL
+) SERVER vector_types_http OPTIONS (table_name 'items');
+-- Insert through both drivers.
+INSERT INTO items_bin VALUES
+    (1, '[0.1,0.2,0.3]', '[0.1,0.2,0.3]'),
+    (2, '[-1.5,0,2.25]', '[-1.5,0,2.25]');
+INSERT INTO items_http VALUES
+    (3, '[1e-7,-3.4028235e38,123456.79]', '[1e-7,-3.4028235e38,123456.79]'),
+    (4, '[0.1,0.2,0.3]', '[0.1,0.2,0.3]');
+-- COPY and INSERT ... SELECT from a local table.
+COPY items_bin FROM STDIN;
+CREATE TEMP TABLE local_items (id int, f32 vector(3), f64 vector(3));
+INSERT INTO local_items VALUES (6, '[0.5,0.25,0.125]', '[0.5,0.25,0.125]');
+INSERT INTO items_http SELECT * FROM local_items;
+-- Read through both drivers. Values round-trip as the same float4s.
+SELECT * FROM items_bin ORDER BY id;
+ id |               f32                |               f64                
+----+----------------------------------+----------------------------------
+  1 | [0.1,0.2,0.3]                    | [0.1,0.2,0.3]
+  2 | [-1.5,0,2.25]                    | [-1.5,0,2.25]
+  3 | [1e-07,-3.4028235e+38,123456.79] | [1e-07,-3.4028235e+38,123456.79]
+  4 | [0.1,0.2,0.3]                    | [0.1,0.2,0.3]
+  5 | [7,8,9]                          | [7,8,9]
+  6 | [0.5,0.25,0.125]                 | [0.5,0.25,0.125]
+(6 rows)
+
+SELECT * FROM items_http ORDER BY id;
+ id |               f32                |               f64                
+----+----------------------------------+----------------------------------
+  1 | [0.1,0.2,0.3]                    | [0.1,0.2,0.3]
+  2 | [-1.5,0,2.25]                    | [-1.5,0,2.25]
+  3 | [1e-07,-3.4028235e+38,123456.79] | [1e-07,-3.4028235e+38,123456.79]
+  4 | [0.1,0.2,0.3]                    | [0.1,0.2,0.3]
+  5 | [7,8,9]                          | [7,8,9]
+  6 | [0.5,0.25,0.125]                 | [0.5,0.25,0.125]
+(6 rows)
+
+SELECT f32::real[], f64::real[] FROM items_bin WHERE id = 1;
+      f32      |      f64      
+---------------+---------------
+ {0.1,0.2,0.3} | {0.1,0.2,0.3}
+(1 row)
+
+-- What ClickHouse stored.
+SELECT * FROM clickhouse_query('vector_types_admin', $$
+    SELECT id, toString(f32), toString(f64) FROM vector_types_test.items ORDER BY id
+$$) AS t(id int, f32 text, f64 text);
+ id |              f32               |                              f64                              
+----+--------------------------------+---------------------------------------------------------------
+  1 | [0.1,0.2,0.3]                  | [0.10000000149011612,0.20000000298023224,0.30000001192092896]
+  2 | [-1.5,0,2.25]                  | [-1.5,0,2.25]
+  3 | [1e-7,-3.4028235e38,123456.79] | [1.0000000116860974e-7,-3.4028234663852886e38,123456.7890625]
+  4 | [0.1,0.2,0.3]                  | [0.10000000149011612,0.20000000298023224,0.30000001192092896]
+  5 | [7,8,9]                        | [7,8,9]
+  6 | [0.5,0.25,0.125]               | [0.5,0.25,0.125]
+(6 rows)
+
+-- Equality pushes down with a Float32-typed literal, so it matches the
+-- Float32 values ClickHouse stored rather than comparing them to Float64.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM items_bin WHERE f32 = '[0.1,0.2,0.3]';
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.items_bin
+   Output: id
+   Remote SQL: SELECT id FROM vector_types_test.items WHERE ((f32 = cast([0.1,0.2,0.3] as Array(Float32))))
+(3 rows)
+
+SELECT id FROM items_bin WHERE f32 = '[0.1,0.2,0.3]' ORDER BY id;
+ id 
+----
+  1
+  4
+(2 rows)
+
+SELECT id FROM items_http WHERE f32 = '[0.1,0.2,0.3]' ORDER BY id;
+ id 
+----
+  1
+  4
+(2 rows)
+
+SELECT id FROM items_bin WHERE f64 = '[0.1,0.2,0.3]' ORDER BY id;
+ id 
+----
+  1
+  4
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM items_bin WHERE f32 <> '[0.1,0.2,0.3]';
+                                                 QUERY PLAN                                                  
+-------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.items_bin
+   Output: id
+   Remote SQL: SELECT id FROM vector_types_test.items WHERE ((f32 <> cast([0.1,0.2,0.3] as Array(Float32))))
+(3 rows)
+
+SELECT id FROM items_bin WHERE f32 <> '[0.1,0.2,0.3]' ORDER BY id;
+ id 
+----
+  2
+  3
+  5
+  6
+(4 rows)
+
+-- Parameters go to ClickHouse as Array(Float32).
+SET plan_cache_mode = force_generic_plan;
+PREPARE vec_eq(vector) AS SELECT id FROM items_bin WHERE f32 = $1 ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE vec_eq('[0.1,0.2,0.3]');
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.items_bin
+   Output: id
+   Remote SQL: SELECT id FROM vector_types_test.items WHERE ((f32 = {p1:Array(Float32)})) ORDER BY id ASC NULLS LAST
+(3 rows)
+
+EXECUTE vec_eq('[0.1,0.2,0.3]');
+ id 
+----
+  1
+  4
+(2 rows)
+
+EXECUTE vec_eq('[7,8,9]');
+ id 
+----
+  5
+(1 row)
+
+DEALLOCATE vec_eq;
+PREPARE vec_eq_http(vector) AS SELECT id FROM items_http WHERE f32 = $1 ORDER BY id;
+EXECUTE vec_eq_http('[0.5,0.25,0.125]');
+ id 
+----
+  6
+(1 row)
+
+DEALLOCATE vec_eq_http;
+RESET plan_cache_mode;
+-- Operators without a ClickHouse mapping stay local.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM items_bin WHERE f32 < '[1,1,1]';
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Foreign Scan on public.items_bin
+   Output: id
+   Filter: (items_bin.f32 < '[1,1,1]'::vector)
+   Remote SQL: SELECT id, f32 FROM vector_types_test.items
+(4 rows)
+
+SELECT id FROM items_bin WHERE f32 < '[1,1,1]' ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+  4
+  6
+(5 rows)
+
+-- halfvec is not pushed down; Postgres evaluates it locally. Skip row 3,
+-- whose values are out of the halfvec range.
+CREATE FOREIGN TABLE items_half (
+    id  int NOT NULL,
+    f32 halfvec(3) NOT NULL
+) SERVER vector_types_bin OPTIONS (table_name 'items');
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM items_half WHERE id <> 3 AND f32 = '[7,8,9]';
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Foreign Scan on public.items_half
+   Output: id
+   Filter: (items_half.f32 = '[7,8,9]'::halfvec)
+   Remote SQL: SELECT id, f32 FROM vector_types_test.items WHERE ((id <> 3))
+(4 rows)
+
+SELECT id FROM items_half WHERE id <> 3 AND f32 = '[7,8,9]';
+ id 
+----
+  5
+(1 row)
+
+-- BFloat16 arrays read as vectors, but writes truncate float4 to bfloat16.
+-- Use values bfloat16 represents exactly.
+\set ECHO errors
+\if :ch_bf16
+CALL clickhouse_perform('vector_types_admin', $$
+    CREATE TABLE vector_types_test.bf16 (id Int32, v Array(BFloat16)) ENGINE = MergeTree ORDER BY (id);
+$$);
+CREATE FOREIGN TABLE bf16_bin (id int, v vector(3)) SERVER vector_types_bin OPTIONS (table_name 'bf16');
+CREATE FOREIGN TABLE bf16_http (id int, v vector(3)) SERVER vector_types_http OPTIONS (table_name 'bf16');
+INSERT INTO bf16_bin VALUES (1, '[0.5,1.25,-2]');
+INSERT INTO bf16_http VALUES (2, '[3,-0.75,1024]');
+SELECT * FROM bf16_bin ORDER BY id;
+ id |       v        
+----+----------------
+  1 | [0.5,1.25,-2]
+  2 | [3,-0.75,1024]
+(2 rows)
+
+SELECT * FROM bf16_http ORDER BY id;
+ id |       v        
+----+----------------
+  1 | [0.5,1.25,-2]
+  2 | [3,-0.75,1024]
+(2 rows)
+
+SELECT id FROM bf16_bin WHERE v = '[0.5,1.25,-2]';
+ id 
+----
+  1
+(1 row)
+
+DROP FOREIGN TABLE bf16_bin, bf16_http;
+\endif
+CALL clickhouse_perform('vector_types_admin', 'DROP DATABASE vector_types_test');
+DROP USER MAPPING FOR CURRENT_USER SERVER vector_types_bin;
+DROP USER MAPPING FOR CURRENT_USER SERVER vector_types_http;
+DROP USER MAPPING FOR CURRENT_USER SERVER vector_types_admin;
+DROP SERVER vector_types_bin CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table items_bin
+drop cascades to foreign table items_half
+DROP SERVER vector_types_http CASCADE;
+NOTICE:  drop cascades to foreign table items_http
+DROP SERVER vector_types_admin CASCADE;

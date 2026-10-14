@@ -338,6 +338,19 @@ timezone.sql
  25.8+      | timezone.out
  23-25.7    | timezone_1.out
 
+vector_types.sql
+----------------
+
+ Postgres | File
+----------|------------------
+ 14-19    | vector_types.out
+
+ ClickHouse | pgvector  | File
+------------|-----------|--------------------
+ 25.8+      | installed | vector_types.out
+ 23.3-25.3  | installed | vector_types_1.out
+ any        | absent    | vector_types_2.out
+
 where_sub.sql
 -------------
 

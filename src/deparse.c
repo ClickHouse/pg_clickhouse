@@ -3381,6 +3381,16 @@ deparseConst(Const* node, deparse_expr_cxt* context, bool showtype) {
     } else if (node->consttype == BYTEAOID) {
         deparseByteaLiteral(buf, node->constvalue);
         goto cleanup;
+    } else if (chfdw_is_pgvector_type(node->consttype)) {
+        /* A bare literal would be Array(Float64) and miss Float32 equality */
+        if (!showtype) {
+            appendStringInfoString(buf, "cast(");
+        }
+        chfdw_append_vector_literal(buf, node->constvalue);
+        if (!showtype) {
+            appendStringInfoString(buf, " as Array(Float32))");
+        }
+        goto cleanup;
     } else if (deparseStringDatum(buf, node->constvalue, typoutput)) {
         goto cleanup;
     } else {

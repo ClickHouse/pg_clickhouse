@@ -26,6 +26,12 @@ All notable changes to this project will be documented in this file. It uses the
     *   [regr_sxx]
     *   [regr_sxy]
     *   [regr_syy]
+*   Added support for [pgvector] `vector` columns stored in ClickHouse
+    `Array(Float32)`, `Array(Float64)`, and `Array(BFloat16)` columns, for
+    reads, inserts, and `COPY`. pgvector is not required; pg_clickhouse
+    recognizes its `vector` type when installed. `vector` constants and
+    parameters push down as `Array(Float32)`, as do the pgvector `=` and `<>`
+    operators ([#410]).
 
 ### 🚀 Distribution
 
@@ -70,6 +76,10 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#402 Specify precision for unconstrained numeric casts"
   [#403]: https://github.com/ClickHouse/pg_clickhouse/pull/403
     "ClickHouse/pg_clickhouse#403 Preserve floating-point parameter precision"
+  [#410]: https://github.com/ClickHouse/pg_clickhouse/pull/410
+    "ClickHouse/pg_clickhouse#410 Read and write pgvector vectors"
+  [pgvector]: https://github.com/pgvector/pgvector
+    "pgvector: Open-source vector similarity search for Postgres"
   [citext]: https://www.postgresql.org/docs/current/citext.html
     "PostgreSQL Docs: citext"
   [intarray]: https://www.postgresql.org/docs/current/intarray.html

@@ -1135,6 +1135,24 @@ or `bigint` to read and write counts of their units. For example, an
 `IntervalNanosecond` to `bigint` preserves nanoseconds, while mapping to
 `interval` truncates to microseconds.
 
+### pgvector
+
+When the [pgvector] extension is installed, declare ClickHouse float array
+columns as `vector` to read and write them as pgvector values:
+
+```pgsql
+CREATE FOREIGN TABLE items (
+    id        bigint NOT NULL,
+    embedding vector(768) NOT NULL
+) SERVER ch OPTIONS (table_name 'items');
+```
+
+| ClickHouse        | PostgreSQL  | Notes                                                    |
+|-------------------|-------------|----------------------------------------------------------|
+| `Array(Float32)`  | `vector(n)` | Lossless                                                 |
+| `Array(Float64)`  | `vector(n)` | Reads round to `real`; writes are exact                  |
+| `Array(BFloat16)` | `vector(n)` | Reads are exact; writes truncate to the bfloat16 mantissa |
+
 ### BYTEA
 
 ClickHouse does not provide the equivalent of the PostgreSQL [BYTEA] type, but
@@ -1794,6 +1812,19 @@ Two [fuzzystrmatch] functions push down to ClickHouse:
 *   `soundex`: [soundex](https://clickhouse.com/docs/sql-reference/functions/string-functions#soundex)
 *   `levenshtein` (2-arg): [editDistanceUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#editDistanceUTF8)
 
+#### pgvector
+
+These [pgvector] operators on the `vector` type push down to ClickHouse
+array comparisons:
+
+*   `=`: [equals](https://clickhouse.com/docs/sql-reference/operators#equals)
+*   `<>`: [notEquals](https://clickhouse.com/docs/sql-reference/operators#notEquals)
+
+pg_clickhouse casts `vector` constants to `Array(Float32)`, so equality
+compares the same `Float32` values ClickHouse stores in `Array(Float32)`
+columns. See [pgvector](#pgvector) under Data Types for supported column
+types.
+
 #### pgcyrpto
 
 *   `digest(text, text)` and `digest(bytea, text)`: Corresponding ClickHouse
@@ -2199,6 +2230,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: intarray"
   [fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html
     "PostgreSQL Docs: fuzzystrmatch"
+  [pgvector]: https://github.com/pgvector/pgvector
+    "pgvector: Open-source vector similarity search for Postgres"
   [`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html
     "PostgreSQL Docs: Data Type Formatting Functions"
   [formatDateTime]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#formatDateTime

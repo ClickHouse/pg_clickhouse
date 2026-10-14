@@ -24,7 +24,7 @@ jobs:
       - name: Start Postgres ${{ matrix.pg }}
         run: pg-start ${{ matrix.pg }} libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev libre2-dev libicu-dev
       - name: Install Extensions
-        run: pgxn install re2
+        run: pgxn install re2 && pgxn install vector
       - name: Checkout the Repository
         uses: actions/checkout@v7
         with: { submodules: recursive }

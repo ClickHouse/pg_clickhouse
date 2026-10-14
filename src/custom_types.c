@@ -784,10 +784,16 @@ chfdw_check_for_custom_type(Oid typeoid) {
         Oid extoid  = getExtensionOfObject(
             TypeRelationId, OidIsValid(elemoid) ? elemoid : typeoid
         );
-        char* extname = get_extension_name(extoid);
+        char* extname           = get_extension_name(extoid);
+        custom_object_type type = CF_USUAL;
 
         if (extname) {
             bool known = STR_EQUAL(extname, "hstore");
+
+            if (pgch_is_pgvector_type(typeoid)) {
+                known = true;
+                type  = CF_PGVECTOR;
+            }
 
             pfree(extname);
             if (!known) {
@@ -797,6 +803,7 @@ chfdw_check_for_custom_type(Oid typeoid) {
 
         entry = hash_search(custom_objects_cache, (void*)&typeoid, HASH_ENTER, NULL);
         init_custom_entry(entry);
+        entry->cf_type = type;
     }
 
     return entry;
@@ -901,6 +908,14 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
                 extname && STR_EQUAL(extname, "re2") && STR_EQUAL(oprname, "@~")
             ) {
                 entry->cf_type = CF_RE2_MATCH;
+            } else if (
+                extname && STR_EQUAL(extname, "vector") &&
+                (STR_EQUAL(oprname, "=") || STR_EQUAL(oprname, "<>")) &&
+                chfdw_is_pgvector_type(form->oprleft) &&
+                chfdw_is_pgvector_type(form->oprright)
+            ) {
+                /* ClickHouse compares Array(Float32) values element-wise. */
+                entry->cf_type = CF_USUAL;
             } else {
                 /* Unknown or user defined operator */
                 hash_search(custom_objects_cache, (void*)&opoid, HASH_REMOVE, NULL);
