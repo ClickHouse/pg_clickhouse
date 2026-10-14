@@ -1043,6 +1043,19 @@ SET pg_clickhouse.vector_planner_warnings = 'false';
 
 See [Vector Index Use](#vector-index-use) for details.
 
+#### `pg_clickhouse.explain_remote`
+
+The `pg_clickhouse.explain_remote` parameter controls whether `EXPLAIN`
+also shows the plan ClickHouse chooses for each foreign scan, under "Remote
+Plan". pg_clickhouse gets the plan by running `EXPLAIN indexes = 1` on
+ClickHouse, which lists the indexes it uses, including vector similarity
+indexes. It does not explain queries with parameters. It's off by default;
+set this parameter to true to show the plans:
+
+```sql
+SET pg_clickhouse.explain_remote = 'true';
+```
+
 #### `pg_clickhouse.vector_metadata_ttl`
 
 The `pg_clickhouse.vector_metadata_ttl` parameter sets how long, in seconds,
@@ -1620,6 +1633,28 @@ Reads the version from the native-protocol connection handshake, or over HTTP
 from a single `SELECT version()` query, and caches it for the life of the
 connection.
 
+#### `clickhouse_vector_indexes`
+
+```sql
+SELECT * FROM clickhouse_vector_indexes('items');
+```
+
+List the ClickHouse vector similarity indexes of a foreign table. Each row
+reports the index name, the indexed column, the index definition, its
+compressed size on disk, and the number of unfinished ClickHouse mutations
+that build it:
+
+```sql
+      name       | column_name |                    definition                    | compressed_bytes | pending_mutations
+-----------------+-------------+--------------------------------------------------+------------------+-------------------
+ items_embedding | embedding   | vector_similarity('hnsw', 'cosineDistance', 768) |         10485760 |                 0
+```
+
+The table must be a pg_clickhouse foreign table. Use
+[`clickhouse_query`](#clickhouse_query) to read other vector search state,
+such as the `VectorSimilarityIndexCache*` metrics in `system.metrics` and the
+`vector_similarity_index_cache_*` settings in `system.server_settings`.
+
 #### `clickhouse_refresh_metadata`
 
 ```sql
@@ -2024,6 +2059,7 @@ Such an exact search returns the true nearest neighbors. An index search is
 much faster, but approximate. Even when `EXPLAIN` names an index, ClickHouse
 may choose to filter rows first and compare them exactly, for example when a
 `WHERE` condition matches the primary key.
+Set [`pg_clickhouse.explain_remote`] to see the plan ClickHouse chooses.
 
 pg_clickhouse casts `vector` constants to `Array(Float32)`, so equality
 compares the same `Float32` values ClickHouse stores in `Array(Float32)`
@@ -2441,6 +2477,7 @@ Copyright (c) 2025-2026, ClickHouse.
     "pgvector: Open-source vector similarity search for Postgres"
   [vector similarity index]: https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/annindexes
     "ClickHouse Docs: Exact and Approximate Vector Search"
+  [`pg_clickhouse.explain_remote`]: #pg_clickhouseexplain_remote
   [`pg_clickhouse.vector_metadata_ttl`]: #pg_clickhousevector_metadata_ttl
   [`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html
     "PostgreSQL Docs: Data Type Formatting Functions"

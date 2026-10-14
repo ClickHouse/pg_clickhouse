@@ -20,8 +20,10 @@
 
 #include "access/stratnum.h"
 #include "commands/explain.h"
+#include "miscadmin.h"
 #if PG_VERSION_NUM >= 180000
 #include "commands/explain_format.h"
+#include "commands/explain_state.h"
 #endif
 #include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
@@ -317,4 +319,39 @@ chfdw_explain_vector_info(List* info, struct ExplainState* es) {
     if (*reason) {
         ExplainPropertyText("Vector Fallback", reason, es);
     }
+}
+
+/*
+ * Show ClickHouse's EXPLAIN indexes = 1 for the remote query of a scan, which
+ * reports whether a vector index serves it. Parameterized queries cannot be
+ * explained without their values.
+ */
+void
+chfdw_explain_remote_plan(ForeignScan* plan, const char* sql, struct ExplainState* es) {
+    if (plan->fdw_exprs) {
+        ExplainPropertyText("Remote Plan", "unavailable for parameterized queries", es);
+        return;
+    }
+
+    UserMapping* user = GetUserMapping(GetUserId(), plan->fs_server);
+    List* rows = chfdw_run_text_query(user, psprintf("EXPLAIN indexes = 1 %s", sql), 1);
+    List* lines = NIL;
+    ListCell* lc;
+
+    foreach (lc, rows) {
+        lines = lappend(lines, ((char**)lfirst(lc))[0]);
+    }
+    if (es->format != EXPLAIN_FORMAT_TEXT) {
+        ExplainPropertyList("Remote Plan", lines, es);
+        return;
+    }
+    /* ExplainIndentText() is not exported before Postgres 18 */
+    appendStringInfoSpaces(es->str, es->indent * 2);
+    appendStringInfoString(es->str, "Remote Plan:\n");
+    es->indent++;
+    foreach (lc, lines) {
+        appendStringInfoSpaces(es->str, es->indent * 2);
+        appendStringInfo(es->str, "%s\n", (char*)lfirst(lc));
+    }
+    es->indent--;
 }

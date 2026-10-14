@@ -75,6 +75,7 @@ static kv_list* ch_session_settings_list = NULL;
 static bool ch_pushdown_regex            = true;
 static bool ch_vector_planner_warnings   = true;
 static int ch_vector_metadata_ttl        = 60;
+static bool ch_explain_remote            = false;
 
 /*
  * Helper functions
@@ -584,6 +585,14 @@ chfdw_vector_planner_warnings(void) {
 }
 
 /*
+ * Return the current value of the `explain_remote` GUC.
+ */
+bool
+chfdw_explain_remote(void) {
+    return ch_explain_remote;
+}
+
+/*
  * Return the current value of the `vector_metadata_ttl` GUC, in seconds.
  */
 int
@@ -694,6 +703,20 @@ _PG_init(void) {
         "vector similarity index, and why.",
         &ch_vector_planner_warnings,
         true,
+        PGC_USERSET,
+        0,
+        NULL,
+        NULL,
+        NULL
+    );
+
+    DefineCustomBoolVariable(
+        "pg_clickhouse.explain_remote",
+        "Show the ClickHouse plan of each foreign scan in EXPLAIN.",
+        "When on, EXPLAIN runs EXPLAIN indexes = 1 for the remote query of each "
+        "foreign scan and shows the result, including the indexes it uses.",
+        &ch_explain_remote,
+        false,
         PGC_USERSET,
         0,
         NULL,
