@@ -195,6 +195,14 @@ ilike_regex.sql
  25+        | ilike_regex.out
  23-24      | ilike_regex_1.out
 
+import_lake.sql
+---------------
+
+ ClickHouse | File
+------------|-------------------
+ 26.3+      | import_lake.out
+ < 26.3     | import_lake_1.out (test aborts)
+
 import_schema.sql
 -----------------
 

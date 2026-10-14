@@ -1,0 +1,14 @@
+-- Import from a DataLakeCatalog database. .github/ubuntu/lake.sh seeds the
+-- Iceberg warehouse from test/lake/seed.sql and serves it on port 8181.
+SET datestyle = 'ISO';
+CREATE SERVER lake_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER lake_admin;
+SELECT clickhouse_server_version('lake_admin') AS ch_version \gset
+SELECT (split_part(:'ch_version', '.', 1)::int,
+        split_part(:'ch_version', '.', 2)::int) < (26, 3) AS no_ch263 \gset
+\if :no_ch263
+\echo 'SKIP: Seeding Iceberg tables requires ClickHouse 26.3 or higher'
+SKIP: Seeding Iceberg tables requires ClickHouse 26.3 or higher
+DROP SERVER lake_admin CASCADE;
+NOTICE:  drop cascades to user mapping for postgres on server lake_admin
+\quit

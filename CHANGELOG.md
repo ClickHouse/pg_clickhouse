@@ -50,6 +50,8 @@ All notable changes to this project will be documented in this file. It uses the
     settings, and `pg_clickhouse.session_settings` overrides both for matching
     keys. Vector search settings unsupported by older servers are skipped with
     a warning. Thanks to Kaushik Iska for the PR ([#412])!
+*   Added `IMPORT FOREIGN SCHEMA` support for ClickHouse [DataLakeCatalog]
+    databases, including Iceberg REST catalogs ([#408]).
 
 ### 🚀 Distribution
 
@@ -103,6 +105,10 @@ All notable changes to this project will be documented in this file. It uses the
   [regr_sxx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxx
   [regr_sxy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxy
   [regr_syy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_syy
+  [DataLakeCatalog]: https://clickhouse.com/docs/engines/database-engines/datalakecatalog
+    "ClickHouse Docs: DataLakeCatalog"
+  [#408]: https://github.com/ClickHouse/pg_clickhouse/pull/408
+    "ClickHouse/pg_clickhouse#408 Support IMPORT FOREIGN SCHEMA for DataLakeCatalog databases"
   [#397]: https://github.com/ClickHouse/pg_clickhouse/pull/397
     "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
   [#402]: https://github.com/ClickHouse/pg_clickhouse/pull/402
