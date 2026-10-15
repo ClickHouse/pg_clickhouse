@@ -302,7 +302,7 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     case F_TIMEZONE_TEXT_TIMESTAMP:
     case F_TIMEZONE_TEXT_TIMESTAMPTZ:
         def->cf_type = CF_TIMEZONE;
-        def->ch_name = "toTimeZone";
+        def->ch_name = "toDateTime64";
         return true;
     case F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE:
     case F_ARRAY_POSITION_ANYCOMPATIBLEARRAY_ANYCOMPATIBLE_INT4:
@@ -691,7 +691,7 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     case F_RTRIM_TEXT_TEXT:
     case F_CONCAT_WS:
     case F_LENGTH_BYTEA:
-        /* date(ts), date(tstz) deparse as CH date() (alias toDate) */
+        /* date(ts), date(tstz) deparse as toDate32 in TimeZone */
     case F_DATE_TIMESTAMP:
     case F_DATE_TIMESTAMPTZ:
         /* window functions: lead/lag share PG and CH names */

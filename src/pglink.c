@@ -329,11 +329,11 @@ native_chunks_cancelled(void* ud pg_attribute_unused()) {
 }
 
 /* Room for every setting native_overrides writes. */
-#define NATIVE_OVERRIDES_MAX 3
+#define NATIVE_OVERRIDES_MAX 4
 
 /*
  * Settings the shared decoder needs from a Native response: the pair
- * PGCH_NATIVE_SETTINGS joins, plus the format itself. Listed one by one
+ * PGCH_NATIVE_SETTINGS joins, plus format and time zone. Listed one by one
  * because each needs its own server version gate; an unknown HTTP setting
  * fails the query.
  */
@@ -351,6 +351,10 @@ native_overrides(void* conn, ch_setting out[NATIVE_OVERRIDES_MAX]) {
     }
     if (chfdw_version_ge(version, 24, 10)) {
         out[n++] = (ch_setting){ "output_format_native_write_json_as_string", "1" };
+    }
+    if (chfdw_version_ge(version, 23, 6)) {
+        /* Read unzoned DateTime in PostgreSQL TimeZone, as timestamp encodes */
+        out[n++] = (ch_setting){ "session_timezone", pgch_session_timezone() };
     }
 
     return n;

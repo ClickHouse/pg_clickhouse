@@ -67,6 +67,12 @@ All notable changes to this project will be documented in this file. It uses the
     affected ([#403]).
 *   Fixed ClickHouse type mappings for pushed-down casts and parameters,
     where previously invalid casts would cause remote query failures ([#401]).
+*   Fixed time zone handling in pushed down Date/time functions and casts by
+    using PostgreSQL's `TimeZone`, including fixed UTC offsets such as
+    `SET TIME ZONE 5`. `AT TIME ZONE` and epoch extraction now correctly
+    handle `timestamp` values without a time zone, matching PostgreSQL
+    results. Connections to ClickHouse 23.6+ now also set `session_timezone`
+    to match the PostgreSQL `TimeZone` ([#413]).
 *   Fixed GCC 15 build failure caused by a `-Wclobbered` error in binary
     driver connection setup ([#395]).
 *   Added checks to prevent the pushdown of custom functions or
@@ -155,6 +161,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#401 Fix temporal, UUID and JSON type mappings"
   [#406]: https://github.com/ClickHouse/pg_clickhouse/pull/406
     "ClickHouse/pg_clickhouse#406 Fix interval parameters in datetime arithmetic"
+  [#413]: https://github.com/ClickHouse/pg_clickhouse/pull/413
+    "ClickHouse/pg_clickhouse#413 Fix timezone handling"
   [#415]: https://github.com/ClickHouse/pg_clickhouse/pull/415
     "ClickHouse/pg_clickhouse#415 Fix crashes and hangs when a connection closes mid-use"
   [#416]: https://github.com/ClickHouse/pg_clickhouse/pull/416

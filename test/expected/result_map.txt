@@ -206,7 +206,8 @@ import_schema.sql
  ClickHouse | File
 ------------|---------------------
  26.7+      | import_schema.out
- 23.3-26.6  | import_schema_2.out
+ 23.6-26.6  | import_schema_2.out
+ 23.3       | import_schema_3.out
 
 interval.sql
 ------------
@@ -332,11 +333,6 @@ timezone.sql
  Postgres | File
 ----------|--------------
  14-19    | timezone.out
-
- ClickHouse | File
-------------|----------------
- 25.8+      | timezone.out
- 23-25.7    | timezone_1.out
 
 vector_pushdown.sql
 -------------------

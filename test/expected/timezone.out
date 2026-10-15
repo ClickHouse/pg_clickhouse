@@ -218,10 +218,105 @@ EXECUTE prep_http(1);
 (2 rows)
 
 DEALLOCATE prep_http;
+-- Extract and truncate timestamptz in PostgreSQL TimeZone, not column zone.
+SET session timezone = 'America/New_York';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_trunc('day', lax_ts) AS d, date_part('hour', utc_ts) AS h,
+       to_char(nyc_ts, 'HH24') AS c, to_char(utc_ts::date, 'YYYY-MM') AS m
+  FROM tz_bin.ts GROUP BY d, h, c, m ORDER BY d;
+                                                                                                                                                                                                                                                     QUERY PLAN                                                                                                                                                                                                                                                     
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_trunc('day'::text, lax_ts)), (date_part('hour'::text, utc_ts)), (to_char(nyc_ts, 'HH24'::text)), (to_char(((utc_ts)::date)::timestamp with time zone, 'YYYY-MM'::text))
+   Relations: Aggregate on (ts)
+   Remote SQL: SELECT toStartOfDay(lax_ts, 'America/New_York'), toHour(utc_ts, 'America/New_York'), formatDateTime(nyc_ts, '%H', 'America/New_York'), formatDateTime(toDate32(utc_ts, 'America/New_York'), '%Y-%m') FROM tz_test.ts GROUP BY (toStartOfDay(lax_ts, 'America/New_York')), (toHour(utc_ts, 'America/New_York')), (formatDateTime(nyc_ts, '%H', 'America/New_York')), (formatDateTime(toDate32(utc_ts, 'America/New_York'), '%Y-%m')) ORDER BY toStartOfDay(lax_ts, 'America/New_York') ASC NULLS LAST
+(4 rows)
+
+SELECT date_trunc('day', lax_ts) AS d, date_part('hour', utc_ts) AS h,
+       to_char(nyc_ts, 'HH24') AS c, to_char(utc_ts::date, 'YYYY-MM') AS m
+  FROM tz_bin.ts GROUP BY d, h, c, m ORDER BY d;
+           d            | h | c  |    m    
+------------------------+---+----+---------
+ 2020-01-01 00:00:00-05 | 5 | 05 | 2020-01
+ 2020-04-01 00:00:00-04 | 6 | 06 | 2020-04
+ 2020-07-01 00:00:00-04 | 6 | 06 | 2020-07
+ 2020-10-01 00:00:00-04 | 6 | 06 | 2020-10
+(4 rows)
+
+SELECT date_trunc('day', lax_ts) AS d, date_part('hour', utc_ts) AS h,
+       to_char(nyc_ts, 'HH24') AS c, to_char(utc_ts::date, 'YYYY-MM') AS m
+  FROM tz_http.ts GROUP BY d, h, c, m ORDER BY d;
+           d            | h | c  |    m    
+------------------------+---+----+---------
+ 2020-01-01 00:00:00-05 | 5 | 05 | 2020-01
+ 2020-04-01 00:00:00-04 | 6 | 06 | 2020-04
+ 2020-07-01 00:00:00-04 | 6 | 06 | 2020-07
+ 2020-10-01 00:00:00-04 | 6 | 06 | 2020-10
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tz_bin.ts WHERE extract(hour FROM lax_ts) = 5;
+                                        QUERY PLAN                                        
+------------------------------------------------------------------------------------------
+ Foreign Scan on tz_bin.ts
+   Output: id
+   Remote SQL: SELECT id FROM tz_test.ts WHERE ((toHour(lax_ts, 'America/New_York') = 5))
+(3 rows)
+
+SELECT id FROM tz_bin.ts WHERE extract(hour FROM lax_ts) = 5;
+ id 
+----
+  0
+(1 row)
+
+SELECT id FROM tz_http.ts WHERE extract(hour FROM lax_ts) = 5;
+ id 
+----
+  0
+(1 row)
+
+-- Wall clock 02:30 falls in Los Angeles DST gap, so must not pass through it.
+CALL clickhouse_perform('tz_admin', $$
+    CREATE TABLE tz_test.gap (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY ts
+$$);
+CALL clickhouse_perform('tz_admin', $$
+    INSERT INTO tz_test.gap VALUES ('2020-03-08 02:30:00')
+$$);
+CREATE FOREIGN TABLE tz_bin.gap (ts timestamptz) SERVER tz_bin_svr
+    OPTIONS (database 'tz_test');
+SET session timezone = 'America/Los_Angeles';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_part('hour', ts AT TIME ZONE 'UTC') AS h,
+       date_part('epoch', ts AT TIME ZONE 'UTC') AS e,
+       to_char(ts AT TIME ZONE 'UTC', 'HH24:MI') AS c,
+       (ts AT TIME ZONE 'UTC')::date AS d,
+       (ts AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS r
+  FROM tz_bin.gap GROUP BY h, e, c, d, r;
+                                                                                                                                                                                                              QUERY PLAN                                                                                                                                                                                                              
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_part('hour'::text, (ts AT TIME ZONE 'UTC'::text))), (date_part('epoch'::text, (ts AT TIME ZONE 'UTC'::text))), (to_char((ts AT TIME ZONE 'UTC'::text), 'HH24:MI'::text)), (((ts AT TIME ZONE 'UTC'::text))::date), (((ts AT TIME ZONE 'UTC'::text) AT TIME ZONE 'UTC'::text))
+   Relations: Aggregate on (gap)
+   Remote SQL: SELECT toHour(ts, 'UTC'), toUnixTimestamp(toDateTime64(toString(ts, 'UTC'), 6, 'UTC')), formatDateTime(ts, '%H:%i', 'UTC'), toDate32(ts, 'UTC'), toDateTime64(toString(ts, 'UTC'), 6, 'UTC') FROM tz_test.gap GROUP BY (toHour(ts, 'UTC')), (toUnixTimestamp(toDateTime64(toString(ts, 'UTC'), 6, 'UTC'))), (formatDateTime(ts, '%H:%i', 'UTC')), (toDate32(ts, 'UTC')), (toDateTime64(toString(ts, 'UTC'), 6, 'UTC'))
+(4 rows)
+
+SELECT date_part('hour', ts AT TIME ZONE 'UTC') AS h,
+       date_part('epoch', ts AT TIME ZONE 'UTC') AS e,
+       to_char(ts AT TIME ZONE 'UTC', 'HH24:MI') AS c,
+       (ts AT TIME ZONE 'UTC')::date AS d,
+       (ts AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS r
+  FROM tz_bin.gap GROUP BY h, e, c, d, r;
+ h |     e      |   c   |     d      |           r            
+---+------------+-------+------------+------------------------
+ 2 | 1583634600 | 02:30 | 2020-03-08 | 2020-03-07 18:30:00-08
+(1 row)
+
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER tz_bin_svr;
 DROP SERVER tz_bin_svr CASCADE;
-NOTICE:  drop cascades to foreign table tz_bin.ts
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table tz_bin.ts
+drop cascades to foreign table tz_bin.gap
 DROP USER MAPPING FOR CURRENT_USER SERVER tz_http_svr;
 DROP SERVER tz_http_svr CASCADE;
 NOTICE:  drop cascades to foreign table tz_http.ts

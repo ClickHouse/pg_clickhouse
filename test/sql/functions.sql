@@ -126,7 +126,7 @@ $$);
 -- check coalesce((cast as Nullable...
 EXPLAIN (VERBOSE, COSTS OFF)
 	SELECT coalesce(a::text, b::text, c::text) FROM t1 GROUP BY a, b, c;
-SELECT coalesce(a::text, b::text, c::text) FROM t1 GROUP BY a, b, c;
+SELECT coalesce(a::text, b::text, c::text) FROM t1 GROUP BY a, b, c ORDER BY 1;
 
 -- check IN functions
 EXPLAIN (VERBOSE, COSTS OFF)

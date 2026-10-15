@@ -95,9 +95,11 @@ ch_binary_query_settings(
     const ch_query* query,
     size_t* n_settings
 ) {
-    bool json_as_string = chfdw_version_ge(ch_binary_server_version(conn), 24, 10);
-    size_t n            = (query->settings ? (size_t)query->settings->length : 0) +
-                          (json_as_string ? 1 : 0);
+    ch_server_version version = ch_binary_server_version(conn);
+    bool json_as_string       = chfdw_version_ge(version, 24, 10);
+    bool timezone             = chfdw_version_ge(version, 23, 6);
+    size_t n = (query->settings ? (size_t)query->settings->length : 0) +
+               (json_as_string ? 1 : 0) + (timezone ? 1 : 0);
 
     *n_settings = n;
     if (!n) {
@@ -117,6 +119,12 @@ ch_binary_query_settings(
     if (json_as_string) {
         settings[i].name      = "output_format_native_write_json_as_string";
         settings[i].value     = "1";
+        settings[i].important = true;
+        i++;
+    }
+    if (timezone) {
+        settings[i].name      = "session_timezone";
+        settings[i].value     = pgch_session_timezone();
         settings[i].important = true;
     }
     return settings;

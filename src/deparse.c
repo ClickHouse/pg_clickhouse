@@ -56,8 +56,8 @@
 /* Aggregate OIDs absent from fmgroids.h on all PG versions. */
 #define F_STRING_AGG_TEXT_TEXT 3538
 
-/* Oft-used syntax to quote quote the session time zone literal string. */
-#define QUOTED_TZ ch_quote_literal(pg_get_timezone_name(session_timezone))
+/* Quote session time zone for ClickHouse SQL. */
+#define QUOTED_TZ ch_quote_literal(pgch_session_timezone())
 
 /* variable counter */
 static uint32 var_counter = 0;
@@ -4343,6 +4343,63 @@ chfdw_translate_to_char_format(const char* pgfmt, StringInfo out) {
 }
 
 /*
+ * Append explicit zone, or PostgreSQL TimeZone for timestamp arguments,
+ * overriding ClickHouse column time zone to match PostgreSQL session semantics.
+ * Skip default zone for dates: implicit casts deparse as Date, which rejects it.
+ */
+static void
+appendTimeZoneArg(Expr* arg, Expr* zone, deparse_expr_cxt* context) {
+    Oid type = exprType(strip_implicit_coercions((Node*)arg));
+
+    if (zone) {
+        appendStringInfoString(context->buf, ", ");
+        deparseExpr(zone, context);
+    } else if (type == TIMESTAMPOID || type == TIMESTAMPTZOID) {
+        appendStringInfo(context->buf, ", %s", QUOTED_TZ);
+    }
+}
+
+/*
+ * Unwrap timezone(zone, timestamptz) so ClickHouse reads instant in zone,
+ * return zone or NULL. Detour through TimeZone wall clock breaks in DST gaps
+ */
+static Expr*
+unwrapTimeZone(Expr** arg) {
+    FuncExpr* func = (FuncExpr*)*arg;
+
+    if (!IsA(func, FuncExpr) || func->funcid != F_TIMEZONE_TEXT_TIMESTAMPTZ ||
+        exprType(strip_implicit_coercions(lsecond(func->args))) != TIMESTAMPTZOID) {
+        return NULL;
+    }
+    *arg = lsecond(func->args);
+    return linitial(func->args);
+}
+
+/*
+ * Format timestamp arg as wall clock string in zone, NULL for TimeZone.
+ * Decoder casts DateTime to timestamp in TimeZone, so timestamp wall clock is
+ * in TimeZone. Date takes midnight in TimeZone, as PostgreSQL casts it
+ */
+static void
+appendWallClock(Expr* arg, Expr* zone, deparse_expr_cxt* context) {
+    StringInfo buf = context->buf;
+    bool date      = exprType(strip_implicit_coercions((Node*)arg)) == DATEOID;
+
+    appendStringInfoString(buf, date ? "toString(toDateTime64(" : "toString(");
+    deparseExpr(arg, context);
+    if (date) {
+        appendStringInfo(buf, ", 0, %s)", QUOTED_TZ);
+    }
+    appendStringInfoString(buf, ", ");
+    if (zone) {
+        deparseExpr(zone, context);
+    } else {
+        appendStringInfoString(buf, QUOTED_TZ);
+    }
+    appendStringInfoChar(buf, ')');
+}
+
+/*
  * Deparse a function call.
  */
 static void
@@ -4359,6 +4416,29 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
     if (node->funcformat == COERCE_IMPLICIT_CAST) {
         deparseExpr((Expr*)linitial(node->args), context);
         return;
+    }
+
+    /* Day boundaries need PostgreSQL TimeZone, not column time zone */
+    switch (node->funcid) {
+    case F_DATE_TIMESTAMP:
+    case F_DATE_TIMESTAMPTZ: {
+        Expr* source = linitial(node->args);
+        Expr* zone   = unwrapTimeZone(&source);
+
+        appendStringInfoString(buf, "toDate32(");
+        deparseExpr(source, context);
+        appendTimeZoneArg(source, zone, context);
+        appendStringInfoChar(buf, ')');
+        return;
+    }
+    case F_TIMESTAMP_DATE:
+    case F_TIMESTAMPTZ_DATE:
+        appendStringInfoString(buf, "toDateTime64(");
+        deparseExpr((Expr*)linitial(node->args), context);
+        appendStringInfo(buf, ", 6, %s)", QUOTED_TZ);
+        return;
+    default:
+        break;
     }
 
     /*
@@ -4461,18 +4541,22 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             if (cast_to_datetime64) {
                 appendStringInfoString(buf, "(toDateTime64(");
                 deparseExpr(list_nth(node->args, 1), context);
-                appendStringInfoString(buf, ", 1))");
+                appendStringInfoString(buf, ", 1)");
             } else {
                 appendStringInfoChar(buf, '(');
                 deparseExpr(list_nth(node->args, 1), context);
-                appendStringInfoChar(buf, ')');
             }
+            appendTimeZoneArg(list_nth(node->args, 1), NULL, context);
+            appendStringInfoChar(buf, ')');
             return;
         }
         case CF_DATE_PART: {
             Const* arg        = (Const*)linitial(node->args);
+            Expr* source      = lsecond(node->args);
+            Expr* zone        = unwrapTimeZone(&source);
             char* parttype    = TextDatumGetCString(arg->constvalue);
             bool postgres_dow = false;
+            bool epoch        = false;
 
             CSTRING_TOLOWER(parttype);
 
@@ -4501,6 +4585,7 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
                 appendStringInfoString(buf, "toISOWeek");
             } else if (strcmp(parttype, "epoch") == 0) {
                 appendStringInfoString(buf, "toUnixTimestamp");
+                epoch = true;
             } else {
                 ereport(
                     ERROR,
@@ -4511,15 +4596,43 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
 
             pfree(parttype);
             appendStringInfoChar(buf, '(');
-            deparseExpr(list_nth(node->args, 1), context);
+            if (epoch && (zone || exprType((Node*)source) != TIMESTAMPTZOID)) {
+                /* PostgreSQL reads timestamp and date epoch as UTC wall clock */
+                appendStringInfoString(buf, "toDateTime64(");
+                appendWallClock(source, zone, context);
+                appendStringInfoString(buf, ", 6, 'UTC')");
+            } else {
+                deparseExpr(source, context);
+            }
             if (postgres_dow) {
                 /* Mode 2 aligns with Postgres behavior (Sunday = 0). */
                 appendStringInfoString(buf, ", 2");
             }
+            /* Unix timestamp is always UTC */
+            if (!epoch) {
+                appendTimeZoneArg(source, zone, context);
+            }
             appendStringInfoChar(buf, ')');
             return;
         }
-        case CF_TIMEZONE:
+        case CF_TIMEZONE: {
+            /* timezone() keeps wall clock and swaps zone, toTimeZone keeps instant */
+            Expr* zone      = linitial(node->args);
+            Expr* source    = lsecond(node->args);
+            bool to_tz      = node->funcresulttype == TIMESTAMPTZOID;
+            Expr* wall_zone = to_tz ? unwrapTimeZone(&source) : zone;
+
+            appendStringInfoChar(buf, '(');
+            appendWallClock(source, wall_zone, context);
+            appendStringInfoString(buf, ", 6, ");
+            if (to_tz) {
+                deparseExpr(zone, context);
+            } else {
+                appendStringInfoString(buf, QUOTED_TZ);
+            }
+            appendStringInfoChar(buf, ')');
+            return;
+        }
         case CF_ARRAY_PREPEND:
         case CF_STRING_TO_ARRAY:
         case CF_STRING_TO_ARRAY_PART: {
@@ -4677,6 +4790,8 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
              */
             Const* fmt_const = (Const*)list_nth(node->args, 1);
             char* pgfmt      = TextDatumGetCString(fmt_const->constvalue);
+            Expr* source     = linitial(node->args);
+            Expr* zone       = unwrapTimeZone(&source);
             StringInfoData chfmt;
 
             initStringInfo(&chfmt);
@@ -4689,9 +4804,10 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             }
 
             appendStringInfoChar(buf, '(');
-            deparseExpr((Expr*)linitial(node->args), context);
+            deparseExpr(source, context);
             appendStringInfoString(buf, ", ");
             deparseStringLiteral(buf, chfmt.data);
+            appendTimeZoneArg(source, zone, context);
             appendStringInfoChar(buf, ')');
 
             pfree(chfmt.data);

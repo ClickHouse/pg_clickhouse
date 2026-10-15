@@ -984,6 +984,9 @@ operation of pg_clickhouse itself. These include:
 *   `date_time_output_format`: the http driver requires it to be "iso"
 *   `format_tsv_null_representation`: the http driver requires the default
 *   `output_format_tsv_crlf_end_of_line` the http driver requires the default
+*   `session_timezone`: pg_clickhouse sets it to PostgreSQL's
+    [TimeZone](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-TIMEZONE)
+    on ClickHouse 23.6 and later
 
 Otherwise, pg_clickhouse does not validate the settings, but passes them on to
 ClickHouse for every query. It thus supports all settings for each ClickHouse
@@ -1666,7 +1669,9 @@ equivalents as follows:
     `degrees`, `radians`, `pi`: [ClickHouse math functions](https://clickhouse.com/docs/sql-reference/functions/math-functions)
     of the same name. `asin`, `acos`, `atanh`, `acosh` are not pushed
     down: PG raises on out-of-range input where CH returns `NaN`.
-*   `date_part`:
+*   `date_part`: passes PostgreSQL's
+    [TimeZone](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-TIMEZONE)
+    to ClickHouse for `timestamp` and `timestamptz` values.
     *   `date_part('day')`: [toDayOfMonth](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfMonth)
     *   `date_part('doy')`: [toDayOfYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfYear)
     *   `date_part('dow')`: [toDayOfWeek](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfWeek)
@@ -1679,7 +1684,8 @@ equivalents as follows:
     *   `date_part('isoyear')`: [toISOYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toISOYear)
     *   `date_part('week')`: [toISOYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toISOWeek)
     *   `date_part('epoch')`: [toISOYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toUnixTimestamp)
-*   `date_trunc`:
+*   `date_trunc`: passes PostgreSQL's `TimeZone` to ClickHouse for `timestamp`
+    and `timestamptz` values.
     *   `date_trunc('week')`: [toMonday](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toMonday)
     *   `date_trunc('second')`: [toStartOfSecond](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfSecond)
     *   `date_trunc('minute')`: [toStartOfMinute](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfMinute)
@@ -1688,9 +1694,17 @@ equivalents as follows:
     *   `date_trunc('month')`: [toStartOfMonth](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfMonth)
     *   `date_trunc('quarter')`: [toStartOfQuarter](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfQuarter)
     *   `date_trunc('year')`: [toStartOfYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfYear)
-*   `extract(field FROM source)`: same mappings as `date_part`
-*   `date(timestamp)` & `date(timestamptz)`: [toDate](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#toDate)
-    (deparsed as CH alias `date`)
+*   `extract(field FROM source)`: same mappings as `date_part`; passes PostgreSQL's
+    `TimeZone` to ClickHouse for `timestamp` and `timestamptz` values.
+*   `date(timestamp)` & `date(timestamptz)`: [toDate32](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#toDate32);
+    passes PostgreSQL's `TimeZone` to ClickHouse, as do casts between `date`
+    and `timestamp` or `timestamptz`.
+*   `AT TIME ZONE` & `timezone(zone, source)`: uses [toString](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#tostring)
+    followed by [toDateTime64](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#todatetime64)
+    to preserve local date and time while changing time zone. When converting
+    `timestamp` to `timestamptz`, local times skipped or repeated during
+    daylight saving changes produce different results: ClickHouse chooses
+    an earlier time than PostgreSQL.
 *   `array_position`: [indexOf](https://clickhouse.com/docs/sql-reference/functions/array-functions#indexOf) with
     [nullIf](https://clickhouse.com/docs/reference/functions/regular-functions/functions-for-nulls#nullif)
     to convert `0` to `NULL` and
@@ -1756,7 +1770,8 @@ equivalents as follows:
     when `fmt` is a string constant whose every keyword has a faithful
     ClickHouse equivalent. See [to_char()](#to_char) under Compatibility
     Notes for the supported keywords. Otherwise the function evaluates
-    locally in PostgreSQL.
+    locally in PostgreSQL. Passes PostgreSQL's `TimeZone` to ClickHouse for
+    `timestamp` and `timestamptz` values.
 *   `statement_timestamp`, `transaction_timestamp`, & `clock_timestamp`:
     [nowInBlock64](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#nowInBlock64)
     (`nowInBlock64(9, $session_timezone)`)

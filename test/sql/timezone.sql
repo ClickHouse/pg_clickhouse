@@ -80,6 +80,47 @@ EXECUTE prep_http(1);
 EXECUTE prep_http(1);
 DEALLOCATE prep_http;
 
+-- Extract and truncate timestamptz in PostgreSQL TimeZone, not column zone.
+SET session timezone = 'America/New_York';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_trunc('day', lax_ts) AS d, date_part('hour', utc_ts) AS h,
+       to_char(nyc_ts, 'HH24') AS c, to_char(utc_ts::date, 'YYYY-MM') AS m
+  FROM tz_bin.ts GROUP BY d, h, c, m ORDER BY d;
+SELECT date_trunc('day', lax_ts) AS d, date_part('hour', utc_ts) AS h,
+       to_char(nyc_ts, 'HH24') AS c, to_char(utc_ts::date, 'YYYY-MM') AS m
+  FROM tz_bin.ts GROUP BY d, h, c, m ORDER BY d;
+SELECT date_trunc('day', lax_ts) AS d, date_part('hour', utc_ts) AS h,
+       to_char(nyc_ts, 'HH24') AS c, to_char(utc_ts::date, 'YYYY-MM') AS m
+  FROM tz_http.ts GROUP BY d, h, c, m ORDER BY d;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tz_bin.ts WHERE extract(hour FROM lax_ts) = 5;
+SELECT id FROM tz_bin.ts WHERE extract(hour FROM lax_ts) = 5;
+SELECT id FROM tz_http.ts WHERE extract(hour FROM lax_ts) = 5;
+
+-- Wall clock 02:30 falls in Los Angeles DST gap, so must not pass through it.
+CALL clickhouse_perform('tz_admin', $$
+    CREATE TABLE tz_test.gap (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY ts
+$$);
+CALL clickhouse_perform('tz_admin', $$
+    INSERT INTO tz_test.gap VALUES ('2020-03-08 02:30:00')
+$$);
+CREATE FOREIGN TABLE tz_bin.gap (ts timestamptz) SERVER tz_bin_svr
+    OPTIONS (database 'tz_test');
+SET session timezone = 'America/Los_Angeles';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_part('hour', ts AT TIME ZONE 'UTC') AS h,
+       date_part('epoch', ts AT TIME ZONE 'UTC') AS e,
+       to_char(ts AT TIME ZONE 'UTC', 'HH24:MI') AS c,
+       (ts AT TIME ZONE 'UTC')::date AS d,
+       (ts AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS r
+  FROM tz_bin.gap GROUP BY h, e, c, d, r;
+SELECT date_part('hour', ts AT TIME ZONE 'UTC') AS h,
+       date_part('epoch', ts AT TIME ZONE 'UTC') AS e,
+       to_char(ts AT TIME ZONE 'UTC', 'HH24:MI') AS c,
+       (ts AT TIME ZONE 'UTC')::date AS d,
+       (ts AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS r
+  FROM tz_bin.gap GROUP BY h, e, c, d, r;
+
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER tz_bin_svr;
 DROP SERVER tz_bin_svr CASCADE;
