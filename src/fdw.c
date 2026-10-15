@@ -73,6 +73,8 @@ enum FdwScanPrivateIndex {
     FdwScanPrivateRetrievedAttrs,
     /* Combined table settings as a DefElem list */
     FdwScanPrivateSettings,
+    /* Vector search classification for EXPLAIN, NIL if not a vector search */
+    FdwScanPrivateVectorInfo,
 
     /*
      * String describing join i.e. names of relations being joined and types
@@ -1025,7 +1027,12 @@ clickhouseGetForeignPlan(
      * Build the fdw_private list that will be available to the executor.
      * Items in the list must match order in enum FdwScanPrivateIndex.
      */
-    fdw_private = list_make3(makeString(sql.data), retrieved_attrs, settings);
+    fdw_private = list_make4(
+        makeString(sql.data),
+        retrieved_attrs,
+        settings,
+        chfdw_vector_plan_info(root, foreignrel, best_path, has_limit)
+    );
     if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel)) {
         fdw_private = lappend(fdw_private, makeString(fpinfo->relation_name->data));
     }
@@ -1701,6 +1708,8 @@ clickhouseExplainForeignScan(ForeignScanState* node, ExplainState* es) {
         relations = strVal(list_nth(fdw_private, FdwScanPrivateRelations));
         ExplainPropertyText("Relations", relations, es);
     }
+
+    chfdw_explain_vector_info(list_nth(fdw_private, FdwScanPrivateVectorInfo), es);
 
     /*
      * Add remote query, when VERBOSE option is specified.

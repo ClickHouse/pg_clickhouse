@@ -50,6 +50,14 @@ All notable changes to this project will be documented in this file. It uses the
     settings, and `pg_clickhouse.session_settings` overrides both for matching
     keys. Vector search settings unsupported by older servers are skipped with
     a warning. Thanks to Kaushik Iska for the PR ([#412])!
+*   Added vector index reporting for pgvector nearest neighbor searches.
+    `EXPLAIN` shows the ClickHouse vector similarity index a search can use,
+    or why ClickHouse will compare every row instead, and the planner warns in
+    the latter case. Set `pg_clickhouse.vector_planner_warnings` to false to
+    silence the warnings. pg_clickhouse caches the index definitions it reads
+    from ClickHouse for `pg_clickhouse.vector_metadata_ttl` seconds;
+    `clickhouse_refresh_metadata()` clears the cache. Thanks to Kaushik Iska
+    for the PR ([#414])!
 
 ### 🚀 Distribution
 
@@ -129,6 +137,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#411 Push down pgvector distance operators and functions"
   [#412]: https://github.com/ClickHouse/pg_clickhouse/pull/412
     "ClickHouse/pg_clickhouse#412 Add settings option for servers and foreign tables"
+  [#414]: https://github.com/ClickHouse/pg_clickhouse/pull/414
+    "ClickHouse/pg_clickhouse#414 Report vector index use for pgvector searches"
   [ClickHouse settings]: https://clickhouse.com/docs/operations/settings/settings
     "ClickHouse Docs: Session Settings"
   [`pg_clickhouse.session_settings` syntax]: doc/pg_clickhouse.md#pg_clickhousesession_settings

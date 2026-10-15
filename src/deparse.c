@@ -1471,6 +1471,19 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
  */
 static bool
 server_version_ge(PlannerInfo* root, RelOptInfo* foreignrel, int major, int minor) {
+    UserMapping* user = chfdw_rel_user_mapping(root, foreignrel);
+
+    return user != NULL &&
+           chfdw_version_ge(chfdw_get_server_version(user), major, minor);
+}
+
+/*
+ * Return the user mapping that clickhouseBeginForeignScan() will use to scan
+ * foreignrel, or NULL when none exists, so callers can skip a plan-time
+ * server request rather than fail the query.
+ */
+UserMapping*
+chfdw_rel_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel) {
     CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)foreignrel->fdw_private;
     Oid serverid              = fpinfo->server->serverid;
     Oid userid                = InvalidOid;
@@ -1520,11 +1533,9 @@ server_version_ge(PlannerInfo* root, RelOptInfo* foreignrel, int major, int mino
             ObjectIdGetDatum(InvalidOid),
             ObjectIdGetDatum(serverid)
         )) {
-        return false;
+        return NULL;
     }
-    return chfdw_version_ge(
-        chfdw_get_server_version(GetUserMapping(userid, serverid)), major, minor
-    );
+    return GetUserMapping(userid, serverid);
 }
 
 static bool
@@ -2772,36 +2783,43 @@ deparseColumnRef(
  */
 static void
 deparseRelation(StringInfo buf, Relation rel) {
-    ForeignTable* table;
-    const char* relname   = NULL;
-    char* dbname          = "default";
-    ForeignServer* server = chfdw_get_foreign_server(rel);
+    char* dbname;
+    char* relname;
+
+    chfdw_remote_table_name(RelationGetRelid(rel), &dbname, &relname);
+    appendStringInfo(buf, "%s.%s", quote_identifier(dbname), quote_identifier(relname));
+}
+
+/*
+ * Return the ClickHouse database and table names of foreign table relid,
+ * from its database and table_name options, the server's dbname, and its own
+ * name.
+ */
+void
+chfdw_remote_table_name(Oid relid, char** db, char** table) {
+    ForeignTable* ft      = GetForeignTable(relid);
+    ForeignServer* server = GetForeignServer(ft->serverid);
     ListCell* lc;
 
+    *db    = "default";
+    *table = NULL;
     chfdw_extract_options(
-        server->options, NULL, NULL, NULL, &dbname, NULL, NULL, NULL, NULL, NULL, NULL
+        server->options, NULL, NULL, NULL, db, NULL, NULL, NULL, NULL, NULL, NULL
     );
 
-    /* obtain additional catalog information. */
-    table = GetForeignTable(RelationGetRelid(rel));
-
-    /*
-     * Use value of FDW options if any, instead of the name of object itself.
-     */
-    foreach (lc, table->options) {
+    /* Use value of FDW options if any, instead of the name of object itself. */
+    foreach (lc, ft->options) {
         DefElem* def = (DefElem*)lfirst(lc);
 
         if (strcmp(def->defname, "table_name") == 0) {
-            relname = defGetString(def);
+            *table = defGetString(def);
         } else if (strcmp(def->defname, "database") == 0) {
-            dbname = defGetString(def);
+            *db = defGetString(def);
         }
     }
-    if (relname == NULL) {
-        relname = RelationGetRelationName(rel);
+    if (*table == NULL) {
+        *table = get_rel_name(relid);
     }
-
-    appendStringInfo(buf, "%s.%s", quote_identifier(dbname), quote_identifier(relname));
 }
 
 /*
