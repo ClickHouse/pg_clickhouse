@@ -71,6 +71,12 @@ struct ch_binary_connection_t {
      * Cache layer checks via ch_binary_is_broken & drops the entry.
      */
     bool broken;
+
+    /*
+     * Open INSERTs. Their handles live with the callers' state, which can
+     * outlive this connection, so closing the connection detaches them.
+     */
+    ch_binary_insert_handle* inserts;
 };
 
 /*
@@ -94,6 +100,10 @@ ch_binary_query_settings(
 /* Returns memory owned by ex, which must be copied before clearing its packet. */
 extern const char*
 ch_binary_exception_message(const chc_exception* ex);
+
+/* Detaches the open INSERTs of a connection that is closing. */
+extern void
+ch_binary_detach_inserts(ch_binary_connection_t* conn);
 
 /*
  * Consumes packets until the server sends EOS or an exception. Stores a

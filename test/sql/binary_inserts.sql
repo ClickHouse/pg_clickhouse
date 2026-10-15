@@ -312,6 +312,33 @@ CREATE FOREIGN TABLE u64s (c1 xid8, c2 :oid8) SERVER binary_inserts_loopback;
 INSERT INTO u64s VALUES ('0', '0'), ('18446744073709551615', '18446744073709551615');
 SELECT * FROM u64s ORDER BY c1;
 
+/* A failed INSERT whose block goes on to query the broken connection */
+CALL clickhouse_perform('binary_inserts_admin', 'CREATE TABLE binary_inserts_test.checked (
+	c1 Int32, CONSTRAINT small CHECK c1 < 100
+) ENGINE = MergeTree ORDER BY (c1);');
+
+CREATE FOREIGN TABLE checked (c1 int) SERVER binary_inserts_loopback;
+DO $$
+BEGIN
+    BEGIN
+        INSERT INTO checked VALUES (500);
+    EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'insert failed';
+    END;
+    PERFORM count(*) FROM checked;
+    PERFORM count(*) FROM checked;
+END $$;
+
+/* Several INSERTs of one block, and the connection closing before it ends */
+DO $$
+BEGIN
+    INSERT INTO checked VALUES (1);
+    INSERT INTO checked VALUES (2);
+    ALTER SERVER binary_inserts_loopback OPTIONS (SET dbname 'binary_inserts_test');
+    INSERT INTO checked VALUES (3);
+END $$;
+SELECT * FROM checked ORDER BY c1;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 CALL clickhouse_perform('binary_inserts_admin', 'DROP DATABASE binary_inserts_test');
 DROP SERVER binary_inserts_loopback CASCADE;

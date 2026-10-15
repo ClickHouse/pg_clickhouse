@@ -1301,6 +1301,12 @@ clickhouseIterateForeignScan(ForeignScanState* node) {
         fsstate->is_streaming =
             fsstate->scan_conn.gate.methods->streaming_query != NULL;
 
+        /*
+         * The response lives where the cursor does, in the portal context. In
+         * the scan's contexts it would be freed first when an error aborts a
+         * subtransaction, before the cursor's callback released it.
+         */
+        MemoryContextSwitchTo(PortalContext ? PortalContext : CurrentMemoryContext);
         if (fsstate->is_streaming) {
             fsstate->ch_cursor = fsstate->scan_conn.gate.methods->streaming_query(
                 fsstate->scan_conn.gate.conn, &query
@@ -1340,10 +1346,8 @@ clickhouseIterateForeignScan(ForeignScanState* node) {
  *
  *		When reset_batch_cxt is true (a rescan) the batch context is reset rather
  *		than deleted, because more IterateForeignScan calls follow and rebuild the
- *		cursor and response inside it. The cursor and response contexts are
- *		children of batch_cxt, so deleting it on a rescan would leave the next
- *		iteration allocating in a freed context, corrupting the response context
- *		and hanging its teardown on the following rescan of a correlated subquery.
+ *		tuple batch inside it. The cursor and response contexts live in the portal
+ *		context, so only this function releases them, or an abort does.
  *		At end of scan (reset_batch_cxt false) it is deleted.
  */
 static void

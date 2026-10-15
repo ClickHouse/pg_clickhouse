@@ -24,6 +24,7 @@ struct ch_binary_insert_handle {
     char** names;   /* Holds names referenced by the writer's columns. */
     pgch_writer* w; /* Buffers rows by column. */
     bool finalized; /* Records whether finalization ran or raised an error. */
+    ch_binary_insert_handle* next; /* Next open INSERT of the connection. */
 };
 
 static void
@@ -59,6 +60,26 @@ recv_initial_block(ch_binary_connection_t* conn, ch_binary_insert_handle* h) {
     }
 }
 
+void
+ch_binary_detach_inserts(ch_binary_connection_t* conn) {
+    for (ch_binary_insert_handle* h = conn->inserts; h != NULL; h = h->next) {
+        h->conn = NULL;
+    }
+    conn->inserts = NULL;
+}
+
+/* Fail if the connection closed during the INSERT, which cannot continue */
+static void
+check_open(const ch_binary_insert_handle* h) {
+    if (!h->conn) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_CONNECTION_FAILURE),
+            errmsg("pg_clickhouse: connection closed during INSERT")
+        );
+    }
+}
+
 /*
  * After pgch_writer_new ereports the server is mid-INSERT awaiting our
  * Data; send empty Data + drain so the connection stays usable.
@@ -77,9 +98,11 @@ drain_aborted_insert(ch_binary_connection_t* conn) {
 ch_binary_insert_handle*
 ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query) {
     /*
-     * Allocate the handle under the connection context. The caller's reset
-     * callback lives in a sibling context and releases the handle. Allocating
-     * the handle under that sibling would free it before the callback ran.
+     * Allocate the handle's buffers under the connection context. Allocate the
+     * handle itself in the caller's context, with the reset callback that
+     * releases it, which can run after the connection is closed and its context
+     * deleted. Allocating the buffers under that context would free them before
+     * the callback ran.
      */
     MemoryContext cxt = AllocSetContextCreate(
         conn->cxt, "pg_clickhouse binary insert", ALLOCSET_DEFAULT_SIZES
@@ -90,7 +113,7 @@ ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query) {
 
     PG_TRY();
     {
-        h       = palloc0(sizeof(*h));
+        h       = MemoryContextAllocZero(old, sizeof(*h));
         h->cxt  = cxt;
         h->conn = conn;
 
@@ -156,6 +179,8 @@ ch_binary_begin_insert(ch_binary_connection_t* conn, const ch_query* query) {
     PG_END_TRY();
 
     MemoryContextSwitchTo(old);
+    h->next       = conn->inserts;
+    conn->inserts = h;
     return h;
 }
 
@@ -176,6 +201,8 @@ ch_binary_insert_column_name(const ch_binary_insert_handle* h, size_t i) {
 
 void
 ch_binary_flush_block(ch_binary_insert_handle* h) {
+    check_open(h);
+
     MemoryContext old = MemoryContextSwitchTo(h->cxt);
     chc_err err       = {};
     int rc = chc_client_send_data(h->conn->client, pgch_writer_build(h->w), &err);
@@ -199,6 +226,7 @@ ch_binary_finalize_insert(ch_binary_insert_handle* h) {
     if (!h || h->finalized) {
         return;
     }
+    check_open(h);
 
     /*
      * Set early so an ereport(ERROR) below still leaves h in the "do not
@@ -240,13 +268,19 @@ ch_binary_finalize_insert(ch_binary_insert_handle* h) {
  */
 void
 ch_binary_release_insert(ch_binary_insert_handle* h) {
-    if (!h) {
+    if (!h || !h->conn) {
         return;
     }
 
     if (!h->finalized) {
         h->conn->broken = true;
     }
-
+    for (ch_binary_insert_handle** open = &h->conn->inserts; *open != NULL;
+         open                           = &(*open)->next) {
+        if (*open == h) {
+            *open = h->next;
+            break;
+        }
+    }
     MemoryContextDelete(h->cxt);
 }

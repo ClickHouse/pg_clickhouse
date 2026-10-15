@@ -144,9 +144,10 @@ get_connection_entry(UserMapping* user) {
 
     /*
      * If the connection needs to be remade due to invalidation, disconnect as
-     * soon as we're out of all transactions.
+     * soon as no scan holds it. A live scan keeps reading it, and the next use
+     * after that remakes it.
      */
-    if (entry->gate.conn != NULL && entry->invalidated) {
+    if (entry->gate.conn != NULL && entry->invalidated && !entry->busy) {
         elog(LOG, "closing connection to ClickHouse due to invalidation");
         entry->gate.methods->disconnect(entry->gate.conn);
         entry->gate.conn = NULL;
@@ -157,9 +158,11 @@ get_connection_entry(UserMapping* user) {
      * previous statement (server raised mid-INSERT and closed the socket,
      * write hit EPIPE, etc). Without this, a subsequent statement would write
      * to the dead socket and surface a useless "Broken pipe" instead of the
-     * real error from the next request.
+     * real error from the next request. As with invalidation, leave a leased
+     * connection, which an abandoned scan still releases at transaction end.
      */
-    if (entry->gate.conn != NULL && entry->gate.methods->is_broken != NULL &&
+    if (entry->gate.conn != NULL && !entry->busy &&
+        entry->gate.methods->is_broken != NULL &&
         entry->gate.methods->is_broken(entry->gate.conn)) {
         elog(LOG, "closing broken pg_clickhouse connection");
         entry->gate.methods->disconnect(entry->gate.conn);

@@ -77,6 +77,11 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed interval parameters in datetime arithmetic, such as `ts + $1`,
     which failed once prepared statements switched to generic plans. Other
     expressions using interval parameters now evaluate locally ([#406]).
+*   Fixed backend crashes, heap corruption, and hangs when a connection
+    closed while a scan or binary INSERT still used it: after a PL/pgSQL
+    block caught an error from a binary INSERT or from the middle of a
+    scan, and after `ALTER SERVER` or `ALTER USER MAPPING` while a cursor
+    was open. Thanks to Kaushik Iska for the PR ([#415])!
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -118,6 +123,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#401 Fix temporal, UUID and JSON type mappings"
   [#406]: https://github.com/ClickHouse/pg_clickhouse/pull/406
     "ClickHouse/pg_clickhouse#406 Fix interval parameters in datetime arithmetic"
+  [#415]: https://github.com/ClickHouse/pg_clickhouse/pull/415
+    "ClickHouse/pg_clickhouse#415 Fix crashes and hangs when a connection closes mid-use"
 
 ## [v0.11.0] — 2026-09-30
 

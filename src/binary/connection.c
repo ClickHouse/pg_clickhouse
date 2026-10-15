@@ -377,6 +377,8 @@ ch_binary_server_version(const ch_binary_connection_t* conn) {
 void
 ch_binary_close(ch_binary_connection_t* conn) {
     if (conn) {
+        ch_binary_detach_inserts(conn);
+
         /* The connection itself belongs to this context. */
         MemoryContextDelete(conn->cxt);
     }
