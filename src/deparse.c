@@ -87,6 +87,7 @@ typedef struct deparse_expr_cxt {
                                 * a base relation. */
     StringInfo buf;            /* output buffer to append to */
     List** params_list;        /* exprs that will become remote Params */
+    List** settings;           /* settings of tables sent to ClickHouse */
     CustomObjectDef* func;     /* custom function deparse */
     CHFdwRelationInfo* fpinfo; /* fdw relation info */
     bool interval_op;
@@ -294,7 +295,8 @@ deparseFromExprForRel(
     bool use_alias,
     Index ignore_rel,
     List** ignore_conds,
-    List** params_list
+    List** params_list,
+    List** settings
 );
 static void
 deparseFromExpr(List* quals, deparse_expr_cxt* context);
@@ -306,7 +308,8 @@ deparseRangeTblRef(
     bool make_subquery,
     Index ignore_rel,
     List** ignore_conds,
-    List** params_list
+    List** params_list,
+    List** settings
 );
 static void
 deparseAggref(Aggref* node, deparse_expr_cxt* context);
@@ -1965,7 +1968,8 @@ chfdw_deparse_select_stmt_for_rel(
     bool has_limit,
     bool is_subquery,
     List** retrieved_attrs,
-    List** params_list
+    List** params_list,
+    List** settings
 ) {
     deparse_expr_cxt context;
     CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)rel->fdw_private;
@@ -1986,6 +1990,7 @@ chfdw_deparse_select_stmt_for_rel(
     context.foreignrel     = rel;
     context.scanrel        = IS_UPPER_REL(rel) ? fpinfo->outerrel : rel;
     context.params_list    = params_list;
+    context.settings       = settings;
     context.func           = NULL;
     context.interval_op    = false;
     context.array_as_tuple = false;
@@ -2164,7 +2169,8 @@ deparseFromExpr(List* quals, deparse_expr_cxt* context) {
         (bms_num_members(scanrel->relids) > 1 || context->has_inlined_subplan),
         (Index)0,
         NULL,
-        context->params_list
+        context->params_list,
+        context->settings
     );
 
     /* Construct WHERE clause */
@@ -2414,7 +2420,8 @@ deparseFromExprForRel(
     bool use_alias,
     Index ignore_rel,
     List** ignore_conds,
-    List** params_list
+    List** params_list,
+    List** settings
 ) {
     CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)foreignrel->fdw_private;
 
@@ -2463,7 +2470,8 @@ deparseFromExprForRel(
                 fpinfo->make_outerrel_subquery,
                 ignore_rel,
                 ignore_conds,
-                params_list
+                params_list,
+                settings
             );
 
             /*
@@ -2493,7 +2501,8 @@ deparseFromExprForRel(
                 fpinfo->make_innerrel_subquery,
                 ignore_rel,
                 ignore_conds,
-                params_list
+                params_list,
+                settings
             );
 
             /*
@@ -2546,6 +2555,7 @@ deparseFromExprForRel(
             context.scanrel        = foreignrel;
             context.root           = root;
             context.params_list    = params_list;
+            context.settings       = settings;
             context.func           = NULL;
             context.interval_op    = false;
             context.array_as_tuple = false;
@@ -2568,6 +2578,7 @@ deparseFromExprForRel(
         Relation rel = table_open(rte->relid, NoLock);
 
         deparseRelation(buf, rel);
+        *settings = chfdw_merge_settings(*settings, chfdw_table_settings(rte->relid));
 
         /*
          * Add a unique alias to avoid any conflict in relation names due to
@@ -2593,7 +2604,8 @@ deparseRangeTblRef(
     bool make_subquery,
     Index ignore_rel,
     List** ignore_conds,
-    List** params_list
+    List** params_list,
+    List** settings
 ) {
     CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)foreignrel->fdw_private;
 
@@ -2627,7 +2639,8 @@ deparseRangeTblRef(
             false,
             true,
             &retrieved_attrs,
-            params_list
+            params_list,
+            settings
         );
         appendStringInfoChar(buf, ')');
 
@@ -2657,7 +2670,7 @@ deparseRangeTblRef(
         }
     } else {
         deparseFromExprForRel(
-            buf, root, foreignrel, true, ignore_rel, ignore_conds, params_list
+            buf, root, foreignrel, true, ignore_rel, ignore_conds, params_list, settings
         );
     }
 }
@@ -3742,6 +3755,8 @@ deparseSubPlanFrom(deparse_expr_cxt* context) {
             buf, " %s%d_%d", SUBPLAN_REL_ALIAS_PREFIX, subplan->plan_id, rtr->rtindex
         );
         table_close(rel, NoLock);
+        *context->settings =
+            chfdw_merge_settings(*context->settings, chfdw_table_settings(rte->relid));
     }
 }
 
@@ -3778,6 +3793,7 @@ deparseSubPlanQuery(SubPlan* subplan, deparse_expr_cxt* context, SubPlanBodyForm
     subctx.scanrel     = context->scanrel;
     subctx.buf         = buf;
     subctx.params_list = context->params_list;
+    subctx.settings    = context->settings;
     subctx.fpinfo      = context->fpinfo;
     subctx.subplan     = subplan;
     subctx.parent_ctx  = context;

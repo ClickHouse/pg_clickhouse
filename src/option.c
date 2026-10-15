@@ -166,6 +166,11 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
             }
         }
 
+        /* Check the syntax; ClickHouse checks the values */
+        if (strcmp(def->defname, "settings") == 0) {
+            chfdw_parse_options(defGetString(def));
+        }
+
         if (strcmp(def->defname, "encoding_check") == 0) {
             const char* val = defGetString(def);
             pgch_encoding_check v;
@@ -200,6 +205,8 @@ InitChFdwOptions(void) {
         { "engine",                  ForeignTableRelationId,  false },
         { "driver",                  ForeignServerRelationId, false },
         { "encoding_check",          ForeignServerRelationId, true  },
+        { "settings",                ForeignServerRelationId, false },
+        { "settings",                ForeignTableRelationId,  false },
         { "aggregatefunction",       AttributeRelationId,     false },
         { "simpleaggregatefunction", AttributeRelationId,     false },
         { "column_name",             AttributeRelationId,     false },
@@ -634,7 +641,7 @@ _PG_init(void) {
         "Sets the default ClickHouse session settings.",
         NULL,
         &ch_session_settings,
-        "join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0",
+        "",
         PGC_USERSET,
         0,
         chfdw_check_settings_guc,

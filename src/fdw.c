@@ -71,6 +71,8 @@ enum FdwScanPrivateIndex {
     FdwScanPrivateSelectSql,
     /* Integer list of attribute numbers retrieved by the SELECT */
     FdwScanPrivateRetrievedAttrs,
+    /* Combined table settings as a DefElem list */
+    FdwScanPrivateSettings,
 
     /*
      * String describing join i.e. names of relations being joined and types
@@ -108,6 +110,7 @@ typedef struct ChFdwScanState {
     /* extracted fdw_private data */
     char* query;           /* text of SELECT command */
     List* retrieved_attrs; /* list of retrieved attribute numbers */
+    kv_list* settings;     /* ClickHouse settings to send with the query */
 
     /* for remote query execution */
     ch_scan_connection scan_conn; /* connection leased for this scan */
@@ -834,6 +837,7 @@ clickhouseGetForeignPlan(
     List* remote_exprs      = NIL;
     List* local_exprs       = NIL;
     List* params_list       = NIL;
+    List* settings          = NIL;
     List* fdw_scan_tlist    = NIL;
     List* fdw_recheck_quals = NIL;
     List* retrieved_attrs;
@@ -991,7 +995,8 @@ clickhouseGetForeignPlan(
         has_limit,
         false,
         &retrieved_attrs,
-        &params_list
+        &params_list,
+        &settings
     );
 
     /* Remember remote_exprs for possible use by clickhousePlanDirectModify */
@@ -1021,7 +1026,7 @@ clickhouseGetForeignPlan(
      * Build the fdw_private list that will be available to the executor.
      * Items in the list must match order in enum FdwScanPrivateIndex.
      */
-    fdw_private = list_make2(makeString(sql.data), retrieved_attrs);
+    fdw_private = list_make3(makeString(sql.data), retrieved_attrs, settings);
     if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel)) {
         fdw_private = lappend(fdw_private, makeString(fpinfo->relation_name->data));
     }
@@ -1121,6 +1126,12 @@ clickhouseBeginForeignScan(ForeignScanState* node, int eflags) {
     fsstate->query = strVal(list_nth(fsplan->fdw_private, FdwScanPrivateSelectSql));
     fsstate->retrieved_attrs =
         (List*)list_nth(fsplan->fdw_private, FdwScanPrivateRetrievedAttrs);
+
+    fsstate->settings = chfdw_query_settings(
+        fsplan->fs_server,
+        (List*)list_nth(fsplan->fdw_private, FdwScanPrivateSettings),
+        &fsstate->scan_conn.gate
+    );
 
     /* Create contexts for batches of tuples and per-tuple temp workspace. */
     fsstate->batch_cxt = AllocSetContextCreate(
@@ -1266,12 +1277,13 @@ clickhouseIterateForeignScan(ForeignScanState* node) {
     /* make query if needed */
     if (fsstate->ch_cursor == NULL) {
         MemoryContext old = MemoryContextSwitchTo(fsstate->batch_cxt);
-        ch_query query    = new_query(
+        ch_query query    = new_query_with_settings(
             fsstate->query,
             fsstate->numParams,
             fsstate->param_values,
             fsstate->tupdesc,
             fsstate->retrieved_attrs,
+            fsstate->settings,
             fsstate->scan_conn.gate.encoding_check
         );
 
@@ -1773,12 +1785,15 @@ create_foreign_modify(
 
     /* make a connection and prepare an insertion state */
     fmstate->conn = chfdw_get_connection(user);
-    ch_query q    = new_query(
+    ch_query q    = new_query_with_settings(
         query,
         0,
         NULL,
         RelationGetDescr(rel),
         target_attrs,
+        chfdw_query_settings(
+            table->serverid, chfdw_table_settings(RelationGetRelid(rel)), &fmstate->conn
+        ),
         fmstate->conn.encoding_check
     );
 

@@ -285,6 +285,18 @@ chfdw_extract_options(
 extern List*
 chfdw_parse_options(const char* options);
 
+/* in settings.c */
+extern kv_list*
+chfdw_session_settings(void);
+extern const char*
+chfdw_settings_option(const List* options);
+extern List*
+chfdw_table_settings(Oid relid);
+extern List*
+chfdw_merge_settings(const List* a, const List* b);
+extern kv_list*
+chfdw_query_settings(Oid serverid, const List* tables, const ch_connection* conn);
+
 /* in deparse.c */
 extern void
 chfdw_classify_conditions(
@@ -325,7 +337,8 @@ chfdw_deparse_select_stmt_for_rel(
     bool has_limit,
     bool is_subquery,
     List** retrieved_attrs,
-    List** params_list
+    List** params_list,
+    List** settings
 );
 extern const char*
 chfdw_get_jointype_name(JoinType jointype);

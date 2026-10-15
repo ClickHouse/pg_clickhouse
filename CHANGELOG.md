@@ -13,6 +13,11 @@ All notable changes to this project will be documented in this file. It uses the
 
 *   Changed the default driver from "http" to "binary". Use
     `OPTIONS(driver 'http')` to restore use of the HTTP driver if needed.
+*   Changed `pg_clickhouse.session_settings` to override built-in settings by
+    key rather than replace them. It now defaults to an empty string, and
+    pg_clickhouse always sends `join_use_nulls 1, group_by_use_nulls 1,
+    final 1, transform_null_in 0` unless overridden. Setting it to an empty
+    string no longer drops these settings ([#412]).
 
 ### ⚡ Improvements
 
@@ -39,6 +44,12 @@ All notable changes to this project will be documented in this file. It uses the
     DESC`, the form ClickHouse vector similarity indexes serve, and
     requires ClickHouse 23.8 or later. Thanks to Kaushik Iska for the PR
     ([#411])!
+*   Added the `settings` option for foreign servers and foreign tables to send
+    [ClickHouse settings] with foreign table queries and inserts. Uses
+    [`pg_clickhouse.session_settings` syntax]. Table settings override server
+    settings, and `pg_clickhouse.session_settings` overrides both for matching
+    keys. Vector search settings unsupported by older servers are skipped with
+    a warning. Thanks to Kaushik Iska for the PR ([#412])!
 
 ### 🚀 Distribution
 
@@ -90,6 +101,11 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#410 Read and write pgvector vectors"
   [#411]: https://github.com/ClickHouse/pg_clickhouse/pull/411
     "ClickHouse/pg_clickhouse#411 Push down pgvector distance operators and functions"
+  [#412]: https://github.com/ClickHouse/pg_clickhouse/pull/412
+    "ClickHouse/pg_clickhouse#412 Add settings option for servers and foreign tables"
+  [ClickHouse settings]: https://clickhouse.com/docs/operations/settings/settings
+    "ClickHouse Docs: Session Settings"
+  [`pg_clickhouse.session_settings` syntax]: doc/pg_clickhouse.md#pg_clickhousesession_settings
   [pgvector]: https://github.com/pgvector/pgvector
     "pgvector: Open-source vector similarity search for Postgres"
   [citext]: https://www.postgresql.org/docs/current/citext.html

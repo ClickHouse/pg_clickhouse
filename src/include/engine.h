@@ -89,9 +89,13 @@ typedef struct {
     const size_t body_len;
 } ch_query;
 
+#define new_query_with_settings(sql, num, vals, tupdesc, attrs, settings, check)       \
+    { sql, num, vals, tupdesc, attrs, settings, check }
 #define new_query(sql, num, vals, tupdesc, attrs, check)                               \
-    { sql, num, vals, tupdesc, attrs, chfdw_get_session_settings(), check }
-#define new_body_query(sql, body, len)                                                 \
-    { sql, 0, NULL, NULL, NULL, chfdw_get_session_settings(), CHC_ENC_FAIL, body, len }
+    new_query_with_settings(                                                           \
+        sql, num, vals, tupdesc, attrs, chfdw_session_settings(), check                \
+    )
+#define new_body_query(sql, settings, body, len)                                       \
+    { sql, 0, NULL, NULL, NULL, settings, CHC_ENC_FAIL, body, len }
 
 #endif /* CLICKHOUSE_ENGINE_H */

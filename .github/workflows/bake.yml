@@ -36,6 +36,5 @@ jobs:
         with:
           files: dist/docker-bake.hcl
           project: vrpfjb99c5
-          platforms: linux/amd64,linux/arm64
           pull: true
           push: ${{ startsWith(github.ref, 'refs/tags') }}

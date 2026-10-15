@@ -168,6 +168,19 @@ The supported options are:
         Unicode replacement character (`�`); same as `remove` for other
         encodings
     *   `truncate` truncates the text at the first invalid byte
+*   `settings`: [ClickHouse settings] to send with foreign table queries
+    and inserts on this server. Use syntax from
+    [`pg_clickhouse.session_settings`](#pg_clickhousesession_settings).
+    Use foreign table `settings` to override server settings.
+    `pg_clickhouse.session_settings` values override both for matching keys;
+    see [Settings Precedence](#settings-precedence) for details. Example:
+
+    ```sql
+    ALTER SERVER taxi_srv OPTIONS(ADD settings 'max_threads 8, final 0');
+    ```
+
+    pg_clickhouse checks the syntax when the option is set; ClickHouse checks
+    the values when a query uses them.
 
 ### ALTER SERVER
 
@@ -355,6 +368,25 @@ The supported table options are:
     `CollapsingMergeTree()` and `AggregatingMergeTree()`, pg_clickhouse
     automatically applies the parameters to function expressions executed on
     the table.
+*   `settings`: [ClickHouse settings] to send with queries and inserts
+    on this table. Use
+    [`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) syntax.
+    Table settings override [server settings](#create-server) for matching keys,
+    so tables can use table-specific settings such as vector index options.
+    ClickHouse uses one list of settings per query. Joins and subqueries that
+    push down to ClickHouse combine settings from their tables. If tables set
+    different values for one setting, pg_clickhouse ignores those table
+    values. Server or [session settings](#pg_clickhousesession_settings) still
+    apply. A `NOTICE` reports
+    conflicting setting names and effective query values or fallback to
+    ClickHouse defaults.
+    See [Settings Precedence](#settings-precedence).
+
+    ```sql
+    ALTER FOREIGN TABLE acts OPTIONS(
+        ADD settings 'hnsw_candidate_list_size_for_search 512'
+    );
+    ```
 
 Use the [data type](#data-types) appropriate for the remote ClickHouse data
 type of each column. The supported column options are:
@@ -898,20 +930,16 @@ settings] to be set on subsequent queries. Example:
 SET pg_clickhouse.session_settings = 'join_use_nulls 1, final 1';
 ```
 
-The default is
+The default is an empty string. pg_clickhouse always sends these built-in
+settings, which this parameter overrides by key:
 
 ```
 join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0
 ```
 
-Set it to an empty string to fall back on the ClickHouse server's settings ---
-but note that pushdown correctness depends on some of these defaults:
-`join_use_nulls` for outer joins and `transform_null_in` for the `IN` family
-(see [IN and NULL Semantics](#in-and-null-semantics)).
-
-```sql
-SET pg_clickhouse.session_settings = '';
-```
+Pushdown correctness depends on some of them: `join_use_nulls` for outer joins
+and `transform_null_in` for the `IN` family (see
+[IN and NULL Semantics](#in-and-null-semantics)).
 
 The syntax is a comma-delimited list of key/value pairs separated by one or
 more spaces. Keys must correspond to [ClickHouse settings]. Escape spaces,
@@ -964,6 +992,31 @@ version.
 Note that pg_clickhouse must be loaded before setting
 `pg_clickhouse.session_settings`; either use [shared library preloading] or
 simply use one of the objects in the extension to ensure it loads.
+
+##### Settings Precedence
+
+Foreign table queries and inserts combine settings by key. Later entries
+override earlier entries:
+
+1.  Built-in settings, shown above
+2.  Foreign server `settings`
+3.  Foreign table `settings`
+4.  `pg_clickhouse.session_settings`
+
+Overrides affect only matching keys. For example, table option
+`settings 'final 0'` overrides built-in `final 1`. Override that table option
+with:
+
+```sql
+SET pg_clickhouse.session_settings = 'final 1';
+```
+
+Queries on this table now use `final 1` along with its other settings.
+
+[`clickhouse_query()`](#clickhouse_query) and
+[`clickhouse_perform()`](#clickhouse_perform) use only built-in settings and
+`pg_clickhouse.session_settings`; the `settings` options apply to queries and
+inserts on foreign tables.
 
 #### `pg_clickhouse.pushdown_regex`
 
@@ -1763,9 +1816,9 @@ ClickHouse columns. The proof follows non-NULL constants, `NOT NULL` columns,
 and basic arithmetic (`+`, `-`, `*`, unary `-`) over them.
 
 These rules assume ClickHouse's default `transform_null_in = 0`, which
-pg_clickhouse sets on every query through the default value of the
-[`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) parameter
-so that a ClickHouse server profile cannot silently change it. Setting
+pg_clickhouse sets on every query through its built-in
+[session settings](#pg_clickhousesession_settings) so that a ClickHouse server
+profile cannot silently change it. Setting
 `transform_null_in = 1` breaks the semantics of every pushed `IN`.
 
 ### Custom Functions

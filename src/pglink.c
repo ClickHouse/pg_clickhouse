@@ -49,8 +49,9 @@ static bool initialized = false;
 
 /* Rows buffered for one Native INSERT over HTTP. */
 typedef struct {
-    char* sql;       /* INSERT statement, for error reporting */
-    char* sql_begin; /* sql plus the FORMAT clause the body follows */
+    char* sql;               /* INSERT statement, for error reporting */
+    char* sql_begin;         /* sql plus the FORMAT clause the body follows */
+    const kv_list* settings; /* ClickHouse settings to send with the INSERT */
     pgch_writer* writer;
     AttrNumber* attnums; /* slot attribute feeding each column */
     Oid* atttypids;
@@ -532,7 +533,7 @@ http_flush_insert(ch_http_insert_state* state) {
     /* NULL opts: no block info or custom serialization, matching the reader. */
     pgch_writer_flush(state->writer, &body, NULL);
 
-    ch_query query = new_body_query(state->sql, body.data, body.len);
+    ch_query query = new_body_query(state->sql, state->settings, body.data, body.len);
 
     http_simple_insert(state->conn, &query);
     pgch_buf_reset(&body);
@@ -577,12 +578,13 @@ http_prepare_insert(
     }
 
     /* HTTP has no INSERT sample block; fetch destination types explicitly. */
-    ch_query describe = new_query(
+    ch_query describe = new_query_with_settings(
         psprintf("DESCRIBE (SELECT %s FROM %s)", collist.data, table_name),
         0,
         NULL,
         NULL,
         NIL,
+        query->settings,
         query->encoding_check
     );
     ChFdwScanRowContext ctx = { .cursor = http_native_cursor(conn, &describe) };
@@ -615,6 +617,7 @@ http_prepare_insert(
 
     state->writer    = pgch_writer_new(CurrentMemoryContext, cols, ncols);
     state->sql       = pstrdup(query->sql);
+    state->settings  = query->settings;
     state->sql_begin = psprintf("%s FORMAT Native\n", query->sql);
     state->conn      = conn;
 
