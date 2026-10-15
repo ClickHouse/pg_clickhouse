@@ -1051,9 +1051,10 @@ parse_type(
 
 List*
 chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server) {
-    Oid userid         = GetUserId();
-    UserMapping* user  = GetUserMapping(userid, server->serverid);
-    ch_connection conn = chfdw_get_connection(user);
+    Oid userid               = GetUserId();
+    UserMapping* user        = GetUserMapping(userid, server->serverid);
+    ch_scan_connection sconn = chfdw_get_scan_connection(user);
+    ch_connection conn       = sconn.gate;
     ch_cursor* cursor;
     ch_query query = new_query(NULL, 0, NULL, NULL, NULL, conn.encoding_check);
     List* result   = NIL;
@@ -1216,6 +1217,7 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
         result = lappend(result, buf.data);
         MemoryContextDelete(cols_ctx.cursor->memcxt);
     }
+    chfdw_release_scan_connection(sconn);
 
     return result;
 }

@@ -114,7 +114,6 @@ typedef struct ChFdwScanState {
 
     /* for remote query execution */
     ch_scan_connection scan_conn; /* connection leased for this scan */
-    UserMapping* user;            /* user mapping, for releasing scan_conn */
     int numParams;                /* number of parameters passed to query */
     Oid* param_oids;              /* output parameter type OIDs them */
     List* param_exprs;            /* executable expressions for param values */
@@ -139,7 +138,7 @@ typedef struct CHFdwModifyState {
     AttInMetadata* attinmeta; /* attribute datatype conversion metadata */
 
     /* for remote query execution */
-    ch_connection conn; /* connection for the scan */
+    ch_scan_connection conn; /* connection used for this INSERT */
 
     /* extracted fdw_private data */
     char* query; /* text of INSERT/UPDATE/DELETE command */
@@ -480,7 +479,7 @@ clickhouse_query(PG_FUNCTION_ARGS) {
 
     MemoryContextDelete(row_cxt);
     MemoryContextDelete(cursor->memcxt);
-    chfdw_release_scan_connection(user, sconn);
+    chfdw_release_scan_connection(sconn);
 
     return (Datum)0;
 }
@@ -519,7 +518,7 @@ clickhouse_perform(PG_FUNCTION_ARGS) {
     /* deleting the cursor context drains the connection so it stays reusable */
     cursor = sconn.gate.methods->simple_query(sconn.gate.conn, &query);
     MemoryContextDelete(cursor->memcxt);
-    chfdw_release_scan_connection(user, sconn);
+    chfdw_release_scan_connection(sconn);
 
     PG_RETURN_VOID();
 }
@@ -1119,7 +1118,6 @@ clickhouseBeginForeignScan(ForeignScanState* node, int eflags) {
      * cached connection gets a private one, since ClickHouse permits only one
      * query in flight per connection.
      */
-    fsstate->user      = user;
     fsstate->scan_conn = chfdw_get_scan_connection(user);
 
     /* Get private info created by planner functions. */
@@ -1395,7 +1393,7 @@ clickhouseEndForeignScan(ForeignScanState* node) {
     time_used = 0;
     dispose_scan(fsstate, false); /* delete batch_cxt; scan is finished */
     if (fsstate) {
-        chfdw_release_scan_connection(fsstate->user, fsstate->scan_conn);
+        chfdw_release_scan_connection(fsstate->scan_conn);
     }
 }
 
@@ -1616,7 +1614,7 @@ clickhouseExecForeignInsert(
 
     oldcontext = MemoryContextSwitchTo(fmstate->temp_cxt);
 
-    fmstate->conn.methods->insert_tuple(fmstate->state, slot);
+    fmstate->conn.gate.methods->insert_tuple(fmstate->state, slot);
 
     MemoryContextSwitchTo(oldcontext);
     MemoryContextReset(fmstate->temp_cxt);
@@ -1637,15 +1635,15 @@ clickhouseEndForeignInsert(EState* estate, ResultRelInfo* resultRelInfo) {
     if (fmstate) {
         /* flush */
         oldcontext = MemoryContextSwitchTo(fmstate->temp_cxt);
-        fmstate->conn.methods->insert_tuple(fmstate->state, NULL);
+        fmstate->conn.gate.methods->insert_tuple(fmstate->state, NULL);
 
         /*
          * Finalize on the happy path so the binary driver can ereport on a
          * server-side INSERT exception without raising from inside the
          * MemoryContext reset callback that fires during abort.
          */
-        if (fmstate->conn.methods->finalize_insert) {
-            fmstate->conn.methods->finalize_insert(fmstate->state);
+        if (fmstate->conn.gate.methods->finalize_insert) {
+            fmstate->conn.gate.methods->finalize_insert(fmstate->state);
         }
 
         MemoryContextSwitchTo(oldcontext);
@@ -1787,8 +1785,11 @@ create_foreign_modify(
     table = GetForeignTable(RelationGetRelid(rel));
     user  = GetUserMapping(userid, table->serverid);
 
-    /* make a connection and prepare an insertion state */
-    fmstate->conn = chfdw_get_connection(user);
+    /*
+     * INSERT ... SELECT may already use cached connection for its scan.
+     * Open another connection if needed.
+     */
+    fmstate->conn = chfdw_get_scan_connection(user);
     ch_query q    = new_query_with_settings(
         query,
         0,
@@ -1796,14 +1797,16 @@ create_foreign_modify(
         RelationGetDescr(rel),
         target_attrs,
         chfdw_query_settings(
-            table->serverid, chfdw_table_settings(RelationGetRelid(rel)), &fmstate->conn
+            table->serverid,
+            chfdw_table_settings(RelationGetRelid(rel)),
+            &fmstate->conn.gate
         ),
-        fmstate->conn.encoding_check
+        fmstate->conn.gate.encoding_check
     );
 
     old_mcxt       = MemoryContextSwitchTo(PortalContext);
-    fmstate->state = fmstate->conn.methods->prepare_insert(
-        fmstate->conn.conn, rri, target_attrs, &q, table_name
+    fmstate->state = fmstate->conn.gate.methods->prepare_insert(
+        fmstate->conn.gate.conn, rri, target_attrs, &q, table_name
     );
     MemoryContextSwitchTo(old_mcxt);
 
@@ -1824,6 +1827,7 @@ create_foreign_modify(
 static void
 finish_foreign_modify(CHFdwModifyState* fmstate) {
     Assert(fmstate != NULL);
+    chfdw_release_scan_connection(fmstate->conn);
     memset(&fmstate->conn, 0, sizeof(fmstate->conn));
 }
 

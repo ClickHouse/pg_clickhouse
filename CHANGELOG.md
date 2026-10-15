@@ -85,6 +85,10 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed the pushdown of aggregates with `ORDER BY`, such as
     `array_agg(x ORDER BY y)`, which dropped the `ORDER BY`. They now run
     in Postgres. Thanks to Kaushik Iska for the PR ([#416])!
+*   Fixed `INSERT INTO foreign_table SELECT ... FROM foreign_table` with the
+    binary driver when both tables belong to the same server, which failed
+    with "Unexpected packet Query received from client". Thanks to Kaushik
+    Iska for the PR ([#417])!
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -130,6 +134,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#415 Fix crashes and hangs when a connection closes mid-use"
   [#416]: https://github.com/ClickHouse/pg_clickhouse/pull/416
     "ClickHouse/pg_clickhouse#416 Keep aggregates with ORDER BY local"
+  [#417]: https://github.com/ClickHouse/pg_clickhouse/pull/417
+    "ClickHouse/pg_clickhouse#417 Lease the connection for a foreign INSERT"
 
 ## [v0.11.0] — 2026-09-30
 

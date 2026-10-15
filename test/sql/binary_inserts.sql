@@ -294,6 +294,10 @@ COPY null_ints (c1, c2) FROM stdin;
 \.
 SELECT * FROM null_ints WHERE c1 >= 20 ORDER BY c1;
 
+/* INSERT ... SELECT from a table of the same server */
+INSERT INTO null_ints SELECT c1 + 100, c2 FROM null_ints WHERE c1 < 14;
+SELECT count(*) FROM null_ints WHERE c1 >= 100;
+
 /* Postgres unsigned 64 bit types round-trip through UInt64 */
 \set ECHO errors
 \set oid8 OID8

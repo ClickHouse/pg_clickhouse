@@ -143,9 +143,8 @@ get_connection_entry(UserMapping* user) {
     }
 
     /*
-     * If the connection needs to be remade due to invalidation, disconnect as
-     * soon as no scan holds it. A live scan keeps reading it, and the next use
-     * after that remakes it.
+     * Wait until connection is no longer in use before closing it after a
+     * server or user mapping change. Reconnect below.
      */
     if (entry->gate.conn != NULL && entry->invalidated && !entry->busy) {
         elog(LOG, "closing connection to ClickHouse due to invalidation");
@@ -201,28 +200,19 @@ get_connection_entry(UserMapping* user) {
     return entry;
 }
 
-ch_connection
-chfdw_get_connection(UserMapping* user) {
-    return get_connection_entry(user)->gate;
-}
-
 ch_scan_connection
 chfdw_get_scan_connection(UserMapping* user) {
     ConnCacheEntry* entry = get_connection_entry(user);
-    ch_scan_connection sconn;
 
     if (!entry->busy) {
-        entry->busy      = true;
-        sconn.gate       = entry->gate;
-        sconn.is_private = false;
-        return sconn;
+        entry->busy = true;
+        return (ch_scan_connection){ entry->gate, entry };
     }
 
     /*
-     * The cached connection is already serving a live ancestor scan (e.g. the
-     * outer scan of a correlated subquery). ClickHouse allows only one query in
-     * flight per connection, so open a private one for this scan and remember
-     * it so chfdw_xact_callback can close it if the scan does not release.
+     * ClickHouse allows only one query at a time per connection. Open another
+     * connection when cached one is busy, as in INSERT ... SELECT or a
+     * correlated subquery. Track it for transaction cleanup in case of error.
      */
     {
         ForeignServer* server = GetForeignServer(user->serverid);
@@ -235,44 +225,38 @@ chfdw_get_scan_connection(UserMapping* user) {
         PrivateConnections = lappend(PrivateConnections, held);
         MemoryContextSwitchTo(old);
 
-        sconn.gate       = *held;
-        sconn.is_private = true;
-        return sconn;
+        return (ch_scan_connection){ *held, NULL };
     }
 }
 
 void
-chfdw_release_scan_connection(UserMapping* user, ch_scan_connection sconn) {
-    if (sconn.is_private) {
-        ListCell* lc;
+chfdw_release_scan_connection(ch_scan_connection sconn) {
+    ListCell* lc;
 
-        foreach (lc, PrivateConnections) {
-            ch_connection* held = (ch_connection*)lfirst(lc);
+    /* ConnectionHash never removes entries, so this pointer stays valid. */
+    if (sconn.entry != NULL) {
+        sconn.entry->busy = false;
+        return;
+    }
 
-            if (held->conn == sconn.gate.conn) {
-                PrivateConnections = foreach_delete_current(PrivateConnections, lc);
-                pfree(held);
-                break;
+    /* Transaction cleanup may have already closed and removed this connection. */
+    foreach (lc, PrivateConnections) {
+        ch_connection* held = (ch_connection*)lfirst(lc);
+
+        if (held->conn == sconn.gate.conn) {
+            PrivateConnections = foreach_delete_current(PrivateConnections, lc);
+            if (held->conn != NULL) {
+                held->methods->disconnect(held->conn);
             }
-        }
-        if (sconn.gate.conn != NULL) {
-            sconn.gate.methods->disconnect(sconn.gate.conn);
-        }
-    } else if (ConnectionHash != NULL) {
-        /* Communal: drop the busy lease only; the cache owns closing it. */
-        ConnCacheKey key      = { user->umid };
-        bool found            = false;
-        ConnCacheEntry* entry = hash_search(ConnectionHash, &key, HASH_FIND, &found);
-
-        if (found && entry != NULL) {
-            entry->busy = false;
+            pfree(held);
+            return;
         }
     }
 }
 
 ch_server_version
 chfdw_get_server_version(UserMapping* user) {
-    ch_connection conn = chfdw_get_connection(user);
+    ch_connection conn = get_connection_entry(user)->gate;
 
     if (conn.methods->server_version == NULL) {
         return (ch_server_version){ 0, 0, 0 };

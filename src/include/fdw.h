@@ -237,30 +237,25 @@ extern Expr*
 chfdw_find_em_expr_for_rel(EquivalenceClass* ec, RelOptInfo* rel);
 
 /* in connection.c */
-extern ch_connection
-chfdw_get_connection(UserMapping* user);
 /*
- * A connection leased to a foreign scan. When is_private, the scan opened it
- * exclusively and chfdw_release_scan_connection closes it; otherwise gate is the
- * shared cached connection and release only drops its busy lease (the connection
- * cache, not the scan, owns the cached connection's lifetime).
+ * When entry is set, gate is a cached connection. Release marks it available
+ * for reuse without closing it. When entry is NULL, gate is a private
+ * connection that release closes.
  */
 typedef struct ch_scan_connection {
     ch_connection gate;
-    bool is_private;
+    struct ConnCacheEntry* entry;
 } ch_scan_connection;
 
 /*
- * Acquire a connection for a foreign scan. Returns the cached connection if it
- * is free, marking it busy; otherwise (a live ancestor scan already holds it)
- * returns a freshly-opened private connection. ClickHouse permits only one query
- * in flight per connection, so concurrent scans must not share one. Pair with
- * chfdw_release_scan_connection at end of scan.
+ * Return cached connection and mark it busy, or open a private connection if
+ * cached one is already in use. ClickHouse allows only one query at a time per
+ * connection. Call chfdw_release_scan_connection when finished.
  */
 extern ch_scan_connection
 chfdw_get_scan_connection(UserMapping* user);
 extern void
-chfdw_release_scan_connection(UserMapping* user, ch_scan_connection sconn);
+chfdw_release_scan_connection(ch_scan_connection sconn);
 
 /* in option.c */
 extern kv_list*
@@ -373,7 +368,7 @@ typedef struct ConnCacheEntry {
     ch_connection gate; /* connection to foreign server, or NULL */
     /* Remaining fields are invalid when conn is NULL: */
     bool invalidated;         /* true if reconnect is pending */
-    bool busy;                /* gate is held by a live foreign scan */
+    bool busy;                /* gate is in use */
     uint32 server_hashvalue;  /* hash value of foreign server OID */
     uint32 mapping_hashvalue; /* hash value of user mapping OID */
 } ConnCacheEntry;
