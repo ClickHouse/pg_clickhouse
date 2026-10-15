@@ -149,6 +149,10 @@ All notable changes to this project will be documented in this file. It uses the
     63 bytes. `IMPORT FOREIGN SCHEMA` now preserves full column names
     in `column_name` options when PostgreSQL truncates local names. It also
     matches `LIMIT TO` and `EXCEPT` against truncated table names ([#446]).
+*   Fixed the pushdown of floating point sorts with `NULLS FIRST` on
+    ascending or `NULLS LAST` on descending order, which put NaN values in
+    the wrong place, since ClickHouse sorts NaN with NULLs. These sorts now
+    run in Postgres. Thanks to Kaushik Iska for the PR ([#421])!
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -206,6 +210,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#419 Show vector index state and ClickHouse plans"
   [#420]: https://github.com/ClickHouse/pg_clickhouse/pull/420
     "ClickHouse/pg_clickhouse#420 Add vector_columns option to IMPORT FOREIGN SCHEMA"
+  [#421]: https://github.com/ClickHouse/pg_clickhouse/pull/421
+    "ClickHouse/pg_clickhouse#421 Keep float sorts with non-default NULLS ordering local"
   [#430]: https://github.com/ClickHouse/pg_clickhouse/pull/430
     "ClickHouse/pg_clickhouse#430 Close connections of dropped user mappings and servers"
   [#431]: https://github.com/ClickHouse/pg_clickhouse/pull/431
