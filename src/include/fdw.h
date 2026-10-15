@@ -282,6 +282,8 @@ chfdw_extract_options(
 );
 extern List*
 chfdw_parse_options(const char* options);
+extern List*
+chfdw_shippable_extensions(ForeignServer* server);
 
 /* in settings.c */
 extern kv_list*

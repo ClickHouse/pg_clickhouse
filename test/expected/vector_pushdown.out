@@ -348,6 +348,44 @@ SELECT id FROM vec_items_half ORDER BY v <-> '[0.3,-0.2,0.5,0.1]' LIMIT 3;
                Remote SQL: SELECT id, v FROM vector_pushdown_test.items
 (8 rows)
 
+-- The extensions server option limits pushdown to the listed extensions.
+CREATE EXTENSION hstore;
+ALTER SERVER vector_pushdown_svr OPTIONS (ADD extensions 'hstore');
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <-> :'q' LIMIT 3;
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Limit
+   Output: id, ((v <-> '[0.3,-0.2,0.5,0.1]'::vector))
+   ->  Sort
+         Output: id, ((v <-> '[0.3,-0.2,0.5,0.1]'::vector))
+         Sort Key: ((vec_items.v <-> '[0.3,-0.2,0.5,0.1]'::vector))
+         ->  Foreign Scan on public.vec_items
+               Output: id, (v <-> '[0.3,-0.2,0.5,0.1]'::vector)
+               Remote SQL: SELECT id, v FROM vector_pushdown_test.items
+(8 rows)
+
+ALTER SERVER vector_pushdown_svr OPTIONS (SET extensions 'vector');
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <-> :'q' LIMIT 3;
+                                                                      QUERY PLAN                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, (v <-> '[0.3,-0.2,0.5,0.1]'::vector)
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items ORDER BY L2Distance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) ASC NULLS LAST LIMIT 3
+(3 rows)
+
+ALTER SERVER vector_pushdown_svr OPTIONS (DROP extensions);
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <-> :'q' LIMIT 3;
+                                                                      QUERY PLAN                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, (v <-> '[0.3,-0.2,0.5,0.1]'::vector)
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items ORDER BY L2Distance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) ASC NULLS LAST LIMIT 3
+(3 rows)
+
+DROP EXTENSION hstore;
 CALL clickhouse_perform('vector_pushdown_admin', 'DROP DATABASE vector_pushdown_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER vector_pushdown_svr;
 DROP USER MAPPING FOR CURRENT_USER SERVER vector_pushdown_admin;

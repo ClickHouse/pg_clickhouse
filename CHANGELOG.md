@@ -50,6 +50,10 @@ All notable changes to this project will be documented in this file. It uses the
     settings, and `pg_clickhouse.session_settings` overrides both for matching
     keys. Vector search settings unsupported by older servers are skipped with
     a warning. Thanks to Kaushik Iska for the PR ([#412])!
+*   Added the `extensions` option for foreign servers, a comma-separated list
+    of extensions whose functions, operators, and types may push down. When
+    unset, pg_clickhouse pushes down objects from every installed extension
+    it supports, as before. Thanks to Kaushik Iska for the PR ([#426])!
 
 ### 🚀 Distribution
 
@@ -129,6 +133,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#411 Push down pgvector distance operators and functions"
   [#412]: https://github.com/ClickHouse/pg_clickhouse/pull/412
     "ClickHouse/pg_clickhouse#412 Add settings option for servers and foreign tables"
+  [#426]: https://github.com/ClickHouse/pg_clickhouse/pull/426
+    "ClickHouse/pg_clickhouse#426 Add extensions option for foreign servers"
   [ClickHouse settings]: https://clickhouse.com/docs/operations/settings/settings
     "ClickHouse Docs: Session Settings"
   [`pg_clickhouse.session_settings` syntax]: doc/pg_clickhouse.md#pg_clickhousesession_settings

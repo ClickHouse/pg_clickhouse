@@ -25,6 +25,7 @@
 #include "utils/builtins.h"
 #include "utils/hsearch.h"
 #include "utils/inval.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 /* Hash table for caching the results of shippability lookups */
@@ -96,30 +97,75 @@ InitializeShippableCache(void) {
 }
 
 /*
- * Returns true if given object (operator/function/type) is shippable
- * according to the server options.
- *
- * Right now "shippability" is exclusively a function of whether the object
- * belongs to an extension declared by the user. In the future we could
- * additionally have a whitelist of functions/operators declared one at a time.
+ * Returns true if the given object (operator/function/type) belongs to no
+ * extension or to one listed in fpinfo->shippable_extensions.
  */
 static bool
 lookup_shippable(Oid objectId, Oid classId, CHFdwRelationInfo* fpinfo) {
-    Oid extensionOid;
+    /* Use elemoid as only PG17 began recording array types as extension members */
+    if (classId == TypeRelationId) {
+        Oid elemoid = get_element_type(objectId);
+
+        if (OidIsValid(elemoid)) {
+            objectId = elemoid;
+        }
+    }
 
     /*
      * Is object a member of some extension?  (Note: this is a fairly
      * expensive lookup, which is why we try to cache the results.)
      */
-    extensionOid = getExtensionOfObject(classId, objectId);
+    Oid extensionOid = getExtensionOfObject(classId, objectId);
 
-    /* If so, is that extension in fpinfo->shippable_extensions? */
-    if (OidIsValid(extensionOid) &&
-        list_member_oid(fpinfo->shippable_extensions, extensionOid)) {
+    return !OidIsValid(extensionOid) ||
+           list_member_oid(fpinfo->shippable_extensions, extensionOid);
+}
+
+/*
+ * Returns true if the server's `extensions` option allows pushing down the
+ * given object. pg_clickhouse recognizes the extension objects it can push
+ * down before calling this function; the option only narrows that set.
+ */
+static bool
+extension_ok(Oid objectId, Oid classId, CHFdwRelationInfo* fpinfo) {
+    /* Unset means every extension pg_clickhouse knows. */
+    if (fpinfo->shippable_extensions == NIL || chfdw_is_builtin(objectId)) {
         return true;
     }
 
-    return false;
+    /* Initialize cache if first time through. */
+    if (!ShippableCacheHash) {
+        InitializeShippableCache();
+    }
+
+    /* Set up cache hash key */
+    ShippableCacheKey key;
+    key.objid    = objectId;
+    key.classid  = classId;
+    key.serverid = fpinfo->server->serverid;
+
+    /* See if we already cached the result. */
+    ShippableCacheEntry* entry = (ShippableCacheEntry*)hash_search(
+        ShippableCacheHash, (void*)&key, HASH_FIND, NULL
+    );
+
+    if (!entry) {
+        /* Not found in cache, so perform shippability lookup. */
+        bool shippable = lookup_shippable(objectId, classId, fpinfo);
+
+        /*
+         * Don't create a new hash entry until *after* we have the shippable
+         * result in hand, as the underlying catalog lookups might trigger a
+         * cache invalidation.
+         */
+        entry = (ShippableCacheEntry*)hash_search(
+            ShippableCacheHash, (void*)&key, HASH_ENTER, NULL
+        );
+
+        entry->shippable = shippable;
+    }
+
+    return entry->shippable;
 }
 
 /*
@@ -189,8 +235,6 @@ chfdw_is_shippable(
     CHFdwRelationInfo* fpinfo,
     CustomObjectDef** outcdef
 ) {
-    ShippableCacheKey key;
-    ShippableCacheEntry* entry;
     CustomObjectDef* cdef = NULL;
 
     /*
@@ -202,6 +246,10 @@ chfdw_is_shippable(
         cdef = chfdw_check_for_custom_operator(objectId, NULL);
 
         if (cdef) {
+            if (!extension_ok(objectId, classId, fpinfo)) {
+                return false;
+            }
+
             switch (cdef->cf_type) {
             case CF_REGEX_MATCH:
             case CF_REGEX_NO_MATCH:
@@ -224,6 +272,10 @@ chfdw_is_shippable(
         cdef = chfdw_check_for_custom_function(objectId);
 
         if (cdef) {
+            if (!extension_ok(objectId, classId, fpinfo)) {
+                return false;
+            }
+
             if (outcdef != NULL) {
                 *outcdef = cdef;
             }
@@ -429,44 +481,8 @@ chfdw_is_shippable(
     } else if (
         classId == TypeRelationId && chfdw_check_for_custom_type(objectId) != NULL
     ) {
-        return true;
+        return extension_ok(objectId, classId, fpinfo);
     }
 
-    /* Otherwise, give up if user hasn't specified any shippable extensions. */
-    if (fpinfo->shippable_extensions == NIL) {
-        return false;
-    }
-
-    /* Initialize cache if first time through. */
-    if (!ShippableCacheHash) {
-        InitializeShippableCache();
-    }
-
-    /* Set up cache hash key */
-    key.objid    = objectId;
-    key.classid  = classId;
-    key.serverid = fpinfo->server->serverid;
-
-    /* See if we already cached the result. */
-    entry = (ShippableCacheEntry*)hash_search(
-        ShippableCacheHash, (void*)&key, HASH_FIND, NULL
-    );
-
-    if (!entry) {
-        /* Not found in cache, so perform shippability lookup. */
-        bool shippable = lookup_shippable(objectId, classId, fpinfo);
-
-        /*
-         * Don't create a new hash entry until *after* we have the shippable
-         * result in hand, as the underlying catalog lookups might trigger a
-         * cache invalidation.
-         */
-        entry = (ShippableCacheEntry*)hash_search(
-            ShippableCacheHash, (void*)&key, HASH_ENTER, NULL
-        );
-
-        entry->shippable = shippable;
-    }
-
-    return entry->shippable;
+    return false;
 }

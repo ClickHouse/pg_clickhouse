@@ -85,6 +85,8 @@ static bool
 is_ch_option(const char* keyword);
 static bool
 parse_min_tls_version(const char* val, tls_version* out);
+static List*
+extract_extension_list(const char* extensions, bool warn_missing);
 
 /*
  * Validate the generic options given to a FOREIGN DATA WRAPPER, SERVER,
@@ -166,6 +168,11 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
             }
         }
 
+        /* Check the syntax and warn about extensions that aren't installed */
+        if (strcmp(def->defname, "extensions") == 0) {
+            extract_extension_list(defGetString(def), true);
+        }
+
         /* Check the syntax; ClickHouse checks the values */
         if (strcmp(def->defname, "settings") == 0) {
             chfdw_parse_options(defGetString(def));
@@ -205,6 +212,7 @@ InitChFdwOptions(void) {
         { "engine",                  ForeignTableRelationId,  false },
         { "driver",                  ForeignServerRelationId, false },
         { "encoding_check",          ForeignServerRelationId, true  },
+        { "extensions",              ForeignServerRelationId, false },
         { "settings",                ForeignServerRelationId, false },
         { "settings",                ForeignTableRelationId,  false },
         { "aggregatefunction",       AttributeRelationId,     false },
@@ -281,6 +289,66 @@ parse_min_tls_version(const char* val, tls_version* out) {
         return false;
     }
     return true;
+}
+
+/*
+ * Parse a comma-separated list of extension names into a list of extension
+ * OIDs. Names of extensions that aren't installed raise a WARNING if
+ * warn_missing is true and are otherwise ignored.
+ */
+static List*
+extract_extension_list(const char* extensions, bool warn_missing) {
+    List* names;
+
+    /* SplitIdentifierString scribbles on its input, so pstrdup first */
+    if (!SplitIdentifierString(pstrdup(extensions), ',', &names)) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_FDW_INVALID_STRING_FORMAT),
+            errmsg("invalid value for option \"extensions\": \"%s\"", extensions),
+            errhint("The value must be a comma-separated list of extension names.")
+        );
+    }
+
+    List* oids = NIL;
+    ListCell* lc;
+    foreach (lc, names) {
+        const char* name = lfirst(lc);
+        Oid oid          = get_extension_oid(name, true);
+
+        if (OidIsValid(oid)) {
+            oids = lappend_oid(oids, oid);
+        } else if (warn_missing) {
+            ereport(
+                WARNING,
+                errcode(ERRCODE_UNDEFINED_OBJECT),
+                errmsg("extension \"%s\" is not installed", name)
+            );
+        }
+    }
+
+    list_free(names);
+    return oids;
+}
+
+/*
+ * Return the OIDs of the extensions listed in the server's `extensions`
+ * option, or NIL if it's unset. A set list always includes pg_clickhouse,
+ * whose own functions must always push down, so it's never NIL.
+ */
+List*
+chfdw_shippable_extensions(ForeignServer* server) {
+    ListCell* lc;
+    foreach (lc, server->options) {
+        DefElem* def = lfirst(lc);
+        if (strcmp(def->defname, "extensions") == 0) {
+            return lappend_oid(
+                extract_extension_list(defGetString(def), false),
+                get_extension_oid("pg_clickhouse", false)
+            );
+        }
+    }
+    return NIL;
 }
 
 /*

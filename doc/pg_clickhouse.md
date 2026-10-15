@@ -168,6 +168,21 @@ The supported options are:
         Unicode replacement character (`�`); same as `remove` for other
         encodings
     *   `truncate` truncates the text at the first invalid byte
+*   `extensions`: A comma-separated list of the extensions whose functions,
+    operators, and types may push down to this server. By default,
+    pg_clickhouse pushes down objects from every installed extension it
+    supports; see [Extension Pushdown](#extension-pushdown). Set this option
+    to push down objects only from the listed extensions. Objects from other
+    extensions stay local. pg_clickhouse's own functions always push down.
+    Example:
+
+    ```sql
+    ALTER SERVER taxi_srv OPTIONS(ADD extensions 'vector, re2');
+    ```
+
+    pg_clickhouse warns about extensions that aren't installed when the
+    option is set. Listing an extension pg_clickhouse doesn't support has no
+    effect.
 *   `settings`: [ClickHouse settings] to send with foreign table queries
     and inserts on this server. Use syntax from
     [`pg_clickhouse.session_settings`](#pg_clickhousesession_settings).
@@ -1832,7 +1847,9 @@ any of these functions cannot be pushed down they will raise an exception.
 ### Extension Pushdown
 
 pg_clickhouse recognizes functions from select core and third-party
-extensions, pushing them down to their ClickHouse equivalents.
+extensions, pushing them down to their ClickHouse equivalents. Use the
+[server `extensions` option](#create-server) to limit pushdown to some of
+these extensions.
 
 #### re2
 
