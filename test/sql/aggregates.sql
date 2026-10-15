@@ -403,6 +403,11 @@ EXPLAIN (VERBOSE, COSTS OFF)
     SELECT string_agg(path, ', ' ORDER BY path) FROM agg_bin.hits
     WHERE datestamp = '2025-12-05';
 
+\echo -- array_agg with ORDER BY falls back to local execution
+EXPLAIN (VERBOSE, COSTS OFF)
+    SELECT array_agg(path ORDER BY path DESC) FROM agg_bin.hits
+    WHERE datestamp = '2025-12-05';
+
 \echo -- string_agg per-group pushdown (binary)
 EXPLAIN (VERBOSE, COSTS OFF)
     SELECT datestamp, string_agg(path, ', ') FROM agg_bin.hits

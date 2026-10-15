@@ -1259,8 +1259,8 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
 
-        /* groupConcat has no ORDER BY; block ordered string_agg */
-        if (agg->aggfnoid == F_STRING_AGG_TEXT_TEXT && agg->aggorder != NIL) {
+        /* ClickHouse aggregates have no ORDER BY; keep array_agg(x ORDER BY y) local */
+        if (agg->aggkind == AGGKIND_NORMAL && agg->aggorder != NIL) {
             return false;
         }
 

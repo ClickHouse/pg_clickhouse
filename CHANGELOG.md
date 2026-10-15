@@ -82,6 +82,9 @@ All notable changes to this project will be documented in this file. It uses the
     block caught an error from a binary INSERT or from the middle of a
     scan, and after `ALTER SERVER` or `ALTER USER MAPPING` while a cursor
     was open. Thanks to Kaushik Iska for the PR ([#415])!
+*   Fixed the pushdown of aggregates with `ORDER BY`, such as
+    `array_agg(x ORDER BY y)`, which dropped the `ORDER BY`. They now run
+    in Postgres. Thanks to Kaushik Iska for the PR ([#416])!
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -125,6 +128,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#406 Fix interval parameters in datetime arithmetic"
   [#415]: https://github.com/ClickHouse/pg_clickhouse/pull/415
     "ClickHouse/pg_clickhouse#415 Fix crashes and hangs when a connection closes mid-use"
+  [#416]: https://github.com/ClickHouse/pg_clickhouse/pull/416
+    "ClickHouse/pg_clickhouse#416 Keep aggregates with ORDER BY local"
 
 ## [v0.11.0] — 2026-09-30
 

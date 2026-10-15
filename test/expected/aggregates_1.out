@@ -1254,6 +1254,16 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
          Remote SQL: SELECT path FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
 (5 rows)
 
+-- array_agg with ORDER BY falls back to local execution
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ Aggregate
+   Output: array_agg(path ORDER BY path DESC)
+   ->  Foreign Scan on agg_bin.hits
+         Output: id, uuid, "timestamp", datestamp, path, duration, cost
+         Remote SQL: SELECT path FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
+(5 rows)
+
 -- string_agg per-group pushdown (binary)
                                                                                               QUERY PLAN                                                                                               
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
