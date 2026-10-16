@@ -276,7 +276,7 @@ fetch_meta(
 
     List* rows = chfdw_run_text_query(user, sql.data, 4);
 
-    /* Keep only the parsed indexes, in the entry's long-lived context */
+    /* Keep only the parsed indexes in the entry's long-lived context */
     MemoryContext old = MemoryContextSwitchTo(cxt);
 
     foreach (lc, rows) {
