@@ -570,7 +570,7 @@ clickhouseGetForeignRelSize(
      */
     fpinfo->fdw_startup_cost     = DEFAULT_FDW_STARTUP_COST;
     fpinfo->fdw_tuple_cost       = DEFAULT_FDW_TUPLE_COST;
-    fpinfo->shippable_extensions = NIL;
+    fpinfo->shippable_extensions = chfdw_shippable_extensions(fpinfo->server);
 
     chfdw_apply_custom_table_options(fpinfo, foreigntableid);
 

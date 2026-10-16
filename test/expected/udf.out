@@ -154,6 +154,25 @@ SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE ARRAY[id] @> ARRAY[1]');
  "SELECT id FROM udf_test.vals"
 (1 row)
 
+-- Keep known functions local when the extensions option omits their extension.
+ALTER SERVER udf_loopback OPTIONS (ADD extensions 'plpgsql');
+SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE idx(ARRAY[1, 2], id) = 1');
+           remote_sql           
+--------------------------------
+ "SELECT id FROM udf_test.vals"
+(1 row)
+
+ALTER SERVER udf_loopback OPTIONS (SET extensions 'intarray');
+SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE idx(ARRAY[1, 2], id) = 1');
+                           remote_sql                            
+-----------------------------------------------------------------
+ "SELECT id FROM udf_test.vals WHERE ((indexOf([1,2], id) = 1))"
+(1 row)
+
+-- Warn about extensions that aren't installed.
+ALTER SERVER udf_loopback OPTIONS (SET extensions 'intarray, nonesuch');
+WARNING:  extension "nonesuch" is not installed
+ALTER SERVER udf_loopback OPTIONS (DROP extensions);
 -- Drop intarray so it doesn't mess with other tests (array_functions.sql).
 DROP EXTENSION intarray;
 SELECT pg_advisory_unlock(hashtext('intarray'));

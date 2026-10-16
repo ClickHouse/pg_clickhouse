@@ -77,6 +77,16 @@ SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE intset(id) = ARRAY[1]');
 -- Keep unmapped operators from known extension local.
 SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE ARRAY[id] @> ARRAY[1]');
 
+-- Keep known functions local when the extensions option omits their extension.
+ALTER SERVER udf_loopback OPTIONS (ADD extensions 'plpgsql');
+SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE idx(ARRAY[1, 2], id) = 1');
+ALTER SERVER udf_loopback OPTIONS (SET extensions 'intarray');
+SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE idx(ARRAY[1, 2], id) = 1');
+
+-- Warn about extensions that aren't installed.
+ALTER SERVER udf_loopback OPTIONS (SET extensions 'intarray, nonesuch');
+ALTER SERVER udf_loopback OPTIONS (DROP extensions);
+
 -- Drop intarray so it doesn't mess with other tests (array_functions.sql).
 DROP EXTENSION intarray;
 SELECT pg_advisory_unlock(hashtext('intarray'));

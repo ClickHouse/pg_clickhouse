@@ -150,6 +150,19 @@ CREATE FOREIGN TABLE vec_items_half (
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM vec_items_half ORDER BY v <-> '[0.3,-0.2,0.5,0.1]' LIMIT 3;
 
+-- The extensions server option limits pushdown to the listed extensions.
+CREATE EXTENSION hstore;
+ALTER SERVER vector_pushdown_svr OPTIONS (ADD extensions 'hstore');
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <-> :'q' LIMIT 3;
+ALTER SERVER vector_pushdown_svr OPTIONS (SET extensions 'vector');
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <-> :'q' LIMIT 3;
+ALTER SERVER vector_pushdown_svr OPTIONS (DROP extensions);
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <-> :'q' LIMIT 3;
+DROP EXTENSION hstore;
+
 CALL clickhouse_perform('vector_pushdown_admin', 'DROP DATABASE vector_pushdown_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER vector_pushdown_svr;
 DROP USER MAPPING FOR CURRENT_USER SERVER vector_pushdown_admin;
