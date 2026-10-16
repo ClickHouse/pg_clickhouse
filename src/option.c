@@ -689,9 +689,9 @@ _PG_init(void) {
     DefineCustomBoolVariable(
         "pg_clickhouse.vector_planner_warnings",
         "Warn when a vector search cannot use a ClickHouse vector index.",
-        "When on, planning a pgvector ORDER BY ... LIMIT query on a foreign "
-        "table warns when ClickHouse will search exactly rather than through a "
-        "vector similarity index, and why.",
+        "When on, pg_clickhouse will emit a warning when an ORDER BY "
+        "... LIMIT over pgvector column on a pg_clickhouse table cannot use a "
+        "vector similarity index.",
         &ch_vector_planner_warnings,
         true,
         PGC_USERSET,
