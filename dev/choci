@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Start and stop various versions of ClickHouse containers. Requires that an
 # OCI runner like Docker or Orb be running and the `docker` CLI.
@@ -20,32 +20,25 @@ The choci commands are:
 EOF
 }
 
-# https://stackoverflow.com/a/246128
-dir="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+dir="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 image="clickhouse/clickhouse-server"
-name="$(basename "${BASH_SOURCE[0]}")"
+name="$(basename "$0")"
 
 cfg_file() {
-    # Determine which file from ./configs to use.
-    local version="$1"
-    # Default config.
-    fn=default
-    if [[ "$version" =~ [.][0-9]+$ ]] && [ "${version%%.*}" -lt 25 ]; then
-        fn=allow_object
-        # Enable the JSON type in release prior to 2025.
-        if [ "${version:0:4}" == "24.8" ]; then
-            # The setting was renamed.
-            fn=allow_json
-        fi
-    fi
-
-    echo "$fn"
+    # Determine which file from ./configs to use. Enable JSON type in release
+    # prior to 2025, setting renamed in 24.8
+    case "$1" in
+        24.8|24.8.*) echo allow_json ;;
+        2[0-4].*) echo allow_object ;;
+        *) echo default ;;
+    esac
 }
 stop() {
-    cid="$(docker ps -aq --filter "name=$name")"
+    docker rm -f "$name-lake" > /dev/null 2>&1 || true
+    cid="$(docker ps -aq --filter "name=^/?${name}$")"
     if [ -n "$cid" ]; then
         printf 'Stopping ClickHouse instance %s...\n' "$cid"
-        docker rm -f "$cid"
+        docker rm -fv "$cid"
     fi
 }
 
@@ -63,7 +56,16 @@ case "$1" in
             --name "$name" \
             --ulimit nofile=262144:262144 \
              -v "$dir/configs/$cfg_base.yaml:/etc/clickhouse-server/users.d/$cfg_base.yaml" \
+             -v "$dir/../test/lake:/pg_clickhouse_lake:ro" \
+             -v /var/lib/clickhouse/user_files/pg_clickhouse_lake \
              -d "$image:$version"
+        # seed.sh exits 77 when ClickHouse is too old
+        docker exec "$name" sh /pg_clickhouse_lake/seed.sh /var/lib/clickhouse/user_files/pg_clickhouse_lake ||
+            exit $(($? != 77))
+        docker run -d --name "$name-lake" \
+            --network "container:$name" --volumes-from "$name:ro" \
+            python:3.14-alpine python3 -I /pg_clickhouse_lake/catalog.py \
+            8181 /var/lib/clickhouse/user_files/pg_clickhouse_lake
         ;;
     download)
         version="${2:-latest}"

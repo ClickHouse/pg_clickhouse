@@ -1,0 +1,186 @@
+-- Import from a DataLakeCatalog database. .github/ubuntu/lake.sh seeds the
+-- Iceberg warehouse from test/lake/seed.sql and serves it on port 8181.
+SET datestyle = 'ISO';
+CREATE SERVER lake_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER lake_admin;
+SELECT clickhouse_server_version('lake_admin') AS ch_version \gset
+SELECT (split_part(:'ch_version', '.', 1)::int,
+        split_part(:'ch_version', '.', 2)::int) < (26, 3) AS no_ch263 \gset
+\if :no_ch263
+\echo 'SKIP: Seeding Iceberg tables requires ClickHouse 26.3 or higher'
+DROP SERVER lake_admin CASCADE;
+\quit
+\endif
+CALL clickhouse_perform('lake_admin', 'DROP DATABASE IF EXISTS lake_test');
+SET pg_clickhouse.session_settings = 'allow_experimental_database_iceberg 1';
+CALL clickhouse_perform('lake_admin', $$
+    CREATE DATABASE lake_test
+    ENGINE = DataLakeCatalog('http://127.0.0.1:8181/v1')
+    SETTINGS catalog_type = 'rest', warehouse = 'lake', vended_credentials = 0
+$$);
+RESET pg_clickhouse.session_settings;
+CREATE SERVER lake_http FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'lake_test', driver 'http');
+CREATE SERVER lake_bin FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'lake_test', driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER lake_http;
+CREATE USER MAPPING FOR CURRENT_USER SERVER lake_bin;
+CREATE SCHEMA lake_http;
+CREATE SCHEMA lake_bin;
+CREATE SCHEMA lake_limit;
+CREATE SCHEMA lake_except;
+-- Names keep namespace dots, with no engine option
+IMPORT FOREIGN SCHEMA lake_test FROM SERVER lake_http INTO lake_http;
+NOTICE:  pg_clickhouse: ClickHouse <Map> type was translated to <TEXT[][]> type for column "attrs"; please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "point"; please create composite type and alter the column if needed
+\det+ lake_http.*
+                                               List of foreign tables
+  Schema   |       Table        |  Server   |                       FDW options                       | Description 
+-----------+--------------------+-----------+---------------------------------------------------------+-------------
+ lake_http | analytics.events   | lake_http | (database 'lake_test', table_name 'analytics.events')   | 
+ lake_http | analytics.sub.deep | lake_http | (database 'lake_test', table_name 'analytics.sub.deep') | 
+(2 rows)
+
+\d lake_http."analytics.events"
+                     Foreign table "lake_http.analytics.events"
+ Column |            Type             | Collation | Nullable | Default | FDW options 
+--------+-----------------------------+-----------+----------+---------+-------------
+ id     | bigint                      |           | not null |         | 
+ name   | text                        |           |          |         | 
+ score  | double precision            |           | not null |         | 
+ day    | date                        |           | not null |         | 
+ ts     | timestamp(6) with time zone |           | not null |         | 
+ tags   | text[]                      |           | not null |         | 
+ attrs  | text[]                      |           | not null |         | 
+ point  | text[]                      |           | not null |         | 
+Server: lake_http
+FDW options: (database 'lake_test', table_name 'analytics.events')
+
+\d lake_http."analytics.sub.deep"
+          Foreign table "lake_http.analytics.sub.deep"
+ Column |  Type  | Collation | Nullable | Default | FDW options 
+--------+--------+-----------+----------+---------+-------------
+ id     | bigint |           | not null |         | 
+ label  | text   |           | not null |         | 
+Server: lake_http
+FDW options: (database 'lake_test', table_name 'analytics.sub.deep')
+
+IMPORT FOREIGN SCHEMA lake_test FROM SERVER lake_bin INTO lake_bin;
+NOTICE:  pg_clickhouse: ClickHouse <Map> type was translated to <TEXT[][]> type for column "attrs"; please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "point"; please create composite type and alter the column if needed
+\det+ lake_bin.*
+                                              List of foreign tables
+  Schema  |       Table        |  Server  |                       FDW options                       | Description 
+----------+--------------------+----------+---------------------------------------------------------+-------------
+ lake_bin | analytics.events   | lake_bin | (database 'lake_test', table_name 'analytics.events')   | 
+ lake_bin | analytics.sub.deep | lake_bin | (database 'lake_test', table_name 'analytics.sub.deep') | 
+(2 rows)
+
+\d lake_bin."analytics.events"
+                      Foreign table "lake_bin.analytics.events"
+ Column |            Type             | Collation | Nullable | Default | FDW options 
+--------+-----------------------------+-----------+----------+---------+-------------
+ id     | bigint                      |           | not null |         | 
+ name   | text                        |           |          |         | 
+ score  | double precision            |           | not null |         | 
+ day    | date                        |           | not null |         | 
+ ts     | timestamp(6) with time zone |           | not null |         | 
+ tags   | text[]                      |           | not null |         | 
+ attrs  | text[]                      |           | not null |         | 
+ point  | text[]                      |           | not null |         | 
+Server: lake_bin
+FDW options: (database 'lake_test', table_name 'analytics.events')
+
+SELECT * FROM lake_http."analytics.events" ORDER BY id;
+ id | name  | score |    day     |              ts               | tags  |     attrs     |  point   
+----+-------+-------+------------+-------------------------------+-------+---------------+----------
+  1 | click |   1.5 | 2024-01-01 | 2024-01-01 02:00:00.123456-08 | {a,b} | {{k,1}}       | {1,2}
+  2 |       |  -0.5 | 1969-12-31 | 2024-01-01 16:00:00-08        | {}    | {}            | {0,0}
+  3 | view  |     0 | 2024-02-29 | 2024-02-29 15:59:59.999999-08 | {c}   | {{k,2},{j,3}} | {-1,0.5}
+(3 rows)
+
+SELECT * FROM lake_bin."analytics.events" ORDER BY id;
+ id | name  | score |    day     |              ts               | tags  |     attrs     |  point   
+----+-------+-------+------------+-------------------------------+-------+---------------+----------
+  1 | click |   1.5 | 2024-01-01 | 2024-01-01 02:00:00.123456-08 | {a,b} | {{k,1}}       | {1,2}
+  2 |       |  -0.5 | 1969-12-31 | 2024-01-01 16:00:00-08        | {}    | {}            | {0,0}
+  3 | view  |     0 | 2024-02-29 | 2024-02-29 15:59:59.999999-08 | {c}   | {{k,2},{j,3}} | {-1,0.5}
+(3 rows)
+
+SELECT * FROM lake_bin."analytics.sub.deep" ORDER BY id;
+ id | label 
+----+-------
+  1 | one
+  3 | three
+(2 rows)
+
+-- Scan and join between catalog tables push down
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT e.id, e.name, d.label
+  FROM lake_bin."analytics.events" e
+  JOIN lake_bin."analytics.sub.deep" d ON d.id = e.id
+ WHERE e.score >= 0
+ ORDER BY e.id;
+                                                                                                    QUERY PLAN                                                                                                     
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: e.id, e.name, d.label
+   Relations: ("analytics.events" e) INNER JOIN ("analytics.sub.deep" d)
+   Remote SQL: SELECT r1.id, r1.name, r2.label FROM  lake_test."analytics.events" r1 ALL INNER JOIN lake_test."analytics.sub.deep" r2 ON (((r1.id = r2.id))) WHERE ((r1.score >= 0)) ORDER BY r2.id ASC NULLS LAST
+(4 rows)
+
+SELECT e.id, e.name, d.label
+  FROM lake_bin."analytics.events" e
+  JOIN lake_bin."analytics.sub.deep" d ON d.id = e.id
+ WHERE e.score >= 0
+ ORDER BY e.id;
+ id | name  | label 
+----+-------+-------
+  1 | click | one
+  3 | view  | three
+(2 rows)
+
+-- Unquoted name parses as schema-qualified and matches nothing
+IMPORT FOREIGN SCHEMA lake_test LIMIT TO (analytics.events)
+    FROM SERVER lake_bin INTO lake_limit;
+\det lake_limit.*
+ List of foreign tables
+ Schema | Table | Server 
+--------+-------+--------
+(0 rows)
+
+-- LIMIT TO and EXCEPT match quoted names
+IMPORT FOREIGN SCHEMA lake_test LIMIT TO ("analytics.events")
+    FROM SERVER lake_bin INTO lake_limit;
+NOTICE:  pg_clickhouse: ClickHouse <Map> type was translated to <TEXT[][]> type for column "attrs"; please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "point"; please create composite type and alter the column if needed
+\det lake_limit.*
+          List of foreign tables
+   Schema   |      Table       |  Server  
+------------+------------------+----------
+ lake_limit | analytics.events | lake_bin
+(1 row)
+
+IMPORT FOREIGN SCHEMA lake_test EXCEPT ("analytics.events")
+    FROM SERVER lake_bin INTO lake_except;
+\det lake_except.*
+           List of foreign tables
+   Schema    |       Table        |  Server  
+-------------+--------------------+----------
+ lake_except | analytics.sub.deep | lake_bin
+(1 row)
+
+CALL clickhouse_perform('lake_admin', 'DROP DATABASE lake_test');
+DROP SCHEMA lake_http, lake_bin, lake_limit, lake_except CASCADE;
+NOTICE:  drop cascades to 6 other objects
+DETAIL:  drop cascades to foreign table lake_except."analytics.sub.deep"
+drop cascades to foreign table lake_limit."analytics.events"
+drop cascades to foreign table lake_bin."analytics.events"
+drop cascades to foreign table lake_bin."analytics.sub.deep"
+drop cascades to foreign table lake_http."analytics.events"
+drop cascades to foreign table lake_http."analytics.sub.deep"
+DROP SERVER lake_http, lake_bin, lake_admin CASCADE;
+NOTICE:  drop cascades to 3 other objects
+DETAIL:  drop cascades to user mapping for postgres on server lake_admin
+drop cascades to user mapping for postgres on server lake_bin
+drop cascades to user mapping for postgres on server lake_http

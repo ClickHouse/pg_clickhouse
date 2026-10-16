@@ -1062,26 +1062,62 @@ parse_type(
     return decl;
 }
 
+/*
+ * DataLakeCatalog databases list "namespace.table" names from a remote
+ * catalog. Each system.columns query resolves metadata of every catalog table,
+ * so DESCRIBE catalog tables one at a time instead.
+ */
+static bool
+is_lake_catalog(
+    ch_connection conn,
+    ch_query* query,
+    const char* database,
+    const char* settings
+) {
+    ChFdwScanRowContext ctx = { .retrieved_attrs = list_make1_int(1) };
+
+    query->sql = psprintf(
+        "SELECT engine FROM system.databases WHERE name = %s%s",
+        ch_quote_literal(database),
+        settings
+    );
+    ctx.cursor = conn.methods->simple_query(conn.conn, query);
+    Datum* row = conn.methods->fetch_row(&ctx);
+    bool lake =
+        row != NULL && strcmp(TextDatumGetCString(row[0]), "DataLakeCatalog") == 0;
+    MemoryContextDelete(ctx.cursor->memcxt);
+    return lake;
+}
+
 List*
 chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server) {
     Oid userid               = GetUserId();
     UserMapping* user        = GetUserMapping(userid, server->serverid);
     ch_scan_connection sconn = chfdw_get_scan_connection(user);
     ch_connection conn       = sconn.gate;
-    ch_cursor* cursor;
     ch_query query = new_query(NULL, 0, NULL, NULL, NULL, conn.encoding_check);
     List* result   = NIL;
-    Datum* row_values;
+    ch_server_version version = chfdw_get_server_version(user);
 
+    /* 25.10 hides DataLakeCatalog databases from system tables by default */
+    const char* lake_settings =
+        chfdw_version_ge(version, 25, 8)
+            ? " SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+            : "";
+    bool lake = is_lake_catalog(conn, &query, stmt->remote_schema, lake_settings);
+
+    /* Selecting engine would resolve metadata of every catalog table */
     query.sql = psprintf(
-        "SELECT name, engine, engine_full "
+        "SELECT name, %s "
         "FROM system.tables "
         "WHERE name NOT LIKE '.inner%%' "
-        "AND database = %s",
-        ch_quote_literal(stmt->remote_schema)
+        "AND database = %s ORDER BY name%s",
+        lake ? "'', ''" : "engine, engine_full",
+        ch_quote_literal(stmt->remote_schema),
+        lake_settings
     );
 
-    cursor = conn.methods->simple_query(conn.conn, &query);
+    ch_cursor* cursor = conn.methods->simple_query(conn.conn, &query);
 
     ChFdwScanRowContext cols_ctx = {
         NULL, list_make2_int(1, 2), NULL, NULL, NULL, NULL
@@ -1098,6 +1134,7 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
      * permits one in-flight response at a time.
      */
     List* tables = NIL;
+    Datum* row_values;
 
     while ((row_values = conn.methods->fetch_row(&tables_ctx)) != NULL) {
         List* triple = list_make3(
@@ -1152,14 +1189,23 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
             quote_identifier(stmt->local_schema),
             quote_identifier(table_name)
         );
-        query.sql = psprintf(
-            "SELECT name, type "
-            "FROM system.columns "
-            "WHERE database = %s "
-            "AND table = %s",
-            ch_quote_literal(stmt->remote_schema),
-            ch_quote_literal(table_name)
-        );
+        if (lake) {
+            /* Quote as deparseRelation does, so import resolves what scans query */
+            query.sql = psprintf(
+                "DESCRIBE TABLE %s.%s SETTINGS describe_compact_output = 1",
+                quote_identifier(stmt->remote_schema),
+                quote_identifier(table_name)
+            );
+        } else {
+            query.sql = psprintf(
+                "SELECT name, type "
+                "FROM system.columns "
+                "WHERE database = %s "
+                "AND table = %s",
+                ch_quote_literal(stmt->remote_schema),
+                ch_quote_literal(table_name)
+            );
+        }
 
         cols_ctx.cursor = conn.methods->simple_query(conn.conn, &query);
         while ((dvalues = conn.methods->fetch_row(&cols_ctx)) != NULL) {
@@ -1222,7 +1268,7 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
                 sub[1] = '\0';
                 appendStringInfo(&buf, ", engine %s", quote_literal_cstr(engine_full));
             }
-        } else if (engine) {
+        } else if (engine && *engine) {
             appendStringInfo(&buf, ", engine %s", quote_literal_cstr(engine));
         }
 

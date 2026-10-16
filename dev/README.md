@@ -59,6 +59,29 @@ make installcheck
 
 Specify any tag supported by the [Docker image]. Defaults to `latest`.
 
+For ClickHouse 26.3+, `choci start` also seeds an Iceberg warehouse and starts
+a Python container serving its REST catalog on port 8181 inside ClickHouse's
+network namespace. `choci stop` removes both containers and their warehouse.
+
+Run catalog import tests with:
+
+```sh
+./dev/choci start 26.3
+make installcheck TESTS=test/sql/import_lake.sql
+./dev/choci stop
+```
+
+For a native ClickHouse installation, use a fresh directory under its
+configured `user_files_path` and run:
+
+```sh
+sh test/lake/seed.sh /path/to/user_files/pg_clickhouse_lake
+python3 -I test/lake/catalog.py 8181 /path/to/user_files/pg_clickhouse_lake
+```
+
+Keep catalog running while executing tests. Native setup requires ClickHouse
+26.3+ on `PATH`, Python 3.10+, and permission to create warehouse files.
+
 ## ClickHouse Version Testing Containers
 
 This directory's [docker-compose.yml](docker-compose.yml) starts images for

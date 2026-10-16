@@ -341,6 +341,56 @@ Some details to keep in mind:
 > To create objects with different names or all lowercase (and therefore
 > case-insensitive) names, use [CREATE FOREIGN TABLE](#create-foreign-table).
 
+#### Data Lake Catalogs
+
+ClickHouse 25.3 and later can connect to an Iceberg REST, Glue, Unity, or other
+catalog through a [DataLakeCatalog] database. A catalog lists namespaces and
+tables and locates their metadata and data files. ClickHouse reads those files;
+pg_clickhouse connects to ClickHouse.
+
+For a Docker example that starts an Iceberg REST catalog and object storage,
+see [Apache Iceberg's quickstart](https://iceberg.apache.org/spark-quickstart/).
+
+Create a database on your ClickHouse server. Replace `rest-catalog:8181` with
+your catalog's hostname and port, reachable from ClickHouse, and `demo` with
+its warehouse identifier. Configure storage access as described in
+[DataLakeCatalog]:
+
+```sql
+SET allow_database_iceberg = 1;
+CREATE DATABASE lake
+ENGINE = DataLakeCatalog('http://rest-catalog:8181/v1')
+SETTINGS catalog_type = 'rest', warehouse = 'demo';
+```
+
+Then run these commands in PostgreSQL to import its tables:
+
+```sql
+CREATE SCHEMA lake;
+IMPORT FOREIGN SCHEMA lake FROM SERVER taxi_srv INTO lake;
+```
+
+Catalog table names include their namespace, such as `analytics.events`.
+Nested namespaces add more dots, as in `analytics.sub.deep`. Import keeps
+this full name as both foreign table name and `table_name` option. Put names
+in double quotes when querying them:
+
+```sql
+SELECT count(*) FROM lake."analytics.events";
+```
+
+PostgreSQL emits a notice when shortening table or column names longer than
+63 bytes. `LIMIT TO` cannot select tables with longer names, and import creates
+only one foreign table for names with identical first 63 bytes. For these tables, use
+[CREATE FOREIGN TABLE](#create-foreign-table) with a shorter PostgreSQL name
+and full catalog name in its `table_name` option.
+
+ClickHouse 25.7 through 26.7 write errors from listing catalog tables to server
+logs but let queries succeed. If catalog settings are wrong, import can create
+no tables without reporting an error. Check ClickHouse server logs for errors.
+If ClickHouse cannot read a selected table's metadata, `IMPORT` fails and reports
+that error. Use `EXCEPT` to skip tables whose metadata cannot be read.
+
 ### CREATE FOREIGN TABLE
 
 Use [CREATE FOREIGN TABLE] to create a foreign table that can query data from
@@ -2229,6 +2279,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: DROP USER MAPPING"
   [IMPORT FOREIGN SCHEMA]: https://www.postgresql.org/docs/current/sql-importforeignschema.html
     "PostgreSQL Docs: IMPORT FOREIGN SCHEMA"
+  [DataLakeCatalog]: https://clickhouse.com/docs/engines/database-engines/datalakecatalog
+    "ClickHouse Docs: DataLakeCatalog"
   [CREATE FOREIGN TABLE]: https://www.postgresql.org/docs/current/sql-createforeigntable.html
     "PostgreSQL Docs: CREATE FOREIGN TABLE"
   [table engine]: https://clickhouse.com/docs/engines/table-engines
