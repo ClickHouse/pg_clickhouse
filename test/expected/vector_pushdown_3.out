@@ -1,0 +1,393 @@
+SELECT NOT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = 'vector') AS no_vector \gset
+\if :no_vector
+\echo 'SKIP: vector extension not available'
+\quit
+\endif
+-- Push down pgvector distance operators and functions, comparing results with
+-- pgvector on a local copy of the same rows.
+-- Concurrent tests create pgvector; serialize and silence "already exists"
+SET client_min_messages = warning;
+SELECT pg_advisory_lock(hashtext('vector'));
+ pg_advisory_lock 
+------------------
+ 
+(1 row)
+
+CREATE EXTENSION IF NOT EXISTS vector;
+SELECT pg_advisory_unlock(hashtext('vector'));
+ pg_advisory_unlock 
+--------------------
+ t
+(1 row)
+
+RESET client_min_messages;
+-- vector_index_use covers the warnings about vector index use
+SET pg_clickhouse.vector_planner_warnings = off;
+CREATE SERVER vector_pushdown_svr FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'vector_pushdown_test', driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER vector_pushdown_svr;
+CREATE SERVER vector_pushdown_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER vector_pushdown_admin;
+CALL clickhouse_perform('vector_pushdown_admin', 'DROP DATABASE IF EXISTS vector_pushdown_test');
+CALL clickhouse_perform('vector_pushdown_admin', 'CREATE DATABASE vector_pushdown_test');
+CALL clickhouse_perform('vector_pushdown_admin', $$
+    CREATE TABLE vector_pushdown_test.items (
+        id       Int32,
+        category String,
+        v        Array(Float32)
+    ) ENGINE = MergeTree ORDER BY (id);
+$$);
+CREATE FOREIGN TABLE vec_items (
+    id       int NOT NULL,
+    category text NOT NULL,
+    v        vector(4) NOT NULL
+) SERVER vector_pushdown_svr OPTIONS (table_name 'items');
+-- Deterministic vectors with distinct distances, plus a zero vector, whose
+-- cosine distance is NaN.
+INSERT INTO vec_items
+SELECT i, (ARRAY['a', 'b', 'c'])[i % 3 + 1],
+       format('[%s,%s,%s,%s]', sin(i), cos(i), sin(i * 2), cos(i * 3))::vector
+  FROM generate_series(1, 60) i;
+INSERT INTO vec_items VALUES (0, 'a', '[0,0,0,0]');
+CREATE TEMP TABLE local_items AS SELECT * FROM vec_items;
+\set q '[0.3,-0.2,0.5,0.1]'
+-- ORDER BY each distance operator with LIMIT. <#> is the negative inner
+-- product, so ascending order sorts dotProduct descending.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <-> :'q' LIMIT 5;
+                                                                      QUERY PLAN                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, (v <-> '[0.3,-0.2,0.5,0.1]'::vector)
+   Vector Search: L2Distance on v
+   Vector Index: none
+   Vector Fallback: vector similarity indexes require ClickHouse 25.8 or later
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items ORDER BY L2Distance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <=> :'q' LIMIT 5;
+                                                                        QUERY PLAN                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, (v <=> '[0.3,-0.2,0.5,0.1]'::vector)
+   Vector Search: cosineDistance on v
+   Vector Index: none
+   Vector Fallback: vector similarity indexes require ClickHouse 25.8 or later
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items ORDER BY cosineDistance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <#> :'q' LIMIT 5;
+                                                                      QUERY PLAN                                                                       
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, (v <#> '[0.3,-0.2,0.5,0.1]'::vector)
+   Vector Search: dotProduct on v
+   Vector Index: none
+   Vector Fallback: vector similarity indexes require ClickHouse 25.8 or later
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items ORDER BY dotProduct(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) DESC NULLS LAST LIMIT 5
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <+> :'q' LIMIT 5;
+                                                                      QUERY PLAN                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, (v <+> '[0.3,-0.2,0.5,0.1]'::vector)
+   Vector Search: L1Distance on v
+   Vector Index: none
+   Vector Fallback: vector similarity indexes require ClickHouse 25.8 or later
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items ORDER BY L1Distance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(6 rows)
+
+SELECT id, round((v <-> :'q')::numeric, 4) AS dist FROM vec_items ORDER BY v <-> :'q' LIMIT 5;
+ id |  dist  
+----+--------
+  0 | 0.6245
+ 33 | 0.8976
+ 58 | 0.9244
+ 14 | 0.9449
+  8 | 1.0973
+(5 rows)
+
+SELECT id, round((v <-> :'q')::numeric, 4) AS dist FROM local_items ORDER BY v <-> :'q' LIMIT 5;
+ id |  dist  
+----+--------
+  0 | 0.6245
+ 33 | 0.8976
+ 58 | 0.9244
+ 14 | 0.9449
+  8 | 1.0973
+(5 rows)
+
+-- The top ten match pgvector's for every operator.
+SELECT (SELECT array_agg(id) FROM (SELECT id FROM vec_items ORDER BY v <-> :'q' LIMIT 10) r)
+     = (SELECT array_agg(id) FROM (SELECT id FROM local_items ORDER BY v <-> :'q' LIMIT 10) l) AS l2,
+       (SELECT array_agg(id) FROM (SELECT id FROM vec_items ORDER BY v <=> :'q' LIMIT 10) r)
+     = (SELECT array_agg(id) FROM (SELECT id FROM local_items ORDER BY v <=> :'q' LIMIT 10) l) AS cosine,
+       (SELECT array_agg(id) FROM (SELECT id FROM vec_items ORDER BY v <#> :'q' LIMIT 10) r)
+     = (SELECT array_agg(id) FROM (SELECT id FROM local_items ORDER BY v <#> :'q' LIMIT 10) l) AS neg_ip,
+       (SELECT array_agg(id) FROM (SELECT id FROM vec_items ORDER BY v <+> :'q' LIMIT 10) r)
+     = (SELECT array_agg(id) FROM (SELECT id FROM local_items ORDER BY v <+> :'q' LIMIT 10) l) AS l1;
+ l2 | cosine | neg_ip | l1 
+----+--------+--------+----
+ t  | t      | t      | t
+(1 row)
+
+-- Descending order. NaN sorts first, as in Postgres.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <#> :'q' DESC LIMIT 3;
+                                                                      QUERY PLAN                                                                       
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, (v <#> '[0.3,-0.2,0.5,0.1]'::vector)
+   Vector Search: dotProduct on v
+   Vector Index: none
+   Vector Fallback: vector similarity indexes require ClickHouse 25.8 or later
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items ORDER BY dotProduct(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) ASC NULLS FIRST LIMIT 3
+(6 rows)
+
+SELECT id FROM vec_items ORDER BY v <=> :'q' DESC LIMIT 3;
+ id 
+----
+  0
+ 37
+ 12
+(3 rows)
+
+SELECT id FROM local_items ORDER BY v <=> :'q' DESC LIMIT 3;
+ id 
+----
+  0
+ 37
+ 12
+(3 rows)
+
+SELECT (SELECT array_agg(id) FROM (SELECT id FROM vec_items ORDER BY v <#> :'q' DESC LIMIT 10) r)
+     = (SELECT array_agg(id) FROM (SELECT id FROM local_items ORDER BY v <#> :'q' DESC LIMIT 10) l) AS neg_ip_desc;
+ neg_ip_desc 
+-------------
+ t
+(1 row)
+
+-- Distances in the select list and WHERE clause.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, v <=> :'q' AS dist FROM vec_items ORDER BY v <=> :'q' LIMIT 3;
+                                                                        QUERY PLAN                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, (v <=> '[0.3,-0.2,0.5,0.1]'::vector)
+   Vector Search: cosineDistance on v
+   Vector Index: none
+   Vector Fallback: vector similarity indexes require ClickHouse 25.8 or later
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items ORDER BY cosineDistance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) ASC NULLS LAST LIMIT 3
+(6 rows)
+
+SELECT id, round((v <=> :'q')::numeric, 4) AS dist FROM vec_items ORDER BY v <=> :'q' LIMIT 3;
+ id |  dist  
+----+--------
+ 54 | 0.4400
+ 10 | 0.4401
+ 29 | 0.4691
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT count(*) FROM vec_items WHERE v <-> :'q' < 1.2;
+                                                               QUERY PLAN                                                                
+-----------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (count(*))
+   Relations: Aggregate on (vec_items)
+   Remote SQL: SELECT count(*) FROM vector_pushdown_test.items WHERE ((L2Distance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) < 1.2))
+(4 rows)
+
+SELECT (SELECT count(*) FROM vec_items WHERE v <-> :'q' < 1.2)
+     = (SELECT count(*) FROM local_items WHERE v <-> :'q' < 1.2) AS l2,
+       (SELECT count(*) FROM vec_items WHERE v <#> :'q' < -0.3)
+     = (SELECT count(*) FROM local_items WHERE v <#> :'q' < -0.3) AS neg_ip,
+       (SELECT count(*) FROM vec_items WHERE v <+> :'q' < 2)
+     = (SELECT count(*) FROM local_items WHERE v <+> :'q' < 2) AS l1;
+ l2 | neg_ip | l1 
+----+--------+----
+ t  | t      | t
+(1 row)
+
+-- Filters, OFFSET, and tiebreakers push down with the sort and limit.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items WHERE category = 'b' ORDER BY v <-> :'q' LIMIT 3 OFFSET 1;
+                                                                                       QUERY PLAN                                                                                       
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, (v <-> '[0.3,-0.2,0.5,0.1]'::vector)
+   Vector Search: L2Distance on v
+   Vector Index: none
+   Vector Fallback: vector similarity indexes require ClickHouse 25.8 or later
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items WHERE ((category = 'b')) ORDER BY L2Distance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) ASC NULLS LAST LIMIT 3 OFFSET 1
+(6 rows)
+
+SELECT id FROM vec_items WHERE category = 'b' ORDER BY v <-> :'q' LIMIT 3 OFFSET 1;
+ id 
+----
+ 52
+ 10
+ 13
+(3 rows)
+
+SELECT id FROM local_items WHERE category = 'b' ORDER BY v <-> :'q' LIMIT 3 OFFSET 1;
+ id 
+----
+ 52
+ 10
+ 13
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <=> :'q', id LIMIT 5;
+                                                                                 QUERY PLAN                                                                                  
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, (v <=> '[0.3,-0.2,0.5,0.1]'::vector)
+   Vector Search: cosineDistance on v
+   Vector Index: none
+   Vector Fallback: vector similarity indexes require ClickHouse 25.8 or later
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items ORDER BY cosineDistance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) ASC NULLS LAST, id ASC NULLS LAST LIMIT 5
+(6 rows)
+
+-- Parameters for the vector and the limit.
+SET plan_cache_mode = force_generic_plan;
+PREPARE knn(vector, int) AS SELECT id FROM vec_items ORDER BY v <-> $1 LIMIT $2;
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE knn('[0.3,-0.2,0.5,0.1]', 3);
+                                                               QUERY PLAN                                                               
+----------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, (v <-> $1)
+   Vector Search: L2Distance on v
+   Vector Index: none
+   Vector Fallback: vector similarity indexes require ClickHouse 25.8 or later
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items ORDER BY L2Distance(v, {p1:Array(Float32)}) ASC NULLS LAST LIMIT {p2:Int32}
+(6 rows)
+
+EXECUTE knn('[0.3,-0.2,0.5,0.1]', 3);
+ id 
+----
+  0
+ 33
+ 58
+(3 rows)
+
+DEALLOCATE knn;
+RESET plan_cache_mode;
+-- pgvector functions push down in conditions and sorts. Those without an
+-- exact ClickHouse equivalent stay local: l2_normalize() of a zero vector is
+-- NaN in ClickHouse, L2Norm() takes arrays only in newer ClickHouse versions,
+-- and arraySlice() reads negative offsets from the end.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT count(*) FROM vec_items
+ WHERE l2_distance(v, :'q') < 1.2 AND cosine_distance(v, :'q') < 0.9
+   AND l1_distance(v, :'q') < 2.5 AND vector_dims(v) = 4;
+                                                                                                                                                    QUERY PLAN                                                                                                                                                     
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (count(*))
+   Relations: Aggregate on (vec_items)
+   Remote SQL: SELECT count(*) FROM vector_pushdown_test.items WHERE ((L2Distance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) < 1.2)) AND ((cosineDistance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) < 0.9)) AND ((L1Distance(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) < 2.5)) AND ((length(v) = 4))
+(4 rows)
+
+SELECT (SELECT count(*) FROM vec_items
+         WHERE l2_distance(v, :'q') < 1.2 AND cosine_distance(v, :'q') < 0.9
+           AND l1_distance(v, :'q') < 2.5 AND vector_dims(v) = 4)
+     = (SELECT count(*) FROM local_items
+         WHERE l2_distance(v, :'q') < 1.2 AND cosine_distance(v, :'q') < 0.9
+           AND l1_distance(v, :'q') < 2.5 AND vector_dims(v) = 4) AS same_count;
+ same_count 
+------------
+ t
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY inner_product(v, :'q') DESC LIMIT 3;
+                                                                       QUERY PLAN                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id, inner_product(v, '[0.3,-0.2,0.5,0.1]'::vector)
+   Vector Search: dotProduct on v
+   Vector Index: none
+   Vector Fallback: vector similarity indexes require ClickHouse 25.8 or later
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items ORDER BY dotProduct(v, cast([0.3,-0.2,0.5,0.1] as Array(Float32))) DESC NULLS FIRST LIMIT 3
+(6 rows)
+
+SELECT id FROM vec_items ORDER BY inner_product(v, :'q') DESC LIMIT 3;
+ id 
+----
+ 26
+ 29
+  1
+(3 rows)
+
+SELECT id FROM local_items ORDER BY inner_product(v, :'q') DESC LIMIT 3;
+ id 
+----
+ 26
+ 29
+  1
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items
+ WHERE vector_norm(v) > 1 AND l2_normalize(v) <> v AND subvector(v, 1, 2) <> '[0,0]';
+                                                                             QUERY PLAN                                                                              
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.vec_items
+   Output: id
+   Filter: ((vector_norm(vec_items.v) > '1'::double precision) AND (l2_normalize(vec_items.v) <> vec_items.v) AND (subvector(vec_items.v, 1, 2) <> '[0,0]'::vector))
+   Remote SQL: SELECT id, v FROM vector_pushdown_test.items
+(4 rows)
+
+-- A sort on a non-shippable expression stays local.
+SET vector_pushdown.q = '[0.3,-0.2,0.5,0.1]';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items ORDER BY v <-> current_setting('vector_pushdown.q')::vector LIMIT 3;
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
+ Limit
+   Output: id, ((v <-> (current_setting('vector_pushdown.q'::text))::vector))
+   ->  Sort
+         Output: id, ((v <-> (current_setting('vector_pushdown.q'::text))::vector))
+         Sort Key: ((vec_items.v <-> (current_setting('vector_pushdown.q'::text))::vector))
+         ->  Foreign Scan on public.vec_items
+               Output: id, (v <-> (current_setting('vector_pushdown.q'::text))::vector)
+               Vector Search: L2Distance on v
+               Vector Index: none
+               Vector Fallback: the ORDER BY cannot be pushed down, so Postgres sorts every row
+               Remote SQL: SELECT id, v FROM vector_pushdown_test.items
+(11 rows)
+
+RESET vector_pushdown.q;
+-- halfvec distances stay local.
+CREATE FOREIGN TABLE vec_items_half (
+    id int NOT NULL,
+    v  halfvec(4) NOT NULL
+) SERVER vector_pushdown_svr OPTIONS (table_name 'items');
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM vec_items_half ORDER BY v <-> '[0.3,-0.2,0.5,0.1]' LIMIT 3;
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
+ Limit
+   Output: id, ((v <-> '[0.30004883,-0.19995117,0.5,0.099975586]'::halfvec))
+   ->  Sort
+         Output: id, ((v <-> '[0.30004883,-0.19995117,0.5,0.099975586]'::halfvec))
+         Sort Key: ((vec_items_half.v <-> '[0.30004883,-0.19995117,0.5,0.099975586]'::halfvec))
+         ->  Foreign Scan on public.vec_items_half
+               Output: id, (v <-> '[0.30004883,-0.19995117,0.5,0.099975586]'::halfvec)
+               Remote SQL: SELECT id, v FROM vector_pushdown_test.items
+(8 rows)
+
+CALL clickhouse_perform('vector_pushdown_admin', 'DROP DATABASE vector_pushdown_test');
+DROP USER MAPPING FOR CURRENT_USER SERVER vector_pushdown_svr;
+DROP USER MAPPING FOR CURRENT_USER SERVER vector_pushdown_admin;
+DROP SERVER vector_pushdown_svr CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table vec_items
+drop cascades to foreign table vec_items_half
+DROP SERVER vector_pushdown_admin CASCADE;
