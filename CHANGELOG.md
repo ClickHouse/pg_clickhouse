@@ -64,6 +64,11 @@ All notable changes to this project will be documented in this file. It uses the
     classes select the distance function. `REINDEX` rebuilds these indexes
     and `DROP INDEX` drops them. Thanks to Kaushik Iska for the PR
     ([#418])!
+*   Added the `vector_columns` option to `IMPORT FOREIGN SCHEMA`. Set it to
+    `indexed` to import float array columns with a ClickHouse vector
+    similarity index as [pgvector] `vector(n)` columns. pg_clickhouse reports
+    each column it converts with a `NOTICE`. The default, `none`, imports
+    them as arrays, as before. Thanks to Kaushik Iska for the PR ([#420])!
 *   Added `clickhouse_vector_indexes()`, which lists the vector similarity
     indexes of a foreign table, their sizes, and their unfinished builds.
     Also added `pg_clickhouse.explain_remote`, which adds the plan ClickHouse
@@ -175,6 +180,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#418 Create ClickHouse vector indexes with CREATE INDEX"
   [#419]: https://github.com/ClickHouse/pg_clickhouse/pull/419
     "ClickHouse/pg_clickhouse#419 Show vector index state and ClickHouse plans"
+  [#420]: https://github.com/ClickHouse/pg_clickhouse/pull/420
+    "ClickHouse/pg_clickhouse#420 Add vector_columns option to IMPORT FOREIGN SCHEMA"
   [#430]: https://github.com/ClickHouse/pg_clickhouse/pull/430
     "ClickHouse/pg_clickhouse#430 Close connections of dropped user mappings and servers"
   [#431]: https://github.com/ClickHouse/pg_clickhouse/pull/431

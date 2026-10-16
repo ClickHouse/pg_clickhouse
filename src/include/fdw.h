@@ -499,6 +499,8 @@ extern bool
 chfdw_is_pgvector_type(Oid typid);
 extern void
 chfdw_append_vector_literal(StringInfo buf, Datum value);
+extern char*
+chfdw_pgvector_type_decl(int dims);
 
 /* vector_meta.c */
 typedef enum {
@@ -535,6 +537,8 @@ extern bool
 chfdw_is_clickhouse_table(Oid relid);
 extern chfdw_vector_metric
 chfdw_vector_metric_from_ch(const char* name);
+extern int
+chfdw_vector_index_dims(const char* type_full);
 
 /* vector_ddl.c */
 extern void

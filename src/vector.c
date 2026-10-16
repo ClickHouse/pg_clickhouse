@@ -18,9 +18,14 @@
 
 #include "postgres.h"
 
+#include "catalog/pg_extension.h"
+#include "catalog/pg_type.h"
+#include "commands/extension.h"
 #include "common/shortest_dec.h"
 #include "fmgr.h"
 #include "lib/stringinfo.h"
+#include "utils/builtins.h"
+#include "utils/syscache.h"
 
 #include "fdw.h"
 
@@ -46,6 +51,38 @@ chfdw_is_pgvector_type(Oid typid) {
     CustomObjectDef* cdef = chfdw_check_for_custom_type(typid);
 
     return cdef != NULL && cdef->cf_type == CF_PGVECTOR;
+}
+
+/*
+ * Return the declaration of a pgvector vector(dims) column, or NULL when
+ * pgvector is not installed.
+ */
+char*
+chfdw_pgvector_type_decl(int dims) {
+    Oid ext = get_extension_oid("vector", true);
+
+    if (!OidIsValid(ext)) {
+        return NULL;
+    }
+
+    HeapTuple tuple = SearchSysCache1(EXTENSIONOID, ObjectIdGetDatum(ext));
+
+    if (!HeapTupleIsValid(tuple)) {
+        return NULL;
+    }
+
+    Oid schema = ((Form_pg_extension)GETSTRUCT(tuple))->extnamespace;
+
+    ReleaseSysCache(tuple);
+
+    Oid typid = GetSysCacheOid2(
+        TYPENAMENSP,
+        Anum_pg_type_oid,
+        CStringGetDatum("vector"),
+        ObjectIdGetDatum(schema)
+    );
+
+    return OidIsValid(typid) ? format_type_with_typemod(typid, dims) : NULL;
 }
 
 /*
