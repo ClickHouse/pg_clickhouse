@@ -240,17 +240,20 @@ chfdw_find_em_expr_for_rel(EquivalenceClass* ec, RelOptInfo* rel);
 /*
  * When entry is set, gate is a cached connection. Release marks it available
  * for reuse without closing it. When entry is NULL, gate is a private
- * connection that release closes.
+ * connection that release closes. lease releases the connection if an error
+ * frees the memory context it was taken in first.
  */
 typedef struct ch_scan_connection {
     ch_connection gate;
     struct ConnCacheEntry* entry;
+    struct ch_lease* lease;
 } ch_scan_connection;
 
 /*
  * Return cached connection and mark it busy, or open a private connection if
  * cached one is already in use. ClickHouse allows only one query at a time per
- * connection. Call chfdw_release_scan_connection when finished.
+ * connection. Call chfdw_release_scan_connection when finished, in a memory
+ * context that lives until then: freeing it releases the connection.
  */
 extern ch_scan_connection
 chfdw_get_scan_connection(UserMapping* user);

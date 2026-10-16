@@ -113,6 +113,33 @@ SELECT count(*) FROM concur.sales;
      4
 (1 row)
 
+-- Catching such an error frees the scan's cursor and its connection lease, so
+-- later scans reuse the cached connection. So does an error from
+-- clickhouse_query(), which crashed the backend when caught twice
+DO $$
+DECLARE c bigint;
+BEGIN
+    FOR i IN 1..3 LOOP
+        BEGIN
+            SELECT sum(t) INTO c FROM concur.big_throws;
+        EXCEPTION WHEN OTHERS THEN
+            NULL;
+        END;
+        BEGIN
+            PERFORM * FROM clickhouse_query('concur_loopback', 'SELECT throwIf(1)')
+                AS t(x int);
+        EXCEPTION WHEN OTHERS THEN
+            NULL;
+        END;
+    END LOOP;
+    RAISE NOTICE 'cursors: %, connections: %', (
+        SELECT count(*) FROM pg_backend_memory_contexts WHERE name = 'pg_clickhouse cursor'
+    ), (
+        SELECT count(*) FROM pg_backend_memory_contexts
+         WHERE name = 'pg_clickhouse binary connection'
+    );
+END $$;
+NOTICE:  cursors: 0, connections: 1
 DROP FOREIGN TABLE concur.sales, concur.big, concur.big_throws;
 DROP USER MAPPING FOR CURRENT_USER SERVER concur_loopback;
 DROP SERVER concur_loopback;

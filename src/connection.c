@@ -43,6 +43,32 @@ static HTAB* ConnectionHash = NULL;
  */
 static List* PrivateConnections = NIL;
 
+/* Counts transactions, so that a lease outliving its transaction does nothing */
+static uint64 lease_generation = 0;
+
+/*
+ * A lease on a connection, allocated in the context that took it. If an
+ * error frees that context before the holder releases the lease, as when a
+ * PL/pgSQL block catches the error, its reset callback releases it.
+ * Callbacks run after the context's children are gone, so a cursor created
+ * under it has already finished with the connection.
+ */
+typedef struct ch_lease {
+    MemoryContextCallback callback;
+    ch_scan_connection sconn;
+    uint64 generation;
+    bool released;
+} ch_lease;
+
+static void
+release_lease(void* arg) {
+    ch_lease* lease = arg;
+
+    if (lease->generation == lease_generation) {
+        chfdw_release_scan_connection(lease->sconn);
+    }
+}
+
 static void
 chfdw_inval_callback(Datum arg, int cacheid, uint32 hashvalue);
 static void
@@ -203,10 +229,16 @@ get_connection_entry(UserMapping* user) {
 ch_scan_connection
 chfdw_get_scan_connection(UserMapping* user) {
     ConnCacheEntry* entry = get_connection_entry(user);
+    ch_lease* lease       = palloc0(sizeof(ch_lease));
 
+    lease->callback.func = release_lease;
+    lease->callback.arg  = lease;
+    lease->generation    = lease_generation;
     if (!entry->busy) {
-        entry->busy = true;
-        return (ch_scan_connection){ entry->gate, entry };
+        entry->busy  = true;
+        lease->sconn = (ch_scan_connection){ entry->gate, entry, lease };
+        MemoryContextRegisterResetCallback(CurrentMemoryContext, &lease->callback);
+        return lease->sconn;
     }
 
     /*
@@ -225,13 +257,22 @@ chfdw_get_scan_connection(UserMapping* user) {
         PrivateConnections = lappend(PrivateConnections, held);
         MemoryContextSwitchTo(old);
 
-        return (ch_scan_connection){ *held, NULL };
+        lease->sconn = (ch_scan_connection){ *held, NULL, lease };
+        MemoryContextRegisterResetCallback(CurrentMemoryContext, &lease->callback);
+        return lease->sconn;
     }
 }
 
 void
 chfdw_release_scan_connection(ch_scan_connection sconn) {
     ListCell* lc;
+
+    if (sconn.lease != NULL) {
+        if (sconn.lease->released) {
+            return;
+        }
+        sconn.lease->released = true;
+    }
 
     /* ConnectionHash never removes entries, so this pointer stays valid. */
     if (sconn.entry != NULL) {
@@ -327,6 +368,7 @@ chfdw_xact_callback(XactEvent event, void* arg) {
     }
     list_free_deep(PrivateConnections);
     PrivateConnections = NIL;
+    lease_generation++;
 
     if (ConnectionHash != NULL) {
         HASH_SEQ_STATUS scan;

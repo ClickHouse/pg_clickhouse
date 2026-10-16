@@ -70,8 +70,13 @@ chfdw_cursor_open(void* conn, const ch_query* query, const ch_cursor_source* src
 
     PG_TRY();
     {
+        /*
+         * Create the cursor in the caller's context, next to the response, so
+         * that both go when an error frees that context, even when a
+         * subtransaction catches the error.
+         */
         cxt = AllocSetContextCreate(
-            PortalContext, "pg_clickhouse cursor", ALLOCSET_DEFAULT_SIZES
+            CurrentMemoryContext, "pg_clickhouse cursor", ALLOCSET_DEFAULT_SIZES
         );
         MemoryContextSwitchTo(cxt);
 

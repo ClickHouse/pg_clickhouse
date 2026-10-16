@@ -93,6 +93,13 @@ All notable changes to this project will be documented in this file. It uses the
     `INSERT`s into foreign tables. Each `INSERT` kept its writer and
     buffers, up to the size of its largest batch, until the outermost
     statement ended. Thanks to Kaushik Iska for the PR ([#431])!
+*   Fixed leaks and a crash when a PL/pgSQL block catches an error raised
+    by a query to ClickHouse. A foreign scan's cursor and response stayed in
+    memory until the outermost statement ended, and the connection stayed
+    leased until the transaction ended, so that later queries each opened a
+    connection of their own. Catching two errors from `clickhouse_query()`
+    in one transaction crashed the backend. Thanks to Kaushik Iska for the
+    PR ([#432])!
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -142,6 +149,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#417 Lease the connection for a foreign INSERT"
   [#431]: https://github.com/ClickHouse/pg_clickhouse/pull/431
     "ClickHouse/pg_clickhouse#431 Free INSERT state when the INSERT ends"
+  [#432]: https://github.com/ClickHouse/pg_clickhouse/pull/432
+    "ClickHouse/pg_clickhouse#432 Free scans aborted by caught errors"
 
 ## [v0.11.0] — 2026-09-30
 
