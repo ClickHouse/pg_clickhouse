@@ -117,121 +117,85 @@ IMPORT FOREIGN SCHEMA "import_test' OR database = 'public" FROM SERVER import_lo
 -- Should succeed.
 IMPORT FOREIGN SCHEMA import_test FROM SERVER import_loopback INTO clickhouse;
 NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "c2"; please create composite type and alter the column if needed
-\d+ clickhouse.ints;
-                                         Foreign table "clickhouse.ints"
- Column |       Type       | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+------------------+-----------+----------+---------+-------------+---------+--------------+-------------
- c1     | smallint         |           | not null |         |             | plain   |              | 
- c2     | smallint         |           | not null |         |             | plain   |              | 
- c3     | integer          |           | not null |         |             | plain   |              | 
- c4     | bigint           |           | not null |         |             | plain   |              | 
- c5     | smallint         |           | not null |         |             | plain   |              | 
- c6     | integer          |           | not null |         |             | plain   |              | 
- c7     | bigint           |           | not null |         |             | plain   |              | 
- c8     | numeric(20,0)    |           | not null |         |             | main    |              | 
- c9     | real             |           | not null |         |             | plain   |              | 
- c10    | double precision |           |          |         |             | plain   |              | 
-Not-null constraints:
-    "ints_c1_not_null" NOT NULL "c1"
-    "ints_c2_not_null" NOT NULL "c2"
-    "ints_c3_not_null" NOT NULL "c3"
-    "ints_c4_not_null" NOT NULL "c4"
-    "ints_c5_not_null" NOT NULL "c5"
-    "ints_c6_not_null" NOT NULL "c6"
-    "ints_c7_not_null" NOT NULL "c7"
-    "ints_c8_not_null" NOT NULL "c8"
-    "ints_c9_not_null" NOT NULL "c9"
+\d clickhouse.ints;
+                     Foreign table "clickhouse.ints"
+ Column |       Type       | Collation | Nullable | Default | FDW options 
+--------+------------------+-----------+----------+---------+-------------
+ c1     | smallint         |           | not null |         | 
+ c2     | smallint         |           | not null |         | 
+ c3     | integer          |           | not null |         | 
+ c4     | bigint           |           | not null |         | 
+ c5     | smallint         |           | not null |         | 
+ c6     | integer          |           | not null |         | 
+ c7     | bigint           |           | not null |         | 
+ c8     | numeric(20,0)    |           | not null |         | 
+ c9     | real             |           | not null |         | 
+ c10    | double precision |           |          |         | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
 
-\d+ clickhouse.types;
-                                             Foreign table "clickhouse.types"
- Column |           Type           | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+--------------------------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | date                     |           | not null |         |             | plain    |              | 
- c2     | timestamp with time zone |           | not null |         |             | plain    |              | 
- c3     | text                     |           | not null |         |             | extended |              | 
- c4     | text                     |           | not null |         |             | extended |              | 
- c5     | uuid                     |           | not null |         |             | plain    |              | 
- c6     | text                     |           | not null |         |             | extended |              | 
- c7     | text                     |           | not null |         |             | extended |              | 
- c9     | text                     |           |          |         |             | extended |              | 
- c8     | text                     |           | not null |         |             | extended |              | 
-Not-null constraints:
-    "types_c1_not_null" NOT NULL "c1"
-    "types_c2_not_null" NOT NULL "c2"
-    "types_c3_not_null" NOT NULL "c3"
-    "types_c4_not_null" NOT NULL "c4"
-    "types_c5_not_null" NOT NULL "c5"
-    "types_c6_not_null" NOT NULL "c6"
-    "types_c7_not_null" NOT NULL "c7"
-    "types_c8_not_null" NOT NULL "c8"
+\d clickhouse.types;
+                         Foreign table "clickhouse.types"
+ Column |           Type           | Collation | Nullable | Default | FDW options 
+--------+--------------------------+-----------+----------+---------+-------------
+ c1     | date                     |           | not null |         | 
+ c2     | timestamp with time zone |           | not null |         | 
+ c3     | text                     |           | not null |         | 
+ c4     | text                     |           | not null |         | 
+ c5     | uuid                     |           | not null |         | 
+ c6     | text                     |           | not null |         | 
+ c7     | text                     |           | not null |         | 
+ c9     | text                     |           |          |         | 
+ c8     | text                     |           | not null |         | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
 
-\d+ clickhouse.types2;
-                                  Foreign table "clickhouse.types2"
- Column | Type | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | text |           |          |         |             | extended |              | 
+\d clickhouse.types2;
+              Foreign table "clickhouse.types2"
+ Column | Type | Collation | Nullable | Default | FDW options 
+--------+------+-----------+----------+---------+-------------
+ c1     | text |           |          |         | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'types2', engine 'MergeTree')
 
-\d+ clickhouse.arrays;
-                                     Foreign table "clickhouse.arrays"
- Column |   Type    | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | integer[] |           | not null |         |             | extended |              | 
- c2     | text[]    |           | not null |         |             | extended |              | 
-Not-null constraints:
-    "arrays_c1_not_null" NOT NULL "c1"
-    "arrays_c2_not_null" NOT NULL "c2"
+\d clickhouse.arrays;
+                 Foreign table "clickhouse.arrays"
+ Column |   Type    | Collation | Nullable | Default | FDW options 
+--------+-----------+-----------+----------+---------+-------------
+ c1     | integer[] |           | not null |         | 
+ c2     | text[]    |           | not null |         | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
 
-\d+ clickhouse.tuples;
-                                     Foreign table "clickhouse.tuples"
- Column |   Type    | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | smallint  |           | not null |         |             | plain    |              | 
- c2     | text[]    |           | not null |         |             | extended |              | 
- c3.a   | integer[] |           | not null |         |             | extended |              | 
- c3.b   | integer[] |           | not null |         |             | extended |              | 
- c4     | smallint  |           | not null |         |             | plain    |              | 
-Not-null constraints:
-    "tuples_c1_not_null" NOT NULL "c1"
-    "tuples_c2_not_null" NOT NULL "c2"
-    "tuples_c3.a_not_null" NOT NULL "c3.a"
-    "tuples_c3.b_not_null" NOT NULL "c3.b"
-    "tuples_c4_not_null" NOT NULL "c4"
+\d clickhouse.tuples;
+                 Foreign table "clickhouse.tuples"
+ Column |   Type    | Collation | Nullable | Default | FDW options 
+--------+-----------+-----------+----------+---------+-------------
+ c1     | smallint  |           | not null |         | 
+ c2     | text[]    |           | not null |         | 
+ c3.a   | integer[] |           | not null |         | 
+ c3.b   | integer[] |           | not null |         | 
+ c4     | smallint  |           | not null |         | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
 
-\d+ clickhouse.timezones;
-                                            Foreign table "clickhouse.timezones"
- Column |            Type             | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+-----------------------------+-----------+----------+---------+-------------+---------+--------------+-------------
- t1     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
- t2     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
- t4     | timestamp with time zone    |           | not null |         |             | plain   |              | 
- t5     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
-Not-null constraints:
-    "timezones_t1_not_null" NOT NULL "t1"
-    "timezones_t2_not_null" NOT NULL "t2"
-    "timezones_t4_not_null" NOT NULL "t4"
-    "timezones_t5_not_null" NOT NULL "t5"
+\d clickhouse.timezones;
+                        Foreign table "clickhouse.timezones"
+ Column |            Type             | Collation | Nullable | Default | FDW options 
+--------+-----------------------------+-----------+----------+---------+-------------
+ t1     | timestamp(6) with time zone |           | not null |         | 
+ t2     | timestamp(6) with time zone |           | not null |         | 
+ t4     | timestamp with time zone    |           | not null |         | 
+ t5     | timestamp(6) with time zone |           | not null |         | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'timezones', engine 'MergeTree')
 
-\d+ clickhouse.ip;
-                                    Foreign table "clickhouse.ip"
- Column | Type | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+------+-----------+----------+---------+-------------+---------+--------------+-------------
- c1     | inet |           | not null |         |             | main    |              | 
- c2     | inet |           | not null |         |             | main    |              | 
-Not-null constraints:
-    "ip_c1_not_null" NOT NULL "c1"
-    "ip_c2_not_null" NOT NULL "c2"
+\d clickhouse.ip;
+                Foreign table "clickhouse.ip"
+ Column | Type | Collation | Nullable | Default | FDW options 
+--------+------+-----------+----------+---------+-------------
+ c1     | inet |           | not null |         | 
+ c2     | inet |           | not null |         | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'ip', engine 'MergeTree')
 
@@ -289,121 +253,85 @@ SELECT * FROM clickhouse.ip ORDER BY c1;
 
 IMPORT FOREIGN SCHEMA "import_test" FROM SERVER import_loopback_bin INTO clickhouse_bin;
 NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "c2"; please create composite type and alter the column if needed
-\d+ clickhouse_bin.ints;
-                                       Foreign table "clickhouse_bin.ints"
- Column |       Type       | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+------------------+-----------+----------+---------+-------------+---------+--------------+-------------
- c1     | smallint         |           | not null |         |             | plain   |              | 
- c2     | smallint         |           | not null |         |             | plain   |              | 
- c3     | integer          |           | not null |         |             | plain   |              | 
- c4     | bigint           |           | not null |         |             | plain   |              | 
- c5     | smallint         |           | not null |         |             | plain   |              | 
- c6     | integer          |           | not null |         |             | plain   |              | 
- c7     | bigint           |           | not null |         |             | plain   |              | 
- c8     | numeric(20,0)    |           | not null |         |             | main    |              | 
- c9     | real             |           | not null |         |             | plain   |              | 
- c10    | double precision |           |          |         |             | plain   |              | 
-Not-null constraints:
-    "ints_c1_not_null" NOT NULL "c1"
-    "ints_c2_not_null" NOT NULL "c2"
-    "ints_c3_not_null" NOT NULL "c3"
-    "ints_c4_not_null" NOT NULL "c4"
-    "ints_c5_not_null" NOT NULL "c5"
-    "ints_c6_not_null" NOT NULL "c6"
-    "ints_c7_not_null" NOT NULL "c7"
-    "ints_c8_not_null" NOT NULL "c8"
-    "ints_c9_not_null" NOT NULL "c9"
+\d clickhouse_bin.ints;
+                   Foreign table "clickhouse_bin.ints"
+ Column |       Type       | Collation | Nullable | Default | FDW options 
+--------+------------------+-----------+----------+---------+-------------
+ c1     | smallint         |           | not null |         | 
+ c2     | smallint         |           | not null |         | 
+ c3     | integer          |           | not null |         | 
+ c4     | bigint           |           | not null |         | 
+ c5     | smallint         |           | not null |         | 
+ c6     | integer          |           | not null |         | 
+ c7     | bigint           |           | not null |         | 
+ c8     | numeric(20,0)    |           | not null |         | 
+ c9     | real             |           | not null |         | 
+ c10    | double precision |           |          |         | 
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
 
-\d+ clickhouse_bin.types;
-                                           Foreign table "clickhouse_bin.types"
- Column |           Type           | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+--------------------------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | date                     |           | not null |         |             | plain    |              | 
- c2     | timestamp with time zone |           | not null |         |             | plain    |              | 
- c3     | text                     |           | not null |         |             | extended |              | 
- c4     | text                     |           | not null |         |             | extended |              | 
- c5     | uuid                     |           | not null |         |             | plain    |              | 
- c6     | text                     |           | not null |         |             | extended |              | 
- c7     | text                     |           | not null |         |             | extended |              | 
- c9     | text                     |           |          |         |             | extended |              | 
- c8     | text                     |           | not null |         |             | extended |              | 
-Not-null constraints:
-    "types_c1_not_null" NOT NULL "c1"
-    "types_c2_not_null" NOT NULL "c2"
-    "types_c3_not_null" NOT NULL "c3"
-    "types_c4_not_null" NOT NULL "c4"
-    "types_c5_not_null" NOT NULL "c5"
-    "types_c6_not_null" NOT NULL "c6"
-    "types_c7_not_null" NOT NULL "c7"
-    "types_c8_not_null" NOT NULL "c8"
+\d clickhouse_bin.types;
+                       Foreign table "clickhouse_bin.types"
+ Column |           Type           | Collation | Nullable | Default | FDW options 
+--------+--------------------------+-----------+----------+---------+-------------
+ c1     | date                     |           | not null |         | 
+ c2     | timestamp with time zone |           | not null |         | 
+ c3     | text                     |           | not null |         | 
+ c4     | text                     |           | not null |         | 
+ c5     | uuid                     |           | not null |         | 
+ c6     | text                     |           | not null |         | 
+ c7     | text                     |           | not null |         | 
+ c9     | text                     |           |          |         | 
+ c8     | text                     |           | not null |         | 
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
 
-\d+ clickhouse_bin.types2;
-                                Foreign table "clickhouse_bin.types2"
- Column | Type | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | text |           |          |         |             | extended |              | 
+\d clickhouse_bin.types2;
+            Foreign table "clickhouse_bin.types2"
+ Column | Type | Collation | Nullable | Default | FDW options 
+--------+------+-----------+----------+---------+-------------
+ c1     | text |           |          |         | 
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'types2', engine 'MergeTree')
 
-\d+ clickhouse_bin.arrays;
-                                   Foreign table "clickhouse_bin.arrays"
- Column |   Type    | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | integer[] |           | not null |         |             | extended |              | 
- c2     | text[]    |           | not null |         |             | extended |              | 
-Not-null constraints:
-    "arrays_c1_not_null" NOT NULL "c1"
-    "arrays_c2_not_null" NOT NULL "c2"
+\d clickhouse_bin.arrays;
+               Foreign table "clickhouse_bin.arrays"
+ Column |   Type    | Collation | Nullable | Default | FDW options 
+--------+-----------+-----------+----------+---------+-------------
+ c1     | integer[] |           | not null |         | 
+ c2     | text[]    |           | not null |         | 
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
 
-\d+ clickhouse_bin.tuples;
-                                   Foreign table "clickhouse_bin.tuples"
- Column |   Type    | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | smallint  |           | not null |         |             | plain    |              | 
- c2     | text[]    |           | not null |         |             | extended |              | 
- c3.a   | integer[] |           | not null |         |             | extended |              | 
- c3.b   | integer[] |           | not null |         |             | extended |              | 
- c4     | smallint  |           | not null |         |             | plain    |              | 
-Not-null constraints:
-    "tuples_c1_not_null" NOT NULL "c1"
-    "tuples_c2_not_null" NOT NULL "c2"
-    "tuples_c3.a_not_null" NOT NULL "c3.a"
-    "tuples_c3.b_not_null" NOT NULL "c3.b"
-    "tuples_c4_not_null" NOT NULL "c4"
+\d clickhouse_bin.tuples;
+               Foreign table "clickhouse_bin.tuples"
+ Column |   Type    | Collation | Nullable | Default | FDW options 
+--------+-----------+-----------+----------+---------+-------------
+ c1     | smallint  |           | not null |         | 
+ c2     | text[]    |           | not null |         | 
+ c3.a   | integer[] |           | not null |         | 
+ c3.b   | integer[] |           | not null |         | 
+ c4     | smallint  |           | not null |         | 
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
 
-\d+ clickhouse_bin.timezones;
-                                          Foreign table "clickhouse_bin.timezones"
- Column |            Type             | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+-----------------------------+-----------+----------+---------+-------------+---------+--------------+-------------
- t1     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
- t2     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
- t4     | timestamp with time zone    |           | not null |         |             | plain   |              | 
- t5     | timestamp(6) with time zone |           | not null |         |             | plain   |              | 
-Not-null constraints:
-    "timezones_t1_not_null" NOT NULL "t1"
-    "timezones_t2_not_null" NOT NULL "t2"
-    "timezones_t4_not_null" NOT NULL "t4"
-    "timezones_t5_not_null" NOT NULL "t5"
+\d clickhouse_bin.timezones;
+                      Foreign table "clickhouse_bin.timezones"
+ Column |            Type             | Collation | Nullable | Default | FDW options 
+--------+-----------------------------+-----------+----------+---------+-------------
+ t1     | timestamp(6) with time zone |           | not null |         | 
+ t2     | timestamp(6) with time zone |           | not null |         | 
+ t4     | timestamp with time zone    |           | not null |         | 
+ t5     | timestamp(6) with time zone |           | not null |         | 
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'timezones', engine 'MergeTree')
 
-\d+ clickhouse_bin.ip;
-                                  Foreign table "clickhouse_bin.ip"
- Column | Type | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+------+-----------+----------+---------+-------------+---------+--------------+-------------
- c1     | inet |           | not null |         |             | main    |              | 
- c2     | inet |           | not null |         |             | main    |              | 
-Not-null constraints:
-    "ip_c1_not_null" NOT NULL "c1"
-    "ip_c2_not_null" NOT NULL "c2"
+\d clickhouse_bin.ip;
+              Foreign table "clickhouse_bin.ip"
+ Column | Type | Collation | Nullable | Default | FDW options 
+--------+------+-----------+----------+---------+-------------
+ c1     | inet |           | not null |         | 
+ c2     | inet |           | not null |         | 
 Server: import_loopback_bin
 FDW options: (database 'import_test', table_name 'ip', engine 'MergeTree')
 
@@ -460,91 +388,63 @@ SELECT * FROM clickhouse.ip ORDER BY c1;
 (3 rows)
 
 IMPORT FOREIGN SCHEMA "import_test" LIMIT TO (ints, types) FROM SERVER import_loopback INTO clickhouse_limit;
-\d+ clickhouse_limit.ints;
-                                      Foreign table "clickhouse_limit.ints"
- Column |       Type       | Collation | Nullable | Default | FDW options | Storage | Stats target | Description 
---------+------------------+-----------+----------+---------+-------------+---------+--------------+-------------
- c1     | smallint         |           | not null |         |             | plain   |              | 
- c2     | smallint         |           | not null |         |             | plain   |              | 
- c3     | integer          |           | not null |         |             | plain   |              | 
- c4     | bigint           |           | not null |         |             | plain   |              | 
- c5     | smallint         |           | not null |         |             | plain   |              | 
- c6     | integer          |           | not null |         |             | plain   |              | 
- c7     | bigint           |           | not null |         |             | plain   |              | 
- c8     | numeric(20,0)    |           | not null |         |             | main    |              | 
- c9     | real             |           | not null |         |             | plain   |              | 
- c10    | double precision |           |          |         |             | plain   |              | 
-Not-null constraints:
-    "ints_c1_not_null" NOT NULL "c1"
-    "ints_c2_not_null" NOT NULL "c2"
-    "ints_c3_not_null" NOT NULL "c3"
-    "ints_c4_not_null" NOT NULL "c4"
-    "ints_c5_not_null" NOT NULL "c5"
-    "ints_c6_not_null" NOT NULL "c6"
-    "ints_c7_not_null" NOT NULL "c7"
-    "ints_c8_not_null" NOT NULL "c8"
-    "ints_c9_not_null" NOT NULL "c9"
+\d clickhouse_limit.ints;
+                  Foreign table "clickhouse_limit.ints"
+ Column |       Type       | Collation | Nullable | Default | FDW options 
+--------+------------------+-----------+----------+---------+-------------
+ c1     | smallint         |           | not null |         | 
+ c2     | smallint         |           | not null |         | 
+ c3     | integer          |           | not null |         | 
+ c4     | bigint           |           | not null |         | 
+ c5     | smallint         |           | not null |         | 
+ c6     | integer          |           | not null |         | 
+ c7     | bigint           |           | not null |         | 
+ c8     | numeric(20,0)    |           | not null |         | 
+ c9     | real             |           | not null |         | 
+ c10    | double precision |           |          |         | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'ints', engine 'MergeTree')
 
-\d+ clickhouse_limit.types;
-                                          Foreign table "clickhouse_limit.types"
- Column |           Type           | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+--------------------------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | date                     |           | not null |         |             | plain    |              | 
- c2     | timestamp with time zone |           | not null |         |             | plain    |              | 
- c3     | text                     |           | not null |         |             | extended |              | 
- c4     | text                     |           | not null |         |             | extended |              | 
- c5     | uuid                     |           | not null |         |             | plain    |              | 
- c6     | text                     |           | not null |         |             | extended |              | 
- c7     | text                     |           | not null |         |             | extended |              | 
- c9     | text                     |           |          |         |             | extended |              | 
- c8     | text                     |           | not null |         |             | extended |              | 
-Not-null constraints:
-    "types_c1_not_null" NOT NULL "c1"
-    "types_c2_not_null" NOT NULL "c2"
-    "types_c3_not_null" NOT NULL "c3"
-    "types_c4_not_null" NOT NULL "c4"
-    "types_c5_not_null" NOT NULL "c5"
-    "types_c6_not_null" NOT NULL "c6"
-    "types_c7_not_null" NOT NULL "c7"
-    "types_c8_not_null" NOT NULL "c8"
+\d clickhouse_limit.types;
+                      Foreign table "clickhouse_limit.types"
+ Column |           Type           | Collation | Nullable | Default | FDW options 
+--------+--------------------------+-----------+----------+---------+-------------
+ c1     | date                     |           | not null |         | 
+ c2     | timestamp with time zone |           | not null |         | 
+ c3     | text                     |           | not null |         | 
+ c4     | text                     |           | not null |         | 
+ c5     | uuid                     |           | not null |         | 
+ c6     | text                     |           | not null |         | 
+ c7     | text                     |           | not null |         | 
+ c9     | text                     |           |          |         | 
+ c8     | text                     |           | not null |         | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'types', engine 'MergeTree')
 
-\d+ clickhouse_limit.arrays;
-\d+ clickhouse_limit.tuples;
+\d clickhouse_limit.arrays;
+\d clickhouse_limit.tuples;
 IMPORT FOREIGN SCHEMA "import_test" EXCEPT (ints, types) FROM SERVER import_loopback INTO clickhouse_except;
 NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "c2"; please create composite type and alter the column if needed
-\d+ clickhouse_except.ints;
-\d+ clickhouse_except.types;
-\d+ clickhouse_except.arrays;
-                                 Foreign table "clickhouse_except.arrays"
- Column |   Type    | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | integer[] |           | not null |         |             | extended |              | 
- c2     | text[]    |           | not null |         |             | extended |              | 
-Not-null constraints:
-    "arrays_c1_not_null" NOT NULL "c1"
-    "arrays_c2_not_null" NOT NULL "c2"
+\d clickhouse_except.ints;
+\d clickhouse_except.types;
+\d clickhouse_except.arrays;
+             Foreign table "clickhouse_except.arrays"
+ Column |   Type    | Collation | Nullable | Default | FDW options 
+--------+-----------+-----------+----------+---------+-------------
+ c1     | integer[] |           | not null |         | 
+ c2     | text[]    |           | not null |         | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'arrays', engine 'MergeTree')
 
-\d+ clickhouse_except.tuples;
-                                 Foreign table "clickhouse_except.tuples"
- Column |   Type    | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+-----------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | smallint  |           | not null |         |             | plain    |              | 
- c2     | text[]    |           | not null |         |             | extended |              | 
- c3.a   | integer[] |           | not null |         |             | extended |              | 
- c3.b   | integer[] |           | not null |         |             | extended |              | 
- c4     | smallint  |           | not null |         |             | plain    |              | 
-Not-null constraints:
-    "tuples_c1_not_null" NOT NULL "c1"
-    "tuples_c2_not_null" NOT NULL "c2"
-    "tuples_c3.a_not_null" NOT NULL "c3.a"
-    "tuples_c3.b_not_null" NOT NULL "c3.b"
-    "tuples_c4_not_null" NOT NULL "c4"
+\d clickhouse_except.tuples;
+             Foreign table "clickhouse_except.tuples"
+ Column |   Type    | Collation | Nullable | Default | FDW options 
+--------+-----------+-----------+----------+---------+-------------
+ c1     | smallint  |           | not null |         | 
+ c2     | text[]    |           | not null |         | 
+ c3.a   | integer[] |           | not null |         | 
+ c3.b   | integer[] |           | not null |         | 
+ c4     | smallint  |           | not null |         | 
 Server: import_loopback
 FDW options: (database 'import_test', table_name 'tuples', engine 'MergeTree')
 
@@ -575,13 +475,13 @@ CALL clickhouse_perform('import_admin', $$
         -- Min values
         -128, -32768, -2147483648, -9223372036854775808,
         0, 0, 0, 0,
-        1.175494351e-38, 2.2250738585072014e-308
+        toFloat32(1.175494351e-38), 2.2250738585072014e-308
     ),
     (
         -- Max values
         127, 32767, 2147483647, 9223372036854775807,
         255, 65535, 4294967295, 18446744073709551615,
-        3.402823466e+38, 1.7976931348623158e+308
+        toFloat32(3.402823466e+38), 1.7976931348623158e+308
     )
 $$);
 SELECT * FROM clickhouse_query('import_admin', $$

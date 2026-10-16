@@ -1,4 +1,7 @@
 SET datestyle = 'ISO';
+\i test/include/normalize.sql
+\set normalize_echo :ECHO
+\set ECHO none
 CREATE SERVER http_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'http_test', driver 'http');
 CREATE SERVER http_loopback2 FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'http_test', driver 'http');
 CREATE USER MAPPING FOR CURRENT_USER SERVER http_loopback;
@@ -153,14 +156,22 @@ SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work
 (1 row)
 
 ALTER SERVER http_loopback OPTIONS (SET dbname 'no such database');
-SELECT c3, c4 FROM ft1 ORDER BY c3, c1;  -- should fail
-ERROR:  pg_clickhouse: Code: 81. DB::Exception: Database `no such database` does not exist. (UNKNOWN_DATABASE)
-DETAIL:  Remote Query: SELECT c1, c3, c4 FROM "no such database".t1 ORDER BY c3 ASC NULLS LAST, c1 ASC NULLS LAST
-CONTEXT:  HTTP status code: 404
+SELECT * FROM pg_temp.error_filter($$SELECT c3, c4 FROM ft1 ORDER BY c3, c1$$);  -- should fail
+                                                       error                                                       
+-------------------------------------------------------------------------------------------------------------------
+ ERROR:  pg_clickhouse: Code: 81. DB::Exception: Database `no such database` does not exist (UNKNOWN_DATABASE)
+ DETAIL:  Remote Query: SELECT c1, c3, c4 FROM "no such database".t1 ORDER BY c3 ASC NULLS LAST, c1 ASC NULLS LAST
+ CONTEXT:  HTTP status code: 404
+(3 rows)
+
 ALTER USER MAPPING FOR CURRENT_USER SERVER http_loopback OPTIONS (ADD user 'no such user');
-SELECT c3, c4 FROM ft1 ORDER BY c3, c1;  -- should fail
-ERROR:  pg_clickhouse: Code: 516. DB::Exception: no such user: Authentication failed: password is incorrect, or there is no user with such name. (AUTHENTICATION_FAILED)
-CONTEXT:  HTTP status code: 403
+SELECT * FROM pg_temp.error_filter($$SELECT c3, c4 FROM ft1 ORDER BY c3, c1$$);  -- should fail
+                                                                                  error                                                                                  
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ ERROR:  pg_clickhouse: Code: 516. DB::Exception: no such user: Authentication failed: password is incorrect, or there is no user with such name (AUTHENTICATION_FAILED)
+ CONTEXT:  HTTP status code: 403
+(2 rows)
+
 ALTER SERVER http_loopback OPTIONS (SET dbname 'http_test');
 ALTER USER MAPPING FOR CURRENT_USER SERVER http_loopback OPTIONS (DROP user);
 SELECT c3, c4 FROM ft1 ORDER BY c3, c1 LIMIT 1;  -- should work again
@@ -266,19 +277,13 @@ SELECT * FROM ft1 t1 WHERE t1.c3 IN (SELECT c2 FROM ft2 t2 WHERE c1 <= 10) ORDER
 ----+----+----+----+----+----+----+----
 (0 rows)
 
-EXPLAIN (VERBOSE, COSTS OFF)
-SELECT * FROM ft1 t1 WHERE t1.c3 = (SELECT MAX(c2) FROM ft2 t2) ORDER BY c1;
-                                                         QUERY PLAN                                                          
------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on public.ft1 t1
-   Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
-   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c3 = {p1:String})) ORDER BY c1 ASC NULLS LAST
-   InitPlan expr_1
-     ->  Foreign Scan
-           Output: (max(t2.c2))
-           Relations: Aggregate on (ft2 t2)
-           Remote SQL: SELECT max(c2) FROM http_test.t2
-(8 rows)
+SELECT * FROM pg_temp.remote_sql($$
+SELECT * FROM ft1 t1 WHERE t1.c3 = (SELECT MAX(c2) FROM ft2 t2) ORDER BY c1$$);
+                                                  remote_sql                                                   
+---------------------------------------------------------------------------------------------------------------
+ SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c3 = {p1:String})) ORDER BY c1 ASC NULLS LAST
+ SELECT max(c2) FROM http_test.t2
+(2 rows)
 
 SELECT * FROM ft1 t1 WHERE t1.c3 = (SELECT MAX(c2) FROM ft2 t2) ORDER BY c1;
  c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 
@@ -341,12 +346,12 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON
    Remote SQL: SELECT r1.c1, r2.c1 FROM  http_test.t2 r1 ALL LEFT JOIN http_test.t1 r2 ON (((r1.c1 = r2.c1))) LIMIT 10 OFFSET 100
 (4 rows)
 
-EXPLAIN SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10;
-                           QUERY PLAN                           
-----------------------------------------------------------------
- Limit  (cost=1.00..1.09 rows=10 width=32)
-   ->  Unique  (cost=1.00..10.50 rows=1000 width=32)
-         ->  Foreign Scan  (cost=1.00..5.50 rows=1000 width=32)
+SELECT * FROM pg_temp.explain_filter($$EXPLAIN SELECT DISTINCT t1.c1, t2.c1 FROM ft2 t1 LEFT JOIN ft1 t2 ON (t1.c1 = t2.c1) order by t1.c1 LIMIT 10$$);
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ Limit  (cost=1.00..1.09 rows=10 width=N)
+   ->  Unique  (cost=1.00..10.50 rows=1000 width=N)
+         ->  Foreign Scan  (cost=1.00..5.50 rows=1000 width=N)
                Relations: (ft2 t1) LEFT JOIN (ft1 t2)
 (4 rows)
 
@@ -383,21 +388,20 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE t1.c1 = 100 AND t1.c2 = 
    Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c1 = 100)) AND ((c2 = 0))
 (3 rows)
 
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 IS NULL;        -- NullTest
-                QUERY PLAN                
-------------------------------------------
- Result
-   Output: c1, c2, c3, c4, c5, c6, c7, c8
-   Replaces: Scan on t1
-   One-Time Filter: false
-(4 rows)
-
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 IS NOT NULL;    -- NullTest
-                              QUERY PLAN                               
------------------------------------------------------------------------
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c3 IS NULL;        -- NullTest
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
  Foreign Scan on public.ft1 t1
    Output: c1, c2, c3, c4, c5, c6, c7, c8
-   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c3 IS NULL))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c3 IS NOT NULL;    -- NullTest
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c3 IS NOT NULL))
 (3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE round(abs(c1), 0) = 1; -- FuncExpr
@@ -432,15 +436,13 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c6 IS DISTINCT FROM c7; 
    Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE ((c6 IS DISTINCT FROM c7))
 (3 rows)
 
--- Optimized away on Postgres 19+ by commit e2debb643
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE (c1 IS NOT NULL) IS DISTINCT FROM (c1 IS NOT NULL); -- DistinctExpr + NullTest
-                QUERY PLAN                
-------------------------------------------
- Result
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE (c3 IS NOT NULL) IS DISTINCT FROM (c8 = 'foo'); -- DistinctExpr + NullTest
+                                                           QUERY PLAN                                                           
+--------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
    Output: c1, c2, c3, c4, c5, c6, c7, c8
-   Replaces: Scan on t1
-   One-Time Filter: false
-(4 rows)
+   Remote SQL: SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM http_test.t1 WHERE (((c3 IS NOT NULL) IS DISTINCT FROM (c8 = 'foo')))
+(3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = ANY(ARRAY[c2, 1, c1 + 0]); -- ScalarArrayOpExpr
                                                  QUERY PLAN                                                 
@@ -768,16 +770,21 @@ SELECT COUNT(DISTINCT c1) FROM ft2;
 (1 row)
 
 /* DISTINCT with IF */
+-- Postgres 16+ presorts DISTINCT aggregate input, pushing ORDER BY down.
+-- Disable so all versions plan alike
+BEGIN;
+DO $$BEGIN IF current_setting('server_version_num')::int >= 160000 THEN SET LOCAL enable_presorted_aggregate = off; END IF; END$$;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(DISTINCT c1) FILTER (WHERE c1 < 20) FROM ft2;
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                      QUERY PLAN                       
+-------------------------------------------------------
  Aggregate
    Output: count(DISTINCT c1) FILTER (WHERE (c1 < 20))
    ->  Foreign Scan on public.ft2
          Output: c1, c2
-         Remote SQL: SELECT c1 FROM http_test.t2 ORDER BY c1 ASC NULLS LAST
+         Remote SQL: SELECT c1 FROM http_test.t2
 (5 rows)
 
+COMMIT;
 /* Disallow line endings in database names. */
 CREATE SERVER http_loopback_bad FOREIGN DATA WRAPPER clickhouse_fdw
 OPTIONS(driver 'http', dbname E'http_test\r\nX-My-Header: 123');

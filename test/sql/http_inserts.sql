@@ -86,7 +86,7 @@ SELECT * FROM null_ints ORDER BY c1;
 
 /* check dates and strings */
 ALTER TABLE complex ALTER COLUMN c8 SET DATA TYPE timestamp(3);
-\d+ complex
+\d complex
 INSERT INTO complex VALUES
 	(1, '2020-06-01', '2020-06-02 10:01:02', 't1', 'fix_t1', 'low1', '2020-06-01', '2020-06-02 10:01:02.123'),
 	(2, '2020-06-02', '2020-06-03 10:01:02', 5, 'fix_t2', 'low2', '2020-06-02', '2020-06-03 11:01:02.234'),
@@ -269,6 +269,10 @@ COPY null_ints (c1, c2) FROM stdin;
 22	220
 \.
 SELECT * FROM null_ints WHERE c1 >= 20 ORDER BY c1;
+
+/* Local error mid-insert, nothing lands */
+INSERT INTO ints (c1, c2, c3, c4) SELECT i, i, i, 10 / (i - 33) FROM generate_series(30, 35) i;
+SELECT count(*) FROM ints WHERE c1 >= 30;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER http_inserts_loopback;
 CALL clickhouse_perform('http_inserts_admin', 'DROP DATABASE http_inserts_test');

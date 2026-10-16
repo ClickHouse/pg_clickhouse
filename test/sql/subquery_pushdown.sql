@@ -1,6 +1,7 @@
 -- Test for TPC-H Q4 style EXISTS subquery pushdown
 -- TPC-H schema reference: https://raw.githubusercontent.com/Vonng/pgtpc/refs/heads/master/tpch/ddl/schema.ddl
 SET datestyle = 'ISO';
+\i test/include/normalize.sql
 CREATE SERVER subquery_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'subquery_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER subquery_loopback;
 
@@ -64,7 +65,7 @@ SET SESSION search_path = subquery_test,public;
 -- ===================================================================
 
 -- First, show the explain plan - this should show SEMI JOIN being pushed down
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT
     o_orderpriority,
     count(*) as order_count
@@ -81,7 +82,7 @@ WHERE
 GROUP BY
     o_orderpriority
 ORDER BY
-    o_orderpriority;
+    o_orderpriority$$);
 
 -- Execute the actual query
 SELECT

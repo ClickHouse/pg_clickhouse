@@ -54,8 +54,19 @@ WCLOBBERED = $(shell $(CC) -Werror -Wclobbered -x c -c /dev/null -o /dev/null >/
 
 PG_CFLAGS = -Wno-declaration-after-statement -Wall $(WCLOBBERED) -Wsign-compare -Werror $(shell $(CURL_CONFIG) --cflags)
 
+# Instrument for gcov line coverage with `make COVERAGE=1`. PGXS appends
+# PG_CFLAGS after PG's -O2 and links through $(CC) $(CFLAGS), so -O0 wins and
+# --coverage reaches link. Skip bitcode, JIT would inline uninstrumented
+# copies of extension functions. Backends are single threaded, so default
+# -fprofile-update=single suffices, libgcov locks each .gcda while exiting
+# backends merge counters
+ifeq ($(COVERAGE),1)
+PG_CFLAGS += --coverage -O0 -g
+override with_llvm = no
+endif
+
 # Clean up generated files.
-EXTRA_CLEAN = sql/$(EXTENSION)--$(EXTVERSION).sql src/include/version.h compile_commands.json test/schedule $(EXTENSION)-$(DISTVERSION).zip
+EXTRA_CLEAN = sql/$(EXTENSION)--$(EXTVERSION).sql src/include/version.h compile_commands.json test/schedule $(EXTENSION)-$(DISTVERSION).zip $(OBJS:.o=.gcno) $(OBJS:.o=.gcda) coverage
 
 # Import PGXS.
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -117,6 +128,10 @@ tempcheck: install
 results:
 	$(MAKE) installcheck || true
 	rsync -rlpgovP results/ test/expected
+
+.PHONY: coverage-lcov # Export and audit coverage/ after testing a COVERAGE=1 build, server stopped
+coverage-lcov:
+	CC='$(CC)' PG_CONFIG='$(PG_CONFIG)' ci/coverage.sh collect coverage '$(OBJS:.o=.c)'
 
 # Run make print-VARIABLE_NAME to print VARIABLE_NAME's flavor and value.
 print-%	: ; $(info $* is $(flavor $*) variable set to "$($*)") @true

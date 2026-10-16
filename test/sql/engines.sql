@@ -55,12 +55,12 @@ CREATE SCHEMA engines_test;
 IMPORT FOREIGN SCHEMA engines_test FROM SERVER engines_loopback INTO engines_test;
 SET search_path = engines_test, public;
 
-\d+ t1
-\d+ t1_aggr
-\d+ t2
-\d+ t3
-\d+ t3_aggr
-\d+ t4
+\d t1
+\d t1_aggr
+\d t2
+\d t3
+\d t3_aggr
+\d t4
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT a, sum(b) FROM t1 GROUP BY a;
 SELECT a, sum(b) FROM t1 GROUP BY a ORDER BY a;

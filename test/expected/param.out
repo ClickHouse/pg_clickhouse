@@ -1,4 +1,7 @@
 SET datestyle = 'ISO';
+\i test/include/normalize.sql
+\set normalize_echo :ECHO
+\set ECHO none
 -- Create servers for each engine.
 CREATE SERVER param_bin_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(driver 'binary');
@@ -322,16 +325,11 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
 CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.t1 TO param_test.ft1');
 ALTER FOREIGN TABLE bin_test.ft1 OPTIONS (SET table_name 'ft1');
 -- implicit parameter
-EXPLAIN (VERBOSE, COSTS OFF) SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4);
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
- Foreign Scan on bin_test.ft1
-   Output: ft1.c1, ft1.c2
-   Remote SQL: SELECT c1, c2 FROM param_test.ft1 WHERE ((c1 = {p1:Int32}))
-   InitPlan expr_1
-     ->  Result
-           Output: 4
-(6 rows)
+SELECT * FROM pg_temp.remote_sql($$SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4)$$);
+                         remote_sql                          
+-------------------------------------------------------------
+ SELECT c1, c2 FROM param_test.ft1 WHERE ((c1 = {p1:Int32}))
+(1 row)
 
 SELECT c1, c2 FROM bin_test.ft1 WHERE c1 = (SELECT 4);
  c1 | c2 
@@ -835,16 +833,11 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
 CALL clickhouse_perform('param_admin', 'RENAME TABLE param_test.t1 TO param_test.ft1');
 ALTER FOREIGN TABLE http_test.ft1 OPTIONS (SET table_name 'ft1');
 -- implicit parameter
-EXPLAIN (VERBOSE, COSTS OFF) SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4);
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
- Foreign Scan on http_test.ft1
-   Output: ft1.c1, ft1.c2
-   Remote SQL: SELECT c1, c2 FROM param_test.ft1 WHERE ((c1 = {p1:Int32}))
-   InitPlan expr_1
-     ->  Result
-           Output: 4
-(6 rows)
+SELECT * FROM pg_temp.remote_sql($$SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4)$$);
+                         remote_sql                          
+-------------------------------------------------------------
+ SELECT c1, c2 FROM param_test.ft1 WHERE ((c1 = {p1:Int32}))
+(1 row)
 
 SELECT c1, c2 FROM http_test.ft1 WHERE c1 = (SELECT 4);
  c1 | c2 
@@ -1065,6 +1058,84 @@ EXECUTE st16('NaN');
   5
 (5 rows)
 
+-- ===================================================================
+-- parameter literals per type, generic plans keep them as Params
+-- ===================================================================
+CALL clickhouse_perform('param_admin', $$
+    CREATE TABLE param_test.lit (
+        id Int32, i8 Int64, f4 Float32, f8 Float64, s String, by String,
+        d Date, ts DateTime64(6), arr Array(String)
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('param_admin', $$
+    INSERT INTO param_test.lit VALUES
+    (1, 9000000000, 1.5, 2.25, 'q''uote\\back\b\f\r\n\t\a\v', 'by\0te',
+     '2024-02-29', '2024-02-29 12:34:56', ['t\tb', 'n\nl', 'q''x', 'b\\s', 'bs\b'])
+$$);
+CREATE FOREIGN TABLE bin_test.lit (
+    id int, i8 bigint, f4 real, f8 float8, s text, by bytea,
+    d date, ts timestamp, arr text[]
+) SERVER param_bin_svr OPTIONS (database 'param_test', table_name 'lit');
+CREATE FOREIGN TABLE http_test.lit (
+    id int, i8 bigint, f4 real, f8 float8, s text, by bytea,
+    d date, ts timestamp, arr text[]
+) SERVER param_http_svr OPTIONS (database 'param_test', table_name 'lit');
+SET plan_cache_mode = force_generic_plan;
+PREPARE lit_bin(bigint, real, float8, text, bytea, date, timestamp, text[]) AS
+SELECT id FROM bin_test.lit
+ WHERE i8 = $1 AND f4 = $2 AND f8 = $3 AND s = $4 AND by = $5
+   AND d = $6 AND ts = $7 AND arr = $8;
+PREPARE lit_http(bigint, real, float8, text, bytea, date, timestamp, text[]) AS
+SELECT id FROM http_test.lit
+ WHERE i8 = $1 AND f4 = $2 AND f8 = $3 AND s = $4 AND by = $5
+   AND d = $6 AND ts = $7 AND arr = $8;
+EXPLAIN (VERBOSE, COSTS OFF)
+EXECUTE lit_bin(9000000000, 1.5, 2.25, E'q''uote\\back\b\f\r\n\t\x07\x0b', '\x6279007465',
+                '2024-02-29', '2024-02-29 12:34:56',
+                ARRAY[E't\tb', E'n\nl', 'q''x', E'b\\s', E'bs\b']);
+                                                                                                                             QUERY PLAN                                                                                                                              
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on bin_test.lit
+   Output: id
+   Remote SQL: SELECT id FROM param_test.lit WHERE ((i8 = {p1:Int64})) AND ((f4 = {p2:Float32})) AND ((f8 = {p3:Float64})) AND ((s = {p4:String})) AND ((by = {p5:String})) AND ((d = {p6:Date32})) AND ((ts = {p7:DateTime64(6)})) AND ((arr = {p8:Array(String)}))
+(3 rows)
+
+EXECUTE lit_bin(9000000000, 1.5, 2.25, E'q''uote\\back\b\f\r\n\t\x07\x0b', '\x6279007465',
+                '2024-02-29', '2024-02-29 12:34:56',
+                ARRAY[E't\tb', E'n\nl', 'q''x', E'b\\s', E'bs\b']);
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+EXECUTE lit_http(9000000000, 1.5, 2.25, E'q''uote\\back\b\f\r\n\t\x07\x0b', '\x6279007465',
+                 '2024-02-29', '2024-02-29 12:34:56',
+                 ARRAY[E't\tb', E'n\nl', 'q''x', E'b\\s', E'bs\b']);
+                                                                                                                             QUERY PLAN                                                                                                                              
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on http_test.lit
+   Output: id
+   Remote SQL: SELECT id FROM param_test.lit WHERE ((i8 = {p1:Int64})) AND ((f4 = {p2:Float32})) AND ((f8 = {p3:Float64})) AND ((s = {p4:String})) AND ((by = {p5:String})) AND ((d = {p6:Date32})) AND ((ts = {p7:DateTime64(6)})) AND ((arr = {p8:Array(String)}))
+(3 rows)
+
+EXECUTE lit_http(9000000000, 1.5, 2.25, E'q''uote\\back\b\f\r\n\t\x07\x0b', '\x6279007465',
+                 '2024-02-29', '2024-02-29 12:34:56',
+                 ARRAY[E't\tb', E'n\nl', 'q''x', E'b\\s', E'bs\b']);
+ id 
+----
+  1
+(1 row)
+
+EXECUTE lit_bin(9000000000, 1.5, 2.25, NULL, '\x6279007465',
+                '2024-02-29', '2024-02-29 12:34:56',
+                ARRAY[E't\tb', E'n\nl', 'q''x', E'b\\s', E'bs\b']);
+ id 
+----
+(0 rows)
+
+DEALLOCATE lit_bin;
+DEALLOCATE lit_http;
 RESET plan_cache_mode;
 -- cleanup
 DEALLOCATE st1;
@@ -1086,15 +1157,17 @@ DEALLOCATE st16;
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER param_bin_svr;
 DROP SERVER param_bin_svr CASCADE;
-NOTICE:  drop cascades to 4 other objects
+NOTICE:  drop cascades to 5 other objects
 DETAIL:  drop cascades to foreign table bin_test.ft1
 drop cascades to foreign table bin_test.ft2
 drop cascades to foreign table bin_test.mixed
 drop cascades to foreign table bin_test.typed
+drop cascades to foreign table bin_test.lit
 DROP USER MAPPING FOR CURRENT_USER SERVER param_http_svr;
 DROP SERVER param_http_svr CASCADE;
-NOTICE:  drop cascades to 4 other objects
+NOTICE:  drop cascades to 5 other objects
 DETAIL:  drop cascades to foreign table http_test.ft1
 drop cascades to foreign table http_test.ft2
 drop cascades to foreign table http_test.mixed
 drop cascades to foreign table http_test.typed
+drop cascades to foreign table http_test.lit

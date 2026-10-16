@@ -147,27 +147,18 @@ SELECT * FROM null_ints ORDER BY c1;
 
 /* check dates and strings */
 ALTER TABLE complex ALTER COLUMN c8 SET DATA TYPE timestamp(3);
-\d+ complex
-                                           Foreign table "http_inserts_test.complex"
- Column |              Type              | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+--------------------------------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | integer                        |           | not null |         |             | plain    |              | 
- c2     | date                           |           | not null |         |             | plain    |              | 
- c3     | timestamp with time zone       |           | not null |         |             | plain    |              | 
- c4     | text                           |           | not null |         |             | extended |              | 
- c5     | text                           |           | not null |         |             | extended |              | 
- c6     | text                           |           | not null |         |             | extended |              | 
- c7     | date                           |           | not null |         |             | plain    |              | 
- c8     | timestamp(3) without time zone |           | not null |         |             | plain    |              | 
-Not-null constraints:
-    "complex_c1_not_null" NOT NULL "c1"
-    "complex_c2_not_null" NOT NULL "c2"
-    "complex_c3_not_null" NOT NULL "c3"
-    "complex_c4_not_null" NOT NULL "c4"
-    "complex_c5_not_null" NOT NULL "c5"
-    "complex_c6_not_null" NOT NULL "c6"
-    "complex_c7_not_null" NOT NULL "c7"
-    "complex_c8_not_null" NOT NULL "c8"
+\d complex
+                       Foreign table "http_inserts_test.complex"
+ Column |              Type              | Collation | Nullable | Default | FDW options 
+--------+--------------------------------+-----------+----------+---------+-------------
+ c1     | integer                        |           | not null |         | 
+ c2     | date                           |           | not null |         | 
+ c3     | timestamp with time zone       |           | not null |         | 
+ c4     | text                           |           | not null |         | 
+ c5     | text                           |           | not null |         | 
+ c6     | text                           |           | not null |         | 
+ c7     | date                           |           | not null |         | 
+ c8     | timestamp(3) without time zone |           | not null |         | 
 Server: http_inserts_loopback
 FDW options: (database 'http_inserts_test', table_name 'complex', engine 'MergeTree')
 
@@ -422,6 +413,15 @@ SELECT * FROM null_ints WHERE c1 >= 20 ORDER BY c1;
  21 |    
  22 | 220
 (3 rows)
+
+/* Local error mid-insert, nothing lands */
+INSERT INTO ints (c1, c2, c3, c4) SELECT i, i, i, 10 / (i - 33) FROM generate_series(30, 35) i;
+ERROR:  division by zero
+SELECT count(*) FROM ints WHERE c1 >= 30;
+ count 
+-------
+     0
+(1 row)
 
 DROP USER MAPPING FOR CURRENT_USER SERVER http_inserts_loopback;
 CALL clickhouse_perform('http_inserts_admin', 'DROP DATABASE http_inserts_test');

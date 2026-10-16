@@ -280,8 +280,11 @@ SELECT date_part('ePoch'::text, timezone('UTC'::text, c)) as d1 FROM t2 GROUP BY
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_trunc(t4.val, t5.ts) FROM t4, t5 LIMIT 1;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part(t4.val, t5.ts) FROM t4, t5 LIMIT 1;
 
--- Unsupported non-ASCII unit raises a clean error.
+-- Unsupported non-ASCII unit raises a clean error. Message wording varies
+-- by Postgres version, SQLSTATE does not
+\set VERBOSITY sqlstate
 SELECT date_trunc('É'::text, ts) FROM t5 LIMIT 1;
+\set VERBOSITY default
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ltrim(val) AS a, btrim(val) AS b, rtrim(val) AS c FROM t4 GROUP BY a,b,c ORDER BY a;
 SELECT ltrim(val) AS a, btrim(val) AS b, rtrim(val) AS c FROM t4 GROUP BY a,b,c ORDER BY a;

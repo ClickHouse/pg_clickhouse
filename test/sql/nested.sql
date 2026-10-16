@@ -1,5 +1,6 @@
 \set ECHO errors
 SET datestyle = 'ISO';
+\i test/include/normalize.sql
 CREATE SERVER binary_nested_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'nested_test', driver 'binary');
 CREATE SERVER http_nested_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'nested_test', driver 'http');
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_nested_loopback;
@@ -110,10 +111,10 @@ SELECT * FROM nest_http.visits ORDER BY visit_id;
 -- `tupleElement(goals[1], 1) = '1'`.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT visit_id FROM nest_bin.visits WHERE goals[1][1] = '1';
-SELECT visit_id FROM nest_bin.visits WHERE goals[1][1] = '1';
+SELECT * FROM pg_temp.error_filter($$SELECT visit_id FROM nest_bin.visits WHERE goals[1][1] = '1'$$);
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT visit_id FROM nest_http.visits WHERE goals[1][1] = '1';
-SELECT visit_id FROM nest_http.visits WHERE goals[1][1] = '1';
+SELECT * FROM pg_temp.error_filter($$SELECT visit_id FROM nest_http.visits WHERE goals[1][1] = '1'$$);
 
 /****************************************************************************/
 -- Create them manually with a composite type;

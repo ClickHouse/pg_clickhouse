@@ -1,3 +1,6 @@
+\i test/include/normalize.sql
+\set normalize_echo :ECHO
+\set ECHO none
 CREATE SERVER where_sub_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'where_sub_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER where_sub_loopback;
 CREATE SERVER where_sub_admin FOREIGN DATA WRAPPER clickhouse_fdw;
@@ -23,7 +26,7 @@ CREATE SCHEMA where_sub;
 IMPORT FOREIGN SCHEMA "where_sub_test" FROM SERVER where_sub_loopback INTO where_sub;
 -- \d where_sub.orders
 -- \d where_sub.lines
-EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM pg_temp.remote_sql($$
 SELECT class, COUNT(*) AS order_count
   FROM where_sub.orders
  WHERE date >= date '2025-07-01'
@@ -33,14 +36,11 @@ SELECT class, COUNT(*) AS order_count
         WHERE order_id = id AND created_at < updated_at
    )
  GROUP BY class
- ORDER BY class;
-                                                                                                                                              QUERY PLAN                                                                                                                                              
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan
-   Output: orders.class, (count(*))
-   Relations: Aggregate on ((orders) LEFT SEMI JOIN (lines))
-   Remote SQL: SELECT r1.class, count(*) FROM  where_sub_test.orders r1 LEFT SEMI JOIN where_sub_test.lines r3 ON (((r3.created_at < r3.updated_at)) AND ((r1.id = r3.order_id))) WHERE ((r1.date >= '07-01-2025')) AND ((r1.date < '10-01-2025')) GROUP BY r1.class ORDER BY r1.class ASC NULLS LAST
-(4 rows)
+ ORDER BY class$$);
+                                                                                                                                       remote_sql                                                                                                                                       
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ SELECT r1.class, count(*) FROM  where_sub_test.orders r1 LEFT SEMI JOIN where_sub_test.lines r2 ON (((r2.created_at < r2.updated_at)) AND ((r1.id = r2.order_id))) WHERE ((r1.date >= '07-01-2025')) AND ((r1.date < '10-01-2025')) GROUP BY r1.class ORDER BY r1.class ASC NULLS LAST
+(1 row)
 
 CALL clickhouse_perform('where_sub_admin', 'DROP DATABASE where_sub_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER where_sub_loopback;
