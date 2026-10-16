@@ -52,6 +52,11 @@ SELECT avg(val) FILTER (WHERE val > 15),
 
 RESET enable_partitionwise_aggregate;
 
+-- Partitionwise join pushes down the cold self-join with no columns to fetch
+SET enable_partitionwise_join = on;
+SELECT count(*) FROM events a JOIN events b ON a.id = b.id AND a.ts = b.ts;
+RESET enable_partitionwise_join;
+
 DROP TABLE events;
 DROP USER MAPPING FOR CURRENT_USER SERVER pwagg_svr;
 CALL clickhouse_perform('pwagg_admin', 'DROP DATABASE pwagg_test');

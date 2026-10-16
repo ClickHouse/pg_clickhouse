@@ -158,8 +158,8 @@ apply_row(ChFdwScanRowContext* ctx) {
     size_t attcount     = list_length(attrs);
 
     if (attcount == 0) {
+        /* Callers preset nulls, which has no slots for a zero-column scan. */
         if (pgch_reader_columns(reader) == 1 && reader->nulls[0]) {
-            nulls[0] = true;
             return reader->values;
         }
         ereport(
