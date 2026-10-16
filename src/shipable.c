@@ -176,10 +176,42 @@ is_known_type(Oid type_oid) {
     case JSONOID:
     case JSONBOID:
     case RECORDOID:
+    /* Literals can have unknown type in calls such as concat_ws(). */
+    case UNKNOWNOID:
         return true;
     default:
         return false;
     }
+}
+
+/*
+ * ClickHouse rejects other builtin operator names or gives them different
+ * meanings, as with ^ and jsonb @>.
+ */
+static bool
+is_known_operator(Oid opno) {
+    static const char* const names[] = {
+        "=", "<>", "<", "<=", ">",   ">=",  "+",    "-",
+        "*", "/",  "%", "~~", "~~*", "!~~", "!~~*",
+    };
+    char* name = get_opname(opno);
+    bool known = false;
+
+    /* ClickHouse concat cannot add a single element to either end of an array. */
+    if (strcmp(name, "||") == 0) {
+        Oid left;
+        Oid right;
+
+        op_input_types(opno, &left, &right);
+        known = (left == TEXTOID && right == TEXTOID) ||
+                (left == ANYCOMPATIBLEARRAYOID && right == ANYCOMPATIBLEARRAYOID);
+    }
+    for (size_t i = 0; i < lengthof(names) && !known; i++) {
+        known = strcmp(name, names[i]) == 0;
+    }
+
+    pfree(name);
+    return known;
 }
 
 static bool
@@ -436,17 +468,18 @@ chfdw_is_shippable(
     }
 
     /*
-     * Builtin operators ship by default, builtin types only when
-     * is_known_type. Builtin functions only ship when explicitly registered
-     * via chfdw_check_for_custom_function, so unrecognised builtins fail
-     * planner shippability checks rather than deparse to a name that may
-     * behave differently on ClickHouse. Cast
-     * coercions are an exception: deparse handles them as cast() or by
-     * dropping the implicit wrapper, regardless of the underlying funcid.
+     * Allow remote execution only for known builtin types and operators.
+     * Require builtin functions to be registered with
+     * chfdw_check_for_custom_function, since matching names can behave
+     * differently in ClickHouse. Allow casts regardless of function ID:
+     * deparse emits cast() or removes implicit casts.
      */
     if (chfdw_is_builtin(objectId)) {
         if (classId == TypeRelationId) {
             return is_known_type(objectId);
+        }
+        if (classId == OperatorRelationId) {
+            return is_known_operator(objectId);
         }
         if (classId != ProcedureRelationId) {
             return true;

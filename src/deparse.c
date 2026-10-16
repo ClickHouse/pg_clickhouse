@@ -555,15 +555,14 @@ static bool
 op_expr_never_null(OpExpr* op, foreign_glob_cxt* glob_cxt);
 
 /*
- * True if `expr` provably cannot evaluate to NULL: a non-NULL constant, a
- * column of a scanned relation that is declared NOT NULL and cannot have been
- * null-extended by an outer join, or certain arithmetic operators over such
- * inputs (see op_expr_never_null). Anything else is assumed nullable.
+ * Check whether `expr` cannot return NULL: an array constructor, a non-NULL
+ * constant, a NOT NULL column with no NULLs added by an outer join, or certain
+ * operators with non-NULL inputs (see op_expr_never_null). Assume other
+ * expressions can return NULL.
  *
- * PG 17+ precomputes the catalog half of this as
- * RelOptInfo->notnullattnums; the syscache lookup below keeps one code path
- * across PG 14-19, so switch when PG 16 support drops. Postgres exports no
- * expression-level equivalent on any version.
+ * PG 17+ stores NOT NULL column information in RelOptInfo->notnullattnums.
+ * Use catalog lookups across PG 14-19 until PG 16 support ends. PostgreSQL
+ * provides no equivalent check for expressions.
  */
 static bool
 expr_never_null(Expr* expr, foreign_glob_cxt* glob_cxt) {
@@ -573,6 +572,10 @@ expr_never_null(Expr* expr, foreign_glob_cxt* glob_cxt) {
 
     if (IsA(expr, Const)) {
         return !((Const*)expr)->constisnull;
+    }
+
+    if (IsA(expr, ArrayExpr)) {
+        return true;
     }
 
     if (IsA(expr, Var)) {
@@ -632,14 +635,13 @@ expr_never_null(Expr* expr, foreign_glob_cxt* glob_cxt) {
 }
 
 /*
- * Operator implementation funcs that cannot return NULL when no input is NULL.
- * Limited to basic arithmetic, which returns a value or raises an error.
- * Being strict alone proves nothing here: a strict function may still compute
- * NULL from non-NULL inputs (json's ->> on a missing key, for one), and no
- * catalog flag distinguishes the two, so every entry below is hand-picked.
- * Extend as pushdown-worthy shapes turn up; the list need not stay sorted here,
- * since `sort_never_null_opfuncs` (below) sorts it in place once, at load time,
- * for consistency across PG versions.
+ * List operator functions that cannot return NULL when all inputs are non-NULL.
+ * Include basic arithmetic and array concatenation.
+ * A strict function can still return NULL for non-NULL inputs, such as JSON
+ * ->> with a missing key. PostgreSQL has no catalog flag for this behavior,
+ * so check each function before adding it.
+ * Add functions as needed for remote execution. No need to keep entries sorted:
+ * sort_never_null_opfuncs sorts them at load time across PG versions.
  */
 static Oid never_null_opfuncs[] = {
     /* + */
@@ -694,6 +696,7 @@ static Oid never_null_opfuncs[] = {
     F_FLOAT4UM,
     F_FLOAT8UM,
     F_NUMERIC_UMINUS,
+    F_ARRAY_CAT,
 };
 
 static void __attribute__((constructor))
@@ -898,6 +901,18 @@ is_interval_param_op(OpExpr* oe) {
                     cdef->cf_type == CF_DATETIME_MI_INTERVAL);
 }
 
+/* CURRENT_TIME and time cast to timetz both use session time zone offset. */
+static bool
+is_session_timetz(Node* node) {
+    if (IsA(node, SQLValueFunction)) {
+        SQLValueFunctionOp op = ((SQLValueFunction*)node)->op;
+
+        return op == SVFOP_CURRENT_TIME || op == SVFOP_CURRENT_TIME_N;
+    }
+    return IsA(node, FuncExpr) && ((FuncExpr*)node)->funcid == F_TIMETZ_TIME &&
+           ((FuncExpr*)node)->funcformat == COERCE_IMPLICIT_CAST;
+}
+
 /*
  * Check if expression is safe to execute remotely, and return true if so.
  *
@@ -1098,9 +1113,32 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
 
+        /* PostgreSQL treats NULL arrays as empty; ClickHouse concat returns NULL. */
+        if (get_opcode(oe->opno) == F_ARRAY_CAT &&
+            (!expr_never_null(linitial(oe->args), glob_cxt) ||
+             !expr_never_null(lsecond(oe->args), glob_cxt))) {
+            return false;
+        }
+
         if (is_interval_param_op(oe)) {
             if (!foreign_expr_walker(linitial(oe->args), glob_cxt, EXPR_CTX_EXACT)) {
                 return false;
+            }
+            break;
+        }
+
+        /* With matching offsets, compare local times using ClickHouse Time64. */
+        if (list_length(oe->args) == 2 && is_session_timetz(linitial(oe->args)) &&
+            is_session_timetz(lsecond(oe->args))) {
+            ListCell* lc;
+
+            foreach (lc, oe->args) {
+                if (IsA(lfirst(lc), FuncExpr) &&
+                    !foreign_expr_walker(
+                        (Node*)((FuncExpr*)lfirst(lc))->args, glob_cxt, EXPR_CTX_EXACT
+                    )) {
+                    return false;
+                }
             }
             break;
         }
