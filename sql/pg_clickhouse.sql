@@ -229,6 +229,19 @@ CREATE FUNCTION dictGet(TEXT, TEXT, ANYELEMENT) RETURNS TEXT
 AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
 LANGUAGE C STRICT;
 
+-- Create error-raising QBit distance functions to push down to ClickHouse.
+CREATE FUNCTION L2DistanceTransposed("any", "any", INT) RETURNS FLOAT8
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION cosineDistanceTransposed("any", "any", INT) RETURNS FLOAT8
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION dotProductTransposed("any", "any", INT) RETURNS FLOAT8
+AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
+LANGUAGE C IMMUTABLE STRICT;
+
 -- Create error-raising functions used for casting to ClickHouse unsigned integers.
 CREATE FUNCTION toUInt8("any") RETURNS smallint
 AS 'MODULE_PATHNAME', 'clickhouse_push_fail'
