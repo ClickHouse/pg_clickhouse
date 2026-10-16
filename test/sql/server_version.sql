@@ -19,5 +19,10 @@ SELECT clickhouse_server_version('srv_ver_binary') ~ '^[1-9][0-9]*\.[0-9]+\.[0-9
 SELECT clickhouse_server_version('srv_ver_http') ~ '^[1-9][0-9]*\.[0-9]+\.[0-9]+$'
            AS http_well_formed;
 
+-- Dropping a server closes its connection when the transaction ends
+SELECT count(*) AS conns FROM pg_backend_memory_contexts
+ WHERE name = 'pg_clickhouse binary connection' \gset
 DROP SERVER srv_ver_binary CASCADE;
+SELECT count(*) = :conns - 1 AS closed FROM pg_backend_memory_contexts
+ WHERE name = 'pg_clickhouse binary connection';
 DROP SERVER srv_ver_http CASCADE;

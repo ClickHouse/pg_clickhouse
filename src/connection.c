@@ -348,7 +348,9 @@ chfdw_inval_callback(Datum arg, int cacheid, uint32 hashvalue) {
  * Transaction-end cleanup. By the end of a transaction no foreign scan is live,
  * so close any private scan connections that were not released (e.g. a scan
  * whose End was skipped on error) and clear any leftover busy markers on cached
- * connections so they can be reused.
+ * connections so they can be reused. Close invalidated connections, too: one
+ * whose user mapping or server was dropped would otherwise stay open for the
+ * life of the backend, since nothing looks it up again.
  */
 static void
 chfdw_xact_callback(XactEvent event, void* arg) {
@@ -377,6 +379,10 @@ chfdw_xact_callback(XactEvent event, void* arg) {
         hash_seq_init(&scan, ConnectionHash);
         while ((entry = (ConnCacheEntry*)hash_seq_search(&scan)) != NULL) {
             entry->busy = false;
+            if (entry->gate.conn != NULL && entry->invalidated) {
+                entry->gate.methods->disconnect(entry->gate.conn);
+                entry->gate.conn = NULL;
+            }
         }
     }
 }
