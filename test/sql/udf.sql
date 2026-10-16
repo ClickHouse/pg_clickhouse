@@ -15,10 +15,18 @@ $$);
 CALL clickhouse_perform('udf_admin', $$
     INSERT INTO udf_test.vals VALUES (1), (2), (3)
 $$);
+CALL clickhouse_perform('udf_admin', $$
+    CREATE TABLE udf_test.typed (p Point, a String, b String) ENGINE = TinyLog
+$$);
 
 CREATE FOREIGN TABLE udf_vals (
     id int
 ) SERVER udf_loopback OPTIONS (table_name 'vals');
+CREATE FOREIGN TABLE udf_typed (
+    p point,
+    a inet,
+    b bit(3)
+) SERVER udf_loopback OPTIONS (table_name 'typed');
 
 CREATE FUNCTION keep_local(bigint) RETURNS bigint LANGUAGE plpgsql AS $$
 BEGIN
@@ -66,6 +74,11 @@ SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE set_limit(id) = '1' $$
 CREATE EXTENSION IF NOT EXISTS citext;
 SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) = '1' $$);
 SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) IS NULL $$);
+
+-- Keep builtin types without ClickHouse equivalent local.
+SELECT * FROM remote_sql($$ SELECT 1 FROM udf_typed WHERE p ~= point '(1,2)' $$);
+SELECT * FROM remote_sql($$ SELECT 1 FROM udf_typed WHERE a < inet '10.0.0.9' $$);
+SELECT * FROM remote_sql($$ SELECT 1 FROM udf_typed WHERE b = B'101' $$);
 
 -- Wait for a lock before loading intarray.
 SELECT pg_advisory_lock(hashtext('intarray'));

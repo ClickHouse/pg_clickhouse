@@ -25,6 +25,7 @@
 #include "utils/builtins.h"
 #include "utils/hsearch.h"
 #include "utils/inval.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 /* Hash table for caching the results of shippability lookups */
@@ -142,6 +143,43 @@ lookup_shippable(Oid objectId, Oid classId, CHFdwRelationInfo* fpinfo) {
 bool
 chfdw_is_builtin(Oid objectId) {
     return (objectId < FirstUnpinnedObjectId);
+}
+
+/*
+ * Other builtin types, such as geometric, network and bit string types,
+ * compare differently in ClickHouse or lack a ClickHouse literal form
+ */
+static bool
+is_known_type(Oid type_oid) {
+    Oid elem_oid = get_element_type(type_oid);
+
+    switch (OidIsValid(elem_oid) ? elem_oid : type_oid) {
+    case BOOLOID:
+    case INT2OID:
+    case INT4OID:
+    case INT8OID:
+    case OIDOID:
+    case FLOAT4OID:
+    case FLOAT8OID:
+    case NUMERICOID:
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID:
+    case NAMEOID:
+    case BYTEAOID:
+    case UUIDOID:
+    case DATEOID:
+    case TIMEOID:
+    case TIMESTAMPOID:
+    case TIMESTAMPTZOID:
+    case INTERVALOID:
+    case JSONOID:
+    case JSONBOID:
+    case RECORDOID:
+        return true;
+    default:
+        return false;
+    }
 }
 
 static bool
@@ -398,14 +436,18 @@ chfdw_is_shippable(
     }
 
     /*
-     * Builtin operators and types ship by default. Builtin functions only
-     * ship when explicitly registered via chfdw_check_for_custom_function, so
-     * unrecognised builtins fail planner shippability checks rather than
-     * deparse to a name that may behave differently on ClickHouse. Cast
+     * Builtin operators ship by default, builtin types only when
+     * is_known_type. Builtin functions only ship when explicitly registered
+     * via chfdw_check_for_custom_function, so unrecognised builtins fail
+     * planner shippability checks rather than deparse to a name that may
+     * behave differently on ClickHouse. Cast
      * coercions are an exception: deparse handles them as cast() or by
      * dropping the implicit wrapper, regardless of the underlying funcid.
      */
     if (chfdw_is_builtin(objectId)) {
+        if (classId == TypeRelationId) {
+            return is_known_type(objectId);
+        }
         if (classId != ProcedureRelationId) {
             return true;
         }
