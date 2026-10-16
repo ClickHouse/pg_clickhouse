@@ -2126,10 +2126,11 @@ deparseSelectSql(
          * the subquery, no need to care about *retrieved_attrs.
          */
         deparseSubqueryTargetList(context);
-    } else if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel)) {
+    } else if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel) || tlist != NIL) {
         /*
-         * For a join or upper relation the input tlist gives the list of
-         * columns required to be fetched from the foreign server.
+         * For a join or upper relation, or a base relation sorted by a vector
+         * distance, the input tlist gives the list of columns required to be
+         * fetched from the foreign server.
          */
         deparseExplicitTargetList(tlist, retrieved_attrs, context);
     } else {

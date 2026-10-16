@@ -64,16 +64,22 @@ All notable changes to this project will be documented in this file. It uses the
     classes select the distance function. `REINDEX` rebuilds these indexes
     and `DROP INDEX` drops them. Thanks to Kaushik Iska for the PR
     ([#418])!
-*   Added the `vector_columns` option to `IMPORT FOREIGN SCHEMA`. Set it to
-    `indexed` to import float array columns with a ClickHouse vector
-    similarity index as [pgvector] `vector(n)` columns. pg_clickhouse reports
-    each column it converts with a `NOTICE`. The default, `none`, imports
-    them as arrays, as before. Thanks to Kaushik Iska for the PR ([#420])!
 *   Added `clickhouse_vector_indexes()`, which lists the vector similarity
     indexes of a foreign table, their sizes, and their unfinished builds.
     Also added `pg_clickhouse.explain_remote`, which adds the plan ClickHouse
     chooses, including the indexes it uses, to `EXPLAIN`. Thanks to Kaushik
     Iska for the PR ([#419])!
+*   Added the `vector_columns` option to `IMPORT FOREIGN SCHEMA`. Set it to
+    `indexed` to import float array columns with a ClickHouse vector
+    similarity index as [pgvector] `vector(n)` columns. pg_clickhouse reports
+    each column it converts with a `NOTICE`. The default, `none`, imports
+    them as arrays, as before. Thanks to Kaushik Iska for the PR ([#420])!
+*   Changed nearest neighbor searches to take each row's distance from
+    ClickHouse, rather than fetching the row's vector to compute the
+    distance in Postgres. Reading the vectors kept ClickHouse from answering
+    a search from its vector similarity index alone, which made indexed
+    searches about ten times slower. Thanks to Kaushik Iska for the PR
+    ([#422])!
 
 ### 🚀 Distribution
 
@@ -188,6 +194,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#420 Add vector_columns option to IMPORT FOREIGN SCHEMA"
   [#421]: https://github.com/ClickHouse/pg_clickhouse/pull/421
     "ClickHouse/pg_clickhouse#421 Keep float sorts with non-default NULLS ordering local"
+  [#422]: https://github.com/ClickHouse/pg_clickhouse/pull/422
+    "ClickHouse/pg_clickhouse#422 Return pgvector distances from ClickHouse"
   [#430]: https://github.com/ClickHouse/pg_clickhouse/pull/430
     "ClickHouse/pg_clickhouse#430 Close connections of dropped user mappings and servers"
   [#431]: https://github.com/ClickHouse/pg_clickhouse/pull/431
