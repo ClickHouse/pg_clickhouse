@@ -103,6 +103,9 @@ All notable changes to this project will be documented in this file. It uses the
     connection of their own. Catching two errors from `clickhouse_query()`
     in one transaction crashed the backend. Thanks to Kaushik Iska for the
     PR ([#432])!
+*   Fixed growth of the cache of pushed-down function, type, and operator
+    definitions, which kept entries for dropped objects. Thanks to Kaushik
+    Iska for the PR ([#434])!
 *   Fixed the HTTP driver's reporting of exceptions that ClickHouse raises
     after it starts sending results, which appeared as garbled errors such
     as "unknown type: f". It now reports the ClickHouse exception. Thanks to
@@ -164,6 +167,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#431 Free INSERT state when the INSERT ends"
   [#432]: https://github.com/ClickHouse/pg_clickhouse/pull/432
     "ClickHouse/pg_clickhouse#432 Free scans aborted by caught errors"
+  [#434]: https://github.com/ClickHouse/pg_clickhouse/pull/434
+    "ClickHouse/pg_clickhouse#434 Drop stale custom object definitions"
   [#436]: https://github.com/ClickHouse/pg_clickhouse/pull/436
     "ClickHouse/pg_clickhouse#436 Report exceptions raised mid-stream by the HTTP driver"
   [#438]: https://github.com/ClickHouse/pg_clickhouse/pull/438

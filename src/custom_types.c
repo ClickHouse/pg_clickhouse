@@ -3,6 +3,7 @@
 #include "access/heapam.h"
 #include "access/htup.h"
 #include "access/htup_details.h"
+#include "access/xact.h"
 #include "catalog/dependency.h"
 #include "catalog/pg_operator_d.h"
 #include "catalog/pg_proc.h"
@@ -48,13 +49,53 @@
 
 static HTAB* custom_objects_cache = NULL;
 static HTAB* custom_columns_cache = NULL;
+static bool custom_objects_stale  = false;
+
+/*
+ * Note a change to a function, type, or operator, so that the transaction's
+ * end drops the cached definitions. Dropping them now could free one in use.
+ */
+static void
+invalidate_custom_objects_cache(Datum arg, int cacheid, uint32 hashvalue) {
+    custom_objects_stale = true;
+}
+
+/*
+ * Drop the cached definitions after a change to the objects they describe.
+ * Without it, each DROP and CREATE of an extension left entries for objects
+ * that no longer exist, and a reused OID could find another object's entry.
+ */
+static void
+drop_stale_custom_objects(XactEvent event, void* arg) {
+    if (custom_objects_stale && custom_objects_cache &&
+        (event == XACT_EVENT_COMMIT || event == XACT_EVENT_ABORT)) {
+        hash_destroy(custom_objects_cache);
+        custom_objects_cache = NULL;
+        custom_objects_stale = false;
+    }
+}
 
 static HTAB*
 create_custom_objects_cache(void) {
+    static bool registered = false;
     HASHCTL ctl;
 
-    ctl.keysize   = sizeof(Oid);
-    ctl.entrysize = sizeof(CustomObjectDef);
+    if (!registered) {
+        CacheRegisterSyscacheCallback(
+            PROCOID, invalidate_custom_objects_cache, (Datum)0
+        );
+        CacheRegisterSyscacheCallback(
+            TYPEOID, invalidate_custom_objects_cache, (Datum)0
+        );
+        CacheRegisterSyscacheCallback(
+            OPEROID, invalidate_custom_objects_cache, (Datum)0
+        );
+        RegisterXactCallback(drop_stale_custom_objects, NULL);
+        registered = true;
+    }
+    custom_objects_stale = false;
+    ctl.keysize          = sizeof(Oid);
+    ctl.entrysize        = sizeof(CustomObjectDef);
 
     return hash_create(
         "pg_clickhouse custom functions", 20, &ctl, HASH_ELEM | HASH_BLOBS
