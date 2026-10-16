@@ -64,6 +64,11 @@ All notable changes to this project will be documented in this file. It uses the
     classes select the distance function. `REINDEX` rebuilds these indexes
     and `DROP INDEX` drops them. Thanks to Kaushik Iska for the PR
     ([#418])!
+*   Added `clickhouse_vector_indexes()`, which lists the vector similarity
+    indexes of a foreign table, their sizes, and their unfinished builds.
+    Also added `pg_clickhouse.explain_remote`, which adds the plan ClickHouse
+    chooses, including the indexes it uses, to `EXPLAIN`. Thanks to Kaushik
+    Iska for the PR ([#419])!
 
 ### 🚀 Distribution
 
@@ -168,6 +173,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#417 Lease the connection for a foreign INSERT"
   [#418]: https://github.com/ClickHouse/pg_clickhouse/pull/418
     "ClickHouse/pg_clickhouse#418 Create ClickHouse vector indexes with CREATE INDEX"
+  [#419]: https://github.com/ClickHouse/pg_clickhouse/pull/419
+    "ClickHouse/pg_clickhouse#419 Show vector index state and ClickHouse plans"
   [#430]: https://github.com/ClickHouse/pg_clickhouse/pull/430
     "ClickHouse/pg_clickhouse#430 Close connections of dropped user mappings and servers"
   [#431]: https://github.com/ClickHouse/pg_clickhouse/pull/431

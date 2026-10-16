@@ -1718,6 +1718,13 @@ clickhouseExplainForeignScan(ForeignScanState* node, ExplainState* es) {
         sql = strVal(list_nth(fdw_private, FdwScanPrivateSelectSql));
         ExplainPropertyText("Remote SQL", sql, es);
     }
+    if (chfdw_explain_remote()) {
+        chfdw_explain_remote_plan(
+            (ForeignScan*)node->ss.ps.plan,
+            strVal(list_nth(fdw_private, FdwScanPrivateSelectSql)),
+            es
+        );
+    }
 
     if (es->timing && time_used > 0) {
         ExplainPropertyFloat("FDW Time", "ms", time_used, 3, es);
