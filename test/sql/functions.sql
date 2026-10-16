@@ -456,7 +456,7 @@ BEGIN
 			-- Times64 supported but needs to be enabled.
 			opt := ' SETTINGS enable_time_time64_type = 1';
 		END IF;
-		-- Set up a foreign table mapping timetz to Time64.
+		-- Map PostgreSQL time to ClickHouse Time64 in a foreign table.
 		CALL clickhouse_perform('functions_admin',
 			'CREATE TABLE functions_test.times (t64 Time64) engine=TinyLog()' || opt
 		);
@@ -466,7 +466,7 @@ BEGIN
 				   ('00:00:00'),
 				   ('23:59:59.999999999')
 		$q$);
-		CREATE FOREIGN TABLE times (t64 TIMETZ) SERVER functions_loopback;
+		CREATE FOREIGN TABLE times (t64 TIME) SERVER functions_loopback;
 
 		-- Test that CURRENT_TIME passes down properly.
 		EXPLAIN (VERBOSE, FORMAT JSON) SELECT * FROM times WHERE t64 <> CURRENT_TIME INTO output;

@@ -121,6 +121,15 @@ All notable changes to this project will be documented in this file. It uses the
     as a partitionwise `count(*)` self-join of foreign partitions. Each row
     wrote one byte past the end of a zero-length array. Thanks to Kaushik
     Iska for the PR ([#438])!
+*   Fixed precision loss in pushed down `real` arithmetic, `numeric`
+    division, and `numeric` constants with fractions or over 18 digits, which
+    ClickHouse computed as `Float64`. `numeric` division now uses
+    `divideDecimal` with the Postgres result scale ([#439]).
+*   Fixed pushdown of expressions ClickHouse evaluates differently. These now
+    run in Postgres: expressions on builtin types such as geometric and bit
+    string types, `jsonb` comparisons, `uuid` and `inet` ordering, interval
+    constants with months, and appending one element to an array with `||`
+    ([#439]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -182,6 +191,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#436 Report exceptions raised mid-stream by the HTTP driver"
   [#438]: https://github.com/ClickHouse/pg_clickhouse/pull/438
     "ClickHouse/pg_clickhouse#438 Stop writing past nulls on zero-column scans"
+  [#439]: https://github.com/ClickHouse/pg_clickhouse/pull/439
+    "ClickHouse/pg_clickhouse#439 Keep expressions on unsupported builtin types local"
   [#443]: https://github.com/ClickHouse/pg_clickhouse/pull/443
     "ClickHouse/pg_clickhouse#443 Fix pushdown for operators ClickHouse implements as functions"
 

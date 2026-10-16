@@ -1806,6 +1806,7 @@ equivalents as follows:
 *   `->>` (JSON/JSONB extract element as text): [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
 *   `->` (JSON/JSONB extract): [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
 *   `/` (integer division): [intDiv](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#intDiv)
+*   `/` (numeric division): [divideDecimal](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#divideDecimal)
 *   `^` (exponent): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
 *   `|/` (square root): [sqrt](https://clickhouse.com/docs/sql-reference/functions/math-functions#sqrt)
 *   `||/` (cube root): [cbrt](https://clickhouse.com/docs/sql-reference/functions/math-functions#cbrt)
