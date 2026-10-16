@@ -442,6 +442,32 @@ DROP SERVER http_min_tls_v13;
 CREATE SERVER http_min_tls_bad FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'http_test', driver 'http', min_tls_version 'TLSv2');
 
+/* ===== Exceptions after ClickHouse starts sending data ===== */
+
+/* Report the exception, not a garbled decoder error. */
+CALL clickhouse_perform('http_admin', $$CREATE VIEW http_test.late_error AS
+    SELECT number AS n, throwIf(number = 100000, 'boom') AS t FROM numbers(1000000)$$);
+CREATE FOREIGN TABLE late_error (n bigint, t int)
+    SERVER http_loopback OPTIONS (table_name 'late_error');
+
+/* Strip the expression from the message, since it varies by version. */
+CREATE FUNCTION late_error(sql text) RETURNS text LANGUAGE plpgsql AS $$
+BEGIN
+    EXECUTE sql;
+    RETURN 'no error';
+EXCEPTION WHEN OTHERS THEN
+    RETURN regexp_replace(SQLERRM, ': while executing ''.*''', '');
+END $$;
+
+SELECT late_error('SELECT * FROM late_error');
+SELECT late_error($$
+    SELECT * FROM clickhouse_query('http_loopback', 'SELECT number, if(number < 500000, number, throwIf(1))
+      FROM numbers(1000000) SETTINGS max_block_size = 1000') AS t(a bigint, b bigint)
+$$);
+
+DROP FUNCTION late_error;
+DROP FOREIGN TABLE late_error;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback_bad;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback2;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback;

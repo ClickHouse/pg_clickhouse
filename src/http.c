@@ -16,6 +16,7 @@
  *
  *-------------------------------------------------------------------------
  */
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -193,6 +194,10 @@ struct HttpStream {
     ch_cancel_check cancel; /* NULL leaves the transfer uninterruptible */
     char error_buffer[CURL_ERROR_SIZE];
 
+    /* Last bytes received, where ClickHouse writes a late exception. */
+    char tail[CH_ERROR_MSG_LEN];
+    size_t tail_len;
+
     /* Public state readable via C accessors */
     long http_status;
     char query_id[CH_HTTP_QUERY_ID_LEN];
@@ -228,7 +233,8 @@ is_overridden(const ch_http_request* req, const char* name) {
 
 /* ----------------------------------------------------------------
  * write_callback: CURL write callback. Appends data to the stream
- * buffer and, when streaming, pauses receipt so the caller drains it.
+ * buffer and, when streaming, keeps its tail and pauses receipt so the
+ * caller drains it.
  * ----------------------------------------------------------------
  */
 static size_t
@@ -260,6 +266,13 @@ write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
     self->buf[self->write_pos] = '\0';
 
     if (self->streaming) {
+        size_t n    = Min(realsize, sizeof(self->tail));
+        size_t keep = Min(self->tail_len, sizeof(self->tail) - n);
+
+        memmove(self->tail, self->tail + self->tail_len - keep, keep);
+        memcpy(self->tail + keep, (char*)contents + realsize - n, n);
+        self->tail_len = keep + n;
+
         self->paused = true;
         curl_easy_pause(self->curl, CURLPAUSE_RECV);
     }
@@ -450,6 +463,38 @@ ch_http_stream_next_chunk(void* ud, const void** data, size_t* len, char** error
     /* Bytes stay readable until the next pump refills from offset 0 */
     stream->write_pos = 0;
     return true;
+}
+
+/*
+ * Copy the exception ClickHouse writes into the body when a query fails after
+ * it has sent the status and some data. ClickHouse 25 and later precede it
+ * with an `__exception__` line, and 26.9 with a tag as well; earlier versions
+ * just append it. Either way it ends the body, so drain what little remains
+ * first. Returns false when the tail holds no exception.
+ */
+bool
+ch_http_stream_exception(HttpStream* stream, char* buf, size_t bufsize) {
+    /* Stop short of draining a long result after some other decoding error. */
+    for (size_t n = 0; !stream->transfer_done && n < sizeof(stream->tail);) {
+        stream->write_pos = 0;
+        if (pump(stream) < 0) {
+            break;
+        }
+        n += stream->write_pos;
+    }
+    stream->write_pos = 0;
+
+    const char* end = stream->tail + stream->tail_len;
+    const char* exc = stream->tail;
+    while ((exc = memmem(exc, end - exc, "Code: ", 6)) != NULL) {
+        if (exc + 6 < end && isdigit((unsigned char)exc[6])) {
+            ch_http_copy_error(buf, bufsize, exc, end - exc);
+            return true;
+        }
+        exc += 6;
+    }
+
+    return false;
 }
 
 /* ----------------------------------------------------------------

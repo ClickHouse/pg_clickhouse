@@ -734,7 +734,10 @@ binary_simple_query(void* conn, const ch_query* query) {
     return chfdw_cursor_open(conn, query, &src);
 }
 
-/* Report a truncated response as cancellation when that is what caused it. */
+/*
+ * Report a truncated response as cancellation when that is what caused it,
+ * and a response that ends in an exception as that exception.
+ */
 static void
 http_native_read_error(ch_cursor* cursor) {
     HttpStream* stream = cursor->response;
@@ -756,6 +759,16 @@ http_native_read_error(ch_cursor* cursor) {
             ERROR,
             errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
             errmsg("pg_clickhouse: query was aborted")
+        );
+    }
+
+    char error[CH_ERROR_MSG_LEN];
+    if (ch_http_stream_exception(stream, error, sizeof(error))) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
+            errmsg("pg_clickhouse: %s", error),
+            errdetail_internal("Remote Query: %.64000s", cursor->query)
         );
     }
 }

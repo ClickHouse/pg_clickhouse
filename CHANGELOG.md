@@ -103,6 +103,10 @@ All notable changes to this project will be documented in this file. It uses the
     connection of their own. Catching two errors from `clickhouse_query()`
     in one transaction crashed the backend. Thanks to Kaushik Iska for the
     PR ([#432])!
+*   Fixed the HTTP driver's reporting of exceptions that ClickHouse raises
+    after it starts sending results, which appeared as garbled errors such
+    as "unknown type: f". It now reports the ClickHouse exception. Thanks to
+    Kaushik Iska for the PR ([#436])!
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -156,6 +160,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#431 Free INSERT state when the INSERT ends"
   [#432]: https://github.com/ClickHouse/pg_clickhouse/pull/432
     "ClickHouse/pg_clickhouse#432 Free scans aborted by caught errors"
+  [#436]: https://github.com/ClickHouse/pg_clickhouse/pull/436
+    "ClickHouse/pg_clickhouse#436 Report exceptions raised mid-stream by the HTTP driver"
 
 ## [v0.11.0] — 2026-09-30
 
