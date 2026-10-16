@@ -277,13 +277,12 @@ chfdw_vector_plan_info(
             WARNING,
             errmsg(
                 "pg_clickhouse: vector search on \"%s\" will not use a ClickHouse "
-                "vector "
-                "index: %s",
-                get_rel_name(relid),
-                reason
+                "vector index",
+                get_rel_name(relid)
             ),
+            errdetail_internal(reason),
             errhint(
-                "Set pg_clickhouse.vector_planner_warnings = off to hide this warning."
+                "set pg_clickhouse.vector_planner_warnings = off to hide this warning."
             )
         );
     }
