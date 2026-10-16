@@ -1804,7 +1804,13 @@ create_foreign_modify(
         fmstate->conn.gate.encoding_check
     );
 
-    old_mcxt       = MemoryContextSwitchTo(PortalContext);
+    /*
+     * Keep the insert state, with its buffered rows, in executor memory, freed
+     * when the statement ends or its subtransaction aborts. The portal context
+     * would keep it until the outermost statement ended, so that each INSERT
+     * run by a PL/pgSQL loop held on to its writer and buffers.
+     */
+    old_mcxt       = MemoryContextSwitchTo(estate->es_query_cxt);
     fmstate->state = fmstate->conn.gate.methods->prepare_insert(
         fmstate->conn.gate.conn, rri, target_attrs, &q, table_name
     );

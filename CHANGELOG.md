@@ -89,6 +89,10 @@ All notable changes to this project will be documented in this file. It uses the
     binary driver when both tables belong to the same server, which failed
     with "Unexpected packet Query received from client". Thanks to Kaushik
     Iska for the PR ([#417])!
+*   Fixed memory growth in PL/pgSQL loops and procedures that run many
+    `INSERT`s into foreign tables. Each `INSERT` kept its writer and
+    buffers, up to the size of its largest batch, until the outermost
+    statement ended. Thanks to Kaushik Iska for the PR ([#431])!
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -136,6 +140,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#416 Keep aggregates with ORDER BY local"
   [#417]: https://github.com/ClickHouse/pg_clickhouse/pull/417
     "ClickHouse/pg_clickhouse#417 Lease the connection for a foreign INSERT"
+  [#431]: https://github.com/ClickHouse/pg_clickhouse/pull/431
+    "ClickHouse/pg_clickhouse#431 Free INSERT state when the INSERT ends"
 
 ## [v0.11.0] — 2026-09-30
 

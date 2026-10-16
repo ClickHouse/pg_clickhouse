@@ -343,6 +343,17 @@ BEGIN
 END $$;
 SELECT * FROM checked ORDER BY c1;
 
+/* Each INSERT frees its writer when it ends, not when the block does */
+DO $$
+BEGIN
+    FOR i IN 1..3 LOOP
+        INSERT INTO checked VALUES (i);
+    END LOOP;
+    RAISE NOTICE 'writers: %', (
+        SELECT count(*) FROM pg_backend_memory_contexts WHERE name = 'pgch writer'
+    );
+END $$;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 CALL clickhouse_perform('binary_inserts_admin', 'DROP DATABASE binary_inserts_test');
 DROP SERVER binary_inserts_loopback CASCADE;
