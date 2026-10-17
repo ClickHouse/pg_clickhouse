@@ -58,6 +58,12 @@ All notable changes to this project will be documented in this file. It uses the
     from ClickHouse for `pg_clickhouse.vector_metadata_ttl` seconds;
     `clickhouse_refresh_metadata()` clears the cache. Thanks to Kaushik Iska
     for the PR ([#414])!
+*   Added `CREATE INDEX ... USING clickhouse` to create ClickHouse vector
+    similarity indexes on pgvector columns of foreign tables. The
+    `vector_l2_ops`, `vector_cosine_ops`, and `vector_ip_ops` operator
+    classes select the distance function. `REINDEX` rebuilds these indexes
+    and `DROP INDEX` drops them. Thanks to Kaushik Iska for the PR
+    ([#418])!
 
 ### 🚀 Distribution
 
@@ -179,6 +185,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#416 Keep aggregates with ORDER BY local"
   [#417]: https://github.com/ClickHouse/pg_clickhouse/pull/417
     "ClickHouse/pg_clickhouse#417 Lease the connection for a foreign INSERT"
+  [#418]: https://github.com/ClickHouse/pg_clickhouse/pull/418
+    "ClickHouse/pg_clickhouse#418 Create ClickHouse vector indexes with CREATE INDEX"
   [#430]: https://github.com/ClickHouse/pg_clickhouse/pull/430
     "ClickHouse/pg_clickhouse#430 Close connections of dropped user mappings and servers"
   [#431]: https://github.com/ClickHouse/pg_clickhouse/pull/431

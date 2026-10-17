@@ -1957,6 +1957,55 @@ A tiebreaker, such as `ORDER BY embedding <=> '[...]', id`, also pushes
 down, but ClickHouse does not use a vector similarity index for a sort with
 more than one key.
 
+##### Vector Indexes
+
+Use `CREATE INDEX ... USING clickhouse` on a foreign table to create a
+ClickHouse [vector similarity index] and build it for existing data. The
+operator class selects the distance function:
+
+```pgsql
+CREATE INDEX items_embedding ON items USING clickhouse (embedding vector_cosine_ops)
+  WITH (quantization = 'bf16', m = 32, ef_construction = 128);
+```
+
+| Operator class      | ClickHouse metric | Search operator |
+|---------------------|-------------------|-----------------|
+| `vector_l2_ops`     | `L2Distance`      | `<->`           |
+| `vector_cosine_ops` | `cosineDistance`  | `<=>`           |
+| `vector_ip_ops`     | `dotProduct`      | `<#>`           |
+
+The `WITH` clause supports these options:
+
+*   `quantization`: `f64`, `f32`, `f16`, `bf16`, `i8`, or `b1`
+*   `m` and `ef_construction`: HNSW build parameters, sent only with
+    `quantization`; they default to 32 and 128
+*   `dimensions`: the vector length, for a column without a `vector(n)`
+    type modifier
+*   `granularity`: the index granularity
+*   `materialize`: set to `false` to skip building the index for existing
+    data
+
+pg_clickhouse ignores columns without a vector operator class, since
+ClickHouse can filter on any column.
+
+`CREATE INDEX` waits for ClickHouse to build the index, while `CREATE INDEX
+CONCURRENTLY` starts the build and returns. `REINDEX INDEX` rebuilds one
+index, `REINDEX TABLE` rebuilds every vector index of a foreign table, and
+`DROP INDEX` drops the index from ClickHouse. Vector indexes require
+ClickHouse 25.8 or later, and `dotProduct` indexes require 26.8 or later.
+Only the owner of the foreign table may run these commands.
+
+These commands work only once pg_clickhouse is loaded, so set
+[`session_preload_libraries`](#session_preload_libraries) or run `LOAD
+'pg_clickhouse'` first. ClickHouse DDL is not transactional: rolling back a
+transaction does not undo it.
+
+`DROP INDEX` and `REINDEX INDEX` look up an index by name among the foreign
+tables in the schemas on the `search_path`. They also find indexes created
+directly in ClickHouse, once pg_clickhouse refreshes its cache of index
+definitions; see [`pg_clickhouse.vector_metadata_ttl`]. They fail if indexes
+on two different remote tables have the same name.
+
 ##### Vector Index Use
 
 For a nearest neighbor search, `EXPLAIN` shows the distance function and the

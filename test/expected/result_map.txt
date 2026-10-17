@@ -348,6 +348,19 @@ vector_pushdown.sql
  23.3       | installed | vector_pushdown_1.out
  any        | absent    | vector_pushdown_2.out
 
+vector_index_ddl.sql
+--------------------
+
+ Postgres | File
+----------|----------------------
+ 14-19    | vector_index_ddl.out
+
+ ClickHouse | pgvector  | File
+------------|-----------|------------------------
+ 25.8+      | installed | vector_index_ddl.out
+ 23.3-25.3  | installed | vector_index_ddl_1.out
+ any        | absent    | vector_index_ddl_2.out
+
 vector_index_use.sql
 --------------------
 
