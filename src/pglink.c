@@ -3,6 +3,8 @@
 #include "access/htup_details.h"
 #include "access/tupdesc.h"
 #include "catalog/pg_type_d.h"
+#include "commands/defrem.h"
+#include "commands/extension.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
@@ -1087,9 +1089,37 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
 
     cursor = conn.methods->simple_query(conn.conn, &query);
 
-    ChFdwScanRowContext cols_ctx = {
-        NULL, list_make2_int(1, 2), NULL, NULL, NULL, NULL
-    };
+    ChFdwScanRowContext cols_ctx = { NULL, list_make3_int(1, 2, 3), NULL, NULL, NULL,
+                                     NULL };
+
+    /* vector_columns 'indexed' imports vector-indexed arrays as vector(n) */
+    bool vectors = false;
+    ListCell* olc;
+
+    foreach (olc, stmt->options) {
+        DefElem* def = lfirst(olc);
+
+        if (strcmp(def->defname, "vector_columns") == 0) {
+            char* val = defGetString(def);
+
+            vectors = strcmp(val, "indexed") == 0;
+            if (!vectors && strcmp(val, "none") != 0) {
+                ereport(
+                    ERROR,
+                    errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                    errmsg("invalid value for option \"vector_columns\": \"%s\"", val),
+                    errhint("Valid values are \"none\" and \"indexed\".")
+                );
+            }
+            if (vectors && !OidIsValid(get_extension_oid("vector", true))) {
+                ereport(
+                    ERROR,
+                    errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                    errmsg("vector_columns 'indexed' requires the pgvector extension")
+                );
+            }
+        }
+    }
 
     ChFdwScanRowContext tables_ctx = {
         .retrieved_attrs = list_make3_int(1, 2, 3),
@@ -1157,26 +1187,44 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
             quote_identifier(table_name)
         );
         query.sql = psprintf(
-            "SELECT name, type "
-            "FROM system.columns "
-            "WHERE database = %s "
-            "AND table = %s",
+            "SELECT c.name, c.type, ifNull(i.type_full, '') "
+            "FROM system.columns AS c LEFT JOIN ("
+            "SELECT replaceRegexpAll(expr, '^`|`$', '') AS col, "
+            "any(type_full) AS type_full FROM system.data_skipping_indices "
+            "WHERE database = %s AND table = %s AND type = 'vector_similarity' "
+            "GROUP BY col) AS i ON c.name = i.col "
+            "WHERE c.database = %s AND c.table = %s ORDER BY c.position",
+            ch_quote_literal(stmt->remote_schema),
+            ch_quote_literal(table_name),
             ch_quote_literal(stmt->remote_schema),
             ch_quote_literal(table_name)
         );
 
         cols_ctx.cursor = conn.methods->simple_query(conn.conn, &query);
         while ((dvalues = conn.methods->fetch_row(&cols_ctx)) != NULL) {
-            List* options     = NIL;
-            bool is_nullable  = false;
-            char* colname     = TextDatumGetCString(dvalues[0]);
-            char* remote_type = parse_type(
-                table_name,
-                colname,
-                TextDatumGetCString(dvalues[1]),
-                &is_nullable,
-                &options
-            );
+            List* options    = NIL;
+            bool is_nullable = false;
+            char* colname    = TextDatumGetCString(dvalues[0]);
+            char* chtype     = TextDatumGetCString(dvalues[1]);
+            char* remote_type =
+                parse_type(table_name, colname, chtype, &is_nullable, &options);
+            int dims = chfdw_vector_index_dims(TextDatumGetCString(dvalues[2]));
+            char* vector_decl =
+                vectors && dims > 0 ? chfdw_pgvector_type_decl(dims) : NULL;
+
+            if (vector_decl && strncmp(chtype, "Array(", 6) == 0) {
+                ereport(
+                    NOTICE,
+                    errmsg(
+                        "importing column \"%s.%s\" of type %s as %s",
+                        table_name,
+                        colname,
+                        chtype,
+                        vector_decl
+                    )
+                );
+                remote_type = vector_decl;
+            }
 
             if (!first) {
                 appendStringInfoString(&buf, ",\n");

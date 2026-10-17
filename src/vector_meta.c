@@ -226,6 +226,16 @@ parse_vector_index(const char* type_full, VectorIndexInfo* info) {
 }
 
 /*
+ * Return the dimensions of a vector_similarity() index declaration, or 0.
+ */
+int
+chfdw_vector_index_dims(const char* type_full) {
+    VectorIndexInfo info = {};
+
+    return parse_vector_index(type_full, &info) ? info.dims : 0;
+}
+
+/*
  * Return a column expression as ClickHouse prints it, with a name that needs
  * quoting unquoted: `Mixed Col` is Mixed Col.
  */
