@@ -293,6 +293,7 @@ subplan_pushdown.sql
  Postgres | File
 ----------|------------------------
  19       | subplan_pushdown.out
+ 19rc1    | subplan_pushdown_0.out
  17-18    | subplan_pushdown_1.out
  16       | subplan_pushdown_2.out
  14-15    | subplan_pushdown_3.out

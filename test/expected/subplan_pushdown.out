@@ -189,7 +189,7 @@ ORDER BY item_id;
  Foreign Scan
    Output: items.item_id
    Relations: (items) LEFT ANTI JOIN (sales)
-   Remote SQL: SELECT r1.item_id FROM  subplan_test.items r1 LEFT ANTI JOIN subplan_test.sales r3 ON (((r1.item_id = r3.item_id)) AND ((r3.region = 'east'))) ORDER BY r1.item_id ASC NULLS LAST
+   Remote SQL: SELECT r1.item_id FROM  subplan_test.items r1 LEFT ANTI JOIN subplan_test.sales r4 ON (((r1.item_id = r4.item_id)) AND ((r4.region = 'east'))) ORDER BY r1.item_id ASC NULLS LAST
 (4 rows)
 
 SELECT item_id FROM items
