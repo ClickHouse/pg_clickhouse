@@ -98,7 +98,7 @@ installcheck: test/schedule
 dist-test: $(EXTENSION)-$(DISTVERSION).zip
 	unzip $(EXTENSION)-$(DISTVERSION).zip
 	cd $(EXTENSION)-$(DISTVERSION)
-	make && make install && make installcheck
+	$(MAKE) && $(DIST_TEST_SUDO) $(MAKE) install && $(MAKE) installcheck
 
 .PHONY: release-notes # Show release notes for current version (must have `mknotes` in PATH).
 release-notes: CHANGELOG.md
