@@ -50,6 +50,7 @@ All notable changes to this project will be documented in this file. It uses the
     settings, and `pg_clickhouse.session_settings` overrides both for matching
     keys. Vector search settings unsupported by older servers are skipped with
     a warning. Thanks to Kaushik Iska for the PR ([#412])!
+*   Added pushdown for `^` `|/` `||/` `@` `&` `|` `#` `~` `<<` `>>` ([#443]).
 
 ### 🚀 Distribution
 
@@ -181,6 +182,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#436 Report exceptions raised mid-stream by the HTTP driver"
   [#438]: https://github.com/ClickHouse/pg_clickhouse/pull/438
     "ClickHouse/pg_clickhouse#438 Stop writing past nulls on zero-column scans"
+  [#443]: https://github.com/ClickHouse/pg_clickhouse/pull/443
+    "ClickHouse/pg_clickhouse#443 Fix pushdown for operators ClickHouse implements as functions"
 
 ## [v0.11.0] — 2026-09-30
 

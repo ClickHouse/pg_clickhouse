@@ -5079,34 +5079,12 @@ findFunction(Oid typoid, char* name) {
     return result;
 }
 
-/*
- * Deparse a pgvector distance operator to the ClickHouse distance function.
- * For <#>, emit dotProduct without the negation; callers negate or reverse
- * the sort direction.
- */
+/* Deparse dotProduct for <#>; callers negate or reverse sort direction. */
 static void
-deparseVectorDistance(
-    custom_object_type cf_type,
-    OpExpr* node,
-    deparse_expr_cxt* context
-) {
+deparseVectorDotProduct(OpExpr* node, deparse_expr_cxt* context) {
     StringInfo buf = context->buf;
 
-    switch (cf_type) {
-    case CF_VECTOR_L2:
-        appendStringInfoString(buf, "L2Distance(");
-        break;
-    case CF_VECTOR_COSINE:
-        appendStringInfoString(buf, "cosineDistance(");
-        break;
-    case CF_VECTOR_L1:
-        appendStringInfoString(buf, "L1Distance(");
-        break;
-    default:
-        Assert(cf_type == CF_VECTOR_NEG_IP);
-        appendStringInfoString(buf, "dotProduct(");
-        break;
-    }
+    appendStringInfoString(buf, "dotProduct(");
     deparseExpr(linitial(node->args), context);
     appendStringInfoString(buf, ", ");
     deparseExpr(lsecond(node->args), context);
@@ -5181,15 +5159,10 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             );
             goto cleanup;
         } break;
-        case CF_VECTOR_L2:
-        case CF_VECTOR_COSINE:
-        case CF_VECTOR_L1:
-            deparseVectorDistance(cdef->cf_type, node, context);
-            goto cleanup;
         case CF_VECTOR_NEG_IP:
             /* pgvector's <#> is the negative inner product */
             appendStringInfoString(buf, "(-");
-            deparseVectorDistance(cdef->cf_type, node, context);
+            deparseVectorDotProduct(node, context);
             appendStringInfoChar(buf, ')');
             goto cleanup;
         case CF_HSTORE_FETCHVAL: {
@@ -5222,35 +5195,11 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
 
             goto cleanup;
         } break;
-        case CF_RE2_MATCH: {
-            appendStringInfoString(buf, "match(");
-            deparseExpr(linitial(node->args), context);
-            appendStringInfoString(buf, ", ");
-            deparseExpr(lsecond(node->args), context);
-            appendStringInfoChar(buf, ')');
-            goto cleanup;
-        } break;
-        case CF_ARRAY_CONTAINS: {
-            appendStringInfoString(buf, "hasAll(");
-            deparseExpr(linitial(node->args), context);
-            appendStringInfoString(buf, ", ");
-            deparseExpr(lsecond(node->args), context);
-            appendStringInfoChar(buf, ')');
-            goto cleanup;
-        } break;
         case CF_ARRAY_CONTAINED_BY: {
             appendStringInfoString(buf, "hasAll(");
             deparseExpr(lsecond(node->args), context);
             appendStringInfoString(buf, ", ");
             deparseExpr(linitial(node->args), context);
-            appendStringInfoChar(buf, ')');
-            goto cleanup;
-        } break;
-        case CF_ARRAY_OVERLAP: {
-            appendStringInfoString(buf, "hasAny(");
-            deparseExpr(linitial(node->args), context);
-            appendStringInfoString(buf, ", ");
-            deparseExpr(lsecond(node->args), context);
             appendStringInfoChar(buf, ')');
             goto cleanup;
         } break;
@@ -5290,16 +5239,32 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             }
             /* Non-text key: fall through to standard deparse */
         } break;
+        case CF_OPERATOR_FUNC: {
+            /* ClickHouse picks narrower or unsigned types from integer args */
+            char* cast = node->opresulttype == INT2OID ||
+                                 node->opresulttype == INT4OID ||
+                                 node->opresulttype == INT8OID
+                             ? ch_format_type_extended(node->opresulttype, 0, 0)
+                             : NULL;
+
+            appendStringInfo(buf, "%s(", cdef->custom_name);
+            foreach (arg, node->args) {
+                if (foreach_current_index(arg) > 0) {
+                    appendStringInfoString(buf, ", ");
+                }
+                if (cast) {
+                    appendStringInfo(buf, "to%s(", cast);
+                }
+                deparseExpr(lfirst(arg), context);
+                if (cast) {
+                    appendStringInfoChar(buf, ')');
+                }
+            }
+            appendStringInfoChar(buf, ')');
+            goto cleanup;
+        }
         default: /* keep compiler quiet */;
         }
-    }
-
-    if ((node->opresulttype == INT2OID || node->opresulttype == INT4OID ||
-         node->opresulttype == INT8OID) &&
-        strcmp(NameStr(form->oprname), "/") == 0) {
-        char* s = ch_format_type_extended(node->opresulttype, 0, 0);
-
-        appendStringInfo(buf, "to%s", s);
     }
 
     /* Always parenthesize the expression. */
@@ -6752,7 +6717,7 @@ appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* conte
         appendStringInfoString(buf, delim);
         if (is_vector_neg_ip(em_expr)) {
             /* Sort <#> as dotProduct in reverse, the form vector indexes serve */
-            deparseVectorDistance(CF_VECTOR_NEG_IP, (OpExpr*)em_expr, context);
+            deparseVectorDotProduct((OpExpr*)em_expr, context);
             asc = !asc;
         } else {
             deparseExpr(em_expr, context);
