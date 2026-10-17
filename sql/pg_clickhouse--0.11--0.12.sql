@@ -4,3 +4,16 @@ CREATE FUNCTION clickhouse_refresh_metadata()
 RETURNS VOID
 AS 'MODULE_PATHNAME'
 LANGUAGE C;
+
+-- Report the ClickHouse vector similarity indexes of a foreign table, with
+-- their size and the build mutations not yet done.
+CREATE FUNCTION clickhouse_vector_indexes(
+    foreign_table REGCLASS,
+    OUT name TEXT,
+    OUT column_name TEXT,
+    OUT definition TEXT,
+    OUT compressed_bytes BIGINT,
+    OUT pending_mutations INT
+) RETURNS SETOF RECORD
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;

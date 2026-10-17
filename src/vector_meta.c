@@ -28,9 +28,11 @@
 #include "miscadmin.h"
 #include "utils/builtins.h"
 #include "utils/hsearch.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/resowner.h"
 #include "utils/timestamp.h"
+#include "utils/tuplestore.h"
 
 #include "cursor.h"
 #include "fdw.h"
@@ -51,6 +53,7 @@ static HTAB* vector_meta_cache = NULL;
 static MemoryContext meta_cxt  = NULL;
 
 PG_FUNCTION_INFO_V1(clickhouse_refresh_metadata);
+PG_FUNCTION_INFO_V1(clickhouse_vector_indexes);
 
 /*
  * Drop every cached entry. Called after pg_clickhouse changes an index and by
@@ -410,4 +413,72 @@ chfdw_vector_table_meta(Oid relid, UserMapping* user) {
     entry->meta       = meta;
     entry->fetched_at = now;
     return &entry->meta;
+}
+
+/*
+ * SQL: clickhouse_vector_indexes(foreign_table regclass) returns the vector
+ * similarity indexes ClickHouse reports for the table, with their size and
+ * the build mutations not yet done.
+ */
+Datum
+clickhouse_vector_indexes(PG_FUNCTION_ARGS) {
+    Oid relid             = PG_GETARG_OID(0);
+    ReturnSetInfo* rsinfo = (ReturnSetInfo*)fcinfo->resultinfo;
+    TupleDesc tupdesc;
+    char* db;
+    char* table;
+    StringInfoData sql;
+
+    if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE) {
+        elog(ERROR, "return type must be a row type");
+    }
+    if (!chfdw_is_clickhouse_table(relid)) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_WRONG_OBJECT_TYPE),
+            errmsg("\"%s\" is not a ClickHouse foreign table", get_rel_name(relid))
+        );
+    }
+    chfdw_remote_table_name(relid, &db, &table);
+
+    StringInfoData db_lit;
+    StringInfoData table_lit;
+
+    initStringInfo(&db_lit);
+    initStringInfo(&table_lit);
+    ch_append_literal(&db_lit, db, strlen(db));
+    ch_append_literal(&table_lit, table, strlen(table));
+    initStringInfo(&sql);
+    appendStringInfo(
+        &sql,
+        "SELECT name, expr, type_full, toString(data_compressed_bytes), "
+        "toString(arrayCount(c -> position(c, concat('INDEX ', name, ')')) > 0 OR "
+        "position(c, concat('INDEX ', name, ' ')) > 0 OR "
+        "position(c, concat('INDEX `', name, '`')) > 0, "
+        "(SELECT groupArray(command) FROM system.mutations WHERE database = %s "
+        "AND table = %s AND NOT is_done))) FROM system.data_skipping_indices "
+        "WHERE database = %s AND table = %s AND type = 'vector_similarity' ORDER BY "
+        "name",
+        db_lit.data,
+        table_lit.data,
+        db_lit.data,
+        table_lit.data
+    );
+
+    List* rows = chfdw_run_text_query(
+        GetUserMapping(GetUserId(), GetForeignTable(relid)->serverid), sql.data, 5
+    );
+    MemoryContext old = MemoryContextSwitchTo(rsinfo->econtext->ecxt_per_query_memory);
+    Tuplestorestate* store   = tuplestore_begin_heap(true, false, work_mem);
+    AttInMetadata* attinmeta = TupleDescGetAttInMetadata(CreateTupleDescCopy(tupdesc));
+    ListCell* lc;
+
+    foreach (lc, rows) {
+        tuplestore_puttuple(store, BuildTupleFromCStrings(attinmeta, lfirst(lc)));
+    }
+    rsinfo->returnMode = SFRM_Materialize;
+    rsinfo->setResult  = store;
+    rsinfo->setDesc    = attinmeta->tupdesc;
+    MemoryContextSwitchTo(old);
+    return (Datum)0;
 }
