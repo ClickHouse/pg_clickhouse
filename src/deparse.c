@@ -44,6 +44,7 @@
 #include "utils/datetime.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
+#include "utils/numeric.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
@@ -555,15 +556,14 @@ static bool
 op_expr_never_null(OpExpr* op, foreign_glob_cxt* glob_cxt);
 
 /*
- * True if `expr` provably cannot evaluate to NULL: a non-NULL constant, a
- * column of a scanned relation that is declared NOT NULL and cannot have been
- * null-extended by an outer join, or certain arithmetic operators over such
- * inputs (see op_expr_never_null). Anything else is assumed nullable.
+ * Check whether `expr` cannot return NULL: an array constructor, a non-NULL
+ * constant, a NOT NULL column with no NULLs added by an outer join, or certain
+ * operators with non-NULL inputs (see op_expr_never_null). Assume other
+ * expressions can return NULL.
  *
- * PG 17+ precomputes the catalog half of this as
- * RelOptInfo->notnullattnums; the syscache lookup below keeps one code path
- * across PG 14-19, so switch when PG 16 support drops. Postgres exports no
- * expression-level equivalent on any version.
+ * PG 17+ stores NOT NULL column information in RelOptInfo->notnullattnums.
+ * Use catalog lookups across PG 14-19 until PG 16 support ends. PostgreSQL
+ * provides no equivalent check for expressions.
  */
 static bool
 expr_never_null(Expr* expr, foreign_glob_cxt* glob_cxt) {
@@ -573,6 +573,10 @@ expr_never_null(Expr* expr, foreign_glob_cxt* glob_cxt) {
 
     if (IsA(expr, Const)) {
         return !((Const*)expr)->constisnull;
+    }
+
+    if (IsA(expr, ArrayExpr)) {
+        return true;
     }
 
     if (IsA(expr, Var)) {
@@ -632,14 +636,13 @@ expr_never_null(Expr* expr, foreign_glob_cxt* glob_cxt) {
 }
 
 /*
- * Operator implementation funcs that cannot return NULL when no input is NULL.
- * Limited to basic arithmetic, which returns a value or raises an error.
- * Being strict alone proves nothing here: a strict function may still compute
- * NULL from non-NULL inputs (json's ->> on a missing key, for one), and no
- * catalog flag distinguishes the two, so every entry below is hand-picked.
- * Extend as pushdown-worthy shapes turn up; the list need not stay sorted here,
- * since `sort_never_null_opfuncs` (below) sorts it in place once, at load time,
- * for consistency across PG versions.
+ * List operator functions that cannot return NULL when all inputs are non-NULL.
+ * Include basic arithmetic and array concatenation.
+ * A strict function can still return NULL for non-NULL inputs, such as JSON
+ * ->> with a missing key. PostgreSQL has no catalog flag for this behavior,
+ * so check each function before adding it.
+ * Add functions as needed for remote execution. No need to keep entries sorted:
+ * sort_never_null_opfuncs sorts them at load time across PG versions.
  */
 static Oid never_null_opfuncs[] = {
     /* + */
@@ -694,6 +697,7 @@ static Oid never_null_opfuncs[] = {
     F_FLOAT4UM,
     F_FLOAT8UM,
     F_NUMERIC_UMINUS,
+    F_ARRAY_CAT,
 };
 
 static void __attribute__((constructor))
@@ -885,17 +889,31 @@ classify_notin_subplan(SubPlan* subplan, PlannerInfo* root, Relids relids) {
     return NOTIN_SHIP_NONE;
 }
 
-/* Datetime +/- interval Param, which deparseIntervalOp splits into parts */
+/* Datetime +/- interval Const or Param, which deparseIntervalOp splits into parts */
 static bool
-is_interval_param_op(OpExpr* oe) {
-    if (list_length(oe->args) != 2 || !IsA(lsecond(oe->args), Param) ||
-        ((Param*)lsecond(oe->args))->paramkind == PARAM_MULTIEXPR) {
+is_split_interval_op(OpExpr* oe) {
+    if (list_length(oe->args) != 2 ||
+        !(IsA(lsecond(oe->args), Const) ||
+          (IsA(lsecond(oe->args), Param) &&
+           ((Param*)lsecond(oe->args))->paramkind != PARAM_MULTIEXPR))) {
         return false;
     }
 
     CustomObjectDef* cdef = chfdw_check_for_custom_operator(oe->opno, NULL);
     return cdef && (cdef->cf_type == CF_DATETIME_PL_INTERVAL ||
                     cdef->cf_type == CF_DATETIME_MI_INTERVAL);
+}
+
+/* CURRENT_TIME and time cast to timetz both use session time zone offset. */
+static bool
+is_session_timetz(Node* node) {
+    if (IsA(node, SQLValueFunction)) {
+        SQLValueFunctionOp op = ((SQLValueFunction*)node)->op;
+
+        return op == SVFOP_CURRENT_TIME || op == SVFOP_CURRENT_TIME_N;
+    }
+    return IsA(node, FuncExpr) && ((FuncExpr*)node)->funcid == F_TIMETZ_TIME &&
+           ((FuncExpr*)node)->funcformat == COERCE_IMPLICIT_CAST;
 }
 
 /*
@@ -955,8 +973,15 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
     } break;
-    case T_Const:
-        break;
+    case T_Const: {
+        Const* c = (Const*)node;
+
+        /* deparseConst converts intervals to seconds */
+        if (c->consttype == INTERVALOID && !c->constisnull &&
+            DatumGetIntervalP(c->constvalue)->month != 0) {
+            return false;
+        }
+    } break;
     case T_Param: {
         Param* p = (Param*)node;
 
@@ -977,7 +1002,7 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
 
-        /* is_interval_param_op ships interval params, others stay local */
+        /* is_split_interval_op ships interval params, others stay local */
         if (p->paramtype == INTERVALOID) {
             return false;
         }
@@ -1098,9 +1123,32 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
 
-        if (is_interval_param_op(oe)) {
+        /* PostgreSQL treats NULL arrays as empty; ClickHouse concat returns NULL. */
+        if (get_opcode(oe->opno) == F_ARRAY_CAT &&
+            (!expr_never_null(linitial(oe->args), glob_cxt) ||
+             !expr_never_null(lsecond(oe->args), glob_cxt))) {
+            return false;
+        }
+
+        if (is_split_interval_op(oe)) {
             if (!foreign_expr_walker(linitial(oe->args), glob_cxt, EXPR_CTX_EXACT)) {
                 return false;
+            }
+            break;
+        }
+
+        /* With matching offsets, compare local times using ClickHouse Time64. */
+        if (list_length(oe->args) == 2 && is_session_timetz(linitial(oe->args)) &&
+            is_session_timetz(lsecond(oe->args))) {
+            ListCell* lc;
+
+            foreach (lc, oe->args) {
+                if (IsA(lfirst(lc), FuncExpr) &&
+                    !foreign_expr_walker(
+                        (Node*)((FuncExpr*)lfirst(lc))->args, glob_cxt, EXPR_CTX_EXACT
+                    )) {
+                    return false;
+                }
             }
             break;
         }
@@ -1123,7 +1171,8 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
         CHEqualOp optype      = chfdw_is_equal_op(oe->opno);
         Expr* arr;
 
-        if (optype == CH_OP_NONE) {
+        if (optype == CH_OP_NONE ||
+            !chfdw_is_shippable(node, oe->opno, OperatorRelationId, fpinfo, NULL)) {
             return false;
         }
 
@@ -3156,6 +3205,43 @@ chfdw_append_float_literal(StringInfo buf, double v) {
     }
 }
 
+/* ClickHouse widens Float32 to Float64 to compare, so print widened value */
+static void
+appendFloat4Literal(StringInfo buf, float4 v) {
+    bool negative = signbit(v);
+
+    if (negative) {
+        appendStringInfoChar(buf, '(');
+    }
+    chfdw_append_float_literal(buf, v);
+    if (negative) {
+        appendStringInfoChar(buf, ')');
+    }
+}
+
+/*
+ * Use Decimal literals to avoid rounding: ClickHouse reads fractions and
+ * integers beyond UInt64 range as Float64
+ */
+static bool
+appendDecimalLiteral(StringInfo buf, const char* val) {
+    const char* digits = val + (val[0] == '-');
+    const char* point  = strchr(digits, '.');
+    size_t len         = strlen(digits);
+
+    if (strspn(digits, "0123456789.") != len || (!point && len <= 18)) {
+        return false;
+    }
+    appendStringInfo(
+        buf,
+        "cast('%s', 'Decimal(%d, %d)')",
+        val,
+        (int)len - (point != NULL),
+        point ? (int)strlen(point + 1) : 0
+    );
+    return true;
+}
+
 static void
 emitArrayElement(
     StringInfo buf,
@@ -3164,8 +3250,6 @@ emitArrayElement(
     Oid element_type,
     FmgrInfo* typoutput
 ) {
-    char* extval;
-
     if (isnull) {
         appendStringInfoString(buf, "NULL");
         return;
@@ -3180,16 +3264,21 @@ emitArrayElement(
         return;
     }
 
-    extval = OutputFunctionCall(typoutput, elt);
+    char* extval = OutputFunctionCall(typoutput, elt);
 
     switch (element_type) {
+    case FLOAT4OID:
+        appendFloat4Literal(buf, DatumGetFloat4(elt));
+        break;
     case INT2OID:
     case INT4OID:
     case INT8OID:
     case OIDOID:
-    case FLOAT4OID:
     case FLOAT8OID:
     case NUMERICOID: {
+        if (element_type == NUMERICOID && appendDecimalLiteral(buf, extval)) {
+            break;
+        }
         /*
          * No need to quote unless it's a special value such as 'NaN'.
          * See comments in get_const_expr().
@@ -3455,13 +3544,18 @@ deparseConst(Const* node, deparse_expr_cxt* context, bool showtype) {
     }
 
     switch (node->consttype) {
+    case FLOAT4OID:
+        appendFloat4Literal(buf, DatumGetFloat4(node->constvalue));
+        break;
     case INT2OID:
     case INT4OID:
     case INT8OID:
     case OIDOID:
-    case FLOAT4OID:
     case FLOAT8OID:
     case NUMERICOID: {
+        if (node->consttype == NUMERICOID && appendDecimalLiteral(buf, extval)) {
+            break;
+        }
         /*
          * No need to quote unless it's a special value such as 'NaN'.
          * See comments in get_const_expr().
@@ -5113,6 +5207,29 @@ deparseVectorDistance(
     appendStringInfoChar(buf, ')');
 }
 
+/* Use -1 when numeric type has no declared decimal scale */
+static int
+numericScale(Expr* node) {
+    int32 typmod = exprTypmod((Node*)node);
+
+    if (typmod < (int32)VARHDRSZ) {
+        return -1;
+    }
+    /* Follow PostgreSQL's private numeric_typmod_scale() for signed 11-bit scale */
+    int scale = (((typmod - VARHDRSZ) & 0x7ff) ^ 1024) - 1024;
+    return Max(0, scale);
+}
+
+/*
+ * Use 38 decimal places when numeric type has no declared scale
+ */
+static void
+deparseDecimal256(Expr* node, int scale, deparse_expr_cxt* context) {
+    appendStringInfoString(context->buf, "toDecimal256(");
+    deparseExpr(node, context);
+    appendStringInfo(context->buf, ", %d)", scale < 0 ? 38 : scale);
+}
+
 /*
  * Deparse given operator expression. To avoid problems around priority of
  * operations, we always parenthesize the arguments.
@@ -5290,16 +5407,58 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             }
             /* Non-text key: fall through to standard deparse */
         } break;
+        case CF_OPERATOR_FUNC:
+        case CF_INT_SHIFT: {
+            /* ClickHouse picks narrower or unsigned types from integer args */
+            char* cast = node->opresulttype == INT2OID ||
+                                 node->opresulttype == INT4OID ||
+                                 node->opresulttype == INT8OID
+                             ? ch_format_type_extended(node->opresulttype, 0, 0)
+                             : NULL;
+
+            appendStringInfo(buf, "%s(", cdef->custom_name);
+            foreach (arg, node->args) {
+                if (foreach_current_index(arg) > 0) {
+                    appendStringInfoString(buf, ", ");
+                }
+                if (cast) {
+                    appendStringInfo(buf, "to%s(", cast);
+                }
+                deparseExpr(lfirst(arg), context);
+                if (cast) {
+                    appendStringInfoChar(buf, ')');
+                }
+            }
+            appendStringInfoChar(buf, ')');
+            goto cleanup;
+        }
+        case CF_NUMERIC_DIV: {
+            /*
+             * ClickHouse / keeps decimal places from left operand and can
+             * overflow Decimal256 without an error. Follow select_div_scale()
+             * in PostgreSQL numeric.c for quotient weight 0. Ignore display
+             * scale for inputs with no declared scale; round as div_var() does
+             */
+            Expr* left  = linitial(node->args);
+            Expr* right = lsecond(node->args);
+            int scale =
+                Max(NUMERIC_MIN_SIG_DIGITS,
+                    Max(numericScale(left), numericScale(right)));
+
+            appendStringInfo(buf, "round(%s(", cdef->custom_name);
+            deparseDecimal256(left, numericScale(left), context);
+            appendStringInfoString(buf, ", ");
+            deparseDecimal256(right, numericScale(right), context);
+            appendStringInfo(buf, ", %d), %d)", scale + 1, scale);
+            goto cleanup;
+        }
         default: /* keep compiler quiet */;
         }
     }
 
-    if ((node->opresulttype == INT2OID || node->opresulttype == INT4OID ||
-         node->opresulttype == INT8OID) &&
-        strcmp(NameStr(form->oprname), "/") == 0) {
-        char* s = ch_format_type_extended(node->opresulttype, 0, 0);
-
-        appendStringInfo(buf, "to%s", s);
+    /* ClickHouse computes Float32 arithmetic as Float64 */
+    if (node->opresulttype == FLOAT4OID) {
+        appendStringInfoString(buf, "toFloat32");
     }
 
     /* Always parenthesize the expression. */

@@ -45,6 +45,136 @@ SELECT id, vals FROM t1 WHERE array_cat(vals, ARRAY[99]) = ARRAY[10,20,30,99];
   1 | {10,20,30}
 (1 row)
 
+-- Concatenate arrays with ||, including empty arrays and NULL elements.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE vals || ARRAY[99] = ARRAY[10,20,30,99];
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.t1 WHERE (((vals || [99]) = [10,20,30,99]))
+(3 rows)
+
+SELECT id FROM t1 WHERE vals || ARRAY[99] = ARRAY[10,20,30,99];
+ id 
+----
+  1
+(1 row)
+
+SELECT id FROM t1 WHERE ARRAY[99] || vals = ARRAY[99,10,20,30];
+ id 
+----
+  1
+(1 row)
+
+SELECT id FROM t1 WHERE vals || ARRAY[]::int[] = vals ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+SELECT id FROM empty_arrays WHERE vals || ARRAY[99] = ARRAY[99];
+ id 
+----
+  4
+(1 row)
+
+SELECT id FROM t1 WHERE vals || ARRAY[NULL::int] = ARRAY[10,20,30,NULL];
+ id 
+----
+  1
+(1 row)
+
+SELECT id FROM t1 WHERE pts || pts = ARRAY[[1,2],[3,4],[1,2],[3,4]]::smallint[];
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE ARRAY[id] || ARRAY[id] || ARRAY[99] = ARRAY[1,1,99];
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Remote SQL: SELECT id FROM arr_test.t1 WHERE (((([id] || [id]) || [99]) = [1,1,99]))
+(3 rows)
+
+SELECT id FROM t1 WHERE ARRAY[id] || ARRAY[id] || ARRAY[99] = ARRAY[1,1,99];
+ id 
+----
+  1
+(1 row)
+
+-- Evaluate locally when adding single elements or joining arrays that may be NULL.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE vals || 99 = ARRAY[10,20,30,99];
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Filter: ((t1.vals || 99) = '{10,20,30,99}'::integer[])
+   Remote SQL: SELECT id, vals FROM arr_test.t1
+(4 rows)
+
+SELECT id FROM t1 WHERE vals || 99 = ARRAY[10,20,30,99];
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE 99 || vals = ARRAY[99,10,20,30];
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Filter: ((99 || t1.vals) = '{99,10,20,30}'::integer[])
+   Remote SQL: SELECT id, vals FROM arr_test.t1
+(4 rows)
+
+SELECT id FROM t1 WHERE 99 || vals = ARRAY[99,10,20,30];
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE vals || NULL::int[] = vals;
+                     QUERY PLAN                     
+----------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Filter: ((t1.vals || NULL::integer[]) = t1.vals)
+   Remote SQL: SELECT id, vals FROM arr_test.t1
+(4 rows)
+
+SELECT id FROM t1 WHERE vals || NULL::int[] = vals ORDER BY id;
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE (CASE WHEN id = 1 THEN NULL::int[] ELSE vals END) || ARRAY[99] = ARRAY[99];
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on arr_test.t1
+   Output: id
+   Filter: ((CASE WHEN (t1.id = 1) THEN NULL::integer[] ELSE t1.vals END || '{99}'::integer[]) = '{99}'::integer[])
+   Remote SQL: SELECT id, vals FROM arr_test.t1
+(4 rows)
+
+SELECT id FROM t1 WHERE (CASE WHEN id = 1 THEN NULL::int[] ELSE vals END) || ARRAY[99] = ARRAY[99];
+ id 
+----
+  1
+(1 row)
+
 -- array_append → arrayPushBack
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id, vals FROM t1 WHERE array_append(vals, 99) = ARRAY[10,20,30,99];

@@ -50,6 +50,9 @@ All notable changes to this project will be documented in this file. It uses the
     settings, and `pg_clickhouse.session_settings` overrides both for matching
     keys. Vector search settings unsupported by older servers are skipped with
     a warning. Thanks to Kaushik Iska for the PR ([#412])!
+*   Added support for running powers, square and cube roots, absolute values,
+    and integer bitwise operations in ClickHouse. Bit shifts require a constant
+    shift count smaller than number of bits in integer type ([#439]).
 
 ### 🚀 Distribution
 
@@ -120,6 +123,10 @@ All notable changes to this project will be documented in this file. It uses the
     as a partitionwise `count(*)` self-join of foreign partitions. Each row
     wrote one byte past the end of a zero-length array. Thanks to Kaushik
     Iska for the PR ([#438])!
+*   Fixed loss of precision when ClickHouse divides integers, calculates with
+    floating point numbers, or divides and compares decimals. Run expressions
+    in Postgres when ClickHouse does not support their types or operators, or
+    would return different results ([#439]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -181,6 +188,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#436 Report exceptions raised mid-stream by the HTTP driver"
   [#438]: https://github.com/ClickHouse/pg_clickhouse/pull/438
     "ClickHouse/pg_clickhouse#438 Stop writing past nulls on zero-column scans"
+  [#439]: https://github.com/ClickHouse/pg_clickhouse/pull/439
+    "ClickHouse/pg_clickhouse#439 Keep expressions on unknown builtin types local"
 
 ## [v0.11.0] — 2026-09-30
 

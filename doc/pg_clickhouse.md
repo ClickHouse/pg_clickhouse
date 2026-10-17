@@ -1805,6 +1805,18 @@ equivalents as follows:
 *   `!~*` (case insensitive regexp not match): [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
 *   `->>` (JSON/JSONB extract element as text): [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
 *   `->` (JSON/JSONB extract): [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
+*   `/` (integer division): [intDiv](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#intDiv)
+*   `/` (numeric division): [divideDecimal](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#divideDecimal)
+*   `^` (exponent): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
+*   `|/` (square root): [sqrt](https://clickhouse.com/docs/sql-reference/functions/math-functions#sqrt)
+*   `||/` (cube root): [cbrt](https://clickhouse.com/docs/sql-reference/functions/math-functions#cbrt)
+*   `@` (absolute value): [abs](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#abs)
+*   `&` (bitwise and): [bitAnd](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitAnd)
+*   `|` (bitwise or): [bitOr](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitOr)
+*   `#` (bitwise xor): [bitXor](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitXor)
+*   `~` (bitwise not): [bitNot](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitNot)
+*   `<<` (shift left by constant): [bitShiftLeft](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitShiftLeft)
+*   `>>` (shift right by constant): [bitShiftRight](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitShiftRight)
 
 ### IN and NULL Semantics
 

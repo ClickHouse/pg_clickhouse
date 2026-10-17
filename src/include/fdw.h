@@ -440,6 +440,9 @@ typedef enum {
     CF_VECTOR_NEG_IP,          /* pgvector <#> → -dotProduct */
     CF_VECTOR_L1,              /* pgvector <+> → L1Distance */
     CF_VECTOR_DOT,             /* pgvector inner_product → dotProduct */
+    CF_OPERATOR_FUNC,          /* builtin operator → function */
+    CF_INT_SHIFT,              /* integer shift by constant → function */
+    CF_NUMERIC_DIV,            /* numeric / → divideDecimal */
 } custom_object_type;
 
 typedef enum {

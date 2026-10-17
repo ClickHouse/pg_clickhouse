@@ -38,6 +38,33 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id, vals FROM t1 WHERE array_cat(vals, ARRAY[99]) = ARRAY[10,20,30,99];
 SELECT id, vals FROM t1 WHERE array_cat(vals, ARRAY[99]) = ARRAY[10,20,30,99];
 
+-- Concatenate arrays with ||, including empty arrays and NULL elements.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE vals || ARRAY[99] = ARRAY[10,20,30,99];
+SELECT id FROM t1 WHERE vals || ARRAY[99] = ARRAY[10,20,30,99];
+SELECT id FROM t1 WHERE ARRAY[99] || vals = ARRAY[99,10,20,30];
+SELECT id FROM t1 WHERE vals || ARRAY[]::int[] = vals ORDER BY id;
+SELECT id FROM empty_arrays WHERE vals || ARRAY[99] = ARRAY[99];
+SELECT id FROM t1 WHERE vals || ARRAY[NULL::int] = ARRAY[10,20,30,NULL];
+SELECT id FROM t1 WHERE pts || pts = ARRAY[[1,2],[3,4],[1,2],[3,4]]::smallint[];
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE ARRAY[id] || ARRAY[id] || ARRAY[99] = ARRAY[1,1,99];
+SELECT id FROM t1 WHERE ARRAY[id] || ARRAY[id] || ARRAY[99] = ARRAY[1,1,99];
+
+-- Evaluate locally when adding single elements or joining arrays that may be NULL.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE vals || 99 = ARRAY[10,20,30,99];
+SELECT id FROM t1 WHERE vals || 99 = ARRAY[10,20,30,99];
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE 99 || vals = ARRAY[99,10,20,30];
+SELECT id FROM t1 WHERE 99 || vals = ARRAY[99,10,20,30];
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE vals || NULL::int[] = vals;
+SELECT id FROM t1 WHERE vals || NULL::int[] = vals ORDER BY id;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM t1 WHERE (CASE WHEN id = 1 THEN NULL::int[] ELSE vals END) || ARRAY[99] = ARRAY[99];
+SELECT id FROM t1 WHERE (CASE WHEN id = 1 THEN NULL::int[] ELSE vals END) || ARRAY[99] = ARRAY[99];
+
 -- array_append → arrayPushBack
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id, vals FROM t1 WHERE array_append(vals, 99) = ARRAY[10,20,30,99];

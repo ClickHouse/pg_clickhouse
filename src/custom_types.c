@@ -914,11 +914,12 @@ chfdw_check_for_custom_type(Oid typeoid) {
 #define OID_TIMESTAMP_MI_INTERVAL_OP 2068
 
 /*
- * Map a builtin operator OID to its custom_object_type. Returns CF_USUAL
- * when the operator needs no special handling.
+ * Map a builtin operator OID to its custom_object_type, and set ch_name for
+ * operators deparsed as ClickHouse functions. Returns CF_USUAL when the
+ * operator needs no special handling.
  */
 static custom_object_type
-classify_builtin_operator(Oid opoid) {
+classify_builtin_operator(Oid opoid, const char** ch_name) {
     switch (opoid) {
     case OID_TEXT_REGEXEQ_OP:
         return CF_REGEX_MATCH;
@@ -949,8 +950,75 @@ classify_builtin_operator(Oid opoid) {
     case OID_TIMESTAMP_MI_INTERVAL_OP:
         return CF_DATETIME_MI_INTERVAL;
     default:
+        break;
+    }
+
+    switch (get_opcode(opoid)) {
+    case F_DPOW:
+        *ch_name = "pow";
+        break;
+    case F_DSQRT:
+        *ch_name = "sqrt";
+        break;
+    case F_DCBRT:
+        *ch_name = "cbrt";
+        break;
+    case F_INT2ABS:
+    case F_INT4ABS:
+    case F_INT8ABS:
+    case F_FLOAT4ABS:
+    case F_FLOAT8ABS:
+    case F_NUMERIC_ABS:
+        *ch_name = "abs";
+        break;
+    case F_INT2DIV:
+    case F_INT4DIV:
+    case F_INT8DIV:
+    case F_INT24DIV:
+    case F_INT42DIV:
+    case F_INT28DIV:
+    case F_INT82DIV:
+    case F_INT48DIV:
+    case F_INT84DIV:
+        *ch_name = "intDiv";
+        break;
+    case F_INT2AND:
+    case F_INT4AND:
+    case F_INT8AND:
+        *ch_name = "bitAnd";
+        break;
+    case F_INT2OR:
+    case F_INT4OR:
+    case F_INT8OR:
+        *ch_name = "bitOr";
+        break;
+    case F_INT2XOR:
+    case F_INT4XOR:
+    case F_INT8XOR:
+        *ch_name = "bitXor";
+        break;
+    case F_INT2NOT:
+    case F_INT4NOT:
+    case F_INT8NOT:
+        *ch_name = "bitNot";
+        break;
+    case F_INT2SHL:
+    case F_INT4SHL:
+    case F_INT8SHL:
+        *ch_name = "bitShiftLeft";
+        return CF_INT_SHIFT;
+    case F_INT2SHR:
+    case F_INT4SHR:
+    case F_INT8SHR:
+        *ch_name = "bitShiftRight";
+        return CF_INT_SHIFT;
+    case F_NUMERIC_DIV:
+        *ch_name = "divideDecimal";
+        return CF_NUMERIC_DIV;
+    default:
         return CF_USUAL;
     }
+    return CF_OPERATOR_FUNC;
 }
 
 /*
@@ -978,8 +1046,9 @@ pgvector_operator_type(const char* oprname, custom_object_type* ctype) {
 
 CustomObjectDef*
 chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
-    HeapTuple tuple = NULL;
-    custom_object_type ctype;
+    HeapTuple tuple          = NULL;
+    const char* ch_name      = NULL;
+    custom_object_type ctype = CF_USUAL;
 
     CustomObjectDef* entry;
 
@@ -988,7 +1057,7 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
     }
 
     if (chfdw_is_builtin(opoid)) {
-        ctype = classify_builtin_operator(opoid);
+        ctype = classify_builtin_operator(opoid, &ch_name);
         if (ctype == CF_USUAL) {
             return NULL;
         }
@@ -1007,9 +1076,11 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
         entry = hash_search(custom_objects_cache, (void*)&opoid, HASH_ENTER, NULL);
         init_custom_entry(entry);
 
-        ctype = classify_builtin_operator(opoid);
         if (ctype != CF_USUAL) {
             entry->cf_type = ctype;
+            if (ch_name) {
+                strlcpy(entry->custom_name, ch_name, NAMEDATALEN);
+            }
         } else {
             Oid extoid          = getExtensionOfObject(OperatorRelationId, opoid);
             char* extname       = get_extension_name(extoid);
