@@ -388,7 +388,6 @@ typedef enum {
     CF_DATETIME_MI_INTERVAL, /* date/timestamp/timestamptz - interval */
     CF_TIMEZONE,             /* timezone */
     CF_HSTORE_FETCHVAL,      /* -> operation on hstore */
-    CF_RE2_MATCH,            /* @~ re operation */
     CF_INTARRAY_IDX,
     CF_CH_FUNCTION,            /* adapted clickhouse function */
     CF_MATCH,                  /* regexp_match function */
@@ -423,9 +422,7 @@ typedef enum {
                                 * arrayReverseSort/arraySort */
     CF_ARRAY_FILL,             /* array_fill → arrayWithConstant,
                                 * swap+extract */
-    CF_ARRAY_CONTAINS,         /* @> → hasAll(left, right) */
     CF_ARRAY_CONTAINED_BY,     /* <@ → hasAll(right, left) */
-    CF_ARRAY_OVERLAP,          /* && → hasAny(left, right) */
     CF_TO_CHAR,                /* to_char(timestamp[tz], fmt) →
                                 * formatDateTime, with strict format
                                 * translation */
@@ -435,11 +432,9 @@ typedef enum {
     CF_DIGEST,                 /* pgcrypto digest(data, algorithm) → hash function */
     CF_REGR_AGG,               /* regr_*() aggregates → to 26.9+ */
     CF_PGVECTOR,               /* pgvector vector type → Array(Float32) */
-    CF_VECTOR_L2,              /* pgvector <-> → L2Distance */
-    CF_VECTOR_COSINE,          /* pgvector <=> → cosineDistance */
     CF_VECTOR_NEG_IP,          /* pgvector <#> → -dotProduct */
-    CF_VECTOR_L1,              /* pgvector <+> → L1Distance */
     CF_VECTOR_DOT,             /* pgvector inner_product → dotProduct */
+    CF_OPERATOR_FUNC,          /* operator → function */
 } custom_object_type;
 
 typedef enum {

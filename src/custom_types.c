@@ -5,7 +5,6 @@
 #include "access/htup_details.h"
 #include "access/xact.h"
 #include "catalog/dependency.h"
-#include "catalog/pg_operator_d.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
@@ -899,58 +898,106 @@ chfdw_check_for_custom_type(Oid typeoid) {
     return entry;
 }
 
-/* pg_operator_d.h only has oid_symbol for some operators */
-#define OID_TEXT_REGEX_NE_OP 642
-#define OID_TEXT_IREGEX_NE_OP 1229
-#define OID_JSONB_FETCHVAL_OP 3211
-#define OID_JSONB_FETCHVAL_TEXT_OP 3477
-#define OID_JSON_FETCHVAL_OP 3962
-#define OID_JSON_FETCHVAL_TEXT_OP 3963
-#define OID_DATE_PL_INTERVAL_OP 1076
-#define OID_DATE_MI_INTERVAL_OP 1077
-#define OID_TIMESTAMPTZ_PL_INTERVAL_OP 1327
-#define OID_TIMESTAMPTZ_MI_INTERVAL_OP 1329
-#define OID_TIMESTAMP_PL_INTERVAL_OP 2066
-#define OID_TIMESTAMP_MI_INTERVAL_OP 2068
-
 /*
- * Map a builtin operator OID to its custom_object_type. Returns CF_USUAL
- * when the operator needs no special handling.
+ * Map a builtin operator OID to its custom_object_type, and set ch_name for
+ * operators deparsed as ClickHouse functions. Returns CF_USUAL when the
+ * operator needs no special handling.
  */
 static custom_object_type
-classify_builtin_operator(Oid opoid) {
-    switch (opoid) {
-    case OID_TEXT_REGEXEQ_OP:
+classify_builtin_operator(Oid opoid, const char** ch_name) {
+    switch (get_opcode(opoid)) {
+    case F_TEXTREGEXEQ:
         return CF_REGEX_MATCH;
-    case OID_TEXT_REGEX_NE_OP:
+    case F_TEXTREGEXNE:
         return CF_REGEX_NO_MATCH;
-    case OID_TEXT_ICREGEXEQ_OP:
+    case F_TEXTICREGEXEQ:
         return CF_REGEX_ICASE_MATCH;
-    case OID_TEXT_IREGEX_NE_OP:
+    case F_TEXTICREGEXNE:
         return CF_REGEX_ICASE_NO_MATCH;
-    case OID_JSONB_FETCHVAL_OP:
-    case OID_JSON_FETCHVAL_OP:
+    case F_JSONB_OBJECT_FIELD:
+    case F_JSON_OBJECT_FIELD:
         return CF_JSON_FETCHVAL;
-    case OID_JSONB_FETCHVAL_TEXT_OP:
-    case OID_JSON_FETCHVAL_TEXT_OP:
+    case F_JSONB_OBJECT_FIELD_TEXT:
+    case F_JSON_OBJECT_FIELD_TEXT:
         return CF_JSON_FETCHVAL_TEXT;
-    case OID_ARRAY_CONTAINS_OP:
-        return CF_ARRAY_CONTAINS;
-    case OID_ARRAY_CONTAINED_OP:
+    case F_ARRAYCONTAINS:
+        *ch_name = "hasAll";
+        break;
+    case F_ARRAYCONTAINED:
         return CF_ARRAY_CONTAINED_BY;
-    case OID_ARRAY_OVERLAP_OP:
-        return CF_ARRAY_OVERLAP;
-    case OID_DATE_PL_INTERVAL_OP:
-    case OID_TIMESTAMPTZ_PL_INTERVAL_OP:
-    case OID_TIMESTAMP_PL_INTERVAL_OP:
+    case F_ARRAYOVERLAP:
+        *ch_name = "hasAny";
+        break;
+    case F_DATE_PL_INTERVAL:
+    case F_TIMESTAMPTZ_PL_INTERVAL:
+    case F_TIMESTAMP_PL_INTERVAL:
         return CF_DATETIME_PL_INTERVAL;
-    case OID_DATE_MI_INTERVAL_OP:
-    case OID_TIMESTAMPTZ_MI_INTERVAL_OP:
-    case OID_TIMESTAMP_MI_INTERVAL_OP:
+    case F_DATE_MI_INTERVAL:
+    case F_TIMESTAMPTZ_MI_INTERVAL:
+    case F_TIMESTAMP_MI_INTERVAL:
         return CF_DATETIME_MI_INTERVAL;
+    case F_DPOW:
+        *ch_name = "pow";
+        break;
+    case F_DSQRT:
+        *ch_name = "sqrt";
+        break;
+    case F_DCBRT:
+        *ch_name = "cbrt";
+        break;
+    case F_INT2ABS:
+    case F_INT4ABS:
+    case F_INT8ABS:
+    case F_FLOAT4ABS:
+    case F_FLOAT8ABS:
+    case F_NUMERIC_ABS:
+        *ch_name = "abs";
+        break;
+    case F_INT2DIV:
+    case F_INT4DIV:
+    case F_INT8DIV:
+    case F_INT24DIV:
+    case F_INT42DIV:
+    case F_INT28DIV:
+    case F_INT82DIV:
+    case F_INT48DIV:
+    case F_INT84DIV:
+        *ch_name = "intDiv";
+        break;
+    case F_INT2AND:
+    case F_INT4AND:
+    case F_INT8AND:
+        *ch_name = "bitAnd";
+        break;
+    case F_INT2OR:
+    case F_INT4OR:
+    case F_INT8OR:
+        *ch_name = "bitOr";
+        break;
+    case F_INT2XOR:
+    case F_INT4XOR:
+    case F_INT8XOR:
+        *ch_name = "bitXor";
+        break;
+    case F_INT2NOT:
+    case F_INT4NOT:
+    case F_INT8NOT:
+        *ch_name = "bitNot";
+        break;
+    case F_INT2SHL:
+    case F_INT4SHL:
+    case F_INT8SHL:
+        *ch_name = "bitShiftLeft";
+        break;
+    case F_INT2SHR:
+    case F_INT4SHR:
+    case F_INT8SHR:
+        *ch_name = "bitShiftRight";
+        break;
     default:
         return CF_USUAL;
     }
+    return CF_OPERATOR_FUNC;
 }
 
 /*
@@ -958,28 +1005,38 @@ classify_builtin_operator(Oid opoid) {
  * operators without a ClickHouse equivalent.
  */
 static bool
-pgvector_operator_type(const char* oprname, custom_object_type* ctype) {
+pgvector_operator_type(
+    const char* oprname,
+    custom_object_type* ctype,
+    const char** ch_name
+) {
     if (STR_EQUAL(oprname, "=") || STR_EQUAL(oprname, "<>")) {
         /* ClickHouse compares Array(Float32) values element-wise. */
         *ctype = CF_USUAL;
-    } else if (STR_EQUAL(oprname, "<->")) {
-        *ctype = CF_VECTOR_L2;
-    } else if (STR_EQUAL(oprname, "<=>")) {
-        *ctype = CF_VECTOR_COSINE;
-    } else if (STR_EQUAL(oprname, "<#>")) {
+        return true;
+    }
+    if (STR_EQUAL(oprname, "<#>")) {
         *ctype = CF_VECTOR_NEG_IP;
+        return true;
+    }
+    if (STR_EQUAL(oprname, "<->")) {
+        *ch_name = "L2Distance";
+    } else if (STR_EQUAL(oprname, "<=>")) {
+        *ch_name = "cosineDistance";
     } else if (STR_EQUAL(oprname, "<+>")) {
-        *ctype = CF_VECTOR_L1;
+        *ch_name = "L1Distance";
     } else {
         return false;
     }
+    *ctype = CF_OPERATOR_FUNC;
     return true;
 }
 
 CustomObjectDef*
 chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
-    HeapTuple tuple = NULL;
-    custom_object_type ctype;
+    HeapTuple tuple          = NULL;
+    const char* ch_name      = NULL;
+    custom_object_type ctype = CF_USUAL;
 
     CustomObjectDef* entry;
 
@@ -988,7 +1045,7 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
     }
 
     if (chfdw_is_builtin(opoid)) {
-        ctype = classify_builtin_operator(opoid);
+        ctype = classify_builtin_operator(opoid, &ch_name);
         if (ctype == CF_USUAL) {
             return NULL;
         }
@@ -1007,7 +1064,6 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
         entry = hash_search(custom_objects_cache, (void*)&opoid, HASH_ENTER, NULL);
         init_custom_entry(entry);
 
-        ctype = classify_builtin_operator(opoid);
         if (ctype != CF_USUAL) {
             entry->cf_type = ctype;
         } else {
@@ -1020,10 +1076,11 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
             } else if (
                 extname && STR_EQUAL(extname, "re2") && STR_EQUAL(oprname, "@~")
             ) {
-                entry->cf_type = CF_RE2_MATCH;
+                entry->cf_type = CF_OPERATOR_FUNC;
+                ch_name        = "match";
             } else if (
                 extname && STR_EQUAL(extname, "vector") &&
-                pgvector_operator_type(oprname, &ctype) &&
+                pgvector_operator_type(oprname, &ctype, &ch_name) &&
                 chfdw_is_pgvector_type(form->oprleft) &&
                 chfdw_is_pgvector_type(form->oprright)
             ) {
@@ -1036,6 +1093,9 @@ chfdw_check_for_custom_operator(Oid opoid, Form_pg_operator form) {
             if (extname) {
                 pfree(extname);
             }
+        }
+        if (entry && ch_name) {
+            strlcpy(entry->custom_name, ch_name, NAMEDATALEN);
         }
     }
 
