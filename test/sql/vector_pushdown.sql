@@ -13,6 +13,9 @@ CREATE EXTENSION IF NOT EXISTS vector;
 SELECT pg_advisory_unlock(hashtext('vector'));
 RESET client_min_messages;
 
+-- vector_index_use covers the warnings about vector index use
+SET pg_clickhouse.vector_planner_warnings = off;
+
 CREATE SERVER vector_pushdown_svr FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'vector_pushdown_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER vector_pushdown_svr;

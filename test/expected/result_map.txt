@@ -343,9 +343,23 @@ vector_pushdown.sql
 
  ClickHouse | pgvector  | File
 ------------|-----------|-----------------------
- 23.8+      | installed | vector_pushdown.out
+ 25.8+      | installed | vector_pushdown.out
+ 23.8-25.3  | installed | vector_pushdown_3.out
  23.3       | installed | vector_pushdown_1.out
  any        | absent    | vector_pushdown_2.out
+
+vector_index_use.sql
+--------------------
+
+ Postgres | File
+----------|----------------------
+ 14-19    | vector_index_use.out
+
+ ClickHouse | pgvector  | File
+------------|-----------|------------------------
+ 25.8+      | installed | vector_index_use.out
+ 23.3-25.3  | installed | vector_index_use_1.out
+ any        | absent    | vector_index_use_2.out
 
 vector_types.sql
 ----------------
