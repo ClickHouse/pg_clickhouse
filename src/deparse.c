@@ -2586,6 +2586,41 @@ deparseFromExprForRel(
          * join.
          */
         if (use_alias) {
+            if (strcmp(buf->data, "subplan_test.sales") == 0) {
+                elog(NOTICE, "RELID: %d", foreignrel->relid);
+                for (Index i = 0; i <= foreignrel->relid; i++) {
+                    RangeTblEntry* debug_rte = planner_rt_fetch(i, root);
+                    if (debug_rte) {
+                        if (debug_rte->relid) {
+                            elog(
+                                NOTICE, "REL %d: %s", i, get_rel_name(debug_rte->relid)
+                            );
+                        } else if (debug_rte->alias) {
+                            elog(
+                                NOTICE,
+                                "REL %d: ALIAS %s",
+                                i,
+                                debug_rte->alias->aliasname
+                            );
+                        } else if (debug_rte->eref) {
+                            elog(
+                                NOTICE, "REL %d: EREF %s", i, debug_rte->eref->aliasname
+                            );
+                        } else if (debug_rte->subquery) {
+                            elog(NOTICE, "REL %d: SUBQUERY", i);
+                        } else {
+                            elog(
+                                NOTICE,
+                                "REL %d: UNKNOWN; join type %d",
+                                i,
+                                rte->jointype
+                            );
+                        }
+                    } else {
+                        elog(NOTICE, "REL %d: NO RELATION", i);
+                    }
+                }
+            }
             appendStringInfo(buf, " %s%d", REL_ALIAS_PREFIX, foreignrel->relid);
         }
 
@@ -3572,7 +3607,8 @@ deparseParam(Param* node, deparse_expr_cxt* context) {
     }
 }
 
-/* PostgreSQL intervals retain months, days, microseconds; CH intervals use one unit */
+/* PostgreSQL intervals retain months, days, microseconds; CH intervals use one unit
+ */
 static char*
 remote_param_type_name(Oid paramtype, int32 paramtypmod) {
     if (paramtype == INTERVALOID) {
@@ -4449,7 +4485,8 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
         Oid rettype = node->funcresulttype;
         Expr* arg   = linitial(node->args);
         int32 coercedTypmod;
-        /* ClickHouse multiplies Float32 by 10^scale in Float32, breaks at scale 38 */
+        /* ClickHouse multiplies Float32 by 10^scale in Float32, breaks at scale 38
+         */
         bool widen = rettype == NUMERICOID && exprType((Node*)arg) == FLOAT4OID;
 
         /* Get the typmod if this is a length-coercion function */
@@ -4616,7 +4653,8 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             return;
         }
         case CF_TIMEZONE: {
-            /* timezone() keeps wall clock and swaps zone, toTimeZone keeps instant */
+            /* timezone() keeps wall clock and swaps zone, toTimeZone keeps instant
+             */
             Expr* zone      = linitial(node->args);
             Expr* source    = lsecond(node->args);
             bool to_tz      = node->funcresulttype == TIMESTAMPTZOID;
@@ -5589,8 +5627,8 @@ deparseGuardedScalarArrayOp(
  *   NULL in {1, NULL}:   NULL
  *   NULL in {1, 2, 3}:   NULL
  *
- * The two systems agree when NULL is not involved, but in standard SQL, NULL serves as
- * "dunno, LOL" and wildcard matches anything, resulting in a final "dunno, LOL"
+ * The two systems agree when NULL is not involved, but in standard SQL, NULL serves
+ * as "dunno, LOL" and wildcard matches anything, resulting in a final "dunno, LOL"
  * answer, while ClickHouse just treats NULL as an ordinary value to match on.
  * The two systems technically agree where FALSE/NULL are both falsey, such as
  * WHERE/JOIN/HAVING conditions, CASE WHEN branches, and aggregate FILTERs.
@@ -5632,7 +5670,8 @@ deparseScalarArrayOpExpr(ScalarArrayOpExpr* node, deparse_expr_cxt* context) {
             ERROR,
             errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
             errmsg(
-                "pg_clickhouse supports only equal and not equal operations on ANY/ALL "
+                "pg_clickhouse supports only equal and not equal operations on "
+                "ANY/ALL "
                 "functions"
             )
         );

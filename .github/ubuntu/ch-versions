@@ -45,7 +45,7 @@ Print no releases prior to this major version.
 
   .github/ubuntu/ch-versions --prefix '*   '
 
-Print this prefix before each release.
+Print this prefix before each release. Defaults to C<'          - '>.
 
 =cut
 
@@ -58,7 +58,7 @@ my %opt = (
     lts           => 0,  # Only LTS release
     latest_stable => 0,  # but include latest stable if newer than latest LTS
     earliest      => 0,  # Omit earlier than this version.
-    prefix        => '', # Prefix each version with this string
+    prefix        => '          - ', # Prefix each version with this string
 );
 
 GetOptions(
