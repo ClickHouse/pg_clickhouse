@@ -173,10 +173,3 @@ lsp: compile_commands.json
 compile_commands.json:
 	$(MAKE) clean -j $$(nproc)
 	bear --config "dev/bear.$$(if [ "$$(bear --version | awk -F'[^0-9]+' '{ print $$2 }')" -eq 3 ]; then echo 'json'; else echo 'yml'; fi)" -- $(MAKE) all -j $$(nproc)
-
-# ClickHouse Docker Containers
-start-containers: dev/Makefile dev/docker-compose.yml
-	@$(MAKE) -C dev start
-
-stop-containers: dev/Makefile dev/docker-compose.yml
-	@$(MAKE) -C dev stop

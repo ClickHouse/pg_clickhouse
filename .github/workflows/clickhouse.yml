@@ -15,7 +15,6 @@ jobs:
       fail-fast: false
       matrix:
         # Test latest version and all LTS releases.
-        # Keep in sync with dev/docker-compose.yml.
         # .github/ubuntu/ch-versions --lts --latest-stable --earliest 23  --prefix '          - ' | pbcopy
         ch:
           - 26.9.2.8-stable

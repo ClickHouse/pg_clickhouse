@@ -7,8 +7,6 @@ development of pg_clickhouse.
 *   `bear.yml`: [Bear Configuration](#bear-configuration)
 *   `choci`: [Run ClickHouse Server](#run-local-clickhouse-server)
 *   `configs`: Configuration files for `choci` and `runch`
-*   `docker-compose.yml`: [ClickHouse Version Testing Containers](#clickhouse-version-testing-containers)
-*   `Makefile`: Automates [ClickHouse Version Testing Containers](#clickhouse-version-testing-containers)
 *   `README.md`: This file
 *   `runch`: [Run ClickHouse Server](#run-clickhouse-server)
 *   [`tpch`]: [TPC-H Benchmark Scripts](./tpch/README.md)
@@ -59,36 +57,6 @@ make installcheck
 
 Specify any tag supported by the [Docker image]. Defaults to `latest`.
 
-## ClickHouse Version Testing Containers
-
-This directory's [docker-compose.yml](docker-compose.yml) starts images for
-each supported major version of ClickHouse. Each container also runs
-PostgreSQL 19 with [pgvector], which the vector tests require. Both ClickHouse
-and PostgreSQL run on their default ports (unexported) and trust all local
-connections. The containers are based on [pgxn-tools].
-
-Example usage:
-
-```sh
-make start
-docker logs -f ch_26_3
-# Wait a few minutes for the services to start (log output will stop)
-docker exec -it ch_26_3 bash
-pg-build-test # or make && make install && make installcheck
-```
-
-The containers should remain until you `make stop`; if you restart Docker (or
-your system), they may need to be started again, e.g., `docker start ch_26_3`.
-
-To run a single version, use:
-
-```sh
-(cd dev && docker compose -f docker-compose.yml up -d ch_24_3)
-```
-
-Run `(cd dev && docker compose config --services)` to get a list of service
-versions.
-
 ## Data Type Table
 
 Run `make type-table` to regenerate the data type table in
@@ -123,6 +91,4 @@ The `compile_commands.json` target determines which to use.
   [clickhousectl]: https://clickhouse.com/docs/interfaces/cli "ClickHouse Docs: clickhousectl"
   [Docker image]: https://hub.docker.com/r/clickhouse/clickhouse-server
     "clickhouse/clickhouse-server on DockerHub"
-  [pgxn-tools]: https://github.com/pgxn/docker-pgxn-tools/
-  [pgvector]: https://github.com/pgvector/pgvector "pgvector: Open-source vector similarity search for Postgres"
   [Bear]: https://github.com/rizsotto/Bear "Bear generates a compilation database for Clang tooling"
