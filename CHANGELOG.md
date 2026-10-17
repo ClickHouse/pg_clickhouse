@@ -50,6 +50,9 @@ All notable changes to this project will be documented in this file. It uses the
     settings, and `pg_clickhouse.session_settings` overrides both for matching
     keys. Vector search settings unsupported by older servers are skipped with
     a warning. Thanks to Kaushik Iska for the PR ([#412])!
+*   Added pushdown of the math operators `^`, `|/`, `||/`, and `@`, and the
+    integer operators `&`, `|`, `#`, `~`, `<<`, and `>>`. Shifts push down
+    when the shift count is a constant smaller than the type width ([#439]).
 
 ### 🚀 Distribution
 
@@ -121,9 +124,13 @@ All notable changes to this project will be documented in this file. It uses the
     wrote one byte past the end of a zero-length array. Thanks to Kaushik
     Iska for the PR ([#438])!
 *   Evaluate expressions locally when builtin types or operators have no
-    ClickHouse equivalent. Examples include `point`, `inet`, `bit`, `#`, and
-    `jsonb` `@>`. Sending these expressions to ClickHouse caused errors or
+    ClickHouse equivalent. Examples include `point`, `bit`, `inet` ordering,
+    `uuid` ordering, `jsonb` comparisons, `numeric` division, and `time`
+    plus `interval`. Sending these expressions to ClickHouse caused errors or
     returned different results ([#439]).
+*   Fixed integer division to use `intDiv`, which keeps `bigint` precision
+    past 2^53, and `real` arithmetic and constants to compare as `Float32`
+    ([#439]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"

@@ -83,7 +83,7 @@ SELECT * FROM remote_sql($$ SELECT 1 FROM udf_typed WHERE b = B'101' $$);
 SELECT * FROM remote_sql($$ SELECT 1 FROM udf_typed WHERE t < CURRENT_TIME $$);
 
 -- Evaluate builtin operators locally when ClickHouse has no equivalent.
-SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE id # 1 = 0 $$);
+SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE id::numeric ^ 2 = 1 $$);
 
 -- Wait for a lock before loading intarray.
 SELECT pg_advisory_lock(hashtext('intarray'));

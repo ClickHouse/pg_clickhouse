@@ -23,6 +23,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/hsearch.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -168,6 +169,7 @@ is_known_type(Oid type_oid) {
     case NAMEOID:
     case BYTEAOID:
     case UUIDOID:
+    case INETOID:
     case DATEOID:
     case TIMEOID:
     case TIMESTAMPOID:
@@ -184,30 +186,77 @@ is_known_type(Oid type_oid) {
     }
 }
 
+static bool
+is_numeric_type(Oid type_oid) {
+    switch (type_oid) {
+    case INT2OID:
+    case INT4OID:
+    case INT8OID:
+    case FLOAT4OID:
+    case FLOAT8OID:
+    case NUMERICOID:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool
+is_known_arithmetic(Oid opcode, Oid left, Oid right) {
+    switch (opcode) {
+    case F_NUMERIC_DIV:
+        /* ClickHouse keeps dividend scale */
+        return false;
+    /* Interval literals and ClickHouse time differences both use seconds */
+    case F_DATE_PLI:
+    case F_DATE_MII:
+    case F_DATE_MI:
+    case F_TIMESTAMP_MI:
+    case F_TIMESTAMPTZ_MI:
+    case F_TIME_MI_TIME:
+    case F_INTERVAL_PL:
+    case F_INTERVAL_MI:
+    case F_INTERVAL_UM:
+    case F_INTERVAL_MUL:
+    case F_MUL_D_INTERVAL:
+    case F_INTERVAL_DIV:
+        return true;
+    default:
+        return (left == InvalidOid || is_numeric_type(left)) && is_numeric_type(right);
+    }
+}
+
 /*
- * ClickHouse rejects other builtin operator names or gives them different
- * meanings, as with ^ and jsonb @>.
+ * ClickHouse rejects other builtin operators or gives them different
+ * meanings, as with jsonb comparisons, time + interval past midnight and
+ * numeric division
  */
 static bool
 is_known_operator(Oid opno) {
     static const char* const names[] = {
-        "=", "<>", "<", "<=", ">",   ">=",  "+",    "-",
-        "*", "/",  "%", "~~", "~~*", "!~~", "!~~*",
+        "=", "<>", "<", "<=", ">", ">=", "~~", "~~*", "!~~", "!~~*",
     };
     char* name = get_opname(opno);
+    Oid opcode = get_opcode(opno);
+    Oid left;
+    Oid right;
     bool known = false;
 
-    /* ClickHouse concat cannot add a single element to either end of an array. */
+    op_input_types(opno, &left, &right);
     if (strcmp(name, "||") == 0) {
-        Oid left;
-        Oid right;
-
-        op_input_types(opno, &left, &right);
-        known = (left == TEXTOID && right == TEXTOID) ||
-                (left == ANYCOMPATIBLEARRAYOID && right == ANYCOMPATIBLEARRAYOID);
-    }
-    for (size_t i = 0; i < lengthof(names) && !known; i++) {
-        known = strcmp(name, names[i]) == 0;
+        /* ClickHouse concat cannot add a single element to either end of an array */
+        known = left == right &&
+                (left == TEXTOID || left == BYTEAOID || left == ANYCOMPATIBLEARRAYOID);
+    } else if (name[1] == '\0' && strchr("+-*/%", name[0])) {
+        known = is_known_arithmetic(opcode, left, right);
+    } else if (left == UUIDOID || left == INETOID) {
+        /* ClickHouse orders UUIDs differently and IPs lack netmasks */
+        known = opcode == F_UUID_EQ || opcode == F_UUID_NE || opcode == F_NETWORK_EQ ||
+                opcode == F_NETWORK_NE;
+    } else if (left != JSONBOID) {
+        for (size_t i = 0; i < lengthof(names) && !known; i++) {
+            known = strcmp(name, names[i]) == 0;
+        }
     }
 
     pfree(name);
@@ -279,6 +328,16 @@ chfdw_is_shippable(
             case CF_REGEX_ICASE_NO_MATCH:
                 /* Don't pushdown regular expressions if the GUC is false. */
                 return chfdw_pushdown_regex_ok();
+            case CF_INT_SHIFT: {
+                /* PostgreSQL shifts past type width as host CPU does */
+                OpExpr* oe   = (OpExpr*)node;
+                Const* count = lsecond(oe->args);
+                int bits     = get_typlen(oe->opresulttype) * BITS_PER_BYTE;
+
+                return IsA(count, Const) && !count->constisnull &&
+                       DatumGetInt32(count->constvalue) >= 0 &&
+                       DatumGetInt32(count->constvalue) < bits;
+            }
             default:
                 return true;
             }
@@ -487,10 +546,10 @@ chfdw_is_shippable(
         if (node && IsA(node, FuncExpr)) {
             FuncExpr* fe = (FuncExpr*)node;
 
-            if (fe->funcformat == COERCE_IMPLICIT_CAST ||
-                fe->funcformat == COERCE_EXPLICIT_CAST) {
-                return true;
-            }
+            /* PostgreSQL inet text keeps netmask */
+            return (fe->funcformat == COERCE_IMPLICIT_CAST ||
+                    fe->funcformat == COERCE_EXPLICIT_CAST) &&
+                   fe->funcid != F_TEXT_INET;
         }
         return false;
     }

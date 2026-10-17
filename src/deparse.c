@@ -888,11 +888,13 @@ classify_notin_subplan(SubPlan* subplan, PlannerInfo* root, Relids relids) {
     return NOTIN_SHIP_NONE;
 }
 
-/* Datetime +/- interval Param, which deparseIntervalOp splits into parts */
+/* Datetime +/- interval Const or Param, which deparseIntervalOp splits into parts */
 static bool
-is_interval_param_op(OpExpr* oe) {
-    if (list_length(oe->args) != 2 || !IsA(lsecond(oe->args), Param) ||
-        ((Param*)lsecond(oe->args))->paramkind == PARAM_MULTIEXPR) {
+is_split_interval_op(OpExpr* oe) {
+    if (list_length(oe->args) != 2 ||
+        !(IsA(lsecond(oe->args), Const) ||
+          (IsA(lsecond(oe->args), Param) &&
+           ((Param*)lsecond(oe->args))->paramkind != PARAM_MULTIEXPR))) {
         return false;
     }
 
@@ -970,8 +972,15 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
     } break;
-    case T_Const:
-        break;
+    case T_Const: {
+        Const* c = (Const*)node;
+
+        /* deparseConst converts intervals to seconds */
+        if (c->consttype == INTERVALOID && !c->constisnull &&
+            DatumGetIntervalP(c->constvalue)->month != 0) {
+            return false;
+        }
+    } break;
     case T_Param: {
         Param* p = (Param*)node;
 
@@ -992,7 +1001,7 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
 
-        /* is_interval_param_op ships interval params, others stay local */
+        /* is_split_interval_op ships interval params, others stay local */
         if (p->paramtype == INTERVALOID) {
             return false;
         }
@@ -1120,7 +1129,7 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
 
-        if (is_interval_param_op(oe)) {
+        if (is_split_interval_op(oe)) {
             if (!foreign_expr_walker(linitial(oe->args), glob_cxt, EXPR_CTX_EXACT)) {
                 return false;
             }
@@ -1161,7 +1170,8 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
         CHEqualOp optype      = chfdw_is_equal_op(oe->opno);
         Expr* arr;
 
-        if (optype == CH_OP_NONE) {
+        if (optype == CH_OP_NONE ||
+            !chfdw_is_shippable(node, oe->opno, OperatorRelationId, fpinfo, NULL)) {
             return false;
         }
 
@@ -3194,6 +3204,20 @@ chfdw_append_float_literal(StringInfo buf, double v) {
     }
 }
 
+/* ClickHouse widens Float32 to Float64 to compare, so print widened value */
+static void
+appendFloat4Literal(StringInfo buf, float4 v) {
+    bool negative = signbit(v);
+
+    if (negative) {
+        appendStringInfoChar(buf, '(');
+    }
+    chfdw_append_float_literal(buf, v);
+    if (negative) {
+        appendStringInfoChar(buf, ')');
+    }
+}
+
 static void
 emitArrayElement(
     StringInfo buf,
@@ -3221,11 +3245,13 @@ emitArrayElement(
     extval = OutputFunctionCall(typoutput, elt);
 
     switch (element_type) {
+    case FLOAT4OID:
+        appendFloat4Literal(buf, DatumGetFloat4(elt));
+        break;
     case INT2OID:
     case INT4OID:
     case INT8OID:
     case OIDOID:
-    case FLOAT4OID:
     case FLOAT8OID:
     case NUMERICOID: {
         /*
@@ -3493,11 +3519,13 @@ deparseConst(Const* node, deparse_expr_cxt* context, bool showtype) {
     }
 
     switch (node->consttype) {
+    case FLOAT4OID:
+        appendFloat4Literal(buf, DatumGetFloat4(node->constvalue));
+        break;
     case INT2OID:
     case INT4OID:
     case INT8OID:
     case OIDOID:
-    case FLOAT4OID:
     case FLOAT8OID:
     case NUMERICOID: {
         /*
@@ -5328,16 +5356,38 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             }
             /* Non-text key: fall through to standard deparse */
         } break;
+        case CF_OPERATOR_FUNC:
+        case CF_INT_SHIFT: {
+            /* ClickHouse picks narrower or unsigned types from integer args */
+            char* cast = node->opresulttype == INT2OID ||
+                                 node->opresulttype == INT4OID ||
+                                 node->opresulttype == INT8OID
+                             ? ch_format_type_extended(node->opresulttype, 0, 0)
+                             : NULL;
+
+            appendStringInfo(buf, "%s(", cdef->custom_name);
+            foreach (arg, node->args) {
+                if (foreach_current_index(arg) > 0) {
+                    appendStringInfoString(buf, ", ");
+                }
+                if (cast) {
+                    appendStringInfo(buf, "to%s(", cast);
+                }
+                deparseExpr(lfirst(arg), context);
+                if (cast) {
+                    appendStringInfoChar(buf, ')');
+                }
+            }
+            appendStringInfoChar(buf, ')');
+            goto cleanup;
+        }
         default: /* keep compiler quiet */;
         }
     }
 
-    if ((node->opresulttype == INT2OID || node->opresulttype == INT4OID ||
-         node->opresulttype == INT8OID) &&
-        strcmp(NameStr(form->oprname), "/") == 0) {
-        char* s = ch_format_type_extended(node->opresulttype, 0, 0);
-
-        appendStringInfo(buf, "to%s", s);
+    /* ClickHouse computes Float32 arithmetic as Float64 */
+    if (node->opresulttype == FLOAT4OID) {
+        appendStringInfoString(buf, "toFloat32");
     }
 
     /* Always parenthesize the expression. */
