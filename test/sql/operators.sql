@@ -79,10 +79,15 @@ SELECT id FROM nums WHERE f32 + 0.2::real = 0.3::real;
 SELECT id FROM nums WHERE f32 = 0.3::real;
 SELECT id FROM nums WHERE f32 IN (0.3::real, 0.7::real);
 
--- Evaluate numeric division locally, as ClickHouse keeps dividend scale.
+-- Use divideDecimal to keep decimal places when dividing numeric values.
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT id FROM nums WHERE n / 3 < -0.4;
-SELECT id FROM nums WHERE n / 3 < -0.4;
+SELECT id FROM nums WHERE n / 3 > 0.83 AND n / 0.1 = 25;
+SELECT id FROM nums WHERE n / 3 > 0.83 AND n / 0.1 = 25;
+
+-- Use Decimal literals to avoid rounding fractions and integers beyond UInt64 range.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM nums WHERE n > 2.4999999999999999 OR i64::numeric * 10000 = 90071992547409930000;
+SELECT id FROM nums WHERE n > 2.4999999999999999 OR i64::numeric * 10000 = 90071992547409930000 ORDER BY id;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM nums WHERE n * 2 = -3;
 

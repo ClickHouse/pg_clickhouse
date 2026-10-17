@@ -44,6 +44,7 @@
 #include "utils/datetime.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
+#include "utils/numeric.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
@@ -3218,6 +3219,29 @@ appendFloat4Literal(StringInfo buf, float4 v) {
     }
 }
 
+/*
+ * Use Decimal literals to avoid rounding: ClickHouse reads fractions and
+ * integers beyond UInt64 range as Float64
+ */
+static bool
+appendDecimalLiteral(StringInfo buf, const char* val) {
+    const char* digits = val + (val[0] == '-');
+    const char* point  = strchr(digits, '.');
+    size_t len         = strlen(digits);
+
+    if (strspn(digits, "0123456789.") != len || (!point && len <= 18)) {
+        return false;
+    }
+    appendStringInfo(
+        buf,
+        "cast('%s', 'Decimal(%d, %d)')",
+        val,
+        (int)len - (point != NULL),
+        point ? (int)strlen(point + 1) : 0
+    );
+    return true;
+}
+
 static void
 emitArrayElement(
     StringInfo buf,
@@ -3226,8 +3250,6 @@ emitArrayElement(
     Oid element_type,
     FmgrInfo* typoutput
 ) {
-    char* extval;
-
     if (isnull) {
         appendStringInfoString(buf, "NULL");
         return;
@@ -3242,7 +3264,7 @@ emitArrayElement(
         return;
     }
 
-    extval = OutputFunctionCall(typoutput, elt);
+    char* extval = OutputFunctionCall(typoutput, elt);
 
     switch (element_type) {
     case FLOAT4OID:
@@ -3254,6 +3276,9 @@ emitArrayElement(
     case OIDOID:
     case FLOAT8OID:
     case NUMERICOID: {
+        if (element_type == NUMERICOID && appendDecimalLiteral(buf, extval)) {
+            break;
+        }
         /*
          * No need to quote unless it's a special value such as 'NaN'.
          * See comments in get_const_expr().
@@ -3528,6 +3553,9 @@ deparseConst(Const* node, deparse_expr_cxt* context, bool showtype) {
     case OIDOID:
     case FLOAT8OID:
     case NUMERICOID: {
+        if (node->consttype == NUMERICOID && appendDecimalLiteral(buf, extval)) {
+            break;
+        }
         /*
          * No need to quote unless it's a special value such as 'NaN'.
          * See comments in get_const_expr().
@@ -5179,6 +5207,29 @@ deparseVectorDistance(
     appendStringInfoChar(buf, ')');
 }
 
+/* Use -1 when numeric type has no declared decimal scale */
+static int
+numericScale(Expr* node) {
+    int32 typmod = exprTypmod((Node*)node);
+
+    if (typmod < (int32)VARHDRSZ) {
+        return -1;
+    }
+    /* Follow PostgreSQL's private numeric_typmod_scale() for signed 11-bit scale */
+    int scale = (((typmod - VARHDRSZ) & 0x7ff) ^ 1024) - 1024;
+    return Max(0, scale);
+}
+
+/*
+ * Use 38 decimal places when numeric type has no declared scale
+ */
+static void
+deparseDecimal256(Expr* node, int scale, deparse_expr_cxt* context) {
+    appendStringInfoString(context->buf, "toDecimal256(");
+    deparseExpr(node, context);
+    appendStringInfo(context->buf, ", %d)", scale < 0 ? 38 : scale);
+}
+
 /*
  * Deparse given operator expression. To avoid problems around priority of
  * operations, we always parenthesize the arguments.
@@ -5379,6 +5430,26 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
                 }
             }
             appendStringInfoChar(buf, ')');
+            goto cleanup;
+        }
+        case CF_NUMERIC_DIV: {
+            /*
+             * ClickHouse / keeps decimal places from left operand and can
+             * overflow Decimal256 without an error. Follow select_div_scale()
+             * in PostgreSQL numeric.c for quotient weight 0. Ignore display
+             * scale for inputs with no declared scale; round as div_var() does
+             */
+            Expr* left  = linitial(node->args);
+            Expr* right = lsecond(node->args);
+            int scale =
+                Max(NUMERIC_MIN_SIG_DIGITS,
+                    Max(numericScale(left), numericScale(right)));
+
+            appendStringInfo(buf, "round(%s(", cdef->custom_name);
+            deparseDecimal256(left, numericScale(left), context);
+            appendStringInfoString(buf, ", ");
+            deparseDecimal256(right, numericScale(right), context);
+            appendStringInfo(buf, ", %d), %d)", scale + 1, scale);
             goto cleanup;
         }
         default: /* keep compiler quiet */;

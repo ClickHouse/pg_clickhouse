@@ -1012,6 +1012,9 @@ classify_builtin_operator(Oid opoid, const char** ch_name) {
     case F_INT8SHR:
         *ch_name = "bitShiftRight";
         return CF_INT_SHIFT;
+    case F_NUMERIC_DIV:
+        *ch_name = "divideDecimal";
+        return CF_NUMERIC_DIV;
     default:
         return CF_USUAL;
     }

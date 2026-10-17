@@ -204,9 +204,6 @@ is_numeric_type(Oid type_oid) {
 static bool
 is_known_arithmetic(Oid opcode, Oid left, Oid right) {
     switch (opcode) {
-    case F_NUMERIC_DIV:
-        /* ClickHouse keeps dividend scale */
-        return false;
     /* Interval literals and ClickHouse time differences both use seconds */
     case F_DATE_PLI:
     case F_DATE_MII:
@@ -227,9 +224,9 @@ is_known_arithmetic(Oid opcode, Oid left, Oid right) {
 }
 
 /*
- * ClickHouse rejects other builtin operators or gives them different
- * meanings, as with jsonb comparisons, time + interval past midnight and
- * numeric division
+ * Keep other builtin operators in Postgres: ClickHouse may reject them or
+ * return different results, as with jsonb comparisons and time + interval
+ * past midnight
  */
 static bool
 is_known_operator(Oid opno) {

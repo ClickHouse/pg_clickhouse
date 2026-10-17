@@ -2357,13 +2357,12 @@ SELECT a FROM t3 WHERE round(a::numeric) = 5;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
-                          QUERY PLAN                           
----------------------------------------------------------------
+                                                                                                 QUERY PLAN                                                                                                  
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Filter: (round(((t3.a)::numeric / '3'::numeric), 2) = 1.67)
-   Remote SQL: SELECT a FROM functions_test.t3
-(4 rows)
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round(round(divideDecimal(toDecimal256(cast(a, 'Nullable(Decimal(76, 38))'), 38), toDecimal256(3, 38), 17), 16), 2) = cast('1.67', 'Decimal(3, 2)')))
+(3 rows)
 
 SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
  a 

@@ -227,12 +227,12 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT a, percentile_disc(0.75) WITHIN GROUP (ORDER
 (4 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT a, percentile_disc(0.75) WITHIN GROUP (ORDER BY f) / sum(d) FROM t4 GROUP BY a;
-                                                 QUERY PLAN                                                 
-------------------------------------------------------------------------------------------------------------
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
-   Output: a, (((percentile_disc('0.75'::double precision) WITHIN GROUP (ORDER BY f)))::numeric / (sum(d)))
+   Output: a, (((percentile_disc('0.75'::double precision) WITHIN GROUP (ORDER BY f))::numeric / sum(d)))
    Relations: Aggregate on (t4)
-   Remote SQL: SELECT a, quantileExactLowMerge(0.75)(f), sum(d) FROM engines_test.t4 GROUP BY a
+   Remote SQL: SELECT a, round(divideDecimal(toDecimal256(quantileExactLowMerge(0.75)(f), 38), toDecimal256(sum(d), 38), 17), 16) FROM engines_test.t4 GROUP BY a
 (4 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT a, count(e) FROM t4 GROUP BY a;
