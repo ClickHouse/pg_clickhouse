@@ -1731,7 +1731,7 @@ equivalents as follows:
 *   `btrim`: [trimBoth](https://clickhouse.com/docs/sql-reference/functions/string-functions#trimboth)
 *   `ltrim`: [trimLeft](https://clickhouse.com/docs/sql-reference/functions/string-functions#trimLeft)
 *   `rtrim`: [trimRight](https://clickhouse.com/docs/sql-reference/functions/string-functions#trimRight)
-*   `concat_ws`: [concatWithSeparator](https://clickhouse.com/docs/sql-reference/functions/string-functions#concatwithseparator)
+*   `concat_ws`: [arrayStringConcat](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayStringConcat)
 *   `lower(text)`: [lowerUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#lowerutf8)
 *   `upper(text)`: [upperUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#upperutf8)
 *   `substring(text, ...)` & `substr(text, ...)`: [substringUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#substringutf8)
