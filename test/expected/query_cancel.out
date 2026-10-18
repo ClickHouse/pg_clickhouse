@@ -41,7 +41,7 @@ BEGIN;
 SET LOCAL statement_timeout = '10ms';
 SELECT count(*) FROM cancel_http_ft a CROSS JOIN cancel_http_ft b
     CROSS JOIN cancel_http_ft c CROSS JOIN cancel_http_ft d;
-ERROR:  pg_clickhouse: query was aborted
+ERROR:  canceling statement due to statement timeout
 COMMIT;
 -- Binary: same test, exercising the OnProgress cancel path.
 BEGIN;
