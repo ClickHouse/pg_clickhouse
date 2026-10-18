@@ -4792,6 +4792,35 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             return;
         }
 
+        case CF_CONCAT_WS: {
+            /*
+             * arrayStringConcat([v1, toString(v2), ...], sep) skips NULL
+             * values like Postgres concat_ws() does. Convert non-text values
+             * to String so the array has a common element type.
+             */
+            ListCell* lc;
+
+            appendStringInfoString(buf, "([");
+            for_each_from(lc, node->args, 1) {
+                Expr* arg    = (Expr*)lfirst(lc);
+                bool is_text = exprType((Node*)arg) == TEXTOID;
+
+                if (foreach_current_index(lc) > 1) {
+                    appendStringInfoString(buf, ", ");
+                }
+                if (!is_text) {
+                    appendStringInfoString(buf, "toString(");
+                }
+                deparseExpr(arg, context);
+                if (!is_text) {
+                    appendStringInfoChar(buf, ')');
+                }
+            }
+            appendStringInfoString(buf, "], ");
+            deparseExpr((Expr*)linitial(node->args), context);
+            appendStringInfoChar(buf, ')');
+            return;
+        }
         case CF_ARRAY_FILL:
             /* arrayWithConstant(n, val): swap args */
             appendStringInfoChar(buf, '(');

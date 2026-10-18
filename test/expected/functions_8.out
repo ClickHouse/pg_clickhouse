@@ -1905,11 +1905,11 @@ SELECT * FROM t4 WHERE val <> CURRENT_DATABASE();
 -- Test concat_ws.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t3_map WHERE concat_ws('/', key2, val) = 'key4/val4';
-                                                    QUERY PLAN                                                     
--------------------------------------------------------------------------------------------------------------------
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t3_map
    Output: key1, key2, val
-   Remote SQL: SELECT key1, key2, val FROM functions_test.t3_map WHERE ((concat_ws('/', key2, val) = 'key4/val4'))
+   Remote SQL: SELECT key1, key2, val FROM functions_test.t3_map WHERE ((arrayStringConcat([key2, val], '/') = 'key4/val4'))
 (3 rows)
 
 SELECT * FROM t3_map WHERE concat_ws('/', key2, val) = 'key4/val4';
@@ -1920,16 +1920,68 @@ SELECT * FROM t3_map WHERE concat_ws('/', key2, val) = 'key4/val4';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t1 WHERE concat_ws(',', a, b, 'foo', c) = '2,3,foo,2019-01-02 10:00:00';
-                                                          QUERY PLAN                                                          
-------------------------------------------------------------------------------------------------------------------------------
+                                                                                   QUERY PLAN                                                                                   
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t1
    Output: a, b, c
-   Remote SQL: SELECT a, b, c FROM functions_test.t1 WHERE ((concat_ws(',', a, b, 'foo', c) = '2,3,foo,2019-01-02 10:00:00'))
+   Remote SQL: SELECT a, b, c FROM functions_test.t1 WHERE ((arrayStringConcat([toString(a), toString(b), toString('foo'), toString(c)], ',') = '2,3,foo,2019-01-02 10:00:00'))
 (3 rows)
 
 SELECT * FROM t1 WHERE concat_ws(',', a, b, 'foo', c) = '2,3,foo,2019-01-02 10:00:00';
-ERROR:  pg_clickhouse: DB::Exception: Illegal type Int32 of argument 2 of function concatWithSeparator: While processing concatWithSeparator(',', a, b, 'foo', c) = '2,3,foo,2019-01-02 10:00:00'
-DETAIL:  Remote Query: SELECT a, b, c FROM functions_test.t1 WHERE ((concat_ws(',', a, b, 'foo', c) = '2,3,foo,2019-01-02 10:00:00'))
+ a | b |          c          
+---+---+---------------------
+ 2 | 3 | 2019-01-02 10:00:00
+(1 row)
+
+-- concat_ws skips NULL values.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE concat_ws('/', a, nullif(b, 3)) = '2';
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((arrayStringConcat([toString(a), toString(NULLIF(b,3))], '/') = '2'))
+(3 rows)
+
+SELECT a FROM t3 WHERE concat_ws('/', a, nullif(b, 3)) = '2';
+ a 
+---
+ 2
+(1 row)
+
+-- concat_ws with a non-constant separator or VARIADIC does not push down.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE concat_ws(b::text, a, a) = '232';
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Filter: (concat_ws((t3.b)::text, t3.a, t3.a) = '232'::text)
+   Remote SQL: SELECT a, b FROM functions_test.t3
+(4 rows)
+
+SELECT a FROM t3 WHERE concat_ws(b::text, a, a) = '232';
+ a 
+---
+ 2
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE concat_ws('/', VARIADIC ARRAY[a, b]) = '2/3';
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Filter: (concat_ws('/'::text, VARIADIC ARRAY[t3.a, t3.b]) = '2/3'::text)
+   Remote SQL: SELECT a, b FROM functions_test.t3
+(4 rows)
+
+SELECT a FROM t3 WHERE concat_ws('/', VARIADIC ARRAY[a, b]) = '2/3';
+ a 
+---
+ 2
+(1 row)
+
 -- Test fuzzystrmatch pushdown.
 CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
 -- soundex pushes down with same name.
