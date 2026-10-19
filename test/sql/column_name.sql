@@ -88,6 +88,32 @@ ALTER FOREIGN TABLE cn_drop_late DROP COLUMN discarded;
 INSERT INTO cn_drop_late VALUES (9, 'after drop');
 SELECT * FROM cn_drop_late ORDER BY pg_id;
 
+-- Import names longer than PostgreSQL's 63 byte identifier limit.
+-- Match truncated table names with LIMIT TO; preserve full names with column_name.
+CALL clickhouse_perform('cn_admin', 'CREATE TABLE cn_test.table_with_a_name_longer_than_postgres_allows_for_identifiers_too (
+    id Int32, column_with_a_name_longer_than_postgres_allows_for_identifiers_too String
+) ENGINE = MergeTree ORDER BY (id);');
+
+CREATE SCHEMA cn_long_http;
+CREATE SCHEMA cn_long_bin;
+IMPORT FOREIGN SCHEMA cn_test
+    LIMIT TO ("table_with_a_name_longer_than_postgres_allows_for_identifiers_too")
+    FROM SERVER cn_http_loopback INTO cn_long_http;
+IMPORT FOREIGN SCHEMA cn_test
+    LIMIT TO ("table_with_a_name_longer_than_postgres_allows_for_identifiers_too")
+    FROM SERVER cn_bin_loopback INTO cn_long_bin;
+\d cn_long_bin.*
+
+INSERT INTO cn_long_http."table_with_a_name_longer_than_postgres_allows_for_identifiers_too"
+    VALUES (1, 'http long');
+INSERT INTO cn_long_bin."table_with_a_name_longer_than_postgres_allows_for_identifiers_too"
+    VALUES (2, 'bin long');
+SELECT * FROM cn_long_http."table_with_a_name_longer_than_postgres_allows_for_identifiers_too"
+    ORDER BY id;
+SELECT * FROM cn_long_bin."table_with_a_name_longer_than_postgres_allows_for_identifiers_too"
+    ORDER BY id;
+DROP SCHEMA cn_long_http, cn_long_bin CASCADE;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER cn_http_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER cn_bin_loopback;
 CALL clickhouse_perform('cn_admin', 'DROP DATABASE cn_test');

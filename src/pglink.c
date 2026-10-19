@@ -8,6 +8,7 @@
 #include "miscadmin.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_type.h"
+#include "parser/scansup.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
@@ -574,7 +575,7 @@ http_prepare_insert(
         CustomColumnInfo* cinfo = chfdw_get_custom_column_info(relid, attnum);
         /* Name must match the INSERT column list chfdw_deparse_insert_sql built */
         const char* colname =
-            (cinfo && cinfo->colname[0]) ? cinfo->colname : NameStr(attr->attname);
+            (cinfo && cinfo->colname) ? cinfo->colname : NameStr(attr->attname);
         appendStringInfo(&collist, "%s%s", i ? ", " : "", pgch_quote_ch_ident(colname));
         state->attnums[i]   = attnum;
         state->atttypids[i] = attr->atttypid;
@@ -832,8 +833,8 @@ build_insert_colmap(binary_insert_state* state, TupleDesc indesc) {
                 cinfo  = OidIsValid(state->relid)
                              ? chfdw_get_custom_column_info(state->relid, j + 1)
                              : NULL;
-                inname = (cinfo && cinfo->colname[0]) ? cinfo->colname
-                                                      : NameStr(attin->attname);
+                inname = (cinfo && cinfo->colname) ? cinfo->colname
+                                                   : NameStr(attin->attname);
 
                 if (strcmp(chname, inname) == 0) {
                     m->attnum = (AttrNumber)(j + 1);
@@ -1136,13 +1137,24 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
         if (list_length(stmt->table_list)) {
             ListCell* lc;
             bool found = false;
+            /* PostgreSQL truncates names in LIMIT TO and EXCEPT. */
+            char* local_name = table_name;
+            size_t name_len  = strlen(table_name);
 
+            if (name_len >= NAMEDATALEN) {
+                local_name = pstrdup(table_name);
+                truncate_identifier(local_name, name_len, false);
+            }
             foreach (lc, stmt->table_list) {
                 RangeVar* rv = (RangeVar*)lfirst(lc);
 
-                if (strcmp(rv->relname, table_name) == 0) {
+                if (strcmp(rv->relname, local_name) == 0) {
                     found = true;
+                    break;
                 }
+            }
+            if (local_name != table_name) {
+                pfree(local_name);
             }
 
             if (stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT && found) {
@@ -1180,6 +1192,14 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
                 &is_nullable,
                 &options
             );
+
+            /* Preserve remote names that exceed PostgreSQL's identifier limit. */
+            if (strlen(colname) >= NAMEDATALEN) {
+                options = list_concat(
+                    options,
+                    list_make2(makeString(pstrdup("column_name")), makeString(colname))
+                );
+            }
 
             if (!first) {
                 appendStringInfoString(&buf, ",\n");

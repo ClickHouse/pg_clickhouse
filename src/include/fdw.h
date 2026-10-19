@@ -455,7 +455,7 @@ typedef struct CustomObjectDef {
 typedef struct CustomColumnInfo {
     Oid relid;
     int varattno;
-    char colname[NAMEDATALEN];
+    char* colname;
     ch_aggregate_func_type is_AggregateFunction;
     custom_object_type coltype;
 

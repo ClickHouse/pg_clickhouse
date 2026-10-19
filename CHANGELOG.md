@@ -121,6 +121,10 @@ All notable changes to this project will be documented in this file. It uses the
     as a partitionwise `count(*)` self-join of foreign partitions. Each row
     wrote one byte past the end of a zero-length array. Thanks to Kaushik
     Iska for the PR ([#438])!
+*   Fixed remote queries that truncated `column_name` values longer than
+    63 bytes. `IMPORT FOREIGN SCHEMA` now preserves full column names
+    in `column_name` options when PostgreSQL truncates local names. It also
+    matches `LIMIT TO` and `EXCEPT` against truncated table names ([#446]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -184,6 +188,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#438 Stop writing past nulls on zero-column scans"
   [#443]: https://github.com/ClickHouse/pg_clickhouse/pull/443
     "ClickHouse/pg_clickhouse#443 Fix pushdown for operators ClickHouse implements as functions"
+  [#446]: https://github.com/ClickHouse/pg_clickhouse/pull/446
+    "ClickHouse/pg_clickhouse#446 Fix issues with long names"
 
 ## [v0.11.0] — 2026-09-30
 
