@@ -658,6 +658,25 @@ clickhouseGetForeignRelSize(
 }
 
 /*
+ * Return true if ClickHouse would order NaN differently than PostgreSQL, which
+ * sorts it above every number whatever the NULLS setting: ClickHouse places
+ * NaN with the NULLs, so a float sort with NULLS FIRST on ASC or NULLS LAST on
+ * DESC must stay local.
+ */
+static bool
+nan_order_differs(PathKey* pathkey, Expr* expr) {
+    Oid type = exprType((Node*)expr);
+
+#if PG_VERSION_NUM >= 180000
+    bool asc = pathkey->pk_cmptype == BTLessStrategyNumber;
+#else
+    bool asc = pathkey->pk_strategy == BTLessStrategyNumber;
+#endif
+
+    return (type == FLOAT4OID || type == FLOAT8OID) && pathkey->pk_nulls_first == asc;
+}
+
+/*
  * get_useful_pathkeys_for_relation
  *		Determine which orderings of a relation might be useful.
  *
@@ -697,7 +716,8 @@ get_useful_pathkeys_for_relation(PlannerInfo* root, RelOptInfo* rel) {
              */
             if (pathkey_ec->ec_has_volatile ||
                 !(em_expr = chfdw_find_em_expr_for_rel(pathkey_ec, rel)) ||
-                !chfdw_is_foreign_expr(root, rel, em_expr, true)) {
+                !chfdw_is_foreign_expr(root, rel, em_expr, true) ||
+                nan_order_differs(pathkey, em_expr)) {
                 query_pathkeys_ok = false;
                 break;
             }
@@ -3291,7 +3311,8 @@ add_foreign_ordered_paths(
         );
 
         if (sort_expr == NULL ||
-            !chfdw_is_foreign_expr(root, input_rel, sort_expr, true)) {
+            !chfdw_is_foreign_expr(root, input_rel, sort_expr, true) ||
+            nan_order_differs(pathkey, sort_expr)) {
             return;
         }
     }

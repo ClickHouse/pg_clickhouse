@@ -171,6 +171,17 @@ SELECT (SELECT array_agg(id) FROM (SELECT id FROM vec_items ORDER BY v <#> :'q' 
  t
 (1 row)
 
+-- ClickHouse sorts NaN with the NULLs, unlike Postgres, so a NULLS setting
+-- other than the default stays local.
+SELECT (SELECT array_agg(id) FROM (SELECT id FROM vec_items ORDER BY v <=> :'q' NULLS FIRST LIMIT 3) r)
+     = (SELECT array_agg(id) FROM (SELECT id FROM local_items ORDER BY v <=> :'q' NULLS FIRST LIMIT 3) l) AS nulls_first,
+       (SELECT array_agg(id) FROM (SELECT id FROM vec_items ORDER BY v <=> :'q' DESC NULLS LAST LIMIT 3) r)
+     = (SELECT array_agg(id) FROM (SELECT id FROM local_items ORDER BY v <=> :'q' DESC NULLS LAST LIMIT 3) l) AS desc_nulls_last;
+ nulls_first | desc_nulls_last 
+-------------+-----------------
+ t           | t
+(1 row)
+
 -- Distances in the select list and WHERE clause.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id, v <=> :'q' AS dist FROM vec_items ORDER BY v <=> :'q' LIMIT 3;
