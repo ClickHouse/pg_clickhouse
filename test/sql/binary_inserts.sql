@@ -1,4 +1,5 @@
 SET datestyle = 'ISO';
+\i test/include/normalize.sql
 CREATE SERVER binary_inserts_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'binary_inserts_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 
@@ -90,7 +91,7 @@ SELECT * FROM null_ints ORDER BY c1;
 
 /* check dates and strings */
 ALTER TABLE complex ALTER COLUMN c8 SET DATA TYPE timestamp(3);
-\d+ complex
+\d complex
 INSERT INTO complex VALUES
 	(1, '2020-06-01', '2020-06-02 10:01:02', 't1', 'fix_t1', 'low1', '2020-06-01', '2020-06-02 10:01:02.123'),
 	(2, '2020-06-02', '2020-06-03 10:01:02', 5, 'fix_t2', 'low2', '2020-06-02', '2020-06-03 11:01:02.234'),
@@ -353,6 +354,14 @@ BEGIN
         SELECT count(*) FROM pg_backend_memory_contexts WHERE name = 'pgch writer'
     );
 END $$;
+
+/* Missing remote table fails while preparing */
+CREATE FOREIGN TABLE missing_ints (c1 int) SERVER binary_inserts_loopback;
+SELECT * FROM pg_temp.error_filter($$INSERT INTO missing_ints VALUES (1)$$);
+
+/* Local error mid-insert drains the half-sent block, nothing lands */
+INSERT INTO ints (c1, c2, c3, c4) SELECT i, i, i, 10 / (i - 33) FROM generate_series(30, 35) i;
+SELECT count(*) FROM ints WHERE c1 >= 30;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 CALL clickhouse_perform('binary_inserts_admin', 'DROP DATABASE binary_inserts_test');

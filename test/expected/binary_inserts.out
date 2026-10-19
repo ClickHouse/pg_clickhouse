@@ -1,4 +1,7 @@
 SET datestyle = 'ISO';
+\i test/include/normalize.sql
+\set normalize_echo :ECHO
+\set ECHO none
 CREATE SERVER binary_inserts_loopback FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(dbname 'binary_inserts_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 CREATE SERVER binary_inserts_admin FOREIGN DATA WRAPPER clickhouse_fdw;
@@ -150,27 +153,18 @@ SELECT * FROM null_ints ORDER BY c1;
 
 /* check dates and strings */
 ALTER TABLE complex ALTER COLUMN c8 SET DATA TYPE timestamp(3);
-\d+ complex
-                                          Foreign table "binary_inserts_test.complex"
- Column |              Type              | Collation | Nullable | Default | FDW options | Storage  | Stats target | Description 
---------+--------------------------------+-----------+----------+---------+-------------+----------+--------------+-------------
- c1     | integer                        |           | not null |         |             | plain    |              | 
- c2     | date                           |           | not null |         |             | plain    |              | 
- c3     | timestamp with time zone       |           | not null |         |             | plain    |              | 
- c4     | text                           |           | not null |         |             | extended |              | 
- c5     | text                           |           | not null |         |             | extended |              | 
- c6     | text                           |           | not null |         |             | extended |              | 
- c7     | date                           |           | not null |         |             | plain    |              | 
- c8     | timestamp(3) without time zone |           | not null |         |             | plain    |              | 
-Not-null constraints:
-    "complex_c1_not_null" NOT NULL "c1"
-    "complex_c2_not_null" NOT NULL "c2"
-    "complex_c3_not_null" NOT NULL "c3"
-    "complex_c4_not_null" NOT NULL "c4"
-    "complex_c5_not_null" NOT NULL "c5"
-    "complex_c6_not_null" NOT NULL "c6"
-    "complex_c7_not_null" NOT NULL "c7"
-    "complex_c8_not_null" NOT NULL "c8"
+\d complex
+                      Foreign table "binary_inserts_test.complex"
+ Column |              Type              | Collation | Nullable | Default | FDW options 
+--------+--------------------------------+-----------+----------+---------+-------------
+ c1     | integer                        |           | not null |         | 
+ c2     | date                           |           | not null |         | 
+ c3     | timestamp with time zone       |           | not null |         | 
+ c4     | text                           |           | not null |         | 
+ c5     | text                           |           | not null |         | 
+ c6     | text                           |           | not null |         | 
+ c7     | date                           |           | not null |         | 
+ c8     | timestamp(3) without time zone |           | not null |         | 
 Server: binary_inserts_loopback
 FDW options: (database 'binary_inserts_test', table_name 'complex', engine 'MergeTree')
 
@@ -522,10 +516,27 @@ BEGIN
     );
 END $$;
 NOTICE:  writers: 0
+/* Missing remote table fails while preparing */
+CREATE FOREIGN TABLE missing_ints (c1 int) SERVER binary_inserts_loopback;
+SELECT * FROM pg_temp.error_filter($$INSERT INTO missing_ints VALUES (1)$$);
+                                                         error                                                          
+------------------------------------------------------------------------------------------------------------------------
+ ERROR:  pg_clickhouse: could not prepare insert - DB::Exception: Table binary_inserts_test.missing_ints does not exist
+(1 row)
+
+/* Local error mid-insert drains the half-sent block, nothing lands */
+INSERT INTO ints (c1, c2, c3, c4) SELECT i, i, i, 10 / (i - 33) FROM generate_series(30, 35) i;
+ERROR:  division by zero
+SELECT count(*) FROM ints WHERE c1 >= 30;
+ count 
+-------
+     0
+(1 row)
+
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_inserts_loopback;
 CALL clickhouse_perform('binary_inserts_admin', 'DROP DATABASE binary_inserts_test');
 DROP SERVER binary_inserts_loopback CASCADE;
-NOTICE:  drop cascades to 16 other objects
+NOTICE:  drop cascades to 17 other objects
 DETAIL:  drop cascades to foreign table addr
 drop cascades to foreign table arrays
 drop cascades to foreign table bytes
@@ -542,3 +553,4 @@ drop cascades to foreign table default_vals
 drop cascades to foreign table maps
 drop cascades to foreign table u64s
 drop cascades to foreign table checked
+drop cascades to foreign table missing_ints

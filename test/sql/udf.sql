@@ -1,3 +1,4 @@
+\i test/include/normalize.sql
 CREATE SERVER udf_loopback FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'udf_test', driver 'binary');
 CREATE USER MAPPING FOR CURRENT_USER SERVER udf_loopback;
@@ -47,35 +48,25 @@ SELECT id FROM udf_vals WHERE ch_noop_float8('1') = 1.1;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM udf_vals WHERE ch_noop_float8_float8('1', 1.1) = 1.1;
 
-\unset ECHO
-CREATE OR REPLACE FUNCTION remote_sql(TEXT) RETURNS SETOF JSONB LANGUAGE plpgsql  AS $$
-DECLARE
-	output JSONB;
-BEGIN
-    EXECUTE format('EXPLAIN (VERBOSE, FORMAT JSON) %s', $1) INTO output;
-    RETURN QUERY SELECT * FROM jsonb_path_query(output, '$.**."Remote SQL"');
-END;
-$$;
-\set ECHO all
 
 -- Keep unknown extension's functions local.
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
-SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE set_limit(id) = '1' $$);
+SELECT * FROM pg_temp.remote_sql($$ SELECT id FROM udf_vals WHERE set_limit(id) = '1' $$);
 
 -- Keep unknown extension's types and operators local.
 CREATE EXTENSION IF NOT EXISTS citext;
-SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) = '1' $$);
-SELECT * FROM remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) IS NULL $$);
+SELECT * FROM pg_temp.remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) = '1' $$);
+SELECT * FROM pg_temp.remote_sql($$ SELECT id FROM udf_vals WHERE citext(id) IS NULL $$);
 
 -- Wait for a lock before loading intarray.
 SELECT pg_advisory_lock(hashtext('intarray'));
 CREATE EXTENSION intarray;
 
 -- Keep unknown functions from known extension local.
-SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE intset(id) = ARRAY[1]');
+SELECT * FROM pg_temp.remote_sql('SELECT id FROM udf_vals WHERE intset(id) = ARRAY[1]');
 
 -- Keep unmapped operators from known extension local.
-SELECT * FROM remote_sql('SELECT id FROM udf_vals WHERE ARRAY[id] @> ARRAY[1]');
+SELECT * FROM pg_temp.remote_sql('SELECT id FROM udf_vals WHERE ARRAY[id] @> ARRAY[1]');
 
 -- Drop intarray so it doesn't mess with other tests (array_functions.sql).
 DROP EXTENSION intarray;

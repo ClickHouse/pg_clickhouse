@@ -1,44 +1,26 @@
 name: 🐘 Postgres CI
 on:
-  push:
-    branches: [main, wip/**]
-  pull_request:
-  schedule:
-    - cron: "0 12 10 * *" # Monthly at noon on the tenth
+  workflow_call:
+    inputs:
+      pg: { type: string, required: true, description: JSON list of platforms }
 permissions:
   contents: read
 
 jobs:
-  matrix:
-    name: 📋 Generate Matrix
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
-    steps:
-      - name: Generate Matrix
-        id: matrix
-        uses: pgxn/matrix-action@v0
-        with:
-          min-version: 14
-          beta: true
-          deprecated: true
-          no-os: windows macos
-
   build:
     name: ${{ matrix.pg.emoji }} ${{ matrix.pg.arch }} 🐘 ${{ matrix.pg.version }}
-    needs: matrix
     runs-on: ${{ matrix.pg.runner }}
     strategy:
       fail-fast: false
       matrix:
-        pg: ${{ fromJson(needs.matrix.outputs.matrix) }}
-    # name: 🐘 PostgreSQL ${{ matrix.pg }} ${{ matrix.os.icon }} ${{ matrix.os.arch }}
+        pg: ${{ fromJSON(inputs.pg) }}
+    env: { COVERAGE: 1, GCOV_PREFIX: /tmp/gcov }
     steps:
       - name: Start Postgres ${{ matrix.pg.version }}
         uses: pgxn/postgres-action@v0
         with:
           version: ${{ matrix.pg.version }}
-          packages: libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev libre2-dev libicu-dev
+          packages: libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev libre2-dev libicu-dev lcov
       - name: Install Extensions
         run: sudo pgxn install re2 && sudo pgxn install vector
       - name: Checkout the Repository
@@ -46,6 +28,8 @@ jobs:
         with: { submodules: recursive }
       - name: Start ClickHouse
         run: sudo .github/ubuntu/clickhouse.sh
+      - name: Prepare Coverage
+        run: sudo -E ci/coverage.sh prepare
       - name: Build
         run: make
       - name: Install
@@ -60,12 +44,30 @@ jobs:
         if: failure() && steps.test.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
-          name: regression-ch${{ matrix.ch }}
+          name: regression-pg${{ matrix.pg.version }}-${{ matrix.pg.arch }}
           path: |
             regression.diffs
             results
       - name: Test SQL_ASCII
+        id: ascii
         env:
           REGRESS_OPTS: --no-locale --encoding=SQL_ASCII
           TESTS: test/sql/encoding.sql
         run: make installcheck
+      - name: Stop Postgres
+        if: ${{ !cancelled() }}
+        run: sudo -E ci/coverage.sh stop
+      - name: Collect Coverage
+        if: ${{ !cancelled() }}
+        env:
+          LANE: pg${{ matrix.pg.version }}-${{ matrix.pg.arch }}
+          RUNS: default=${{ steps.test.outcome }} SQL_ASCII=${{ steps.ascii.outcome }}
+        run: make coverage-lcov
+      - name: Upload Coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-pg${{ matrix.pg.version }}-${{ matrix.pg.arch }}
+          path: coverage
+          if-no-files-found: error
+          overwrite: true

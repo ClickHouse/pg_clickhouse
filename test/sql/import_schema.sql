@@ -125,13 +125,13 @@ IMPORT FOREIGN SCHEMA "import_test' OR database = 'public" FROM SERVER import_lo
 -- Should succeed.
 IMPORT FOREIGN SCHEMA import_test FROM SERVER import_loopback INTO clickhouse;
 
-\d+ clickhouse.ints;
-\d+ clickhouse.types;
-\d+ clickhouse.types2;
-\d+ clickhouse.arrays;
-\d+ clickhouse.tuples;
-\d+ clickhouse.timezones;
-\d+ clickhouse.ip;
+\d clickhouse.ints;
+\d clickhouse.types;
+\d clickhouse.types2;
+\d clickhouse.arrays;
+\d clickhouse.tuples;
+\d clickhouse.timezones;
+\d clickhouse.ip;
 
 SELECT * FROM clickhouse.ints ORDER BY c1 DESC LIMIT 4;
 SELECT * FROM clickhouse.types ORDER BY c1 LIMIT 2;
@@ -143,13 +143,13 @@ SELECT * FROM clickhouse.ip ORDER BY c1;
 
 IMPORT FOREIGN SCHEMA "import_test" FROM SERVER import_loopback_bin INTO clickhouse_bin;
 
-\d+ clickhouse_bin.ints;
-\d+ clickhouse_bin.types;
-\d+ clickhouse_bin.types2;
-\d+ clickhouse_bin.arrays;
-\d+ clickhouse_bin.tuples;
-\d+ clickhouse_bin.timezones;
-\d+ clickhouse_bin.ip;
+\d clickhouse_bin.ints;
+\d clickhouse_bin.types;
+\d clickhouse_bin.types2;
+\d clickhouse_bin.arrays;
+\d clickhouse_bin.tuples;
+\d clickhouse_bin.timezones;
+\d clickhouse_bin.ip;
 
 SELECT * FROM clickhouse_bin.ints ORDER BY c1 DESC LIMIT 4;
 SELECT * FROM clickhouse_bin.types ORDER BY c1 LIMIT 2;
@@ -161,17 +161,17 @@ SELECT * FROM clickhouse.ip ORDER BY c1;
 
 IMPORT FOREIGN SCHEMA "import_test" LIMIT TO (ints, types) FROM SERVER import_loopback INTO clickhouse_limit;
 
-\d+ clickhouse_limit.ints;
-\d+ clickhouse_limit.types;
-\d+ clickhouse_limit.arrays;
-\d+ clickhouse_limit.tuples;
+\d clickhouse_limit.ints;
+\d clickhouse_limit.types;
+\d clickhouse_limit.arrays;
+\d clickhouse_limit.tuples;
 
 IMPORT FOREIGN SCHEMA "import_test" EXCEPT (ints, types) FROM SERVER import_loopback INTO clickhouse_except;
 
-\d+ clickhouse_except.ints;
-\d+ clickhouse_except.types;
-\d+ clickhouse_except.arrays;
-\d+ clickhouse_except.tuples;
+\d clickhouse_except.ints;
+\d clickhouse_except.types;
+\d clickhouse_except.arrays;
+\d clickhouse_except.tuples;
 
 -- check custom database
 CALL clickhouse_perform('import_admin', 'CREATE TABLE import_test_2.custom_option (a Int64) ENGINE = MergeTree ORDER BY (a)');
@@ -188,13 +188,13 @@ CALL clickhouse_perform('import_admin', $$
         -- Min values
         -128, -32768, -2147483648, -9223372036854775808,
         0, 0, 0, 0,
-        1.175494351e-38, 2.2250738585072014e-308
+        toFloat32(1.175494351e-38), 2.2250738585072014e-308
     ),
     (
         -- Max values
         127, 32767, 2147483647, 9223372036854775807,
         255, 65535, 4294967295, 18446744073709551615,
-        3.402823466e+38, 1.7976931348623158e+308
+        toFloat32(3.402823466e+38), 1.7976931348623158e+308
     )
 $$);
 

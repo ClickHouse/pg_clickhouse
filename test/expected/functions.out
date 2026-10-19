@@ -902,9 +902,12 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT date_part(t4.val, t5.ts) FROM t4, t5 LIMIT 1
    Remote SQL: SELECT r1.val, r2.ts FROM  functions_test.t4 r1 ALL INNER JOIN functions_test.t5 r2 ON (TRUE) LIMIT 1
 (4 rows)
 
--- Unsupported non-ASCII unit raises a clean error.
+-- Unsupported non-ASCII unit raises a clean error. Message wording varies
+-- by Postgres version, SQLSTATE does not
+\set VERBOSITY sqlstate
 SELECT date_trunc('É'::text, ts) FROM t5 LIMIT 1;
-ERROR:  unit "É" not recognized for type timestamp without time zone
+ERROR:  22023
+\set VERBOSITY default
 EXPLAIN (VERBOSE, COSTS OFF) SELECT ltrim(val) AS a, btrim(val) AS b, rtrim(val) AS c FROM t4 GROUP BY a,b,c ORDER BY a;
                                                                                 QUERY PLAN                                                                                 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
