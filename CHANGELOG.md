@@ -124,7 +124,7 @@ All notable changes to this project will be documented in this file. It uses the
     was NULL, instead of skipping NULL values as Postgres does. It now pushes
     down as `arrayStringConcat()`. A `concat_ws()` with a non-constant
     separator or `VARIADIC` array, which failed or returned wrong results in
-    ClickHouse, now evaluates locally ([#TBD]).
+    ClickHouse, now evaluates locally ([#445]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -186,6 +186,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#436 Report exceptions raised mid-stream by the HTTP driver"
   [#438]: https://github.com/ClickHouse/pg_clickhouse/pull/438
     "ClickHouse/pg_clickhouse#438 Stop writing past nulls on zero-column scans"
+  [#445]: https://github.com/ClickHouse/pg_clickhouse/pull/445
+    "ClickHouse/pg_clickhouse#445 Skip NULL values in pushed-down concat_ws()"
 
 ## [v0.11.0] — 2026-09-30
 
