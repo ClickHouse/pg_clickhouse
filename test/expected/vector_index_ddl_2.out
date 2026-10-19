@@ -1,0 +1,5 @@
+SELECT NOT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = 'vector') AS no_vector \gset
+\if :no_vector
+\echo 'SKIP: vector extension not available'
+SKIP: vector extension not available
+\quit
