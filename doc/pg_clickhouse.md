@@ -2293,6 +2293,9 @@ other backslash sequences are treated as literal text.
 ## Authors
 
 *   [David E. Wheeler](https://justatheory.com/)
+*   [serprex](https://github.com/serprex)
+*   [Josh Ventura](https://github.com/JoshDreamland)
+*   [Kaushik Iska](https://github.com/iskakaushik)
 
 ## Copyright
 

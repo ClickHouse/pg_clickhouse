@@ -36,20 +36,19 @@ All notable changes to this project will be documented in this file. It uses the
     reads, inserts, and `COPY`. pgvector is not required; pg_clickhouse
     recognizes its `vector` type when installed. `vector` constants and
     parameters push down as `Array(Float32)`, as do the pgvector `=` and `<>`
-    operators. Thanks to Kaushik Iska for the PR ([#410])!
+    operators ([#410]).
 *   Added pushdown of the [pgvector] distance operators `<->`, `<=>`, `<#>`,
     and `<+>`, and the `l2_distance`, `cosine_distance`, `inner_product`,
     `l1_distance`, and `vector_dims` functions, so that nearest-neighbor
     queries sort and limit in ClickHouse. `<#>` sorts as `dotProduct(...)
     DESC`, the form ClickHouse vector similarity indexes serve, and
-    requires ClickHouse 23.8 or later. Thanks to Kaushik Iska for the PR
-    ([#411])!
+    requires ClickHouse 23.8 or later ([#411]).
 *   Added the `settings` option for foreign servers and foreign tables to send
     [ClickHouse settings] with foreign table queries and inserts. Uses
     [`pg_clickhouse.session_settings` syntax]. Table settings override server
     settings, and `pg_clickhouse.session_settings` overrides both for matching
     keys. Vector search settings unsupported by older servers are skipped with
-    a warning. Thanks to Kaushik Iska for the PR ([#412])!
+    a warning ([#412]).
 *   Added pushdown for `^` `|/` `||/` `@` `&` `|` `#` `~` `<<` `>>` ([#443]).
 *   Added vector index reporting for pgvector nearest neighbor searches.
     `EXPLAIN` shows the ClickHouse vector similarity index a search can use,
@@ -57,8 +56,7 @@ All notable changes to this project will be documented in this file. It uses the
     the latter case. Set `pg_clickhouse.vector_planner_warnings` to false to
     silence the warnings. pg_clickhouse caches the index definitions it reads
     from ClickHouse for `pg_clickhouse.vector_metadata_ttl` seconds;
-    `clickhouse_refresh_vector_metadata()` clears the cache. Thanks to Kaushik Iska
-    for the PR ([#414])!
+    `clickhouse_refresh_vector_metadata()` clears the cache ([#414]).
 
 ### 🚀 Distribution
 
@@ -96,43 +94,39 @@ All notable changes to this project will be documented in this file. It uses the
     closed while a scan or binary INSERT still used it: after a PL/pgSQL
     block caught an error from a binary INSERT or from the middle of a
     scan, and after `ALTER SERVER` or `ALTER USER MAPPING` while a cursor
-    was open. Thanks to Kaushik Iska for the PR ([#415])!
+    was open ([#415]).
 *   Fixed the pushdown of aggregates with `ORDER BY`, such as
     `array_agg(x ORDER BY y)`, which dropped the `ORDER BY`. They now run
-    in Postgres. Thanks to Kaushik Iska for the PR ([#416])!
+    in Postgres ([#416]).
 *   Fixed `INSERT INTO foreign_table SELECT ... FROM foreign_table` with the
     binary driver when both tables belong to the same server, which failed
-    with "Unexpected packet Query received from client". Thanks to Kaushik
-    Iska for the PR ([#417])!
+    with "Unexpected packet Query received from client" ([#417]).
 *   Fixed a leak of connections whose user mapping or server was dropped,
     which stayed open, with their sockets and memory, until the session
-    ended. Thanks to Kaushik Iska for the PR ([#430])!
+    ended. ([#430]).
 *   Fixed memory growth in PL/pgSQL loops and procedures that run many
     `INSERT`s into foreign tables. Each `INSERT` kept its writer and
     buffers, up to the size of its largest batch, until the outermost
-    statement ended. Thanks to Kaushik Iska for the PR ([#431])!
+    statement ended. ([#431]).
 *   Fixed leaks and a crash when a PL/pgSQL block catches an error raised
     by a query to ClickHouse. A foreign scan's cursor and response stayed in
     memory until the outermost statement ended, and the connection stayed
     leased until the transaction ended, so that later queries each opened a
     connection of their own. Catching two errors from `clickhouse_query()`
-    in one transaction crashed the backend. Thanks to Kaushik Iska for the
-    PR ([#432])!
+    in one transaction crashed the backend ([#432]).
 *   Fixed growth of the cache of pushed-down function, type, and operator
-    definitions, which kept entries for dropped objects. Thanks to Kaushik
-    Iska for the PR ([#434])!
+    definitions, which kept entries for dropped objects ([#434]).
 *   Fixed the HTTP driver's reporting of exceptions that ClickHouse raises
     after it starts sending results, which appeared as garbled errors such
-    as "unknown type: f". It now reports the ClickHouse exception. Thanks to
-    Kaushik Iska for the PR ([#436])!
+    as "unknown type: f". It now reports the ClickHouse exception ([#436]).
 *   Fixed a heap overflow in pushed-down joins that fetch no columns, such
     as a partitionwise `count(*)` self-join of foreign partitions. Each row
-    wrote one byte past the end of a zero-length array. Thanks to Kaushik
-    Iska for the PR ([#438])!
+    wrote one byte past the end of a zero-length array ([#438]).
 *   Fixed remote queries that truncated `column_name` values longer than
     63 bytes. `IMPORT FOREIGN SCHEMA` now preserves full column names
     in `column_name` options when PostgreSQL truncates local names. It also
     matches `LIMIT TO` and `EXCEPT` against truncated table names ([#446]).
+    wrote one byte past the end of a zero-length array ([#438]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
