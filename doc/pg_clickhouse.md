@@ -1167,6 +1167,7 @@ conversion rules.
 | Nullable(T)                  | T                           |                                           | Column imports without NOT NULL                      |
 | Point                        | point                       |                                           |                                                      |
 | Polygon                      | polygon[]                   |                                           |                                                      |
+| QBit(T,N)                    | T[]                         |                                           | Transposes N elements to and from bit planes         |
 | Ring                         | polygon                     | lseg                                      | lseg requires two points                             |
 | SimpleAggregateFunction(f,T) | T                           |                                           | Stores values as T                                   |
 | String                       | text                        | bytea; input-compatible types             | bytea keeps raw bytes                                |

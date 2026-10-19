@@ -21,7 +21,7 @@ jobs:
           packages: libcurl4-openssl-dev uuid-dev liblz4-dev libzstd-dev libre2-dev libicu-dev
       - name: Start ClickHouse
         env: { CH_RELEASE: "${{ matrix.ch }}" }
-        run: sudo .github/ubuntu/clickhouse.sh
+        run: sudo --preserve-env=CH_RELEASE .github/ubuntu/clickhouse.sh
       - name: Build Release Archive
         uses: pgxn/release-action@v0
         with:

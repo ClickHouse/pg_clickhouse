@@ -12,7 +12,7 @@ set -e
 # https://clickhouse.com/docs/install
 if [ -z "$CH_RELEASE" ]; then
     tsv_url=https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv
-    CH_RELEASE=$(curl -sL "$tsv_url" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+-(stable|lts)' | sort -V -r | head -n 1)
+    CH_RELEASE=$(curl -fsSL --retry 5 --retry-all-errors "$tsv_url" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+-(stable|lts)' | sort -V -r | head -n 1)
     # List versions: curl -sL "$tsv_url" | grep -E 'stable|lts'
 fi
 
@@ -33,7 +33,7 @@ for pkg in clickhouse-common-static clickhouse-server; do
         # Prior to v22, the server package supported all architectures.
         ARCH=all
     fi
-    curl -sLo "${pkg}.deb" "${base_url}/${pkg}_${CH_VERSION}_${ARCH}.deb"
+    curl -fsSL --retry 5 --retry-all-errors -o "${pkg}.deb" "${base_url}/${pkg}_${CH_VERSION}_${ARCH}.deb"
     dpkg -i "${pkg}.deb"
     rm "${pkg}.deb"
 done
