@@ -243,6 +243,7 @@ report_http_stream_query_failure(
 
             memcpy(qid, ch_http_stream_query_id(stream), sizeof(qid));
             kill_query(conn, qid);
+            CHECK_FOR_INTERRUPTS();
             ereport(
                 ERROR,
                 errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
@@ -296,6 +297,7 @@ http_simple_insert(void* conn, const ch_query* query) {
         kill_query(conn, resp->query_id);
         ch_http_response_free(resp);
 
+        CHECK_FOR_INTERRUPTS();
         ereport(
             ERROR,
             errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
@@ -759,6 +761,7 @@ http_native_read_error(ch_cursor* cursor) {
         ch_http_stream_end(stream);
         cursor->response = NULL;
         kill_query(cursor->conn, qid);
+        CHECK_FOR_INTERRUPTS();
         ereport(
             ERROR,
             errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
