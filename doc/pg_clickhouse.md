@@ -1999,10 +1999,14 @@ SELECT id FROM items
 `EXPLAIN (VERBOSE)` shows the remote query:
 
 ```sql
-SELECT id, embedding FROM items WHERE ((category = 'footwear'))
+SELECT category, id, cosineDistance(embedding, cast([0.12,0.03,0.4] as Array(Float32)))
+FROM items WHERE ((category = 'footwear'))
 ORDER BY cosineDistance(embedding, cast([0.12,0.03,0.4] as Array(Float32))) ASC NULLS LAST
 LIMIT 10
 ```
+
+ClickHouse returns the distance of each row, not its vector, so a search
+that uses a vector similarity index never has to read the vectors.
 
 pgvector's `<#>` returns the negative inner product, so pg_clickhouse sorts
 it as `dotProduct(...) DESC`, the form ClickHouse vector similarity indexes

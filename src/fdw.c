@@ -839,6 +839,99 @@ replace_windowfuncs_mutator(Node* node, WindowFuncSubstState* state) {
 }
 
 /*
+ * Return true if ClickHouse should return the value of a sort expression, a
+ * pgvector distance, which ClickHouse computes as pgvector does up to float
+ * rounding. Fetching the vectors instead would make ClickHouse read them,
+ * which a vector index search otherwise avoids. Other sort expressions stay
+ * local, since ClickHouse sorts by approximations of some, such as to_char().
+ */
+static bool
+remote_sort_value(Expr* expr) {
+    Node* node            = strip_implicit_coercions((Node*)expr);
+    CustomObjectDef* cdef = NULL;
+
+    if (IsA(node, OpExpr)) {
+        cdef = chfdw_check_for_custom_operator(((OpExpr*)node)->opno, NULL);
+    } else if (IsA(node, FuncExpr)) {
+        cdef = chfdw_check_for_custom_function(((FuncExpr*)node)->funcid);
+    }
+    if (cdef) {
+        switch (cdef->cf_type) {
+        case CF_VECTOR_NEG_IP:
+        case CF_VECTOR_DOT:
+            return true;
+        case CF_OPERATOR_FUNC: /* <->, <=>, <+> and the likes of pow() */
+            return strcmp(cdef->custom_name, "L2Distance") == 0 ||
+                   strcmp(cdef->custom_name, "cosineDistance") == 0 ||
+                   strcmp(cdef->custom_name, "L1Distance") == 0;
+        default:
+            break;
+        }
+    }
+    return false;
+}
+
+/*
+ * Return a scan target list for a base relation scan sorted by an expression
+ * whose value ClickHouse should return, per remote_sort_value(). Returns NIL
+ * to fetch the columns of the relation.
+ */
+static List*
+sort_scan_tlist(
+    RelOptInfo* rel,
+    ForeignPath* path,
+    List* tlist,
+    List* remote_exprs,
+    List* local_exprs
+) {
+    List* sort_exprs = NIL;
+    ListCell* lc;
+
+    if (path->path.param_info) {
+        return NIL;
+    }
+    foreach (lc, path->path.pathkeys) {
+        Expr* expr = chfdw_find_em_expr_for_rel(((PathKey*)lfirst(lc))->pk_eclass, rel);
+
+        if (expr && remote_sort_value(expr)) {
+            sort_exprs = lappend(sort_exprs, expr);
+        }
+    }
+    if (sort_exprs == NIL) {
+        return NIL;
+    }
+
+    /*
+     * Columns for the rest of the output and for local and recheck conditions.
+     * The output is the relation's target and any plan target list, which can
+     * be every column.
+     */
+    List* needed = list_concat_copy(remote_exprs, local_exprs);
+
+    foreach (lc, rel->reltarget->exprs) {
+        if (!list_member(sort_exprs, lfirst(lc))) {
+            needed = lappend(needed, lfirst(lc));
+        }
+    }
+    foreach (lc, tlist) {
+        Expr* expr = ((TargetEntry*)lfirst(lc))->expr;
+
+        if (!list_member(sort_exprs, expr)) {
+            needed = lappend(needed, expr);
+        }
+    }
+    List* vars = pull_var_clause((Node*)needed, PVC_RECURSE_PLACEHOLDERS);
+
+    /* Whole-row and system columns come from the relation's own tuple */
+    foreach (lc, vars) {
+        if (((Var*)lfirst(lc))->varattno <= 0) {
+            return NIL;
+        }
+    }
+    return add_to_flat_tlist(add_to_flat_tlist(NIL, vars), sort_exprs);
+}
+
+/*
  * clickhouseGetForeignPlan
  *		Create ForeignScan plan node which implements selected best path
  */
@@ -929,6 +1022,8 @@ clickhouseGetForeignPlan(
          * should recheck all the remote quals.
          */
         fdw_recheck_quals = remote_exprs;
+        fdw_scan_tlist =
+            sort_scan_tlist(foreignrel, best_path, tlist, remote_exprs, local_exprs);
     } else {
         /*
          * Join relation or upper relation - set scan_relid to 0.
@@ -1170,10 +1265,11 @@ clickhouseBeginForeignScan(ForeignScanState* node, int eflags) {
      * Get info we'll need for converting data fetched from the foreign server
      * into local representation and error reporting during that process.
      */
-    if (fsplan->scan.scanrelid > 0) {
+    if (fsplan->scan.scanrelid > 0 && fsplan->fdw_scan_tlist == NIL) {
         fsstate->rel     = node->ss.ss_currentRelation;
         fsstate->tupdesc = RelationGetDescr(fsstate->rel);
     } else {
+        /* A join, upper relation, or scan with its own target list */
         fsstate->rel     = NULL;
         fsstate->tupdesc = node->ss.ss_ScanTupleSlot->tts_tupleDescriptor;
     }

@@ -84,6 +84,10 @@ SELECT id FROM local_items ORDER BY v <=> :'q' DESC LIMIT 3;
 SELECT (SELECT array_agg(id) FROM (SELECT id FROM vec_items ORDER BY v <#> :'q' DESC LIMIT 10) r)
      = (SELECT array_agg(id) FROM (SELECT id FROM local_items ORDER BY v <#> :'q' DESC LIMIT 10) l) AS neg_ip_desc;
 
+-- A local join above a distance-sorted scan, which outputs every column.
+SELECT (SELECT array_agg(id) FROM (SELECT i.id FROM generate_series(1, 60) g JOIN vec_items i ON i.id = g ORDER BY i.v <-> :'q' LIMIT 5) r)
+     = (SELECT array_agg(id) FROM (SELECT i.id FROM generate_series(1, 60) g JOIN local_items i ON i.id = g ORDER BY i.v <-> :'q' LIMIT 5) l) AS local_join;
+
 -- ClickHouse sorts NaN with the NULLs, unlike Postgres, so a NULLS setting
 -- other than the default stays local.
 SELECT (SELECT array_agg(id) FROM (SELECT id FROM vec_items ORDER BY v <=> :'q' NULLS FIRST LIMIT 3) r)
