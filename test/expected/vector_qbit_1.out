@@ -1,0 +1,10 @@
+-- Read, write, and search ClickHouse QBit columns as float arrays.
+CREATE SERVER vector_qbit_svr FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE SERVER vector_qbit_http_svr FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS (driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER vector_qbit_svr;
+CREATE USER MAPPING FOR CURRENT_USER SERVER vector_qbit_http_svr;
+\set ECHO errors
+\if :no_qbit
+\echo 'SKIP: ClickHouse has no QBit type or pgvector is not available'
+SKIP: ClickHouse has no QBit type or pgvector is not available
+\quit

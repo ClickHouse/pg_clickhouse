@@ -81,6 +81,16 @@ All notable changes to this project will be documented in this file. It uses the
     a search from its vector similarity index alone, which made indexed
     searches about ten times slower. Thanks to Kaushik Iska for the PR
     ([#422])!
+*   Added support for ClickHouse [QBit] columns, which pg_clickhouse reads
+    and writes as `real[]` or `double precision[]`. Also added the
+    pushdown-only functions `L2DistanceTransposed()`,
+    `cosineDistanceTransposed()`, and `dotProductTransposed()` to search
+    them. ClickHouse returns their values when a query sorts by them, so
+    they work in `ORDER BY` and in the select list of such a query. The
+    pgvector distance operators and functions on a `vector` column over a
+    QBit column push down as these functions, too, or stay local where
+    ClickHouse has no exact equivalent. Thanks to Kaushik Iska for the PR
+    ([#423])!
 
 ### 🚀 Distribution
 
@@ -175,6 +185,7 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse Docs: Session Settings"
   [`pg_clickhouse.session_settings` syntax]: doc/pg_clickhouse.md#pg_clickhousesession_settings
   [pgvector]: https://github.com/pgvector/pgvector
+  [QBit]: https://clickhouse.com/docs/sql-reference/data-types/qbit
     "pgvector: Open-source vector similarity search for Postgres"
   [citext]: https://www.postgresql.org/docs/current/citext.html
     "PostgreSQL Docs: citext"
@@ -220,6 +231,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#421 Keep float sorts with non-default NULLS ordering local"
   [#422]: https://github.com/ClickHouse/pg_clickhouse/pull/422
     "ClickHouse/pg_clickhouse#422 Return pgvector distances from ClickHouse"
+  [#423]: https://github.com/ClickHouse/pg_clickhouse/pull/423
+    "ClickHouse/pg_clickhouse#423 Support QBit columns and transposed distance functions"
   [#430]: https://github.com/ClickHouse/pg_clickhouse/pull/430
     "ClickHouse/pg_clickhouse#430 Close connections of dropped user mappings and servers"
   [#431]: https://github.com/ClickHouse/pg_clickhouse/pull/431
