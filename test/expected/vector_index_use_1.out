@@ -1,0 +1,29 @@
+SELECT NOT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = 'vector') AS no_vector \gset
+\if :no_vector
+\echo 'SKIP: vector extension not available'
+\quit
+\endif
+-- Report whether ClickHouse can serve a vector search from a vector
+-- similarity index, and why not, from the indexes ClickHouse reports.
+SET client_min_messages = warning;
+SELECT pg_advisory_lock(hashtext('vector'));
+ pg_advisory_lock 
+------------------
+ 
+(1 row)
+
+CREATE EXTENSION IF NOT EXISTS vector;
+SELECT pg_advisory_unlock(hashtext('vector'));
+ pg_advisory_unlock 
+--------------------
+ t
+(1 row)
+
+RESET client_min_messages;
+CREATE SERVER vector_index_use_svr FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER vector_index_use_svr;
+\set ECHO errors
+\if :old_ch
+\echo 'SKIP: vector similarity indexes require ClickHouse 25.8'
+SKIP: vector similarity indexes require ClickHouse 25.8
+\quit

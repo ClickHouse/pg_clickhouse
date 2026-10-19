@@ -1033,6 +1033,27 @@ SET pg_clickhouse.pushdown_regex = 'false';
 
 See [Regular Expressions](#regular-expressions) for details.
 
+#### `pg_clickhouse.vector_planner_warnings`
+
+The `pg_clickhouse.vector_planner_warnings` parameter controls whether
+pg_clickhouse warns when it plans a pgvector nearest neighbor search that
+ClickHouse cannot serve from a vector similarity index. The warning says why.
+It does so by default; set this parameter to false to silence the warnings:
+
+```sql
+SET pg_clickhouse.vector_planner_warnings = 'false';
+```
+
+See [Vector Index Use](#vector-index-use) for details.
+
+#### `pg_clickhouse.vector_metadata_ttl`
+
+The `pg_clickhouse.vector_metadata_ttl` parameter sets how long, in seconds,
+pg_clickhouse caches the vector similarity index definitions it reads from
+ClickHouse. It defaults to `60`. Set it to `0` to read them for every query,
+or call [`clickhouse_refresh_vector_metadata()`](#clickhouse_refresh_vector_metadata) to
+clear the cache sooner.
+
 ### ALTER ROLE
 
 Use [ALTER ROLE]'s `SET` command to [preload](#preloading) pg_clickhouse
@@ -1602,6 +1623,19 @@ Reads the version from the native-protocol connection handshake, or over HTTP
 from a single `SELECT version()` query, and caches it for the life of the
 connection.
 
+#### `clickhouse_refresh_vector_metadata`
+
+```sql
+SELECT clickhouse_refresh_vector_metadata();
+```
+
+Clear the cache of ClickHouse vector similarity index definitions, so that
+the next nearest neighbor search reads them from ClickHouse. Call it after
+adding, changing, or dropping an index directly in ClickHouse, rather than
+waiting for the cache to expire after
+[`pg_clickhouse.vector_metadata_ttl`](#pg_clickhousevector_metadata_ttl)
+seconds.
+
 #### `clickhouse_query`
 
 ```sql
@@ -1933,6 +1967,48 @@ pgvector does.
 A tiebreaker, such as `ORDER BY embedding <=> '[...]', id`, also pushes
 down, but ClickHouse does not use a vector similarity index for a sort with
 more than one key.
+
+##### Vector Index Use
+
+For a nearest neighbor search, `EXPLAIN` shows the distance function and the
+ClickHouse [vector similarity index] that can serve it. If no index can, it
+says why:
+
+```pgsql
+try=# EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM items ORDER BY embedding <=> '[1,0]' LIMIT 5;
+WARNING:  pg_clickhouse: vector search on "items" will not use a ClickHouse vector index
+DETAIL:  index "items_idx" uses L2Distance (<->), not cosineDistance
+HINT:  set pg_clickhouse.vector_planner_warnings = off to hide this warning.
+                                                                 QUERY PLAN
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.items
+   Output: id, (embedding <=> '[1,0]'::vector)
+   Vector Search: cosineDistance on embedding
+   Vector Index: none
+   Vector Index Not Used: index "items_idx" uses L2Distance (<->), not cosineDistance
+   Remote SQL: SELECT id, embedding FROM try.items ORDER BY cosineDistance(embedding, cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(6 rows)
+```
+
+pg_clickhouse reads index definitions from ClickHouse's
+`system.data_skipping_indices` table when it plans a scan sorted by a pgvector
+distance, and caches them for each table and user; see
+[`pg_clickhouse.vector_metadata_ttl`]. A cache miss costs one small query to
+ClickHouse, in a subtransaction so that a failure never fails the plan; other
+queries cost nothing. ClickHouse can't use an index, and
+instead compares every row, when:
+
+*   The index uses a different distance function than the search
+*   The column has no index
+*   The sort is descending, or has more than one key
+*   The query has no `LIMIT`, or one over `max_limit_for_vector_search_queries`
+*   A `WHERE` condition doesn't push down, so neither does the `LIMIT`
+*   The server is older than ClickHouse 25.8
+
+Such an exact search returns the true nearest neighbors. An index search is
+much faster, but approximate. Even when `EXPLAIN` names an index, ClickHouse
+may choose to filter rows first and compare them exactly, for example when a
+`WHERE` condition matches the primary key.
 
 pg_clickhouse casts `vector` constants to `Array(Float32)`, so equality
 compares the same `Float32` values ClickHouse stores in `Array(Float32)`
@@ -2348,6 +2424,9 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: fuzzystrmatch"
   [pgvector]: https://github.com/pgvector/pgvector
     "pgvector: Open-source vector similarity search for Postgres"
+  [vector similarity index]: https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/annindexes
+    "ClickHouse Docs: Exact and Approximate Vector Search"
+  [`pg_clickhouse.vector_metadata_ttl`]: #pg_clickhousevector_metadata_ttl
   [`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html
     "PostgreSQL Docs: Data Type Formatting Functions"
   [formatDateTime]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#formatDateTime

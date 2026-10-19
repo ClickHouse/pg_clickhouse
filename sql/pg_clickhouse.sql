@@ -19,6 +19,13 @@ RETURNS TEXT
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
+-- Forget cached ClickHouse vector index metadata, so the next vector search
+-- reads it from ClickHouse.
+CREATE FUNCTION clickhouse_refresh_vector_metadata()
+RETURNS VOID
+AS 'MODULE_PATHNAME'
+LANGUAGE C;
+
 -- Execute query against foreign server, mapping ClickHouse result to Postgres
 -- types named in caller's column definition list, e.g.
 -- SELECT FROM clickhouse_query('srv', 'SELECT a, b FROM t') AS (a int, b text);

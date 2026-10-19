@@ -51,6 +51,14 @@ All notable changes to this project will be documented in this file. It uses the
     keys. Vector search settings unsupported by older servers are skipped with
     a warning. Thanks to Kaushik Iska for the PR ([#412])!
 *   Added pushdown for `^` `|/` `||/` `@` `&` `|` `#` `~` `<<` `>>` ([#443]).
+*   Added vector index reporting for pgvector nearest neighbor searches.
+    `EXPLAIN` shows the ClickHouse vector similarity index a search can use,
+    or why ClickHouse will compare every row instead, and the planner warns in
+    the latter case. Set `pg_clickhouse.vector_planner_warnings` to false to
+    silence the warnings. pg_clickhouse caches the index definitions it reads
+    from ClickHouse for `pg_clickhouse.vector_metadata_ttl` seconds;
+    `clickhouse_refresh_vector_metadata()` clears the cache. Thanks to Kaushik Iska
+    for the PR ([#414])!
 
 ### 🚀 Distribution
 
@@ -128,8 +136,6 @@ All notable changes to this project will be documented in this file. It uses the
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
-  [#395]: https://github.com/ClickHouse/pg_clickhouse/pull/395
-    "ClickHouse/pg_clickhouse#395 Fix gcc15 Wclobbered warning"
   [regr_avgx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgx
   [regr_avgy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgy
   [regr_count]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_count
@@ -139,18 +145,6 @@ All notable changes to this project will be documented in this file. It uses the
   [regr_sxx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxx
   [regr_sxy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxy
   [regr_syy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_syy
-  [#397]: https://github.com/ClickHouse/pg_clickhouse/pull/397
-    "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
-  [#402]: https://github.com/ClickHouse/pg_clickhouse/pull/402
-    "ClickHouse/pg_clickhouse#402 Specify precision for unconstrained numeric casts"
-  [#403]: https://github.com/ClickHouse/pg_clickhouse/pull/403
-    "ClickHouse/pg_clickhouse#403 Preserve floating-point parameter precision"
-  [#410]: https://github.com/ClickHouse/pg_clickhouse/pull/410
-    "ClickHouse/pg_clickhouse#410 Read and write pgvector vectors"
-  [#411]: https://github.com/ClickHouse/pg_clickhouse/pull/411
-    "ClickHouse/pg_clickhouse#411 Push down pgvector distance operators and functions"
-  [#412]: https://github.com/ClickHouse/pg_clickhouse/pull/412
-    "ClickHouse/pg_clickhouse#412 Add settings option for servers and foreign tables"
   [ClickHouse settings]: https://clickhouse.com/docs/operations/settings/settings
     "ClickHouse Docs: Session Settings"
   [`pg_clickhouse.session_settings` syntax]: doc/pg_clickhouse.md#pg_clickhousesession_settings
@@ -160,14 +154,30 @@ All notable changes to this project will be documented in this file. It uses the
     "PostgreSQL Docs: citext"
   [intarray]: https://www.postgresql.org/docs/current/intarray.html
     "PostgreSQL Docs: intarray"
-  [#405]: https://github.com/ClickHouse/pg_clickhouse/pull/405
-    "ClickHouse/pg_clickhouse#405 Evaluate unsupported types and operators locally"
+  [#395]: https://github.com/ClickHouse/pg_clickhouse/pull/395
+    "ClickHouse/pg_clickhouse#395 Fix gcc15 Wclobbered warning"
+  [#397]: https://github.com/ClickHouse/pg_clickhouse/pull/397
+    "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
   [#401]: https://github.com/ClickHouse/pg_clickhouse/pull/401
     "ClickHouse/pg_clickhouse#401 Fix temporal, UUID and JSON type mappings"
+  [#402]: https://github.com/ClickHouse/pg_clickhouse/pull/402
+    "ClickHouse/pg_clickhouse#402 Specify precision for unconstrained numeric casts"
+  [#403]: https://github.com/ClickHouse/pg_clickhouse/pull/403
+    "ClickHouse/pg_clickhouse#403 Preserve floating-point parameter precision"
+  [#405]: https://github.com/ClickHouse/pg_clickhouse/pull/405
+    "ClickHouse/pg_clickhouse#405 Evaluate unsupported types and operators locally"
   [#406]: https://github.com/ClickHouse/pg_clickhouse/pull/406
     "ClickHouse/pg_clickhouse#406 Fix interval parameters in datetime arithmetic"
+  [#410]: https://github.com/ClickHouse/pg_clickhouse/pull/410
+    "ClickHouse/pg_clickhouse#410 Read and write pgvector vectors"
+  [#411]: https://github.com/ClickHouse/pg_clickhouse/pull/411
+    "ClickHouse/pg_clickhouse#411 Push down pgvector distance operators and functions"
+  [#412]: https://github.com/ClickHouse/pg_clickhouse/pull/412
+    "ClickHouse/pg_clickhouse#412 Add settings option for servers and foreign tables"
   [#413]: https://github.com/ClickHouse/pg_clickhouse/pull/413
     "ClickHouse/pg_clickhouse#413 Fix timezone handling"
+  [#414]: https://github.com/ClickHouse/pg_clickhouse/pull/414
+    "ClickHouse/pg_clickhouse#414 Report vector index use for pgvector searches"
   [#415]: https://github.com/ClickHouse/pg_clickhouse/pull/415
     "ClickHouse/pg_clickhouse#415 Fix crashes and hangs when a connection closes mid-use"
   [#416]: https://github.com/ClickHouse/pg_clickhouse/pull/416
