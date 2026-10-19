@@ -33,13 +33,16 @@ CREATE SCHEMA lake_except;
 IMPORT FOREIGN SCHEMA lake_test FROM SERVER lake_http INTO lake_http;
 NOTICE:  pg_clickhouse: ClickHouse <Map> type was translated to <TEXT[][]> type for column "attrs"; please create composite type and alter the column if needed
 NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "point"; please create composite type and alter the column if needed
+NOTICE:  identifier "analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers" will be truncated to "analytics.sub.table_with_a_name_longer_than_postgres_allows_for"
+NOTICE:  identifier "column_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "column_with_a_name_longer_than_postgres_allows_for_identifiers_"
 \det+ lake_http.*
-                                               List of foreign tables
-  Schema   |       Table        |  Server   |                       FDW options                       | Description 
------------+--------------------+-----------+---------------------------------------------------------+-------------
- lake_http | analytics.events   | lake_http | (database 'lake_test', table_name 'analytics.events')   | 
- lake_http | analytics.sub.deep | lake_http | (database 'lake_test', table_name 'analytics.sub.deep') | 
-(2 rows)
+                                                                                                  List of foreign tables
+  Schema   |                              Table                              |  Server   |                                                   FDW options                                                    | Description 
+-----------+-----------------------------------------------------------------+-----------+------------------------------------------------------------------------------------------------------------------+-------------
+ lake_http | analytics.events                                                | lake_http | (database 'lake_test', table_name 'analytics.events')                                                            | 
+ lake_http | analytics.sub.deep                                              | lake_http | (database 'lake_test', table_name 'analytics.sub.deep')                                                          | 
+ lake_http | analytics.sub.table_with_a_name_longer_than_postgres_allows_for | lake_http | (database 'lake_test', table_name 'analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers') | 
+(3 rows)
 
 \d lake_http."analytics.events"
                      Foreign table "lake_http.analytics.events"
@@ -68,13 +71,16 @@ FDW options: (database 'lake_test', table_name 'analytics.sub.deep')
 IMPORT FOREIGN SCHEMA lake_test FROM SERVER lake_bin INTO lake_bin;
 NOTICE:  pg_clickhouse: ClickHouse <Map> type was translated to <TEXT[][]> type for column "attrs"; please create composite type and alter the column if needed
 NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "point"; please create composite type and alter the column if needed
+NOTICE:  identifier "analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers" will be truncated to "analytics.sub.table_with_a_name_longer_than_postgres_allows_for"
+NOTICE:  identifier "column_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "column_with_a_name_longer_than_postgres_allows_for_identifiers_"
 \det+ lake_bin.*
-                                              List of foreign tables
-  Schema  |       Table        |  Server  |                       FDW options                       | Description 
-----------+--------------------+----------+---------------------------------------------------------+-------------
- lake_bin | analytics.events   | lake_bin | (database 'lake_test', table_name 'analytics.events')   | 
- lake_bin | analytics.sub.deep | lake_bin | (database 'lake_test', table_name 'analytics.sub.deep') | 
-(2 rows)
+                                                                                                 List of foreign tables
+  Schema  |                              Table                              |  Server  |                                                   FDW options                                                    | Description 
+----------+-----------------------------------------------------------------+----------+------------------------------------------------------------------------------------------------------------------+-------------
+ lake_bin | analytics.events                                                | lake_bin | (database 'lake_test', table_name 'analytics.events')                                                            | 
+ lake_bin | analytics.sub.deep                                              | lake_bin | (database 'lake_test', table_name 'analytics.sub.deep')                                                          | 
+ lake_bin | analytics.sub.table_with_a_name_longer_than_postgres_allows_for | lake_bin | (database 'lake_test', table_name 'analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers') | 
+(3 rows)
 
 \d lake_bin."analytics.events"
                       Foreign table "lake_bin.analytics.events"
@@ -113,6 +119,23 @@ SELECT * FROM lake_bin."analytics.sub.deep" ORDER BY id;
   1 | one
   3 | three
 (2 rows)
+
+-- Long names truncate locally, options keep remote names
+\d lake_bin."analytics.sub.table_with"*
+                                                    Foreign table "lake_bin.analytics.sub.table_with_a_name_longer_than_postgres_allows_for"
+                             Column                              |  Type  | Collation | Nullable | Default |                                    FDW options                                     
+-----------------------------------------------------------------+--------+-----------+----------+---------+------------------------------------------------------------------------------------
+ id                                                              | bigint |           | not null |         | 
+ column_with_a_name_longer_than_postgres_allows_for_identifiers_ | text   |           | not null |         | (column_name 'column_with_a_name_longer_than_postgres_allows_for_identifiers_too')
+Server: lake_bin
+FDW options: (database 'lake_test', table_name 'analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers')
+
+SELECT * FROM lake_bin."analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers";
+NOTICE:  identifier "analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers" will be truncated to "analytics.sub.table_with_a_name_longer_than_postgres_allows_for"
+ id | column_with_a_name_longer_than_postgres_allows_for_identifiers_ 
+----+-----------------------------------------------------------------
+  1 | long
+(1 row)
 
 -- Scan and join between catalog tables push down
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -161,24 +184,45 @@ NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type 
  lake_limit | analytics.events | lake_bin
 (1 row)
 
+IMPORT FOREIGN SCHEMA lake_test
+    LIMIT TO ("analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers")
+    FROM SERVER lake_bin INTO lake_limit;
+NOTICE:  identifier "analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers" will be truncated to "analytics.sub.table_with_a_name_longer_than_postgres_allows_for"
+NOTICE:  identifier "analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers" will be truncated to "analytics.sub.table_with_a_name_longer_than_postgres_allows_for"
+NOTICE:  identifier "column_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "column_with_a_name_longer_than_postgres_allows_for_identifiers_"
+\det lake_limit.*
+                                 List of foreign tables
+   Schema   |                              Table                              |  Server  
+------------+-----------------------------------------------------------------+----------
+ lake_limit | analytics.events                                                | lake_bin
+ lake_limit | analytics.sub.table_with_a_name_longer_than_postgres_allows_for | lake_bin
+(2 rows)
+
 IMPORT FOREIGN SCHEMA lake_test EXCEPT ("analytics.events")
     FROM SERVER lake_bin INTO lake_except;
+NOTICE:  identifier "analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers" will be truncated to "analytics.sub.table_with_a_name_longer_than_postgres_allows_for"
+NOTICE:  identifier "column_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "column_with_a_name_longer_than_postgres_allows_for_identifiers_"
 \det lake_except.*
-           List of foreign tables
-   Schema    |       Table        |  Server  
--------------+--------------------+----------
- lake_except | analytics.sub.deep | lake_bin
-(1 row)
+                                  List of foreign tables
+   Schema    |                              Table                              |  Server  
+-------------+-----------------------------------------------------------------+----------
+ lake_except | analytics.sub.deep                                              | lake_bin
+ lake_except | analytics.sub.table_with_a_name_longer_than_postgres_allows_for | lake_bin
+(2 rows)
 
 CALL clickhouse_perform('lake_admin', 'DROP DATABASE lake_test');
 DROP SCHEMA lake_http, lake_bin, lake_limit, lake_except CASCADE;
-NOTICE:  drop cascades to 6 other objects
+NOTICE:  drop cascades to 10 other objects
 DETAIL:  drop cascades to foreign table lake_except."analytics.sub.deep"
+drop cascades to foreign table lake_except."analytics.sub.table_with_a_name_longer_than_postgres_allows_for"
 drop cascades to foreign table lake_limit."analytics.events"
+drop cascades to foreign table lake_limit."analytics.sub.table_with_a_name_longer_than_postgres_allows_for"
 drop cascades to foreign table lake_bin."analytics.events"
 drop cascades to foreign table lake_bin."analytics.sub.deep"
+drop cascades to foreign table lake_bin."analytics.sub.table_with_a_name_longer_than_postgres_allows_for"
 drop cascades to foreign table lake_http."analytics.events"
 drop cascades to foreign table lake_http."analytics.sub.deep"
+drop cascades to foreign table lake_http."analytics.sub.table_with_a_name_longer_than_postgres_allows_for"
 DROP SERVER lake_http, lake_bin, lake_admin CASCADE;
 NOTICE:  drop cascades to 3 other objects
 DETAIL:  drop cascades to user mapping for postgres on server lake_admin

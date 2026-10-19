@@ -68,6 +68,9 @@ invalidate_custom_columns_cache(Datum arg, int cacheid, uint32 hashvalue) {
 
     hash_seq_init(&status, custom_columns_cache);
     while ((entry = (CustomColumnInfo*)hash_seq_search(&status)) != NULL) {
+        if (entry->colname) {
+            pfree(entry->colname);
+        }
         if (hash_search(
                 custom_columns_cache, (void*)&entry->relid, HASH_REMOVE, NULL
             ) == NULL) {
@@ -1015,7 +1018,6 @@ populate_custom_column_entry(
     CustomColumnInfo* entry,
     Oid relid,
     AttrNumber attnum,
-    const char* attname,
     CHRemoteTableEngine table_engine
 );
 
@@ -1083,7 +1085,6 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo* fpinfo, Oid relid) {
     for (attnum = 1; attnum <= tupdesc->natts; attnum++) {
         bool found;
         CustomColumnInfo entry_key, *entry;
-        Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
 
         entry_key.relid    = relid;
         entry_key.varattno = attnum;
@@ -1095,9 +1096,7 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo* fpinfo, Oid relid) {
             continue;
         }
 
-        populate_custom_column_entry(
-            entry, relid, attnum, NameStr(attr->attname), fpinfo->ch_table_engine
-        );
+        populate_custom_column_entry(entry, relid, attnum, fpinfo->ch_table_engine);
     }
     table_close(rel, NoLock);
 }
@@ -1111,7 +1110,6 @@ populate_custom_column_entry(
     CustomColumnInfo* entry,
     Oid relid,
     AttrNumber attnum,
-    const char* attname,
     CHRemoteTableEngine table_engine
 ) {
     List* options;
@@ -1122,16 +1120,15 @@ populate_custom_column_entry(
     entry->table_engine         = table_engine;
     entry->coltype              = CF_USUAL;
     entry->is_AggregateFunction = CF_AGGR_USUAL;
-    strlcpy(entry->colname, attname, NAMEDATALEN);
+    entry->colname              = NULL;
 
-    /* column_name FDW option overrides attname */
+    /* column_name FDW option overrides attname, may exceed NAMEDATALEN */
     options = GetForeignColumnOptions(relid, attnum);
     foreach (lc, options) {
         DefElem* def = (DefElem*)lfirst(lc);
 
         if (STR_EQUAL(def->defname, "column_name")) {
-            strncpy(entry->colname, defGetString(def), NAMEDATALEN);
-            entry->colname[NAMEDATALEN - 1] = '\0';
+            entry->colname = MemoryContextStrdup(CacheMemoryContext, defGetString(def));
         } else if (STR_EQUAL(def->defname, "aggregatefunction")) {
             entry->is_AggregateFunction = CF_AGGR_FUNC;
         } else if (STR_EQUAL(def->defname, "simpleaggregatefunction")) {
@@ -1171,9 +1168,7 @@ chfdw_get_custom_column_info(Oid relid, uint16 varattno) {
             Form_pg_attribute attr = TupleDescAttr(tupdesc, varattno - 1);
 
             if (!attr->attisdropped) {
-                populate_custom_column_entry(
-                    entry, relid, varattno, NameStr(attr->attname), CH_DEFAULT
-                );
+                populate_custom_column_entry(entry, relid, varattno, CH_DEFAULT);
             } else {
                 hash_search(
                     custom_columns_cache, (void*)&entry_key.relid, HASH_REMOVE, NULL

@@ -48,6 +48,10 @@ SELECT * FROM lake_http."analytics.events" ORDER BY id;
 SELECT * FROM lake_bin."analytics.events" ORDER BY id;
 SELECT * FROM lake_bin."analytics.sub.deep" ORDER BY id;
 
+-- Long names truncate locally, options keep remote names
+\d lake_bin."analytics.sub.table_with"*
+SELECT * FROM lake_bin."analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers";
+
 -- Scan and join between catalog tables push down
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT e.id, e.name, d.label
@@ -68,6 +72,10 @@ IMPORT FOREIGN SCHEMA lake_test LIMIT TO (analytics.events)
 
 -- LIMIT TO and EXCEPT match quoted names
 IMPORT FOREIGN SCHEMA lake_test LIMIT TO ("analytics.events")
+    FROM SERVER lake_bin INTO lake_limit;
+\det lake_limit.*
+IMPORT FOREIGN SCHEMA lake_test
+    LIMIT TO ("analytics.sub.table_with_a_name_longer_than_postgres_allows_for_identifiers")
     FROM SERVER lake_bin INTO lake_limit;
 \det lake_limit.*
 IMPORT FOREIGN SCHEMA lake_test EXCEPT ("analytics.events")

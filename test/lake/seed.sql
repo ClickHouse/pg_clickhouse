@@ -23,3 +23,11 @@ CREATE TABLE deep (
 ) ENGINE = IcebergLocal(concat({warehouse:String}, '/analytics/sub/deep'));
 
 INSERT INTO deep VALUES (1, 'one'), (3, 'three');
+
+-- Names past PostgreSQL's 63 byte identifier limit
+CREATE TABLE long (
+    id Int64,
+    column_with_a_name_longer_than_postgres_allows_for_identifiers_too String
+) ENGINE = IcebergLocal(concat({warehouse:String}, '/analytics/sub/table_with_a_name_longer_than_postgres_allows_for_identifiers'));
+
+INSERT INTO long VALUES (1, 'long');

@@ -91,6 +91,10 @@ All notable changes to this project will be documented in this file. It uses the
     binary driver when both tables belong to the same server, which failed
     with "Unexpected packet Query received from client". Thanks to Kaushik
     Iska for the PR ([#417])!
+*   Fixed `column_name` options longer than 63 bytes, which were truncated
+    in remote queries. `IMPORT FOREIGN SCHEMA` now sets `column_name` for
+    column names Postgres truncates, and matches `LIMIT TO` and `EXCEPT`
+    against truncated table names ([#408]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
