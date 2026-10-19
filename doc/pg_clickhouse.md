@@ -341,6 +341,18 @@ Some details to keep in mind:
 > To create objects with different names or all lowercase (and therefore
 > case-insensitive) names, use [CREATE FOREIGN TABLE](#create-foreign-table).
 
+`IMPORT FOREIGN SCHEMA` imports float array columns as arrays, such as
+`real[]`. To import those with a ClickHouse vector similarity index as
+[pgvector] `vector(n)` columns instead, set the `vector_columns` option to
+`indexed`. pg_clickhouse takes `n` from the index definition and reports
+each column it converts with a `NOTICE`. This option requires pgvector, and
+defaults to `none`:
+
+```pgsql
+IMPORT FOREIGN SCHEMA demo FROM SERVER taxi_srv INTO taxi
+    OPTIONS (vector_columns 'indexed');
+```
+
 ### CREATE FOREIGN TABLE
 
 Use [CREATE FOREIGN TABLE] to create a foreign table that can query data from
