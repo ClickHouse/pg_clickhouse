@@ -277,6 +277,8 @@ extern bool
 chfdw_vector_planner_warnings(void);
 extern int
 chfdw_vector_metadata_ttl(void);
+extern bool
+chfdw_explain_remote(void);
 
 extern void
 chfdw_extract_options(
@@ -520,6 +522,8 @@ extern const VectorTableMeta*
 chfdw_vector_table_meta(Oid relid, UserMapping* user);
 extern void
 chfdw_vector_meta_invalidate_all(void);
+extern bool
+chfdw_is_clickhouse_table(Oid relid);
 extern chfdw_vector_metric
 chfdw_vector_metric_from_ch(const char* name);
 
@@ -538,6 +542,8 @@ chfdw_vector_plan_info(
 );
 extern void
 chfdw_explain_vector_info(List* info, struct ExplainState* es);
+extern void
+chfdw_explain_remote_plan(ForeignScan* plan, const char* sql, struct ExplainState* es);
 
 /* Encode as ClickHouse literal text into buf, which needs MAXDATELEN + 1 bytes */
 extern void
