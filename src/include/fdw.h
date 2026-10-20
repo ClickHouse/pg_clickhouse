@@ -113,8 +113,6 @@ void
 ch_append_literal(StringInfo buf, const char* s, size_t len);
 char*
 chfdw_datum_to_ch_literal(Datum value, Oid type);
-const char*
-ch_quote_ident(const char* rawstr);
 
 typedef enum {
     CH_DEFAULT,

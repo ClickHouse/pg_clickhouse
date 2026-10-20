@@ -75,6 +75,22 @@ OPTIONS (
 );
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(id) FROM engine_args_test.dr_evil3;
 
+-- Should fail on unescaped quote after opening quote.
+CREATE FOREIGN TABLE engine_args_test.dr_evil4 (id INT) SERVER engine_args_svr
+OPTIONS (
+  table_name 'innocuous',
+  engine 'CollapsingMergeTree("") + (SELECT 1) + ("")'
+);
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(id) FROM engine_args_test.dr_evil4;
+
+-- Should fail on escaped closing quote.
+CREATE FOREIGN TABLE engine_args_test.dr_evil5 (id INT) SERVER engine_args_svr
+OPTIONS (
+  table_name 'innocuous',
+  engine 'CollapsingMergeTree("id\")'
+);
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(id) FROM engine_args_test.dr_evil5;
+
 -- Should work for normal column name.
 CREATE FOREIGN TABLE engine_args_test.a_ok (id INT) SERVER engine_args_svr
 OPTIONS (

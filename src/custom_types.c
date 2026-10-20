@@ -20,6 +20,7 @@
 #include "utils/syscache.h"
 
 #include "fdw.h"
+#include "pg-clickhouse.h"
 
 /* regexp_like was added in Postgres 15 */
 #if PG_VERSION_NUM < 150000
@@ -1122,6 +1123,62 @@ populate_custom_column_entry(
     CHRemoteTableEngine table_engine
 );
 
+/*
+ * Quote ClickHouse identifier, returning `ident` as is when already double or
+ * backtick quoted. Error when empty or longer than `NAMEDATALEN` - 1 unquoted
+ * or `CH_ESCAPED_NAMEDATALEN` - 1 quoted
+ */
+static const char*
+ch_quote_ident(const char* ident) {
+    /* https://clickhouse.com/docs/sql-reference/syntax#identifiers */
+    int len = strlen(ident);
+
+    if (len >= 2 && ((ident[0] == '"' && ident[len - 1] == '"') ||
+                     (ident[0] == '`' && ident[len - 1] == '`'))) {
+        /*
+         * Make sure it has no unescaped quote character. Allowed escapes:
+         *
+         * ": (""|\\.)
+         *
+         * `: (``|\\.)
+         */
+        for (int i = 1; i <= len - 2; i++) {
+            /* Skip escaped character, unless it is closing quote */
+            bool escaped =
+                ident[i] == '\\' || (ident[i] == ident[0] && ident[i + 1] == ident[0]);
+
+            if (escaped && i < len - 2) {
+                i++;
+            } else if (escaped || ident[i] == ident[0]) {
+                ereport(
+                    ERROR,
+                    errcode(ERRCODE_FDW_INVALID_STRING_LENGTH_OR_BUFFER_LENGTH),
+                    errmsg_internal("pg_clickhouse: invalid identifier")
+                );
+            }
+        }
+
+        /* Allow already quoted identifier. */
+        if (len == 2 || len > CH_ESCAPED_NAMEDATALEN - 1) {
+            ereport(
+                ERROR,
+                errcode(ERRCODE_FDW_INVALID_STRING_LENGTH_OR_BUFFER_LENGTH),
+                errmsg_internal("pg_clickhouse: invalid identifier")
+            );
+        }
+        return ident;
+    }
+
+    if (len == 0 || len > NAMEDATALEN - 1) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_FDW_INVALID_STRING_LENGTH_OR_BUFFER_LENGTH),
+            errmsg_internal("pg_clickhouse: invalid identifier")
+        );
+    }
+    return pgch_quote_ch_ident(ident);
+}
+
 void
 chfdw_apply_custom_table_options(CHFdwRelationInfo* fpinfo, Oid relid) {
     ListCell* lc;
@@ -1163,11 +1220,17 @@ chfdw_apply_custom_table_options(CHFdwRelationInfo* fpinfo, Oid relid) {
                 fpinfo->ch_table_engine = CH_COLLAPSING_MERGE_TREE;
                 memcpy(sign, start + 1, sign_len);
                 sign[sign_len] = '\0';
-                strlcpy(
-                    fpinfo->ch_table_sign_field,
-                    ch_quote_ident(sign),
-                    CH_ESCAPED_NAMEDATALEN
-                );
+                if (strlcpy(
+                        fpinfo->ch_table_sign_field,
+                        ch_quote_ident(sign),
+                        CH_ESCAPED_NAMEDATALEN
+                    ) >= CH_ESCAPED_NAMEDATALEN) {
+                    ereport(
+                        ERROR,
+                        errcode(ERRCODE_FDW_INVALID_ATTRIBUTE_VALUE),
+                        errmsg("pg_clickhouse: invalid engine parameter")
+                    );
+                }
             } else if (
                 strncasecmp(val, aggregating_text, strlen(aggregating_text)) == 0
             ) {

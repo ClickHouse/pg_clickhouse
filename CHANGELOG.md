@@ -127,6 +127,10 @@ All notable changes to this project will be documented in this file. It uses the
     in `column_name` options when PostgreSQL truncates local names. It also
     matches `LIMIT TO` and `EXCEPT` against truncated table names ([#446]).
     wrote one byte past the end of a zero-length array ([#438]).
+*   Fixed `CollapsingMergeTree` sign column validation and quoting, which
+    allowed SQL expressions in malformed quoted names and failed to escape
+    backslashes in unquoted names. `IMPORT FOREIGN SCHEMA` now preserves
+    sign column names containing closing parentheses ([#450]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -194,6 +198,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#443 Fix pushdown for operators ClickHouse implements as functions"
   [#446]: https://github.com/ClickHouse/pg_clickhouse/pull/446
     "ClickHouse/pg_clickhouse#446 Fix issues with long names"
+  [#450]: https://github.com/ClickHouse/pg_clickhouse/pull/450
+    "ClickHouse/pg_clickhouse#450 Fix CollapsingMergeTree sign column quoting and import"
 
 ## [v0.11.0] — 2026-09-30
 

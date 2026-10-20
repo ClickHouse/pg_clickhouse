@@ -114,8 +114,6 @@ static char*
 ch_quote_literal_internal(char* dst, const char* src, size_t len);
 extern char*
 ch_quote_literal(const char* rawstr);
-extern const char*
-ch_quote_ident(const char* rawstr);
 static ch_server_version
 binary_server_version(void* conn);
 
@@ -1257,11 +1255,25 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
         );
 
         if (engine && engine_full && strcmp(engine, "CollapsingMergeTree") == 0) {
-            char* sub = strchr(engine_full, ')');
+            char quote = '\0';
 
-            if (sub) {
-                sub[1] = '\0';
-                appendStringInfo(&buf, ", engine %s", quote_literal_cstr(engine_full));
+            /* Cut after sign column, skipping parens in quoted identifiers */
+            for (char* p = engine_full; *p; p++) {
+                if (quote) {
+                    if (*p == '\\' && p[1]) {
+                        p++;
+                    } else if (*p == quote) {
+                        quote = '\0';
+                    }
+                } else if (*p == '"' || *p == '`') {
+                    quote = *p;
+                } else if (*p == ')') {
+                    p[1] = '\0';
+                    appendStringInfo(
+                        &buf, ", engine %s", quote_literal_cstr(engine_full)
+                    );
+                    break;
+                }
             }
         } else if (engine) {
             appendStringInfo(&buf, ", engine %s", quote_literal_cstr(engine));
@@ -1384,63 +1396,4 @@ ch_append_literal(StringInfo buf, const char* s, size_t len) {
     enlargeStringInfo(buf, len * 2 + 2);
     buf->len = ch_quote_literal_internal(buf->data + buf->len, s, len) - buf->data;
     buf->data[buf->len] = '\0';
-}
-
-/*
- * Function to quote a ClickHouse identifier. Simply returns `ident` if it's
- * already double-quoted or backtick-quoted. Otherwise quotes it using
- * PostgreSQL's `quote_identifier()`. Raises an error if the identifier length
- * is zero or greater than `NAMEDATALEN` (64) unquoted or
- * `CH_ESCAPED_NAMEDATALEN` quoted.
- */
-const char*
-ch_quote_ident(const char* ident) {
-    /* https://clickhouse.com/docs/sql-reference/syntax#identifiers */
-    int len = strlen(ident);
-
-    if (len >= 2 && ((ident[0] == '"' && ident[len - 1] == '"') ||
-                     (ident[0] == '`' && ident[len - 1] == '`'))) {
-        /*
-         * Make sure it has no unescaped quote character. Allowed escapes:
-         *
-         * ": (""|\\.)
-         *
-         * `: (``|\\.)
-         */
-        for (int i = 2; i <= len - 2; i++) {
-            /* Skip escaped character. */
-            if (ident[i] == '\\') {
-                i++;
-            }
-
-            /* Disallow unescaped quote character. */
-            else if (ident[i] == ident[0] && ident[i + 1] != ident[0]) {
-                ereport(
-                    ERROR,
-                    errcode(ERRCODE_FDW_INVALID_STRING_LENGTH_OR_BUFFER_LENGTH),
-                    errmsg_internal("pg_clickhouse: invalid identifier")
-                );
-            }
-        }
-
-        /* Allow already quoted identifier. */
-        if (len == 2 || len > CH_ESCAPED_NAMEDATALEN - 1) {
-            ereport(
-                ERROR,
-                errcode(ERRCODE_FDW_INVALID_STRING_LENGTH_OR_BUFFER_LENGTH),
-                errmsg_internal("pg_clickhouse: invalid identifier")
-            );
-        }
-        return ident;
-    }
-
-    /* Rely on PostgreSQL 's identifier quoting. */
-    if (len == 0 || len > NAMEDATALEN - 1) {
-        ereport(
-            ERROR,
-            errcode(ERRCODE_FDW_INVALID_STRING_LENGTH_OR_BUFFER_LENGTH),
-            errmsg_internal("pg_clickhouse: invalid identifier")
-        );
-    }
-    return quote_identifier(ident);
 }
