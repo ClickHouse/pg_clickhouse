@@ -132,10 +132,10 @@ All notable changes to this project will be documented in this file. It uses the
     backslashes in unquoted names. `IMPORT FOREIGN SCHEMA` now preserves
     sign column names containing closing parentheses ([#450]).
 *   Fixed the pushdown of `concat_ws()`, which returned NULL when any value
-    was NULL, instead of skipping NULL values as Postgres does. It now pushes
-    down as `arrayStringConcat()`. A `concat_ws()` with a non-constant
-    separator or `VARIADIC` array, which failed or returned wrong results in
-    ClickHouse, now evaluates locally ([#445]).
+    was NULL instead of skipping NULL values as Postgres does. A non-constant
+    separator, which ClickHouse rejected, and a `VARIADIC ARRAY[...]`
+    argument, which returned wrong results, now also push down correctly
+    ([#445]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"

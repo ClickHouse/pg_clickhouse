@@ -241,19 +241,6 @@ chfdw_is_shippable(
                     return false;
                 }
             } break;
-            case CF_CONCAT_WS: {
-                /*
-                 * arrayStringConcat() requires a constant separator and
-                 * takes the values as separate arguments, not VARIADIC.
-                 */
-                FuncExpr* func = (FuncExpr*)node;
-                Expr* sep      = (Expr*)linitial(func->args);
-
-                if (func->funcvariadic || !IsA(sep, Const) ||
-                    ((Const*)sep)->constisnull) {
-                    return false;
-                }
-            } break;
             case CF_ARRAY_SORT_DESC: {
                 /*
                  * If the boolean argument passed to array_sort(arr,

@@ -416,7 +416,7 @@ typedef enum {
     CF_JSON_EXTRACT_PATH,      /* json?_extract_path() →
                                 * toJSONString(col."k1"."k2") */
     CF_STRING_AGG,             /* string_agg → groupConcat(delim)(expr) */
-    CF_CONCAT_WS,              /* concat_ws → arrayStringConcat, skips NULLs */
+    CF_CONCAT_WS,              /* concat_ws → concat() that skips NULLs */
     CF_CURRENT_DATABASE,       /* CURRENT_DATABASE → string literal */
     CF_CURRENT_SCHEMA,         /* CF_CURRENT_SCHEMA → string literal */
     CF_CLOCK_TIMESTAMP,        /* clock_timestamp → nowInBlock64(6, $TZ) */

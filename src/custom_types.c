@@ -483,7 +483,7 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         /* PG concat_ws() skips NULLs, CH concat_ws() returns NULL */
     case F_CONCAT_WS:
         def->cf_type = CF_CONCAT_WS;
-        def->ch_name = "arrayStringConcat";
+        def->ch_name = "\1";
         return true;
     case F_CURRENT_DATABASE:
         def->cf_type = CF_CURRENT_DATABASE;
