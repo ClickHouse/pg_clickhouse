@@ -8,6 +8,7 @@
 #include "miscadmin.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_type.h"
+#include "parser/scansup.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
@@ -113,8 +114,6 @@ static char*
 ch_quote_literal_internal(char* dst, const char* src, size_t len);
 extern char*
 ch_quote_literal(const char* rawstr);
-extern const char*
-ch_quote_ident(const char* rawstr);
 static ch_server_version
 binary_server_version(void* conn);
 
@@ -243,6 +242,7 @@ report_http_stream_query_failure(
 
             memcpy(qid, ch_http_stream_query_id(stream), sizeof(qid));
             kill_query(conn, qid);
+            CHECK_FOR_INTERRUPTS();
             ereport(
                 ERROR,
                 errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
@@ -296,6 +296,7 @@ http_simple_insert(void* conn, const ch_query* query) {
         kill_query(conn, resp->query_id);
         ch_http_response_free(resp);
 
+        CHECK_FOR_INTERRUPTS();
         ereport(
             ERROR,
             errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
@@ -572,7 +573,7 @@ http_prepare_insert(
         CustomColumnInfo* cinfo = chfdw_get_custom_column_info(relid, attnum);
         /* Name must match the INSERT column list chfdw_deparse_insert_sql built */
         const char* colname =
-            (cinfo && cinfo->colname[0]) ? cinfo->colname : NameStr(attr->attname);
+            (cinfo && cinfo->colname) ? cinfo->colname : NameStr(attr->attname);
         appendStringInfo(&collist, "%s%s", i ? ", " : "", pgch_quote_ch_ident(colname));
         state->attnums[i]   = attnum;
         state->atttypids[i] = attr->atttypid;
@@ -759,6 +760,7 @@ http_native_read_error(ch_cursor* cursor) {
         ch_http_stream_end(stream);
         cursor->response = NULL;
         kill_query(cursor->conn, qid);
+        CHECK_FOR_INTERRUPTS();
         ereport(
             ERROR,
             errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
@@ -829,8 +831,8 @@ build_insert_colmap(binary_insert_state* state, TupleDesc indesc) {
                 cinfo  = OidIsValid(state->relid)
                              ? chfdw_get_custom_column_info(state->relid, j + 1)
                              : NULL;
-                inname = (cinfo && cinfo->colname[0]) ? cinfo->colname
-                                                      : NameStr(attin->attname);
+                inname = (cinfo && cinfo->colname) ? cinfo->colname
+                                                   : NameStr(attin->attname);
 
                 if (strcmp(chname, inname) == 0) {
                     m->attnum = (AttrNumber)(j + 1);
@@ -1066,64 +1068,77 @@ parse_type(
     return decl;
 }
 
+/*
+ * Run sql on the server of user and return its rows as a List of char*[]
+ * arrays of ncols text values each, NULL for NULL values.
+ */
 List*
-chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server) {
-    Oid userid               = GetUserId();
-    UserMapping* user        = GetUserMapping(userid, server->serverid);
+chfdw_run_text_query(UserMapping* user, const char* sql, int ncols) {
     ch_scan_connection sconn = chfdw_get_scan_connection(user);
-    ch_connection conn       = sconn.gate;
-    ch_cursor* cursor;
-    ch_query query = new_query(NULL, 0, NULL, NULL, NULL, conn.encoding_check);
-    List* result   = NIL;
-    Datum* row_values;
+    List* retrieved_attrs    = NIL;
+    List* rows               = NIL;
+    ch_query query = new_query(sql, 0, NULL, NULL, NULL, sconn.gate.encoding_check);
 
-    query.sql = psprintf(
-        "SELECT name, engine, engine_full "
-        "FROM system.tables "
-        "WHERE name NOT LIKE '.inner%%' "
-        "AND database = %s",
-        ch_quote_literal(stmt->remote_schema)
-    );
-
-    cursor = conn.methods->simple_query(conn.conn, &query);
-
-    ChFdwScanRowContext cols_ctx = {
-        NULL, list_make2_int(1, 2), NULL, NULL, NULL, NULL
-    };
-
-    ChFdwScanRowContext tables_ctx = {
-        .retrieved_attrs = list_make3_int(1, 2, 3),
-        .cursor          = cursor,
-    };
+    for (int i = 1; i <= ncols; i++) {
+        retrieved_attrs = lappend_int(retrieved_attrs, i);
+    }
 
     /*
-     * Drain the outer query into private strings before opening the per-table
-     * column queries: both use the same connection, and binary streaming only
-     * permits one in-flight response at a time.
+     * Drain the response before the caller sends another query: binary
+     * streaming only permits one in-flight response at a time.
      */
-    List* tables = NIL;
+    PG_TRY();
+    {
+        ch_cursor* cursor = sconn.gate.methods->simple_query(sconn.gate.conn, &query);
+        ChFdwScanRowContext ctx = {
+            .retrieved_attrs = retrieved_attrs,
+            .cursor          = cursor,
+        };
+        Datum* values;
 
-    while ((row_values = conn.methods->fetch_row(&tables_ctx)) != NULL) {
-        List* triple = list_make3(
-            TextDatumGetCString(row_values[0]),
-            TextDatumGetCString(row_values[1]),
-            TextDatumGetCString(row_values[2])
-        );
+        while ((values = sconn.gate.methods->fetch_row(&ctx)) != NULL) {
+            char** row = palloc(ncols * sizeof(char*));
 
-        CHECK_FOR_INTERRUPTS();
-        tables = lappend(tables, triple);
+            for (int i = 0; i < ncols; i++) {
+                row[i] =
+                    cursor->reader.nulls[i] ? NULL : TextDatumGetCString(values[i]);
+            }
+            rows = lappend(rows, row);
+            CHECK_FOR_INTERRUPTS();
+        }
+        MemoryContextDelete(cursor->memcxt);
     }
-    MemoryContextDelete(cursor->memcxt);
+    PG_FINALLY();
+    { chfdw_release_scan_connection(sconn); }
+    PG_END_TRY();
+
+    return rows;
+}
+
+List*
+chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server) {
+    UserMapping* user = GetUserMapping(GetUserId(), server->serverid);
+    List* result      = NIL;
+    List* tables      = chfdw_run_text_query(
+        user,
+        psprintf(
+            "SELECT name, engine, engine_full "
+            "FROM system.tables "
+            "WHERE name NOT LIKE '.inner%%' "
+            "AND database = %s",
+            ch_quote_literal(stmt->remote_schema)
+        ),
+        3
+    );
 
     ListCell* tlc;
 
     foreach (tlc, tables) {
-        List* triple      = (List*)lfirst(tlc);
-        char* table_name  = (char*)linitial(triple);
-        char* engine      = (char*)lsecond(triple);
-        char* engine_full = (char*)lthird(triple);
+        char** table      = lfirst(tlc);
+        char* table_name  = table[0];
+        char* engine      = table[1];
+        char* engine_full = table[2];
         StringInfoData buf;
-        Datum* dvalues;
         bool first = true;
 
         if (table_name == NULL) {
@@ -1133,13 +1148,24 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
         if (list_length(stmt->table_list)) {
             ListCell* lc;
             bool found = false;
+            /* PostgreSQL truncates names in LIMIT TO and EXCEPT. */
+            char* local_name = table_name;
+            size_t name_len  = strlen(table_name);
 
+            if (name_len >= NAMEDATALEN) {
+                local_name = pstrdup(table_name);
+                truncate_identifier(local_name, name_len, false);
+            }
             foreach (lc, stmt->table_list) {
                 RangeVar* rv = (RangeVar*)lfirst(lc);
 
-                if (strcmp(rv->relname, table_name) == 0) {
+                if (strcmp(rv->relname, local_name) == 0) {
                     found = true;
+                    break;
                 }
+            }
+            if (local_name != table_name) {
+                pfree(local_name);
             }
 
             if (stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT && found) {
@@ -1156,27 +1182,36 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
             quote_identifier(stmt->local_schema),
             quote_identifier(table_name)
         );
-        query.sql = psprintf(
-            "SELECT name, type "
-            "FROM system.columns "
-            "WHERE database = %s "
-            "AND table = %s",
-            ch_quote_literal(stmt->remote_schema),
-            ch_quote_literal(table_name)
-        );
 
-        cols_ctx.cursor = conn.methods->simple_query(conn.conn, &query);
-        while ((dvalues = conn.methods->fetch_row(&cols_ctx)) != NULL) {
-            List* options     = NIL;
-            bool is_nullable  = false;
-            char* colname     = TextDatumGetCString(dvalues[0]);
-            char* remote_type = parse_type(
-                table_name,
-                colname,
-                TextDatumGetCString(dvalues[1]),
-                &is_nullable,
-                &options
-            );
+        List* columns = chfdw_run_text_query(
+            user,
+            psprintf(
+                "SELECT name, type "
+                "FROM system.columns "
+                "WHERE database = %s "
+                "AND table = %s",
+                ch_quote_literal(stmt->remote_schema),
+                ch_quote_literal(table_name)
+            ),
+            2
+        );
+        ListCell* clc;
+
+        foreach (clc, columns) {
+            char** column    = lfirst(clc);
+            List* options    = NIL;
+            bool is_nullable = false;
+            char* colname    = column[0];
+            char* remote_type =
+                parse_type(table_name, colname, column[1], &is_nullable, &options);
+
+            /* Preserve remote names that exceed PostgreSQL's identifier limit. */
+            if (strlen(colname) >= NAMEDATALEN) {
+                options = list_concat(
+                    options,
+                    list_make2(makeString(pstrdup("column_name")), makeString(colname))
+                );
+            }
 
             if (!first) {
                 appendStringInfoString(&buf, ",\n");
@@ -1220,11 +1255,25 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
         );
 
         if (engine && engine_full && strcmp(engine, "CollapsingMergeTree") == 0) {
-            char* sub = strchr(engine_full, ')');
+            char quote = '\0';
 
-            if (sub) {
-                sub[1] = '\0';
-                appendStringInfo(&buf, ", engine %s", quote_literal_cstr(engine_full));
+            /* Cut after sign column, skipping parens in quoted identifiers */
+            for (char* p = engine_full; *p; p++) {
+                if (quote) {
+                    if (*p == '\\' && p[1]) {
+                        p++;
+                    } else if (*p == quote) {
+                        quote = '\0';
+                    }
+                } else if (*p == '"' || *p == '`') {
+                    quote = *p;
+                } else if (*p == ')') {
+                    p[1] = '\0';
+                    appendStringInfo(
+                        &buf, ", engine %s", quote_literal_cstr(engine_full)
+                    );
+                    break;
+                }
             }
         } else if (engine) {
             appendStringInfo(&buf, ", engine %s", quote_literal_cstr(engine));
@@ -1232,9 +1281,7 @@ chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* serv
 
         appendStringInfoString(&buf, ");\n");
         result = lappend(result, buf.data);
-        MemoryContextDelete(cols_ctx.cursor->memcxt);
     }
-    chfdw_release_scan_connection(sconn);
 
     return result;
 }
@@ -1349,63 +1396,4 @@ ch_append_literal(StringInfo buf, const char* s, size_t len) {
     enlargeStringInfo(buf, len * 2 + 2);
     buf->len = ch_quote_literal_internal(buf->data + buf->len, s, len) - buf->data;
     buf->data[buf->len] = '\0';
-}
-
-/*
- * Function to quote a ClickHouse identifier. Simply returns `ident` if it's
- * already double-quoted or backtick-quoted. Otherwise quotes it using
- * PostgreSQL's `quote_identifier()`. Raises an error if the identifier length
- * is zero or greater than `NAMEDATALEN` (64) unquoted or
- * `CH_ESCAPED_NAMEDATALEN` quoted.
- */
-const char*
-ch_quote_ident(const char* ident) {
-    /* https://clickhouse.com/docs/sql-reference/syntax#identifiers */
-    int len = strlen(ident);
-
-    if (len >= 2 && ((ident[0] == '"' && ident[len - 1] == '"') ||
-                     (ident[0] == '`' && ident[len - 1] == '`'))) {
-        /*
-         * Make sure it has no unescaped quote character. Allowed escapes:
-         *
-         * ": (""|\\.)
-         *
-         * `: (``|\\.)
-         */
-        for (int i = 2; i <= len - 2; i++) {
-            /* Skip escaped character. */
-            if (ident[i] == '\\') {
-                i++;
-            }
-
-            /* Disallow unescaped quote character. */
-            else if (ident[i] == ident[0] && ident[i + 1] != ident[0]) {
-                ereport(
-                    ERROR,
-                    errcode(ERRCODE_FDW_INVALID_STRING_LENGTH_OR_BUFFER_LENGTH),
-                    errmsg_internal("pg_clickhouse: invalid identifier")
-                );
-            }
-        }
-
-        /* Allow already quoted identifier. */
-        if (len == 2 || len > CH_ESCAPED_NAMEDATALEN - 1) {
-            ereport(
-                ERROR,
-                errcode(ERRCODE_FDW_INVALID_STRING_LENGTH_OR_BUFFER_LENGTH),
-                errmsg_internal("pg_clickhouse: invalid identifier")
-            );
-        }
-        return ident;
-    }
-
-    /* Rely on PostgreSQL 's identifier quoting. */
-    if (len == 0 || len > NAMEDATALEN - 1) {
-        ereport(
-            ERROR,
-            errcode(ERRCODE_FDW_INVALID_STRING_LENGTH_OR_BUFFER_LENGTH),
-            errmsg_internal("pg_clickhouse: invalid identifier")
-        );
-    }
-    return quote_identifier(ident);
 }

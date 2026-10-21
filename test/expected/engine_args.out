@@ -75,6 +75,22 @@ OPTIONS (
 );
 EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(id) FROM engine_args_test.dr_evil3;
 ERROR:  pg_clickhouse: invalid identifier
+-- Should fail on unescaped quote after opening quote.
+CREATE FOREIGN TABLE engine_args_test.dr_evil4 (id INT) SERVER engine_args_svr
+OPTIONS (
+  table_name 'innocuous',
+  engine 'CollapsingMergeTree("") + (SELECT 1) + ("")'
+);
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(id) FROM engine_args_test.dr_evil4;
+ERROR:  pg_clickhouse: invalid identifier
+-- Should fail on escaped closing quote.
+CREATE FOREIGN TABLE engine_args_test.dr_evil5 (id INT) SERVER engine_args_svr
+OPTIONS (
+  table_name 'innocuous',
+  engine 'CollapsingMergeTree("id\")'
+);
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(id) FROM engine_args_test.dr_evil5;
+ERROR:  pg_clickhouse: invalid identifier
 -- Should work for normal column name.
 CREATE FOREIGN TABLE engine_args_test.a_ok (id INT) SERVER engine_args_svr
 OPTIONS (
@@ -271,10 +287,12 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(id) FROM engine_args_test.name_var9;
 DROP USER MAPPING FOR CURRENT_USER SERVER engine_args_svr;
 CALL clickhouse_perform('engine_args_admin', 'DROP DATABASE engine_args_test');
 DROP SERVER engine_args_svr CASCADE;
-NOTICE:  drop cascades to 17 other objects
+NOTICE:  drop cascades to 19 other objects
 DETAIL:  drop cascades to foreign table engine_args_test.dr_evil
 drop cascades to foreign table engine_args_test.dr_evil2
 drop cascades to foreign table engine_args_test.dr_evil3
+drop cascades to foreign table engine_args_test.dr_evil4
+drop cascades to foreign table engine_args_test.dr_evil5
 drop cascades to foreign table engine_args_test.a_ok
 drop cascades to foreign table engine_args_test.name_var1
 drop cascades to foreign table engine_args_test.name_var2

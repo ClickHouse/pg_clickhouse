@@ -1471,6 +1471,21 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
  */
 static bool
 server_version_ge(PlannerInfo* root, RelOptInfo* foreignrel, int major, int minor) {
+    UserMapping* user = chfdw_rel_user_mapping(root, foreignrel);
+
+    return user != NULL &&
+           chfdw_version_ge(chfdw_get_server_version(user), major, minor);
+}
+
+/*
+ * Return the user mapping the executor will use to scan foreignrel, for the
+ * role that owns its permission checks or else the current role, or NULL
+ * when neither it nor a PUBLIC mapping exists. Anything that asks the server
+ * a question at plan time can use it to skip the request rather than fail
+ * the query.
+ */
+UserMapping*
+chfdw_rel_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel) {
     CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)foreignrel->fdw_private;
     Oid serverid              = fpinfo->server->serverid;
     Oid userid                = InvalidOid;
@@ -1520,11 +1535,9 @@ server_version_ge(PlannerInfo* root, RelOptInfo* foreignrel, int major, int mino
             ObjectIdGetDatum(InvalidOid),
             ObjectIdGetDatum(serverid)
         )) {
-        return false;
+        return NULL;
     }
-    return chfdw_version_ge(
-        chfdw_get_server_version(GetUserMapping(userid, serverid)), major, minor
-    );
+    return GetUserMapping(userid, serverid);
 }
 
 static bool
@@ -2772,36 +2785,43 @@ deparseColumnRef(
  */
 static void
 deparseRelation(StringInfo buf, Relation rel) {
-    ForeignTable* table;
-    const char* relname   = NULL;
-    char* dbname          = "default";
-    ForeignServer* server = chfdw_get_foreign_server(rel);
+    char* dbname;
+    char* relname;
+
+    chfdw_remote_table_name(RelationGetRelid(rel), &dbname, &relname);
+    appendStringInfo(buf, "%s.%s", quote_identifier(dbname), quote_identifier(relname));
+}
+
+/*
+ * Return the ClickHouse database and table names of foreign table relid,
+ * from its database and table_name options, the server's dbname, and its own
+ * name.
+ */
+void
+chfdw_remote_table_name(Oid relid, char** db, char** table) {
+    ForeignTable* ft      = GetForeignTable(relid);
+    ForeignServer* server = GetForeignServer(ft->serverid);
     ListCell* lc;
 
+    *db    = "default";
+    *table = NULL;
     chfdw_extract_options(
-        server->options, NULL, NULL, NULL, &dbname, NULL, NULL, NULL, NULL, NULL, NULL
+        server->options, NULL, NULL, NULL, db, NULL, NULL, NULL, NULL, NULL, NULL
     );
 
-    /* obtain additional catalog information. */
-    table = GetForeignTable(RelationGetRelid(rel));
-
-    /*
-     * Use value of FDW options if any, instead of the name of object itself.
-     */
-    foreach (lc, table->options) {
+    /* Use value of FDW options if any, instead of the name of object itself. */
+    foreach (lc, ft->options) {
         DefElem* def = (DefElem*)lfirst(lc);
 
         if (strcmp(def->defname, "table_name") == 0) {
-            relname = defGetString(def);
+            *table = defGetString(def);
         } else if (strcmp(def->defname, "database") == 0) {
-            dbname = defGetString(def);
+            *db = defGetString(def);
         }
     }
-    if (relname == NULL) {
-        relname = RelationGetRelationName(rel);
+    if (*table == NULL) {
+        *table = get_rel_name(relid);
     }
-
-    appendStringInfo(buf, "%s.%s", quote_identifier(dbname), quote_identifier(relname));
 }
 
 /*
@@ -5108,34 +5128,12 @@ findFunction(Oid typoid, char* name) {
     return result;
 }
 
-/*
- * Deparse a pgvector distance operator to the ClickHouse distance function.
- * For <#>, emit dotProduct without the negation; callers negate or reverse
- * the sort direction.
- */
+/* Deparse dotProduct for <#>; callers negate or reverse sort direction. */
 static void
-deparseVectorDistance(
-    custom_object_type cf_type,
-    OpExpr* node,
-    deparse_expr_cxt* context
-) {
+deparseVectorDotProduct(OpExpr* node, deparse_expr_cxt* context) {
     StringInfo buf = context->buf;
 
-    switch (cf_type) {
-    case CF_VECTOR_L2:
-        appendStringInfoString(buf, "L2Distance(");
-        break;
-    case CF_VECTOR_COSINE:
-        appendStringInfoString(buf, "cosineDistance(");
-        break;
-    case CF_VECTOR_L1:
-        appendStringInfoString(buf, "L1Distance(");
-        break;
-    default:
-        Assert(cf_type == CF_VECTOR_NEG_IP);
-        appendStringInfoString(buf, "dotProduct(");
-        break;
-    }
+    appendStringInfoString(buf, "dotProduct(");
     deparseExpr(linitial(node->args), context);
     appendStringInfoString(buf, ", ");
     deparseExpr(lsecond(node->args), context);
@@ -5210,15 +5208,10 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             );
             goto cleanup;
         } break;
-        case CF_VECTOR_L2:
-        case CF_VECTOR_COSINE:
-        case CF_VECTOR_L1:
-            deparseVectorDistance(cdef->cf_type, node, context);
-            goto cleanup;
         case CF_VECTOR_NEG_IP:
             /* pgvector's <#> is the negative inner product */
             appendStringInfoString(buf, "(-");
-            deparseVectorDistance(cdef->cf_type, node, context);
+            deparseVectorDotProduct(node, context);
             appendStringInfoChar(buf, ')');
             goto cleanup;
         case CF_HSTORE_FETCHVAL: {
@@ -5251,35 +5244,11 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
 
             goto cleanup;
         } break;
-        case CF_RE2_MATCH: {
-            appendStringInfoString(buf, "match(");
-            deparseExpr(linitial(node->args), context);
-            appendStringInfoString(buf, ", ");
-            deparseExpr(lsecond(node->args), context);
-            appendStringInfoChar(buf, ')');
-            goto cleanup;
-        } break;
-        case CF_ARRAY_CONTAINS: {
-            appendStringInfoString(buf, "hasAll(");
-            deparseExpr(linitial(node->args), context);
-            appendStringInfoString(buf, ", ");
-            deparseExpr(lsecond(node->args), context);
-            appendStringInfoChar(buf, ')');
-            goto cleanup;
-        } break;
         case CF_ARRAY_CONTAINED_BY: {
             appendStringInfoString(buf, "hasAll(");
             deparseExpr(lsecond(node->args), context);
             appendStringInfoString(buf, ", ");
             deparseExpr(linitial(node->args), context);
-            appendStringInfoChar(buf, ')');
-            goto cleanup;
-        } break;
-        case CF_ARRAY_OVERLAP: {
-            appendStringInfoString(buf, "hasAny(");
-            deparseExpr(linitial(node->args), context);
-            appendStringInfoString(buf, ", ");
-            deparseExpr(lsecond(node->args), context);
             appendStringInfoChar(buf, ')');
             goto cleanup;
         } break;
@@ -5319,16 +5288,32 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             }
             /* Non-text key: fall through to standard deparse */
         } break;
+        case CF_OPERATOR_FUNC: {
+            /* ClickHouse picks narrower or unsigned types from integer args */
+            char* cast = node->opresulttype == INT2OID ||
+                                 node->opresulttype == INT4OID ||
+                                 node->opresulttype == INT8OID
+                             ? ch_format_type_extended(node->opresulttype, 0, 0)
+                             : NULL;
+
+            appendStringInfo(buf, "%s(", cdef->custom_name);
+            foreach (arg, node->args) {
+                if (foreach_current_index(arg) > 0) {
+                    appendStringInfoString(buf, ", ");
+                }
+                if (cast) {
+                    appendStringInfo(buf, "to%s(", cast);
+                }
+                deparseExpr(lfirst(arg), context);
+                if (cast) {
+                    appendStringInfoChar(buf, ')');
+                }
+            }
+            appendStringInfoChar(buf, ')');
+            goto cleanup;
+        }
         default: /* keep compiler quiet */;
         }
-    }
-
-    if ((node->opresulttype == INT2OID || node->opresulttype == INT4OID ||
-         node->opresulttype == INT8OID) &&
-        strcmp(NameStr(form->oprname), "/") == 0) {
-        char* s = ch_format_type_extended(node->opresulttype, 0, 0);
-
-        appendStringInfo(buf, "to%s", s);
     }
 
     /* Always parenthesize the expression. */
@@ -6781,7 +6766,7 @@ appendOrderByClause(List* pathkeys, bool has_final_sort, deparse_expr_cxt* conte
         appendStringInfoString(buf, delim);
         if (is_vector_neg_ip(em_expr)) {
             /* Sort <#> as dotProduct in reverse, the form vector indexes serve */
-            deparseVectorDistance(CF_VECTOR_NEG_IP, (OpExpr*)em_expr, context);
+            deparseVectorDotProduct((OpExpr*)em_expr, context);
             asc = !asc;
         } else {
             deparseExpr(em_expr, context);

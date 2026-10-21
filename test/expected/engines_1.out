@@ -40,6 +40,12 @@ CALL clickhouse_perform('engines_admin', '
 		f AggregateFunction(quantile, Int32))
 	engine = AggregatingMergeTree()
 	order by a');
+CALL clickhouse_perform('engines_admin', '
+	create table engines_test.t5 (a int, `sign)` Int8)
+	engine = CollapsingMergeTree(`sign)`)
+	order by a');
+CALL clickhouse_perform('engines_admin', '
+	insert into engines_test.t5 values (1, 1), (2, 1), (2, -1);');
 CREATE SCHEMA engines_test;
 IMPORT FOREIGN SCHEMA engines_test FROM SERVER engines_loopback INTO engines_test;
 SET search_path = engines_test, public;
@@ -229,13 +235,29 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT a, count(e) FROM t4 GROUP BY a;
    Remote SQL: SELECT a, countMerge(e) FROM engines_test.t4 GROUP BY a
 (4 rows)
 
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(a) FROM t5;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(a))
+   Relations: Aggregate on (t5)
+   Remote SQL: SELECT sum(a * `sign)`) FROM engines_test.t5
+(4 rows)
+
+SELECT sum(a) FROM t5;
+ sum 
+-----
+   1
+(1 row)
+
 DROP USER MAPPING FOR CURRENT_USER SERVER engines_loopback;
 CALL clickhouse_perform('engines_admin', 'DROP DATABASE engines_test');
 DROP SERVER engines_loopback CASCADE;
-NOTICE:  drop cascades to 6 other objects
+NOTICE:  drop cascades to 7 other objects
 DETAIL:  drop cascades to foreign table t1
 drop cascades to foreign table t1_aggr
 drop cascades to foreign table t2
 drop cascades to foreign table t3
 drop cascades to foreign table t3_aggr
 drop cascades to foreign table t4
+drop cascades to foreign table t5

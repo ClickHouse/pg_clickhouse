@@ -36,20 +36,27 @@ All notable changes to this project will be documented in this file. It uses the
     reads, inserts, and `COPY`. pgvector is not required; pg_clickhouse
     recognizes its `vector` type when installed. `vector` constants and
     parameters push down as `Array(Float32)`, as do the pgvector `=` and `<>`
-    operators. Thanks to Kaushik Iska for the PR ([#410])!
+    operators ([#410]).
 *   Added pushdown of the [pgvector] distance operators `<->`, `<=>`, `<#>`,
     and `<+>`, and the `l2_distance`, `cosine_distance`, `inner_product`,
     `l1_distance`, and `vector_dims` functions, so that nearest-neighbor
     queries sort and limit in ClickHouse. `<#>` sorts as `dotProduct(...)
     DESC`, the form ClickHouse vector similarity indexes serve, and
-    requires ClickHouse 23.8 or later. Thanks to Kaushik Iska for the PR
-    ([#411])!
+    requires ClickHouse 23.8 or later ([#411]).
 *   Added the `settings` option for foreign servers and foreign tables to send
     [ClickHouse settings] with foreign table queries and inserts. Uses
     [`pg_clickhouse.session_settings` syntax]. Table settings override server
     settings, and `pg_clickhouse.session_settings` overrides both for matching
     keys. Vector search settings unsupported by older servers are skipped with
-    a warning. Thanks to Kaushik Iska for the PR ([#412])!
+    a warning ([#412]).
+*   Added pushdown for `^` `|/` `||/` `@` `&` `|` `#` `~` `<<` `>>` ([#443]).
+*   Added vector index reporting for pgvector nearest neighbor searches.
+    `EXPLAIN` shows the ClickHouse vector similarity index a search can use,
+    or why ClickHouse will compare every row instead, and the planner warns in
+    the latter case. Set `pg_clickhouse.vector_planner_warnings` to false to
+    silence the warnings. pg_clickhouse caches the index definitions it reads
+    from ClickHouse for `pg_clickhouse.vector_metadata_ttl` seconds;
+    `clickhouse_refresh_vector_metadata()` clears the cache ([#414]).
 
 ### 🚀 Distribution
 
@@ -87,39 +94,43 @@ All notable changes to this project will be documented in this file. It uses the
     closed while a scan or binary INSERT still used it: after a PL/pgSQL
     block caught an error from a binary INSERT or from the middle of a
     scan, and after `ALTER SERVER` or `ALTER USER MAPPING` while a cursor
-    was open. Thanks to Kaushik Iska for the PR ([#415])!
+    was open ([#415]).
 *   Fixed the pushdown of aggregates with `ORDER BY`, such as
     `array_agg(x ORDER BY y)`, which dropped the `ORDER BY`. They now run
-    in Postgres. Thanks to Kaushik Iska for the PR ([#416])!
+    in Postgres ([#416]).
 *   Fixed `INSERT INTO foreign_table SELECT ... FROM foreign_table` with the
     binary driver when both tables belong to the same server, which failed
-    with "Unexpected packet Query received from client". Thanks to Kaushik
-    Iska for the PR ([#417])!
+    with "Unexpected packet Query received from client" ([#417]).
 *   Fixed a leak of connections whose user mapping or server was dropped,
     which stayed open, with their sockets and memory, until the session
-    ended. Thanks to Kaushik Iska for the PR ([#430])!
+    ended. ([#430]).
 *   Fixed memory growth in PL/pgSQL loops and procedures that run many
     `INSERT`s into foreign tables. Each `INSERT` kept its writer and
     buffers, up to the size of its largest batch, until the outermost
-    statement ended. Thanks to Kaushik Iska for the PR ([#431])!
+    statement ended. ([#431]).
 *   Fixed leaks and a crash when a PL/pgSQL block catches an error raised
     by a query to ClickHouse. A foreign scan's cursor and response stayed in
     memory until the outermost statement ended, and the connection stayed
     leased until the transaction ended, so that later queries each opened a
     connection of their own. Catching two errors from `clickhouse_query()`
-    in one transaction crashed the backend. Thanks to Kaushik Iska for the
-    PR ([#432])!
+    in one transaction crashed the backend ([#432]).
 *   Fixed growth of the cache of pushed-down function, type, and operator
-    definitions, which kept entries for dropped objects. Thanks to Kaushik
-    Iska for the PR ([#434])!
+    definitions, which kept entries for dropped objects ([#434]).
 *   Fixed the HTTP driver's reporting of exceptions that ClickHouse raises
     after it starts sending results, which appeared as garbled errors such
-    as "unknown type: f". It now reports the ClickHouse exception. Thanks to
-    Kaushik Iska for the PR ([#436])!
+    as "unknown type: f". It now reports the ClickHouse exception ([#436]).
 *   Fixed a heap overflow in pushed-down joins that fetch no columns, such
     as a partitionwise `count(*)` self-join of foreign partitions. Each row
-    wrote one byte past the end of a zero-length array. Thanks to Kaushik
-    Iska for the PR ([#438])!
+    wrote one byte past the end of a zero-length array ([#438]).
+*   Fixed remote queries that truncated `column_name` values longer than
+    63 bytes. `IMPORT FOREIGN SCHEMA` now preserves full column names
+    in `column_name` options when PostgreSQL truncates local names. It also
+    matches `LIMIT TO` and `EXCEPT` against truncated table names ([#446]).
+    wrote one byte past the end of a zero-length array ([#438]).
+*   Fixed `CollapsingMergeTree` sign column validation and quoting, which
+    allowed SQL expressions in malformed quoted names and failed to escape
+    backslashes in unquoted names. `IMPORT FOREIGN SCHEMA` now preserves
+    sign column names containing closing parentheses ([#450]).
 *   Fixed the pushdown of `concat_ws()`, which returned NULL when any value
     was NULL, instead of skipping NULL values as Postgres does. It now pushes
     down as `arrayStringConcat()`. A `concat_ws()` with a non-constant
@@ -128,8 +139,6 @@ All notable changes to this project will be documented in this file. It uses the
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
-  [#395]: https://github.com/ClickHouse/pg_clickhouse/pull/395
-    "ClickHouse/pg_clickhouse#395 Fix gcc15 Wclobbered warning"
   [regr_avgx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgx
   [regr_avgy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgy
   [regr_count]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_count
@@ -139,18 +148,6 @@ All notable changes to this project will be documented in this file. It uses the
   [regr_sxx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxx
   [regr_sxy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxy
   [regr_syy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_syy
-  [#397]: https://github.com/ClickHouse/pg_clickhouse/pull/397
-    "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
-  [#402]: https://github.com/ClickHouse/pg_clickhouse/pull/402
-    "ClickHouse/pg_clickhouse#402 Specify precision for unconstrained numeric casts"
-  [#403]: https://github.com/ClickHouse/pg_clickhouse/pull/403
-    "ClickHouse/pg_clickhouse#403 Preserve floating-point parameter precision"
-  [#410]: https://github.com/ClickHouse/pg_clickhouse/pull/410
-    "ClickHouse/pg_clickhouse#410 Read and write pgvector vectors"
-  [#411]: https://github.com/ClickHouse/pg_clickhouse/pull/411
-    "ClickHouse/pg_clickhouse#411 Push down pgvector distance operators and functions"
-  [#412]: https://github.com/ClickHouse/pg_clickhouse/pull/412
-    "ClickHouse/pg_clickhouse#412 Add settings option for servers and foreign tables"
   [ClickHouse settings]: https://clickhouse.com/docs/operations/settings/settings
     "ClickHouse Docs: Session Settings"
   [`pg_clickhouse.session_settings` syntax]: doc/pg_clickhouse.md#pg_clickhousesession_settings
@@ -160,14 +157,30 @@ All notable changes to this project will be documented in this file. It uses the
     "PostgreSQL Docs: citext"
   [intarray]: https://www.postgresql.org/docs/current/intarray.html
     "PostgreSQL Docs: intarray"
-  [#405]: https://github.com/ClickHouse/pg_clickhouse/pull/405
-    "ClickHouse/pg_clickhouse#405 Evaluate unsupported types and operators locally"
+  [#395]: https://github.com/ClickHouse/pg_clickhouse/pull/395
+    "ClickHouse/pg_clickhouse#395 Fix gcc15 Wclobbered warning"
+  [#397]: https://github.com/ClickHouse/pg_clickhouse/pull/397
+    "ClickHouse/pg_clickhouse#397 Prevent pushdown of unknown or local functions"
   [#401]: https://github.com/ClickHouse/pg_clickhouse/pull/401
     "ClickHouse/pg_clickhouse#401 Fix temporal, UUID and JSON type mappings"
+  [#402]: https://github.com/ClickHouse/pg_clickhouse/pull/402
+    "ClickHouse/pg_clickhouse#402 Specify precision for unconstrained numeric casts"
+  [#403]: https://github.com/ClickHouse/pg_clickhouse/pull/403
+    "ClickHouse/pg_clickhouse#403 Preserve floating-point parameter precision"
+  [#405]: https://github.com/ClickHouse/pg_clickhouse/pull/405
+    "ClickHouse/pg_clickhouse#405 Evaluate unsupported types and operators locally"
   [#406]: https://github.com/ClickHouse/pg_clickhouse/pull/406
     "ClickHouse/pg_clickhouse#406 Fix interval parameters in datetime arithmetic"
+  [#410]: https://github.com/ClickHouse/pg_clickhouse/pull/410
+    "ClickHouse/pg_clickhouse#410 Read and write pgvector vectors"
+  [#411]: https://github.com/ClickHouse/pg_clickhouse/pull/411
+    "ClickHouse/pg_clickhouse#411 Push down pgvector distance operators and functions"
+  [#412]: https://github.com/ClickHouse/pg_clickhouse/pull/412
+    "ClickHouse/pg_clickhouse#412 Add settings option for servers and foreign tables"
   [#413]: https://github.com/ClickHouse/pg_clickhouse/pull/413
     "ClickHouse/pg_clickhouse#413 Fix timezone handling"
+  [#414]: https://github.com/ClickHouse/pg_clickhouse/pull/414
+    "ClickHouse/pg_clickhouse#414 Report vector index use for pgvector searches"
   [#415]: https://github.com/ClickHouse/pg_clickhouse/pull/415
     "ClickHouse/pg_clickhouse#415 Fix crashes and hangs when a connection closes mid-use"
   [#416]: https://github.com/ClickHouse/pg_clickhouse/pull/416
@@ -186,8 +199,14 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#436 Report exceptions raised mid-stream by the HTTP driver"
   [#438]: https://github.com/ClickHouse/pg_clickhouse/pull/438
     "ClickHouse/pg_clickhouse#438 Stop writing past nulls on zero-column scans"
+  [#443]: https://github.com/ClickHouse/pg_clickhouse/pull/443
+    "ClickHouse/pg_clickhouse#443 Fix pushdown for operators ClickHouse implements as functions"
   [#445]: https://github.com/ClickHouse/pg_clickhouse/pull/445
     "ClickHouse/pg_clickhouse#445 Skip NULL values in pushed-down concat_ws()"
+  [#446]: https://github.com/ClickHouse/pg_clickhouse/pull/446
+    "ClickHouse/pg_clickhouse#446 Fix issues with long names"
+  [#450]: https://github.com/ClickHouse/pg_clickhouse/pull/450
+    "ClickHouse/pg_clickhouse#450 Fix CollapsingMergeTree sign column quoting and import"
 
 ## [v0.11.0] — 2026-09-30
 

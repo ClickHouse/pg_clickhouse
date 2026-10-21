@@ -51,6 +51,14 @@ CALL clickhouse_perform('engines_admin', '
 	engine = AggregatingMergeTree()
 	order by a');
 
+CALL clickhouse_perform('engines_admin', '
+	create table engines_test.t5 (a int, `sign)` Int8)
+	engine = CollapsingMergeTree(`sign)`)
+	order by a');
+
+CALL clickhouse_perform('engines_admin', '
+	insert into engines_test.t5 values (1, 1), (2, 1), (2, -1);');
+
 CREATE SCHEMA engines_test;
 IMPORT FOREIGN SCHEMA engines_test FROM SERVER engines_loopback INTO engines_test;
 SET search_path = engines_test, public;
@@ -80,6 +88,9 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT a, percentile_disc(0.75) WITHIN GROUP (ORDER
 EXPLAIN (VERBOSE, COSTS OFF) SELECT a, percentile_disc(0.75) WITHIN GROUP (ORDER BY f) / sum(d) FROM t4 GROUP BY a;
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT a, count(e) FROM t4 GROUP BY a;
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(a) FROM t5;
+SELECT sum(a) FROM t5;
 
 DROP USER MAPPING FOR CURRENT_USER SERVER engines_loopback;
 CALL clickhouse_perform('engines_admin', 'DROP DATABASE engines_test');

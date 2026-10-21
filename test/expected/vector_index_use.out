@@ -1,0 +1,222 @@
+SELECT NOT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = 'vector') AS no_vector \gset
+\if :no_vector
+\echo 'SKIP: vector extension not available'
+\quit
+\endif
+-- Report whether ClickHouse can serve a vector search from a vector
+-- similarity index, and why not, from the indexes ClickHouse reports.
+SET client_min_messages = warning;
+SELECT pg_advisory_lock(hashtext('vector'));
+ pg_advisory_lock 
+------------------
+ 
+(1 row)
+
+CREATE EXTENSION IF NOT EXISTS vector;
+SELECT pg_advisory_unlock(hashtext('vector'));
+ pg_advisory_unlock 
+--------------------
+ t
+(1 row)
+
+RESET client_min_messages;
+CREATE SERVER vector_index_use_svr FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER vector_index_use_svr;
+\set ECHO errors
+\if :old_ch
+\echo 'SKIP: vector similarity indexes require ClickHouse 25.8'
+\quit
+\endif
+CALL clickhouse_perform('vector_index_use_svr', 'DROP DATABASE IF EXISTS vector_index_use_test');
+CALL clickhouse_perform('vector_index_use_svr', 'CREATE DATABASE vector_index_use_test');
+CALL clickhouse_perform('vector_index_use_svr', $$
+    CREATE TABLE vector_index_use_test.docs (
+        id Int32, v Array(Float32), w Array(Float32),
+        INDEX v_idx v TYPE vector_similarity('hnsw', 'L2Distance', 2)
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('vector_index_use_svr', $$
+    INSERT INTO vector_index_use_test.docs
+    SELECT number, [sin(number), cos(number)], [cos(number), sin(number)] FROM numbers(100)
+$$);
+CREATE FOREIGN TABLE docs (id int, v vector(2), w vector(2))
+    SERVER vector_index_use_svr OPTIONS (database 'vector_index_use_test');
+-- The index serves a single-key ascending L2 sort with a LIMIT under the cap.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY v <-> '[1,0]' LIMIT 5;
+                                                               QUERY PLAN                                                                
+-----------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.docs
+   Output: id, (v <-> '[1,0]'::vector)
+   Vector Search: L2Distance on v
+   Vector Index: v_idx
+   Remote SQL: SELECT id, v FROM vector_index_use_test.docs ORDER BY L2Distance(v, cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(5 rows)
+
+-- Each of these makes ClickHouse search exactly, with a warning.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY v <=> '[1,0]' LIMIT 5;
+WARNING:  pg_clickhouse: vector search on "docs" will not use a ClickHouse vector index
+DETAIL:  index "v_idx" uses L2Distance (<->), not cosineDistance
+HINT:  set pg_clickhouse.vector_planner_warnings = off to hide this warning.
+                                                                 QUERY PLAN                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.docs
+   Output: id, (v <=> '[1,0]'::vector)
+   Vector Search: cosineDistance on v
+   Vector Index: none
+   Vector Index Not Used: index "v_idx" uses L2Distance (<->), not cosineDistance
+   Remote SQL: SELECT id, v FROM vector_index_use_test.docs ORDER BY cosineDistance(v, cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY w <-> '[1,0]' LIMIT 5;
+WARNING:  pg_clickhouse: vector search on "docs" will not use a ClickHouse vector index
+DETAIL:  column "w" has no vector index
+HINT:  set pg_clickhouse.vector_planner_warnings = off to hide this warning.
+                                                               QUERY PLAN                                                                
+-----------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.docs
+   Output: id, (w <-> '[1,0]'::vector)
+   Vector Search: L2Distance on w
+   Vector Index: none
+   Vector Index Not Used: column "w" has no vector index
+   Remote SQL: SELECT id, w FROM vector_index_use_test.docs ORDER BY L2Distance(w, cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY v <-> '[1,0]' DESC LIMIT 5;
+WARNING:  pg_clickhouse: vector search on "docs" will not use a ClickHouse vector index
+DETAIL:  the ORDER BY sorts farthest first
+HINT:  set pg_clickhouse.vector_planner_warnings = off to hide this warning.
+                                                                QUERY PLAN                                                                 
+-------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.docs
+   Output: id, (v <-> '[1,0]'::vector)
+   Vector Search: L2Distance on v
+   Vector Index: none
+   Vector Index Not Used: the ORDER BY sorts farthest first
+   Remote SQL: SELECT id, v FROM vector_index_use_test.docs ORDER BY L2Distance(v, cast([1,0] as Array(Float32))) DESC NULLS FIRST LIMIT 5
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY v <-> '[1,0]', id LIMIT 5;
+WARNING:  pg_clickhouse: vector search on "docs" will not use a ClickHouse vector index
+DETAIL:  the ORDER BY has more than one sort key
+HINT:  set pg_clickhouse.vector_planner_warnings = off to hide this warning.
+                                                                         QUERY PLAN                                                                         
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.docs
+   Output: id, (v <-> '[1,0]'::vector)
+   Vector Search: L2Distance on v
+   Vector Index: none
+   Vector Index Not Used: the ORDER BY has more than one sort key
+   Remote SQL: SELECT id, v FROM vector_index_use_test.docs ORDER BY L2Distance(v, cast([1,0] as Array(Float32))) ASC NULLS LAST, id ASC NULLS LAST LIMIT 5
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY v <-> '[1,0]' LIMIT 5000;
+WARNING:  pg_clickhouse: vector search on "docs" will not use a ClickHouse vector index
+DETAIL:  LIMIT 5000 exceeds max_limit_for_vector_search_queries (1000)
+HINT:  set pg_clickhouse.vector_planner_warnings = off to hide this warning.
+                                                                 QUERY PLAN                                                                 
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.docs
+   Output: id, (v <-> '[1,0]'::vector)
+   Vector Search: L2Distance on v
+   Vector Index: v_idx
+   Vector Index Not Used: LIMIT 5000 exceeds max_limit_for_vector_search_queries (1000)
+   Remote SQL: SELECT id, v FROM vector_index_use_test.docs ORDER BY L2Distance(v, cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5000
+(6 rows)
+
+SET pg_clickhouse.pushdown_regex = off;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs WHERE id::text ~ '1' ORDER BY v <-> '[1,0]' LIMIT 5;
+WARNING:  pg_clickhouse: vector search on "docs" will not use a ClickHouse vector index
+DETAIL:  a WHERE condition cannot be pushed down, so neither can LIMIT
+HINT:  set pg_clickhouse.vector_planner_warnings = off to hide this warning.
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Limit
+   Output: id, ((v <-> '[1,0]'::vector))
+   ->  Foreign Scan on public.docs
+         Output: id, (v <-> '[1,0]'::vector)
+         Filter: ((docs.id)::text ~ '1'::text)
+         Vector Search: L2Distance on v
+         Vector Index: none
+         Vector Index Not Used: a WHERE condition cannot be pushed down, so neither can LIMIT
+         Remote SQL: SELECT id, v FROM vector_index_use_test.docs ORDER BY L2Distance(v, cast([1,0] as Array(Float32))) ASC NULLS LAST
+(9 rows)
+
+RESET pg_clickhouse.pushdown_regex;
+-- The planner reads indexes added in ClickHouse once the cache is refreshed,
+-- however long its time to live.
+SET pg_clickhouse.vector_metadata_ttl = '30d';
+CALL clickhouse_perform('vector_index_use_svr', $$
+    ALTER TABLE vector_index_use_test.docs ADD INDEX w_idx w TYPE vector_similarity('hnsw', 'cosineDistance', 2)
+$$);
+SET pg_clickhouse.vector_planner_warnings = off;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY w <=> '[1,0]' LIMIT 5;
+                                                                 QUERY PLAN                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.docs
+   Output: id, (w <=> '[1,0]'::vector)
+   Vector Search: cosineDistance on w
+   Vector Index: none
+   Vector Index Not Used: column "w" has no vector index
+   Remote SQL: SELECT id, w FROM vector_index_use_test.docs ORDER BY cosineDistance(w, cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(6 rows)
+
+SELECT clickhouse_refresh_vector_metadata();
+ clickhouse_refresh_vector_metadata 
+------------------------------------
+ 
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY w <=> '[1,0]' LIMIT 5;
+                                                                 QUERY PLAN                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.docs
+   Output: id, (w <=> '[1,0]'::vector)
+   Vector Search: cosineDistance on w
+   Vector Index: w_idx
+   Remote SQL: SELECT id, w FROM vector_index_use_test.docs ORDER BY cosineDistance(w, cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(5 rows)
+
+RESET pg_clickhouse.vector_planner_warnings;
+RESET pg_clickhouse.vector_metadata_ttl;
+-- ClickHouse puts backticks around a column name that needs them.
+CALL clickhouse_perform('vector_index_use_svr', $$
+    ALTER TABLE vector_index_use_test.docs ADD COLUMN `my v` Array(Float32),
+        ADD INDEX my_v_idx `my v` TYPE vector_similarity('hnsw', 'L2Distance', 2)
+$$);
+CREATE FOREIGN TABLE quoted_docs (id int, v vector(2) OPTIONS (column_name 'my v'))
+    SERVER vector_index_use_svr OPTIONS (database 'vector_index_use_test', table_name 'docs');
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM quoted_docs ORDER BY v <-> '[1,0]' LIMIT 5;
+                                                                    QUERY PLAN                                                                     
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.quoted_docs
+   Output: id, (v <-> '[1,0]'::vector)
+   Vector Search: L2Distance on my v
+   Vector Index: my_v_idx
+   Remote SQL: SELECT id, "my v" FROM vector_index_use_test.docs ORDER BY L2Distance("my v", cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(5 rows)
+
+-- A ClickHouse server that is down does not fail planning.
+CREATE SERVER vector_index_use_down FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (host 'localhost', port '1');
+CREATE USER MAPPING FOR PUBLIC SERVER vector_index_use_down;
+CREATE FOREIGN TABLE down_docs (id int, v vector(2)) SERVER vector_index_use_down
+    OPTIONS (table_name 'docs');
+EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM down_docs ORDER BY v <-> '[1,0]' LIMIT 5;
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.down_docs
+   Output: id, (v <-> '[1,0]'::vector)
+   Vector Search: L2Distance on v
+   Vector Index: none
+   Remote SQL: SELECT id, v FROM "default".docs ORDER BY L2Distance(v, cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(5 rows)
+
+DROP USER MAPPING FOR PUBLIC SERVER vector_index_use_down;
+DROP SERVER vector_index_use_down CASCADE;
+NOTICE:  drop cascades to foreign table down_docs
+CALL clickhouse_perform('vector_index_use_svr', 'DROP DATABASE vector_index_use_test');
+DROP USER MAPPING FOR CURRENT_USER SERVER vector_index_use_svr;
+DROP SERVER vector_index_use_svr CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table docs
+drop cascades to foreign table quoted_docs

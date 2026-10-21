@@ -105,14 +105,14 @@ ch_server_version
 chfdw_get_server_version(UserMapping* user);
 List*
 chfdw_construct_create_tables(ImportForeignSchemaStmt* stmt, ForeignServer* server);
+extern List*
+chfdw_run_text_query(UserMapping* user, const char* sql, int ncols);
 char*
 ch_quote_literal(const char* rawstr);
 void
 ch_append_literal(StringInfo buf, const char* s, size_t len);
 char*
 chfdw_datum_to_ch_literal(Datum value, Oid type);
-const char*
-ch_quote_ident(const char* rawstr);
 
 typedef enum {
     CH_DEFAULT,
@@ -236,6 +236,12 @@ chfdw_find_em_expr_for_input_target(
 extern Expr*
 chfdw_find_em_expr_for_rel(EquivalenceClass* ec, RelOptInfo* rel);
 
+/* in deparse.c */
+extern void
+chfdw_remote_table_name(Oid relid, char** db, char** table);
+extern UserMapping*
+chfdw_rel_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel);
+
 /* in connection.c */
 /*
  * When entry is set, gate is a cached connection. Release marks it available
@@ -265,6 +271,10 @@ extern kv_list*
 chfdw_get_session_settings(void);
 bool
 chfdw_pushdown_regex_ok(void);
+extern bool
+chfdw_vector_planner_warnings(void);
+extern int
+chfdw_vector_metadata_ttl(void);
 
 extern void
 chfdw_extract_options(
@@ -388,7 +398,6 @@ typedef enum {
     CF_DATETIME_MI_INTERVAL, /* date/timestamp/timestamptz - interval */
     CF_TIMEZONE,             /* timezone */
     CF_HSTORE_FETCHVAL,      /* -> operation on hstore */
-    CF_RE2_MATCH,            /* @~ re operation */
     CF_INTARRAY_IDX,
     CF_CH_FUNCTION,            /* adapted clickhouse function */
     CF_MATCH,                  /* regexp_match function */
@@ -424,9 +433,7 @@ typedef enum {
                                 * arrayReverseSort/arraySort */
     CF_ARRAY_FILL,             /* array_fill → arrayWithConstant,
                                 * swap+extract */
-    CF_ARRAY_CONTAINS,         /* @> → hasAll(left, right) */
     CF_ARRAY_CONTAINED_BY,     /* <@ → hasAll(right, left) */
-    CF_ARRAY_OVERLAP,          /* && → hasAny(left, right) */
     CF_TO_CHAR,                /* to_char(timestamp[tz], fmt) →
                                 * formatDateTime, with strict format
                                 * translation */
@@ -436,11 +443,9 @@ typedef enum {
     CF_DIGEST,                 /* pgcrypto digest(data, algorithm) → hash function */
     CF_REGR_AGG,               /* regr_*() aggregates → to 26.9+ */
     CF_PGVECTOR,               /* pgvector vector type → Array(Float32) */
-    CF_VECTOR_L2,              /* pgvector <-> → L2Distance */
-    CF_VECTOR_COSINE,          /* pgvector <=> → cosineDistance */
     CF_VECTOR_NEG_IP,          /* pgvector <#> → -dotProduct */
-    CF_VECTOR_L1,              /* pgvector <+> → L1Distance */
     CF_VECTOR_DOT,             /* pgvector inner_product → dotProduct */
+    CF_OPERATOR_FUNC,          /* operator → function */
 } custom_object_type;
 
 typedef enum {
@@ -461,7 +466,7 @@ typedef struct CustomObjectDef {
 typedef struct CustomColumnInfo {
     Oid relid;
     int varattno;
-    char colname[NAMEDATALEN];
+    char* colname;
     ch_aggregate_func_type is_AggregateFunction;
     custom_object_type coltype;
 
@@ -488,6 +493,46 @@ extern bool
 chfdw_is_pgvector_type(Oid typid);
 extern void
 chfdw_append_vector_literal(StringInfo buf, Datum value);
+
+/* vector_meta.c */
+typedef enum {
+    VECTOR_METRIC_NONE = 0,
+    VECTOR_METRIC_L2,     /* L2Distance */
+    VECTOR_METRIC_COSINE, /* cosineDistance */
+    VECTOR_METRIC_DOT,    /* dotProduct */
+    VECTOR_METRIC_L1,     /* L1Distance, which no vector index supports */
+} chfdw_vector_metric;
+
+/* A ClickHouse vector similarity index on a remote table */
+typedef struct VectorIndexInfo {
+    char* name;
+    char* column;
+    chfdw_vector_metric metric;
+} VectorIndexInfo;
+
+typedef struct VectorTableMeta {
+    List* indexes;   /* of VectorIndexInfo* */
+    int64 limit_cap; /* max_limit_for_vector_search_queries, or -1 */
+} VectorTableMeta;
+
+extern const VectorTableMeta*
+chfdw_vector_table_meta(Oid relid, UserMapping* user);
+extern void
+chfdw_vector_meta_invalidate_all(void);
+extern chfdw_vector_metric
+chfdw_vector_metric_from_ch(const char* name);
+
+/* vector_plan.c */
+struct ExplainState;
+extern List*
+chfdw_vector_plan_info(
+    PlannerInfo* root,
+    RelOptInfo* rel,
+    ForeignPath* path,
+    bool has_limit
+);
+extern void
+chfdw_explain_vector_info(List* info, struct ExplainState* es);
 
 /* Encode as ClickHouse literal text into buf, which needs MAXDATELEN + 1 bytes */
 extern void

@@ -100,6 +100,62 @@ SELECT * FROM cn_drop_late ORDER BY pg_id;
      9 | after drop
 (2 rows)
 
+-- Import names longer than PostgreSQL's 63 byte identifier limit.
+-- Match truncated table names with LIMIT TO; preserve full names with column_name.
+CALL clickhouse_perform('cn_admin', 'CREATE TABLE cn_test.table_with_a_name_longer_than_postgres_allows_for_identifiers_too (
+    id Int32, column_with_a_name_longer_than_postgres_allows_for_identifiers_too String
+) ENGINE = MergeTree ORDER BY (id);');
+CREATE SCHEMA cn_long_http;
+CREATE SCHEMA cn_long_bin;
+IMPORT FOREIGN SCHEMA cn_test
+    LIMIT TO ("table_with_a_name_longer_than_postgres_allows_for_identifiers_too")
+    FROM SERVER cn_http_loopback INTO cn_long_http;
+NOTICE:  identifier "table_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "table_with_a_name_longer_than_postgres_allows_for_identifiers_t"
+NOTICE:  identifier "table_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "table_with_a_name_longer_than_postgres_allows_for_identifiers_t"
+NOTICE:  identifier "column_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "column_with_a_name_longer_than_postgres_allows_for_identifiers_"
+IMPORT FOREIGN SCHEMA cn_test
+    LIMIT TO ("table_with_a_name_longer_than_postgres_allows_for_identifiers_too")
+    FROM SERVER cn_bin_loopback INTO cn_long_bin;
+NOTICE:  identifier "table_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "table_with_a_name_longer_than_postgres_allows_for_identifiers_t"
+NOTICE:  identifier "table_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "table_with_a_name_longer_than_postgres_allows_for_identifiers_t"
+NOTICE:  identifier "column_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "column_with_a_name_longer_than_postgres_allows_for_identifiers_"
+\d cn_long_bin.*
+                                                   Foreign table "cn_long_bin.table_with_a_name_longer_than_postgres_allows_for_identifiers_t"
+                             Column                              |  Type   | Collation | Nullable | Default |                                    FDW options                                     
+-----------------------------------------------------------------+---------+-----------+----------+---------+------------------------------------------------------------------------------------
+ id                                                              | integer |           | not null |         | 
+ column_with_a_name_longer_than_postgres_allows_for_identifiers_ | text    |           | not null |         | (column_name 'column_with_a_name_longer_than_postgres_allows_for_identifiers_too')
+Server: cn_bin_loopback
+FDW options: (database 'cn_test', table_name 'table_with_a_name_longer_than_postgres_allows_for_identifiers_too', engine 'MergeTree')
+
+INSERT INTO cn_long_http."table_with_a_name_longer_than_postgres_allows_for_identifiers_too"
+    VALUES (1, 'http long');
+NOTICE:  identifier "table_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "table_with_a_name_longer_than_postgres_allows_for_identifiers_t"
+INSERT INTO cn_long_bin."table_with_a_name_longer_than_postgres_allows_for_identifiers_too"
+    VALUES (2, 'bin long');
+NOTICE:  identifier "table_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "table_with_a_name_longer_than_postgres_allows_for_identifiers_t"
+SELECT * FROM cn_long_http."table_with_a_name_longer_than_postgres_allows_for_identifiers_too"
+    ORDER BY id;
+NOTICE:  identifier "table_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "table_with_a_name_longer_than_postgres_allows_for_identifiers_t"
+ id | column_with_a_name_longer_than_postgres_allows_for_identifiers_ 
+----+-----------------------------------------------------------------
+  1 | http long
+  2 | bin long
+(2 rows)
+
+SELECT * FROM cn_long_bin."table_with_a_name_longer_than_postgres_allows_for_identifiers_too"
+    ORDER BY id;
+NOTICE:  identifier "table_with_a_name_longer_than_postgres_allows_for_identifiers_too" will be truncated to "table_with_a_name_longer_than_postgres_allows_for_identifiers_t"
+ id | column_with_a_name_longer_than_postgres_allows_for_identifiers_ 
+----+-----------------------------------------------------------------
+  1 | http long
+  2 | bin long
+(2 rows)
+
+DROP SCHEMA cn_long_http, cn_long_bin CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table cn_long_bin.table_with_a_name_longer_than_postgres_allows_for_identifiers_t
+drop cascades to foreign table cn_long_http.table_with_a_name_longer_than_postgres_allows_for_identifiers_t
 DROP USER MAPPING FOR CURRENT_USER SERVER cn_http_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER cn_bin_loopback;
 CALL clickhouse_perform('cn_admin', 'DROP DATABASE cn_test');
