@@ -567,7 +567,16 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE concat_ws('/', a, nullif(b, 3)) = '2';
 SELECT a FROM t3 WHERE concat_ws('/', a, nullif(b, 3)) = '2';
 
--- concat_ws with a non-constant separator or VARIADIC does not push down.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE concat_ws('/', NULL, a, NULL, b) = '2/3';
+SELECT a FROM t3 WHERE concat_ws('/', NULL, a, NULL, b) = '2/3';
+
+-- concat_ws with a NULL separator returns NULL.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE concat_ws(nullif(b::text, '3'), a, b) IS NULL ORDER BY a;
+SELECT a FROM t3 WHERE concat_ws(nullif(b::text, '3'), a, b) IS NULL ORDER BY a;
+
+-- concat_ws with a non-constant separator or VARIADIC array.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE concat_ws(b::text, a, a) = '232';
 SELECT a FROM t3 WHERE concat_ws(b::text, a, a) = '232';

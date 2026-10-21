@@ -4794,31 +4794,53 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
 
         case CF_CONCAT_WS: {
             /*
-             * arrayStringConcat([v1, toString(v2), ...], sep) skips NULL
-             * values like Postgres concat_ws() does. Convert non-text values
-             * to String so the array has a common element type.
+             * ClickHouse concat_ws() returns NULL when any value is NULL,
+             * but Postgres skips NULL values. Filter them out: prefix each
+             * value with the separator, turn a NULL result into '', then
+             * strip the leading separator. A NULL separator still returns
+             * NULL, because length(NULL) is NULL.
+             *
+             *   substring(concat(ifNull(concat(sep, v1), ''), ...),
+             *             length(sep) + 1)
              */
+            Expr* sep     = (Expr*)linitial(node->args);
+            List* values  = list_copy_tail(node->args, 1);
+            bool no_value = true;
             ListCell* lc;
 
-            appendStringInfoString(buf, "([");
-            for_each_from(lc, node->args, 1) {
-                Expr* arg    = (Expr*)lfirst(lc);
-                bool is_text = exprType((Node*)arg) == TEXTOID;
+            /* Expand VARIADIC ARRAY[...] into its elements. */
+            if (node->funcvariadic && IsA(llast(values), ArrayExpr)) {
+                ArrayExpr* arr = (ArrayExpr*)llast(values);
 
-                if (foreach_current_index(lc) > 1) {
+                values = list_concat(
+                    list_truncate(values, list_length(values) - 1), arr->elements
+                );
+            }
+
+            appendStringInfoString(buf, "substring(concat(");
+            foreach (lc, values) {
+                Expr* value = (Expr*)lfirst(lc);
+
+                /* Postgres skips NULL constants, so leave them out. */
+                if (IsA(value, Const) && ((Const*)value)->constisnull) {
+                    continue;
+                }
+                if (!no_value) {
                     appendStringInfoString(buf, ", ");
                 }
-                if (!is_text) {
-                    appendStringInfoString(buf, "toString(");
-                }
-                deparseExpr(arg, context);
-                if (!is_text) {
-                    appendStringInfoChar(buf, ')');
-                }
+                appendStringInfoString(buf, "ifNull(concat(");
+                deparseExpr(sep, context);
+                appendStringInfoString(buf, ", ");
+                deparseExpr(value, context);
+                appendStringInfoString(buf, "), '')");
+                no_value = false;
             }
-            appendStringInfoString(buf, "], ");
-            deparseExpr((Expr*)linitial(node->args), context);
-            appendStringInfoChar(buf, ')');
+            if (no_value) {
+                appendStringInfoString(buf, "''");
+            }
+            appendStringInfoString(buf, "), length(");
+            deparseExpr(sep, context);
+            appendStringInfoString(buf, ") + 1)");
             return;
         }
         case CF_ARRAY_FILL:
