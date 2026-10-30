@@ -6182,15 +6182,9 @@ deparseAggref(Aggref* node, deparse_expr_cxt* context) {
         /* aggstar can be set only in zero-argument aggregates */
         if (node->aggstar) {
             /*
-             * Omit * for COUNT(*) but not COUNT(DISTINCT *)
-             * https://github.com/ClickHouse/pg_clickhouse/issues/25 To be
-             * fixed in ClickHouse 25.11, so can be omitted once released.
+             * ClickHouse before 25.11 rejects countIf(*, cond), so emit
+             * equivalent countIf(cond)
              * https://github.com/ClickHouse/ClickHouse/pull/89373
-             *
-             * XXX Once ClickHouse has made a release fixing this issue,
-             * consider adding the Client::ServerInfo struct returned from
-             * Client::GetServerInfo() to deparse_expr_cxt so we can allow *
-             * to be passed through for the fixed version.
              */
             omit_star =
                 node->aggfilter && node->aggdistinct == NIL && !strcmp(name, "count");
