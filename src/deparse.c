@@ -4792,6 +4792,57 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             return;
         }
 
+        case CF_CONCAT_WS: {
+            /*
+             * ClickHouse concat_ws() returns NULL when any value is NULL,
+             * but Postgres skips NULL values. Filter them out: prefix each
+             * value with the separator, turn a NULL result into '', then
+             * strip the leading separator. A NULL separator still returns
+             * NULL, because length(NULL) is NULL.
+             *
+             *   substring(concat(ifNull(concat(sep, v1), ''), ...),
+             *             length(sep) + 1)
+             */
+            Expr* sep     = (Expr*)linitial(node->args);
+            List* values  = list_copy_tail(node->args, 1);
+            bool no_value = true;
+            ListCell* lc;
+
+            /* Expand VARIADIC ARRAY[...] into its elements. */
+            if (node->funcvariadic && IsA(llast(values), ArrayExpr)) {
+                ArrayExpr* arr = (ArrayExpr*)llast(values);
+
+                values = list_concat(
+                    list_truncate(values, list_length(values) - 1), arr->elements
+                );
+            }
+
+            appendStringInfoString(buf, "substring(concat(");
+            foreach (lc, values) {
+                Expr* value = (Expr*)lfirst(lc);
+
+                /* Postgres skips NULL constants, so leave them out. */
+                if (IsA(value, Const) && ((Const*)value)->constisnull) {
+                    continue;
+                }
+                if (!no_value) {
+                    appendStringInfoString(buf, ", ");
+                }
+                appendStringInfoString(buf, "ifNull(concat(");
+                deparseExpr(sep, context);
+                appendStringInfoString(buf, ", ");
+                deparseExpr(value, context);
+                appendStringInfoString(buf, "), '')");
+                no_value = false;
+            }
+            if (no_value) {
+                appendStringInfoString(buf, "''");
+            }
+            appendStringInfoString(buf, "), length(");
+            deparseExpr(sep, context);
+            appendStringInfoString(buf, ") + 1)");
+            return;
+        }
         case CF_ARRAY_FILL:
             /* arrayWithConstant(n, val): swap args */
             appendStringInfoChar(buf, '(');

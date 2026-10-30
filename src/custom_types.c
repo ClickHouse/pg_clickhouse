@@ -480,6 +480,11 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         def->cf_type = CF_CURRENT_SCHEMA;
         def->ch_name = "\1";
         return true;
+        /* PG concat_ws() skips NULLs, CH concat_ws() returns NULL */
+    case F_CONCAT_WS:
+        def->cf_type = CF_CONCAT_WS;
+        def->ch_name = "\1";
+        return true;
     case F_CURRENT_DATABASE:
         def->cf_type = CF_CURRENT_DATABASE;
         def->ch_name = "\1";
@@ -687,12 +692,11 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     case F_ROUND_NUMERIC:
     case F_ROUND_NUMERIC_INT4:
     case F_FACTORIAL:
-        /* string functions: CH ltrim/rtrim/concat_ws are aliases */
+        /* string functions: CH ltrim/rtrim are aliases */
     case F_LTRIM_TEXT:
     case F_LTRIM_TEXT_TEXT:
     case F_RTRIM_TEXT:
     case F_RTRIM_TEXT_TEXT:
-    case F_CONCAT_WS:
     case F_LENGTH_BYTEA:
         /* date(ts), date(tstz) deparse as toDate32 in TimeZone */
     case F_DATE_TIMESTAMP:
