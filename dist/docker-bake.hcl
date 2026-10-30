@@ -136,10 +136,11 @@ target "cnpg" {
   }
 }
 
-# Determines the version string used in image tags. Required because beta
-# versions have "betaX" in the version name, whereas final releases do not.
-# Must be updated upon the release of 19.0 and the introduction of 20beta1.
+# Determines the version string used in image tags. Required because beta and
+# release candidate versions have "betaX" or "rcX" in the version name,
+# whereas final releases do not. Must be updated upon the release of 19.0 and
+# the introduction of 20beta1.
 function base_version {
   params = [ pgv ]
-  result =  pgv == 19 ? "${pgv}beta4" : pgv
+  result =  pgv == 19 ? "${pgv}rc1" : pgv
 }
