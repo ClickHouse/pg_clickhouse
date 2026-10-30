@@ -768,7 +768,7 @@ try=# EXPLAIN (VERBOSE, COSTS OFF)
          ->  Foreign Scan
                Output: (PARTIAL count(*)), (PARTIAL sum(events.val)), (PARTIAL min(events.ts)), (PARTIAL max(events.ts))
                Relations: Aggregate on (events_2023 events)
-               Remote SQL: SELECT count(*), sum(val), min(ts), max(ts) FROM "default".events
+               Remote SQL: SELECT count(*), sumOrNull(val), minOrNull(ts), maxOrNull(ts) FROM "default".events
          ->  Partial Aggregate
                Output: PARTIAL count(*), PARTIAL sum(events_1.val), PARTIAL min(events_1.ts), PARTIAL max(events_1.ts)
                ->  Seq Scan on public.events_2024 events_1
@@ -2110,7 +2110,7 @@ SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
 Maps to this ClickHouse query:
 
 ```sql
-SELECT quantile(0.25)(a) FROM t1;
+SELECT quantileOrNull(0.25)(a) FROM t1;
 ```
 
 Note that the non-default `ORDER BY` suffixes `DESC` and `NULLS FIRST`

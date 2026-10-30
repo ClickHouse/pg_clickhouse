@@ -251,18 +251,55 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT a, count(e) FROM t4 GROUP BY a;
 (4 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(a) FROM t5;
-                         QUERY PLAN                         
-------------------------------------------------------------
+                            QUERY PLAN                            
+------------------------------------------------------------------
  Foreign Scan
    Output: (sum(a))
    Relations: Aggregate on (t5)
-   Remote SQL: SELECT sum(a * `sign)`) FROM engines_test.t5
+   Remote SQL: SELECT sumOrNull(a * `sign)`) FROM engines_test.t5
 (4 rows)
 
 SELECT sum(a) FROM t5;
  sum 
 -----
    1
+(1 row)
+
+-- Sums over empty input return NULL.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(b), sum(b) FILTER (WHERE a < 0) FROM t2;
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(b)), (sum(b) FILTER (WHERE (a < 0)))
+   Relations: Aggregate on (t2)
+   Remote SQL: SELECT sumMergeOrNullIf(b,true), sumMergeOrNullIf(b,(((a < 0)) > 0)) FROM engines_test.t2
+(4 rows)
+
+SELECT sum(b) FROM t2 WHERE a < 0;
+ sum 
+-----
+    
+(1 row)
+
+SELECT sum(b), sum(b) FILTER (WHERE a < 0) FROM t2;
+ sum  | sum 
+------+-----
+ 5050 |    
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(d) FROM t4;
+                       QUERY PLAN                       
+--------------------------------------------------------
+ Foreign Scan
+   Output: (sum(d))
+   Relations: Aggregate on (t4)
+   Remote SQL: SELECT sumOrNull(d) FROM engines_test.t4
+(4 rows)
+
+SELECT sum(d) FROM t4;
+ sum 
+-----
+    
 (1 row)
 
 DROP USER MAPPING FOR CURRENT_USER SERVER engines_loopback;

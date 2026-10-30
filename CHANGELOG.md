@@ -131,6 +131,9 @@ All notable changes to this project will be documented in this file. It uses the
     allowed SQL expressions in malformed quoted names and failed to escape
     backslashes in unquoted names. `IMPORT FOREIGN SCHEMA` now preserves
     sign column names containing closing parentheses ([#450]).
+*   Fixed aggregates such as `sum`, `avg`, and `min` to return `NULL` for
+    empty input, matching PostgreSQL. This also applies when no rows pass
+    an aggregate's `FILTER` clause ([#451]).
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -200,6 +203,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#446 Fix issues with long names"
   [#450]: https://github.com/ClickHouse/pg_clickhouse/pull/450
     "ClickHouse/pg_clickhouse#450 Fix CollapsingMergeTree sign column quoting and import"
+  [#451]: https://github.com/ClickHouse/pg_clickhouse/pull/451
+    "ClickHouse/pg_clickhouse#451 Return NULL for empty aggregates"
 
 ## [v0.11.0] — 2026-09-30
 

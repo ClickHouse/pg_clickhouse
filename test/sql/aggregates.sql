@@ -656,6 +656,42 @@ SELECT a, any_value(a) FROM agg_http.agg_numbers GROUP BY a ORDER BY a;
 SELECT a, any_value(a) FROM agg_http.agg_numbers GROUP BY a ORDER BY a;
 \endif
 
+-- Match PostgreSQL's NULL result for empty input. count() returns 0.
+-- Keep array_agg() returning []: ClickHouse before 26.3 rejects Nullable(Array).
+\echo -- empty input (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sum(b), avg(b), min(a), max(a), bool_and(a > 0), stddev_samp(b), count(*), array_agg(a)
+  FROM agg_bin.agg_numbers WHERE a < 0;
+SELECT sum(b), avg(b), min(a), max(a), bool_and(a > 0), stddev_samp(b), count(*), array_agg(a)
+  FROM agg_bin.agg_numbers WHERE a < 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a > 50 AS big, sum(b) FILTER (WHERE a < 0), avg(b) FILTER (WHERE a < 0),
+       count(*) FILTER (WHERE a < 0), max(b)
+  FROM agg_bin.agg_numbers GROUP BY big ORDER BY big;
+SELECT a > 50 AS big, sum(b) FILTER (WHERE a < 0), avg(b) FILTER (WHERE a < 0),
+       count(*) FILTER (WHERE a < 0), max(b)
+  FROM agg_bin.agg_numbers GROUP BY big ORDER BY big;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_slope(b, a), regr_count(b, a) FROM agg_bin.agg_numbers WHERE a < 0;
+SELECT regr_slope(b, a), regr_count(b, a) FROM agg_bin.agg_numbers WHERE a < 0;
+
+\echo -- empty input (http)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sum(b), avg(b), min(a), max(a), bool_and(a > 0), stddev_samp(b), count(*), array_agg(a)
+  FROM agg_http.agg_numbers WHERE a < 0;
+SELECT sum(b), avg(b), min(a), max(a), bool_and(a > 0), stddev_samp(b), count(*), array_agg(a)
+  FROM agg_http.agg_numbers WHERE a < 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a > 50 AS big, sum(b) FILTER (WHERE a < 0), avg(b) FILTER (WHERE a < 0),
+       count(*) FILTER (WHERE a < 0), max(b)
+  FROM agg_http.agg_numbers GROUP BY big ORDER BY big;
+SELECT a > 50 AS big, sum(b) FILTER (WHERE a < 0), avg(b) FILTER (WHERE a < 0),
+       count(*) FILTER (WHERE a < 0), max(b)
+  FROM agg_http.agg_numbers GROUP BY big ORDER BY big;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT regr_slope(b, a), regr_count(b, a) FROM agg_http.agg_numbers WHERE a < 0;
+SELECT regr_slope(b, a), regr_count(b, a) FROM agg_http.agg_numbers WHERE a < 0;
+
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER agg_bin_svr;
 DROP SERVER agg_bin_svr CASCADE;

@@ -92,6 +92,13 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT a, count(e) FROM t4 GROUP BY a;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(a) FROM t5;
 SELECT sum(a) FROM t5;
 
+-- Sums over empty input return NULL.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(b), sum(b) FILTER (WHERE a < 0) FROM t2;
+SELECT sum(b) FROM t2 WHERE a < 0;
+SELECT sum(b), sum(b) FILTER (WHERE a < 0) FROM t2;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT sum(d) FROM t4;
+SELECT sum(d) FROM t4;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER engines_loopback;
 CALL clickhouse_perform('engines_admin', 'DROP DATABASE engines_test');
 DROP SERVER engines_loopback CASCADE;

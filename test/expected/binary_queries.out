@@ -649,12 +649,12 @@ SELECT (CASE WHEN c1 < 10 THEN 1 WHEN c1 < 50 THEN 2 ELSE 3 END) a,
 (3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT SUM(c1) FILTER (WHERE c1 < 20) FROM ft2;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
  Foreign Scan
    Output: (sum(c1) FILTER (WHERE (c1 < 20)))
    Relations: Aggregate on (ft2)
-   Remote SQL: SELECT sumIf(c1,(((c1 < 20)) > 0)) FROM binary_queries_test.t2
+   Remote SQL: SELECT sumIfOrNull(c1,(((c1 < 20)) > 0)) FROM binary_queries_test.t2
 (4 rows)
 
 SELECT SUM(c1) FILTER (WHERE c1 < 20) FROM ft2;

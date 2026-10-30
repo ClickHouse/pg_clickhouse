@@ -42,12 +42,12 @@ Server: agg_http_svr
 FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 
 -- AVG(UInt64)
-                   QUERY PLAN                    
--------------------------------------------------
+                      QUERY PLAN                       
+-------------------------------------------------------
  Foreign Scan
    Output: (avg(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(id) FROM agg_test.hits
+   Remote SQL: SELECT avgOrNull(id) FROM agg_test.hits
 (4 rows)
 
       avg      
@@ -55,12 +55,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2420827679.54
 (1 row)
 
-                   QUERY PLAN                    
--------------------------------------------------
+                      QUERY PLAN                       
+-------------------------------------------------------
  Foreign Scan
    Output: (avg(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(id) FROM agg_test.hits
+   Remote SQL: SELECT avgOrNull(id) FROM agg_test.hits
 (4 rows)
 
       avg      
@@ -68,12 +68,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2420827679.54
 (1 row)
 
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
  Foreign Scan
    Output: (avg(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(id) FROM agg_test.hits WHERE ((id < 1000000000))
+   Remote SQL: SELECT avgOrNull(id) FROM agg_test.hits WHERE ((id < 1000000000))
 (4 rows)
 
      avg     
@@ -81,12 +81,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  404449748.2
 (1 row)
 
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
  Foreign Scan
    Output: (avg(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(id) FROM agg_test.hits WHERE ((id < 1000000000))
+   Remote SQL: SELECT avgOrNull(id) FROM agg_test.hits WHERE ((id < 1000000000))
 (4 rows)
 
      avg     
@@ -95,12 +95,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- AVG(UInt32)
-                      QUERY PLAN                       
--------------------------------------------------------
+                         QUERY PLAN                          
+-------------------------------------------------------------
  Foreign Scan
    Output: (avg(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(duration) FROM agg_test.hits
+   Remote SQL: SELECT avgOrNull(duration) FROM agg_test.hits
 (4 rows)
 
  avg  
@@ -108,12 +108,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  1095
 (1 row)
 
-                      QUERY PLAN                       
--------------------------------------------------------
+                         QUERY PLAN                          
+-------------------------------------------------------------
  Foreign Scan
    Output: (avg(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(duration) FROM agg_test.hits
+   Remote SQL: SELECT avgOrNull(duration) FROM agg_test.hits
 (4 rows)
 
  avg  
@@ -121,12 +121,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  1095
 (1 row)
 
-                                      QUERY PLAN                                       
----------------------------------------------------------------------------------------
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (avg(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT avgOrNull(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
  avg  
@@ -134,12 +134,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  1095
 (1 row)
 
-                                      QUERY PLAN                                       
----------------------------------------------------------------------------------------
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (avg(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT avgOrNull(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
  avg  
@@ -148,12 +148,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- AVG(Decimal)
-                    QUERY PLAN                     
----------------------------------------------------
+                       QUERY PLAN                        
+---------------------------------------------------------
  Foreign Scan
    Output: (avg(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(cost) FROM agg_test.hits
+   Remote SQL: SELECT avgOrNull(cost) FROM agg_test.hits
 (4 rows)
 
   avg   
@@ -161,12 +161,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  5.0768
 (1 row)
 
-                    QUERY PLAN                     
----------------------------------------------------
+                       QUERY PLAN                        
+---------------------------------------------------------
  Foreign Scan
    Output: (avg(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(cost) FROM agg_test.hits
+   Remote SQL: SELECT avgOrNull(cost) FROM agg_test.hits
 (4 rows)
 
   avg   
@@ -174,12 +174,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  5.0768
 (1 row)
 
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
  Foreign Scan
    Output: (avg(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
+   Remote SQL: SELECT avgOrNull(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
 (4 rows)
 
   avg   
@@ -187,12 +187,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  5.0768
 (1 row)
 
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
  Foreign Scan
    Output: (avg(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT avg(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
+   Remote SQL: SELECT avgOrNull(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
 (4 rows)
 
   avg   
@@ -572,12 +572,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- min(UInt64)
-                   QUERY PLAN                    
--------------------------------------------------
+                      QUERY PLAN                       
+-------------------------------------------------------
  Foreign Scan
    Output: (min(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(id) FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(id) FROM agg_test.hits
 (4 rows)
 
    min    
@@ -585,12 +585,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  41607833
 (1 row)
 
-                   QUERY PLAN                    
--------------------------------------------------
+                      QUERY PLAN                       
+-------------------------------------------------------
  Foreign Scan
    Output: (min(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(id) FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(id) FROM agg_test.hits
 (4 rows)
 
    min    
@@ -598,12 +598,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  41607833
 (1 row)
 
-                                   QUERY PLAN                                    
----------------------------------------------------------------------------------
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(id) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull(id) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
    min    
@@ -611,12 +611,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  41607833
 (1 row)
 
-                                   QUERY PLAN                                    
----------------------------------------------------------------------------------
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(id) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull(id) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
    min    
@@ -625,12 +625,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- min(DateTime64)
-                        QUERY PLAN                        
-----------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Foreign Scan
    Output: (min("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min("timestamp") FROM agg_test.hits
+   Remote SQL: SELECT minOrNull("timestamp") FROM agg_test.hits
 (4 rows)
 
               min              
@@ -638,12 +638,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-05 11:51:04.390884+00
 (1 row)
 
-                        QUERY PLAN                        
-----------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Foreign Scan
    Output: (min("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min("timestamp") FROM agg_test.hits
+   Remote SQL: SELECT minOrNull("timestamp") FROM agg_test.hits
 (4 rows)
 
               min              
@@ -651,12 +651,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-05 11:51:04.390884+00
 (1 row)
 
-                                        QUERY PLAN                                        
-------------------------------------------------------------------------------------------
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
               min              
@@ -664,12 +664,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-10 16:24:16.877779+00
 (1 row)
 
-                                        QUERY PLAN                                        
-------------------------------------------------------------------------------------------
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
               min              
@@ -678,12 +678,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- min(Date)
-                       QUERY PLAN                       
---------------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Foreign Scan
    Output: (min(datestamp))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(datestamp) FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(datestamp) FROM agg_test.hits
 (4 rows)
 
     min     
@@ -691,12 +691,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-05
 (1 row)
 
-                       QUERY PLAN                       
---------------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Foreign Scan
    Output: (min(datestamp))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(datestamp) FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(datestamp) FROM agg_test.hits
 (4 rows)
 
     min     
@@ -704,12 +704,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-05
 (1 row)
 
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min(datestamp))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(datestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull(datestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
     min     
@@ -717,12 +717,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-10
 (1 row)
 
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min(datestamp))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(datestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull(datestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
     min     
@@ -731,12 +731,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- min(String)
-                    QUERY PLAN                     
----------------------------------------------------
+                       QUERY PLAN                        
+---------------------------------------------------------
  Foreign Scan
    Output: (min(path))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(path) FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(path) FROM agg_test.hits
 (4 rows)
 
    min    
@@ -744,12 +744,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  /profile
 (1 row)
 
-                    QUERY PLAN                     
----------------------------------------------------
+                       QUERY PLAN                        
+---------------------------------------------------------
  Foreign Scan
    Output: (min(path))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(path) FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(path) FROM agg_test.hits
 (4 rows)
 
    min    
@@ -757,12 +757,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  /profile
 (1 row)
 
-                                    QUERY PLAN                                     
------------------------------------------------------------------------------------
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min(path))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(path) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull(path) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
    min   
@@ -770,12 +770,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  /search
 (1 row)
 
-                                    QUERY PLAN                                     
------------------------------------------------------------------------------------
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min(path))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(path) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull(path) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
    min   
@@ -784,12 +784,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- min(UInt32)
-                      QUERY PLAN                       
--------------------------------------------------------
+                         QUERY PLAN                          
+-------------------------------------------------------------
  Foreign Scan
    Output: (min(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(duration) FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(duration) FROM agg_test.hits
 (4 rows)
 
  min 
@@ -797,12 +797,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    2
 (1 row)
 
-                      QUERY PLAN                       
--------------------------------------------------------
+                         QUERY PLAN                          
+-------------------------------------------------------------
  Foreign Scan
    Output: (min(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(duration) FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(duration) FROM agg_test.hits
 (4 rows)
 
  min 
@@ -810,12 +810,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
    2
 (1 row)
 
-                                      QUERY PLAN                                       
----------------------------------------------------------------------------------------
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
  min 
@@ -823,12 +823,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
   15
 (1 row)
 
-                                      QUERY PLAN                                       
----------------------------------------------------------------------------------------
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
  min 
@@ -837,12 +837,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- min(Decimal)
-                    QUERY PLAN                     
----------------------------------------------------
+                       QUERY PLAN                        
+---------------------------------------------------------
  Foreign Scan
    Output: (min(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(cost) FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(cost) FROM agg_test.hits
 (4 rows)
 
  min  
@@ -850,12 +850,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  1.20
 (1 row)
 
-                    QUERY PLAN                     
----------------------------------------------------
+                       QUERY PLAN                        
+---------------------------------------------------------
  Foreign Scan
    Output: (min(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(cost) FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(cost) FROM agg_test.hits
 (4 rows)
 
  min  
@@ -863,12 +863,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  1.20
 (1 row)
 
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
+   Remote SQL: SELECT minOrNull(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
 (4 rows)
 
  min  
@@ -876,12 +876,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  1.99
 (1 row)
 
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT min(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
+   Remote SQL: SELECT minOrNull(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
 (4 rows)
 
  min  
@@ -890,12 +890,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- max(UInt64)
-                   QUERY PLAN                    
--------------------------------------------------
+                      QUERY PLAN                       
+-------------------------------------------------------
  Foreign Scan
    Output: (max(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(id) FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(id) FROM agg_test.hits
 (4 rows)
 
     max     
@@ -903,12 +903,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  4264738908
 (1 row)
 
-                   QUERY PLAN                    
--------------------------------------------------
+                      QUERY PLAN                       
+-------------------------------------------------------
  Foreign Scan
    Output: (max(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(id) FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(id) FROM agg_test.hits
 (4 rows)
 
     max     
@@ -916,12 +916,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  4264738908
 (1 row)
 
-                                   QUERY PLAN                                    
----------------------------------------------------------------------------------
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(id) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull(id) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
     max    
@@ -929,12 +929,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  914876110
 (1 row)
 
-                                   QUERY PLAN                                    
----------------------------------------------------------------------------------
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max(id))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(id) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull(id) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
     max    
@@ -943,12 +943,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- max(DateTime64)
-                        QUERY PLAN                        
-----------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Foreign Scan
    Output: (max("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max("timestamp") FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull("timestamp") FROM agg_test.hits
 (4 rows)
 
               max              
@@ -956,12 +956,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-19 07:24:50.960198+00
 (1 row)
 
-                        QUERY PLAN                        
-----------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Foreign Scan
    Output: (max("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max("timestamp") FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull("timestamp") FROM agg_test.hits
 (4 rows)
 
               max              
@@ -969,12 +969,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-19 07:24:50.960198+00
 (1 row)
 
-                                        QUERY PLAN                                        
-------------------------------------------------------------------------------------------
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
              max              
@@ -982,12 +982,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-18 16:36:18.43735+00
 (1 row)
 
-                                        QUERY PLAN                                        
-------------------------------------------------------------------------------------------
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
              max              
@@ -996,12 +996,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- max(Date)
-                       QUERY PLAN                       
---------------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Foreign Scan
    Output: (max(datestamp))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(datestamp) FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(datestamp) FROM agg_test.hits
 (4 rows)
 
     max     
@@ -1009,12 +1009,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-19
 (1 row)
 
-                       QUERY PLAN                       
---------------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Foreign Scan
    Output: (max(datestamp))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(datestamp) FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(datestamp) FROM agg_test.hits
 (4 rows)
 
     max     
@@ -1022,12 +1022,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-19
 (1 row)
 
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max(datestamp))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(datestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull(datestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
     max     
@@ -1035,12 +1035,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-18
 (1 row)
 
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max(datestamp))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(datestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull(datestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
     max     
@@ -1049,12 +1049,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- max(String)
-                    QUERY PLAN                     
----------------------------------------------------
+                       QUERY PLAN                        
+---------------------------------------------------------
  Foreign Scan
    Output: (max(path))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(path) FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(path) FROM agg_test.hits
 (4 rows)
 
          max         
@@ -1062,12 +1062,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  /widgets/voluptatem
 (1 row)
 
-                    QUERY PLAN                     
----------------------------------------------------
+                       QUERY PLAN                        
+---------------------------------------------------------
  Foreign Scan
    Output: (max(path))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(path) FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(path) FROM agg_test.hits
 (4 rows)
 
          max         
@@ -1075,12 +1075,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  /widgets/voluptatem
 (1 row)
 
-                                    QUERY PLAN                                     
------------------------------------------------------------------------------------
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max(path))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(path) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull(path) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
          max         
@@ -1088,12 +1088,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  /widgets/voluptatem
 (1 row)
 
-                                    QUERY PLAN                                     
------------------------------------------------------------------------------------
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max(path))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(path) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull(path) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
          max         
@@ -1102,12 +1102,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- max(UInt32)
-                      QUERY PLAN                       
--------------------------------------------------------
+                         QUERY PLAN                          
+-------------------------------------------------------------
  Foreign Scan
    Output: (max(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(duration) FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(duration) FROM agg_test.hits
 (4 rows)
 
  max  
@@ -1115,12 +1115,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  7672
 (1 row)
 
-                      QUERY PLAN                       
--------------------------------------------------------
+                         QUERY PLAN                          
+-------------------------------------------------------------
  Foreign Scan
    Output: (max(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(duration) FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(duration) FROM agg_test.hits
 (4 rows)
 
  max  
@@ -1128,12 +1128,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  7672
 (1 row)
 
-                                      QUERY PLAN                                       
----------------------------------------------------------------------------------------
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
  max  
@@ -1141,12 +1141,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  7672
 (1 row)
 
-                                      QUERY PLAN                                       
----------------------------------------------------------------------------------------
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max(duration))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull(duration) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
  max  
@@ -1155,12 +1155,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- max(Decimal)
-                    QUERY PLAN                     
----------------------------------------------------
+                       QUERY PLAN                        
+---------------------------------------------------------
  Foreign Scan
    Output: (max(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(cost) FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(cost) FROM agg_test.hits
 (4 rows)
 
  max  
@@ -1168,12 +1168,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  8.90
 (1 row)
 
-                    QUERY PLAN                     
----------------------------------------------------
+                       QUERY PLAN                        
+---------------------------------------------------------
  Foreign Scan
    Output: (max(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(cost) FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(cost) FROM agg_test.hits
 (4 rows)
 
  max  
@@ -1181,12 +1181,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  8.90
 (1 row)
 
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
+   Remote SQL: SELECT maxOrNull(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
 (4 rows)
 
  max  
@@ -1194,12 +1194,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  8.53
 (1 row)
 
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max(cost))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT max(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
+   Remote SQL: SELECT maxOrNull(cost) FROM agg_test.hits WHERE ((cost < 1000000000))
 (4 rows)
 
  max  
@@ -1208,35 +1208,35 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- string_agg pushdown (binary)
-                                            QUERY PLAN                                             
----------------------------------------------------------------------------------------------------
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (string_agg(path, '|'::text))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupConcat('|')(path) FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
+   Remote SQL: SELECT groupConcatOrNull('|')(path) FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
 (4 rows)
 
-ERROR:  pg_clickhouse: DB::Exception: Unknown function groupConcat. Maybe you meant: ['mapConcat','arrayConcat']: While processing SELECT groupConcat('|')(path) FROM agg_test.hits WHERE datestamp = '2025-12-05'
-DETAIL:  Remote Query: SELECT groupConcat('|')(path) FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
+ERROR:  pg_clickhouse: DB::Exception: Unknown function groupConcatOrNull: While processing SELECT groupConcatOrNull('|')(path) FROM agg_test.hits WHERE datestamp = '2025-12-05'
+DETAIL:  Remote Query: SELECT groupConcatOrNull('|')(path) FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
 -- string_agg pushdown (http)
-                                            QUERY PLAN                                            
---------------------------------------------------------------------------------------------------
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (string_agg(path, ''::text))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupConcat('')(path) FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
+   Remote SQL: SELECT groupConcatOrNull('')(path) FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
 (4 rows)
 
-ERROR:  pg_clickhouse: Code: 46. DB::Exception: Unknown function groupConcat. Maybe you meant: ['mapConcat','arrayConcat']: While processing SELECT groupConcat('')(path) FROM agg_test.hits WHERE datestamp = '2025-12-05'. (UNKNOWN_FUNCTION)
-DETAIL:  Remote Query: SELECT groupConcat('')(path) FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
+ERROR:  pg_clickhouse: Code: 46. DB::Exception: Unknown function groupConcatOrNull: While processing SELECT groupConcatOrNull('')(path) FROM agg_test.hits WHERE datestamp = '2025-12-05'. (UNKNOWN_FUNCTION)
+DETAIL:  Remote Query: SELECT groupConcatOrNull('')(path) FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
 CONTEXT:  HTTP status code: 404
 -- string_agg DISTINCT pushdown (binary)
-                                                 QUERY PLAN                                                  
--------------------------------------------------------------------------------------------------------------
+                                                    QUERY PLAN                                                     
+-------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (string_agg(DISTINCT path, ', '::text))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupConcat(', ')(DISTINCT path) FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
+   Remote SQL: SELECT groupConcatOrNull(', ')(DISTINCT path) FROM agg_test.hits WHERE ((datestamp = '2025-12-05'))
 (4 rows)
 
 -- string_agg with ORDER BY falls back to local execution
@@ -1271,12 +1271,12 @@ CONTEXT:  HTTP status code: 404
 ERROR:  pg_clickhouse: DB::Exception: Unknown function groupConcat. Maybe you meant: ['mapConcat','arrayConcat']: While processing SELECT datestamp, groupConcat(', ')(path) FROM agg_test.hits WHERE (datestamp >= '2025-12-05') AND (datestamp <= '2025-12-07') GROUP BY datestamp ORDER BY datestamp ASC NULLS LAST
 DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.hits WHERE ((datestamp >= '2025-12-05')) AND ((datestamp <= '2025-12-07')) GROUP BY datestamp ORDER BY datestamp ASC NULLS LAST
 -- bool_and pushdown (binary)
-                             QUERY PLAN                              
----------------------------------------------------------------------
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
  Foreign Scan
    Output: (bool_and((duration > 0)))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupBitAnd((duration > 0)) FROM agg_test.hits
+   Remote SQL: SELECT groupBitAndOrNull((duration > 0)) FROM agg_test.hits
 (4 rows)
 
  bool_and 
@@ -1285,12 +1285,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- bool_or pushdown (binary)
-                              QUERY PLAN                               
------------------------------------------------------------------------
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
  Foreign Scan
    Output: (bool_or((duration > 5000)))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupBitOr((duration > 5000)) FROM agg_test.hits
+   Remote SQL: SELECT groupBitOrOrNull((duration > 5000)) FROM agg_test.hits
 (4 rows)
 
  bool_or 
@@ -1299,12 +1299,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- every pushdown (binary)
-                           QUERY PLAN                            
------------------------------------------------------------------
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
  Foreign Scan
    Output: (every((cost > '0'::numeric)))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupBitAnd((cost > 0)) FROM agg_test.hits
+   Remote SQL: SELECT groupBitAndOrNull((cost > 0)) FROM agg_test.hits
 (4 rows)
 
  every 
@@ -1313,12 +1313,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- bool_and pushdown (http)
-                             QUERY PLAN                              
----------------------------------------------------------------------
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
  Foreign Scan
    Output: (bool_and((duration > 0)))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupBitAnd((duration > 0)) FROM agg_test.hits
+   Remote SQL: SELECT groupBitAndOrNull((duration > 0)) FROM agg_test.hits
 (4 rows)
 
  bool_and 
@@ -1327,12 +1327,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- bool_or pushdown (http)
-                              QUERY PLAN                               
------------------------------------------------------------------------
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
  Foreign Scan
    Output: (bool_or((duration > 5000)))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupBitOr((duration > 5000)) FROM agg_test.hits
+   Remote SQL: SELECT groupBitOrOrNull((duration > 5000)) FROM agg_test.hits
 (4 rows)
 
  bool_or 
@@ -1649,7 +1649,7 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  Foreign Scan
    Output: (corr((a)::double precision, (b)::double precision)), (corr((b)::double precision, (a)::double precision))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT corr(a, b), corr(b, a) FROM agg_test.agg_numbers
+   Remote SQL: SELECT corrOrNull(a, b), corrOrNull(b, a) FROM agg_test.agg_numbers
 (4 rows)
 
         corr        |        corr        
@@ -1662,7 +1662,7 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  Foreign Scan
    Output: (corr((a)::double precision, (b)::double precision)), (corr((b)::double precision, (a)::double precision))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT corr(a, b), corr(b, a) FROM agg_test.agg_numbers
+   Remote SQL: SELECT corrOrNull(a, b), corrOrNull(b, a) FROM agg_test.agg_numbers
 (4 rows)
 
         corr        |        corr        
@@ -1676,7 +1676,7 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  Foreign Scan
    Output: (covar_pop((b)::double precision, (a)::double precision)), (covar_samp((b)::double precision, (a)::double precision))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT covar_pop(b, a), covar_samp(b, a) FROM agg_test.agg_numbers
+   Remote SQL: SELECT covar_popOrNull(b, a), covar_sampOrNull(b, a) FROM agg_test.agg_numbers
 (4 rows)
 
      covar_pop     |    covar_samp     
@@ -1689,7 +1689,7 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  Foreign Scan
    Output: (covar_pop((b)::double precision, (a)::double precision)), (covar_samp((b)::double precision, (a)::double precision))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT covar_pop(b, a), covar_samp(b, a) FROM agg_test.agg_numbers
+   Remote SQL: SELECT covar_popOrNull(b, a), covar_sampOrNull(b, a) FROM agg_test.agg_numbers
 (4 rows)
 
      covar_pop     |    covar_samp     
@@ -1698,12 +1698,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- stddev(int2), stddev_samp(int2), stddev_pop(int2)
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev(a)), (stddev_samp(a)), (stddev_pop(a))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(a), stddev_samp(a), stddev_pop(a) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(a), stddev_sampOrNull(a), stddev_popOrNull(a) FROM agg_test.agg_numbers
 (4 rows)
 
       stddev      |   stddev_samp    |    stddev_pop    
@@ -1711,12 +1711,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  41.2270137975899 | 41.2270137975899 | 35.7036412708844
 (1 row)
 
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev(a)), (stddev_samp(a)), (stddev_pop(a))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(a), stddev_samp(a), stddev_pop(a) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(a), stddev_sampOrNull(a), stddev_popOrNull(a) FROM agg_test.agg_numbers
 (4 rows)
 
       stddev      |   stddev_samp    |    stddev_pop    
@@ -1725,12 +1725,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- stddev(int4), stddev_samp(int4), stddev_pop(int4)
-                                                                               QUERY PLAN                                                                                
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                     QUERY PLAN                                                                                      
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev((a)::integer)), (stddev_samp((a)::integer)), (stddev_pop((a)::integer))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(cast(a, 'Nullable(Int32)')), stddev_samp(cast(a, 'Nullable(Int32)')), stddev_pop(cast(a, 'Nullable(Int32)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(cast(a, 'Nullable(Int32)')), stddev_sampOrNull(cast(a, 'Nullable(Int32)')), stddev_popOrNull(cast(a, 'Nullable(Int32)')) FROM agg_test.agg_numbers
 (4 rows)
 
       stddev      |   stddev_samp    |    stddev_pop    
@@ -1738,12 +1738,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  41.2270137975899 | 41.2270137975899 | 35.7036412708844
 (1 row)
 
-                                                                               QUERY PLAN                                                                                
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                     QUERY PLAN                                                                                      
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev((a)::integer)), (stddev_samp((a)::integer)), (stddev_pop((a)::integer))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(cast(a, 'Nullable(Int32)')), stddev_samp(cast(a, 'Nullable(Int32)')), stddev_pop(cast(a, 'Nullable(Int32)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(cast(a, 'Nullable(Int32)')), stddev_sampOrNull(cast(a, 'Nullable(Int32)')), stddev_popOrNull(cast(a, 'Nullable(Int32)')) FROM agg_test.agg_numbers
 (4 rows)
 
       stddev      |   stddev_samp    |    stddev_pop    
@@ -1752,12 +1752,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- stddev(int8), stddev_samp(int8), stddev_pop(int8)
-                                                                               QUERY PLAN                                                                                
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                     QUERY PLAN                                                                                      
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev((a)::bigint)), (stddev_samp((a)::bigint)), (stddev_pop((a)::bigint))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(cast(a, 'Nullable(Int64)')), stddev_samp(cast(a, 'Nullable(Int64)')), stddev_pop(cast(a, 'Nullable(Int64)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(cast(a, 'Nullable(Int64)')), stddev_sampOrNull(cast(a, 'Nullable(Int64)')), stddev_popOrNull(cast(a, 'Nullable(Int64)')) FROM agg_test.agg_numbers
 (4 rows)
 
       stddev      |   stddev_samp    |    stddev_pop    
@@ -1765,12 +1765,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  41.2270137975899 | 41.2270137975899 | 35.7036412708844
 (1 row)
 
-                                                                               QUERY PLAN                                                                                
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                     QUERY PLAN                                                                                      
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev((a)::bigint)), (stddev_samp((a)::bigint)), (stddev_pop((a)::bigint))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(cast(a, 'Nullable(Int64)')), stddev_samp(cast(a, 'Nullable(Int64)')), stddev_pop(cast(a, 'Nullable(Int64)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(cast(a, 'Nullable(Int64)')), stddev_sampOrNull(cast(a, 'Nullable(Int64)')), stddev_popOrNull(cast(a, 'Nullable(Int64)')) FROM agg_test.agg_numbers
 (4 rows)
 
       stddev      |   stddev_samp    |    stddev_pop    
@@ -1779,12 +1779,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- stddev(float), stddev_samp(float), stddev_pop(float)
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev(b)), (stddev_samp(b)), (stddev_pop(b))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(b), stddev_samp(b), stddev_pop(b) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(b), stddev_sampOrNull(b), stddev_popOrNull(b) FROM agg_test.agg_numbers
 (4 rows)
 
        stddev       |    stddev_samp     |     stddev_pop     
@@ -1792,12 +1792,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  151.38937377929688 | 151.38937377929688 | 131.10704040527344
 (1 row)
 
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev(b)), (stddev_samp(b)), (stddev_pop(b))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(b), stddev_samp(b), stddev_pop(b) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(b), stddev_sampOrNull(b), stddev_popOrNull(b) FROM agg_test.agg_numbers
 (4 rows)
 
        stddev       |    stddev_samp     |     stddev_pop     
@@ -1806,12 +1806,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- stddev(float8), stddev_samp(float8), stddev_pop(float8)
-                                                                                  QUERY PLAN                                                                                   
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                        QUERY PLAN                                                                                         
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev((b)::double precision)), (stddev_samp((b)::double precision)), (stddev_pop((b)::double precision))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(cast(b, 'Nullable(Float64)')), stddev_samp(cast(b, 'Nullable(Float64)')), stddev_pop(cast(b, 'Nullable(Float64)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(cast(b, 'Nullable(Float64)')), stddev_sampOrNull(cast(b, 'Nullable(Float64)')), stddev_popOrNull(cast(b, 'Nullable(Float64)')) FROM agg_test.agg_numbers
 (4 rows)
 
        stddev       |    stddev_samp     |     stddev_pop     
@@ -1819,12 +1819,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  151.38936080399804 | 151.38936080399804 | 131.10703231895047
 (1 row)
 
-                                                                                  QUERY PLAN                                                                                   
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                        QUERY PLAN                                                                                         
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev((b)::double precision)), (stddev_samp((b)::double precision)), (stddev_pop((b)::double precision))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(cast(b, 'Nullable(Float64)')), stddev_samp(cast(b, 'Nullable(Float64)')), stddev_pop(cast(b, 'Nullable(Float64)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(cast(b, 'Nullable(Float64)')), stddev_sampOrNull(cast(b, 'Nullable(Float64)')), stddev_popOrNull(cast(b, 'Nullable(Float64)')) FROM agg_test.agg_numbers
 (4 rows)
 
        stddev       |    stddev_samp     |     stddev_pop     
@@ -1833,12 +1833,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- stddev(numeric), stddev_samp(numeric), stddev_pop(numeric)
-                                                                                                               QUERY PLAN                                                                                                               
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                     QUERY PLAN                                                                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev((b)::numeric)), (stddev_samp((b)::numeric)), (stddev_pop((b)::numeric))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_pop(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_sampOrNull(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_popOrNull(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
 (4 rows)
 
       stddev      |   stddev_samp    |   stddev_pop    
@@ -1846,12 +1846,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  151.389360803998 | 151.389360803998 | 131.10703231895
 (1 row)
 
-                                                                                                               QUERY PLAN                                                                                                               
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                     QUERY PLAN                                                                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (stddev((b)::numeric)), (stddev_samp((b)::numeric)), (stddev_pop((b)::numeric))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT stddev_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_pop(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT stddev_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_sampOrNull(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), stddev_popOrNull(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
 (4 rows)
 
       stddev      |   stddev_samp    |   stddev_pop    
@@ -1860,12 +1860,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- var_pop(int2), var_samp(int2), variance(int2)
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop(a)), (var_samp(a)), (variance(a))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(a), var_samp(a), var_samp(a) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(a), var_sampOrNull(a), var_samp(a) FROM agg_test.agg_numbers
 (4 rows)
 
  var_pop |     var_samp     |     variance     
@@ -1873,12 +1873,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  1274.75 | 1699.66666666667 | 1699.66666666667
 (1 row)
 
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop(a)), (var_samp(a)), (variance(a))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(a), var_samp(a), var_samp(a) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(a), var_sampOrNull(a), var_samp(a) FROM agg_test.agg_numbers
 (4 rows)
 
  var_pop |     var_samp     |     variance     
@@ -1887,12 +1887,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- var_pop(int4), var_samp(int4), variance(int4)
-                                                                           QUERY PLAN                                                                           
-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                 QUERY PLAN                                                                                 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop((a)::integer)), (var_samp((a)::integer)), (variance((a)::integer))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(cast(a, 'Nullable(Int32)')), var_samp(cast(a, 'Nullable(Int32)')), var_samp(cast(a, 'Nullable(Int32)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(cast(a, 'Nullable(Int32)')), var_sampOrNull(cast(a, 'Nullable(Int32)')), var_samp(cast(a, 'Nullable(Int32)')) FROM agg_test.agg_numbers
 (4 rows)
 
  var_pop |     var_samp     |     variance     
@@ -1900,12 +1900,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  1274.75 | 1699.66666666667 | 1699.66666666667
 (1 row)
 
-                                                                           QUERY PLAN                                                                           
-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                 QUERY PLAN                                                                                 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop((a)::integer)), (var_samp((a)::integer)), (variance((a)::integer))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(cast(a, 'Nullable(Int32)')), var_samp(cast(a, 'Nullable(Int32)')), var_samp(cast(a, 'Nullable(Int32)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(cast(a, 'Nullable(Int32)')), var_sampOrNull(cast(a, 'Nullable(Int32)')), var_samp(cast(a, 'Nullable(Int32)')) FROM agg_test.agg_numbers
 (4 rows)
 
  var_pop |     var_samp     |     variance     
@@ -1914,12 +1914,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- var_pop(int8), var_samp(int8), variance(int8)
-                                                                           QUERY PLAN                                                                           
-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                 QUERY PLAN                                                                                 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop((a)::bigint)), (var_samp((a)::bigint)), (variance((a)::bigint))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(cast(a, 'Nullable(Int64)')), var_samp(cast(a, 'Nullable(Int64)')), var_samp(cast(a, 'Nullable(Int64)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(cast(a, 'Nullable(Int64)')), var_sampOrNull(cast(a, 'Nullable(Int64)')), var_samp(cast(a, 'Nullable(Int64)')) FROM agg_test.agg_numbers
 (4 rows)
 
  var_pop |     var_samp     |     variance     
@@ -1927,12 +1927,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  1274.75 | 1699.66666666667 | 1699.66666666667
 (1 row)
 
-                                                                           QUERY PLAN                                                                           
-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                 QUERY PLAN                                                                                 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop((a)::bigint)), (var_samp((a)::bigint)), (variance((a)::bigint))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(cast(a, 'Nullable(Int64)')), var_samp(cast(a, 'Nullable(Int64)')), var_samp(cast(a, 'Nullable(Int64)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(cast(a, 'Nullable(Int64)')), var_sampOrNull(cast(a, 'Nullable(Int64)')), var_samp(cast(a, 'Nullable(Int64)')) FROM agg_test.agg_numbers
 (4 rows)
 
  var_pop |     var_samp     |     variance     
@@ -1941,12 +1941,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- var_pop(float), var_samp(float), variance(float)
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop(b)), (var_samp(b)), (variance(b))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(b), var_samp(b), var_samp(b) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(b), var_sampOrNull(b), var_samp(b) FROM agg_test.agg_numbers
 (4 rows)
 
      var_pop     |   var_samp    |   variance    
@@ -1954,12 +1954,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  17189.056640625 | 22918.7421875 | 22918.7421875
 (1 row)
 
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop(b)), (var_samp(b)), (variance(b))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(b), var_samp(b), var_samp(b) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(b), var_sampOrNull(b), var_samp(b) FROM agg_test.agg_numbers
 (4 rows)
 
      var_pop     |   var_samp    |   variance    
@@ -1968,12 +1968,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- var_pop(float8), var_samp(float8), variance(float8)
-                                                                              QUERY PLAN                                                                              
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                    QUERY PLAN                                                                                    
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop((b)::double precision)), (var_samp((b)::double precision)), (variance((b)::double precision))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(cast(b, 'Nullable(Float64)')), var_samp(cast(b, 'Nullable(Float64)')), var_samp(cast(b, 'Nullable(Float64)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(cast(b, 'Nullable(Float64)')), var_sampOrNull(cast(b, 'Nullable(Float64)')), var_samp(cast(b, 'Nullable(Float64)')) FROM agg_test.agg_numbers
 (4 rows)
 
       var_pop       |      var_samp      |      variance      
@@ -1981,12 +1981,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  17189.053923482326 | 22918.738564643103 | 22918.738564643103
 (1 row)
 
-                                                                              QUERY PLAN                                                                              
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                    QUERY PLAN                                                                                    
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop((b)::double precision)), (var_samp((b)::double precision)), (variance((b)::double precision))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(cast(b, 'Nullable(Float64)')), var_samp(cast(b, 'Nullable(Float64)')), var_samp(cast(b, 'Nullable(Float64)')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(cast(b, 'Nullable(Float64)')), var_sampOrNull(cast(b, 'Nullable(Float64)')), var_samp(cast(b, 'Nullable(Float64)')) FROM agg_test.agg_numbers
 (4 rows)
 
       var_pop       |      var_samp      |      variance      
@@ -1995,12 +1995,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
 (1 row)
 
 -- var_pop(numeric), var_samp(numeric), variance(numeric)
-                                                                                                          QUERY PLAN                                                                                                           
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                QUERY PLAN                                                                                                                 
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop((b)::numeric)), (var_samp((b)::numeric)), (variance((b)::numeric))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_sampOrNull(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
 (4 rows)
 
      var_pop      |     var_samp     |     variance     
@@ -2008,12 +2008,12 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
  17189.0539234823 | 22918.7385646431 | 22918.7385646431
 (1 row)
 
-                                                                                                          QUERY PLAN                                                                                                           
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                QUERY PLAN                                                                                                                 
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (var_pop((b)::numeric)), (var_samp((b)::numeric)), (variance((b)::numeric))
    Relations: Aggregate on (agg_numbers)
-   Remote SQL: SELECT var_pop(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
+   Remote SQL: SELECT var_popOrNull(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_sampOrNull(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')), var_samp(cast(toFloat64(b), 'Nullable(Decimal(76, 38))')) FROM agg_test.agg_numbers
 (4 rows)
 
      var_pop      |     var_samp     |     variance     
@@ -2054,6 +2054,90 @@ DETAIL:  Remote Query: SELECT datestamp, groupConcat(', ')(path) FROM agg_test.h
   56 |        56
  100 |       100
 (4 rows)
+
+-- empty input (binary)
+                                                                                            QUERY PLAN                                                                                            
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(b)), (avg(b)), (min(a)), (max(a)), (bool_and((a > 0))), (stddev_samp(b)), (count(*)), (array_agg(a))
+   Relations: Aggregate on (agg_numbers)
+   Remote SQL: SELECT sumOrNull(b), avgOrNull(b), minOrNull(a), maxOrNull(a), groupBitAndOrNull((a > 0)), stddev_sampOrNull(b), count(*), groupArray(a) FROM agg_test.agg_numbers WHERE ((a < 0))
+(4 rows)
+
+ sum | avg | min | max | bool_and | stddev_samp | count | array_agg 
+-----+-----+-----+-----+----------+-------------+-------+-----------
+     |     |     |     |          |             |     0 | {}
+(1 row)
+
+                                                                                                   QUERY PLAN                                                                                                   
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: ((a > 50)), (sum(b) FILTER (WHERE (a < 0))), (avg(b) FILTER (WHERE (a < 0))), (count(*) FILTER (WHERE (a < 0))), (max(b))
+   Relations: Aggregate on (agg_numbers)
+   Remote SQL: SELECT (a > 50), sumIfOrNull(b,(((a < 0)) > 0)), avgIfOrNull(b,(((a < 0)) > 0)), countIf((((a < 0)) > 0)), max(b) FROM agg_test.agg_numbers GROUP BY ((a > 50)) ORDER BY (a > 50) ASC NULLS LAST
+(4 rows)
+
+ big | sum | avg | count |  max   
+-----+-----+-----+-------+--------
+ f   |     |     |     0 | 324.78
+ t   |     |     |     0 | 99.097
+(2 rows)
+
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: regr_slope((b)::double precision, (a)::double precision), regr_count((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_bin.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers WHERE ((a < 0))
+(5 rows)
+
+ regr_slope | regr_count 
+------------+------------
+            |          0
+(1 row)
+
+-- empty input (http)
+                                                                                            QUERY PLAN                                                                                            
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(b)), (avg(b)), (min(a)), (max(a)), (bool_and((a > 0))), (stddev_samp(b)), (count(*)), (array_agg(a))
+   Relations: Aggregate on (agg_numbers)
+   Remote SQL: SELECT sumOrNull(b), avgOrNull(b), minOrNull(a), maxOrNull(a), groupBitAndOrNull((a > 0)), stddev_sampOrNull(b), count(*), groupArray(a) FROM agg_test.agg_numbers WHERE ((a < 0))
+(4 rows)
+
+ sum | avg | min | max | bool_and | stddev_samp | count | array_agg 
+-----+-----+-----+-----+----------+-------------+-------+-----------
+     |     |     |     |          |             |     0 | {}
+(1 row)
+
+                                                                                                   QUERY PLAN                                                                                                   
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: ((a > 50)), (sum(b) FILTER (WHERE (a < 0))), (avg(b) FILTER (WHERE (a < 0))), (count(*) FILTER (WHERE (a < 0))), (max(b))
+   Relations: Aggregate on (agg_numbers)
+   Remote SQL: SELECT (a > 50), sumIfOrNull(b,(((a < 0)) > 0)), avgIfOrNull(b,(((a < 0)) > 0)), countIf((((a < 0)) > 0)), max(b) FROM agg_test.agg_numbers GROUP BY ((a > 50)) ORDER BY (a > 50) ASC NULLS LAST
+(4 rows)
+
+ big | sum | avg | count |  max   
+-----+-----+-----+-------+--------
+ f   |     |     |     0 | 324.78
+ t   |     |     |     0 | 99.097
+(2 rows)
+
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: regr_slope((b)::double precision, (a)::double precision), regr_count((b)::double precision, (a)::double precision)
+   ->  Foreign Scan on agg_http.agg_numbers
+         Output: a, b
+         Remote SQL: SELECT a, b FROM agg_test.agg_numbers WHERE ((a < 0))
+(5 rows)
+
+ regr_slope | regr_count 
+------------+------------
+            |          0
+(1 row)
 
 NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to foreign table agg_bin.agg_numbers

@@ -6050,6 +6050,103 @@ deparsePartialStatArray(Aggref* node, AggPartialKind kind, deparse_expr_cxt* con
 }
 
 /*
+ * Return NULL for empty input, matching PostgreSQL.
+ * ClickHouse before 26.3 rejects Nullable(Array).
+ */
+static bool
+agg_needs_or_null(Aggref* node, deparse_expr_cxt* context) {
+    if (!node->aggfilter && context->root->parse->groupClause != NIL) {
+        return false;
+    }
+
+    switch (node->aggfnoid) {
+    case F_AVG_INT8:
+    case F_AVG_INT4:
+    case F_AVG_INT2:
+    case F_AVG_NUMERIC:
+    case F_AVG_FLOAT4:
+    case F_AVG_FLOAT8:
+    case F_AVG_INTERVAL:
+    case F_SUM_INT8:
+    case F_SUM_INT4:
+    case F_SUM_INT2:
+    case F_SUM_FLOAT4:
+    case F_SUM_FLOAT8:
+    case F_SUM_INTERVAL:
+    case F_SUM_NUMERIC:
+    case F_MIN_INT8:
+    case F_MIN_INT4:
+    case F_MIN_INT2:
+    case F_MIN_FLOAT4:
+    case F_MIN_FLOAT8:
+    case F_MIN_DATE:
+    case F_MIN_TIMESTAMP:
+    case F_MIN_TIMESTAMPTZ:
+    case F_MIN_INTERVAL:
+    case F_MIN_TEXT:
+    case F_MIN_NUMERIC:
+    case F_MIN_BPCHAR:
+    case F_MAX_INT8:
+    case F_MAX_INT4:
+    case F_MAX_INT2:
+    case F_MAX_FLOAT4:
+    case F_MAX_FLOAT8:
+    case F_MAX_DATE:
+    case F_MAX_TIMESTAMP:
+    case F_MAX_TIMESTAMPTZ:
+    case F_MAX_INTERVAL:
+    case F_MAX_TEXT:
+    case F_MAX_NUMERIC:
+    case F_MAX_BPCHAR:
+    case F_BOOL_AND:
+    case F_BOOL_OR:
+    case F_EVERY:
+    case F_STRING_AGG_TEXT_TEXT:
+    case F_CORR:
+    case F_COVAR_POP:
+    case F_COVAR_SAMP:
+    case F_STDDEV_SAMP_INT2:
+    case F_STDDEV_SAMP_INT4:
+    case F_STDDEV_SAMP_INT8:
+    case F_STDDEV_SAMP_FLOAT4:
+    case F_STDDEV_SAMP_FLOAT8:
+    case F_STDDEV_SAMP_NUMERIC:
+    case F_STDDEV_POP_INT2:
+    case F_STDDEV_POP_INT4:
+    case F_STDDEV_POP_INT8:
+    case F_STDDEV_POP_FLOAT4:
+    case F_STDDEV_POP_FLOAT8:
+    case F_STDDEV_POP_NUMERIC:
+    case F_VAR_POP_INT2:
+    case F_VAR_POP_INT4:
+    case F_VAR_POP_INT8:
+    case F_VAR_POP_FLOAT4:
+    case F_VAR_POP_FLOAT8:
+    case F_VAR_POP_NUMERIC:
+    case F_VAR_SAMP_INT2:
+    case F_VAR_SAMP_INT4:
+    case F_VAR_SAMP_INT8:
+    case F_VAR_SAMP_FLOAT4:
+    case F_VAR_SAMP_FLOAT8:
+    case F_VAR_SAMP_NUMERIC:
+    case F_PERCENTILE_CONT_FLOAT8_FLOAT8:
+    case F_PERCENTILE_CONT_FLOAT8_INTERVAL:
+    case F_PERCENTILE_DISC_FLOAT8_ANYELEMENT:
+    case F_REGR_AVGX:
+    case F_REGR_AVGY:
+    case F_REGR_INTERCEPT:
+    case F_REGR_R2:
+    case F_REGR_SLOPE:
+    case F_REGR_SXX:
+    case F_REGR_SXY:
+    case F_REGR_SYY:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/*
  * Deparse an Aggref node.
  */
 static void
@@ -6090,13 +6187,29 @@ deparseAggref(Aggref* node, deparse_expr_cxt* context) {
         sign_count_filter = true;
     }
 
-    if (aggref_on_aggregate_function(node, context)) {
+    bool merge   = aggref_on_aggregate_function(node, context);
+    bool or_null = agg_needs_or_null(node, context);
+    if (merge) {
         appendStringInfoString(buf, "Merge");
     }
 
-    if (node->aggfilter || sign_count_filter) {
+    /*
+     * ClickHouse rewrites fMergeOrNull as fOrNullMerge, which rejects
+     * AggregateFunction(f) states. Use fMergeOrNullIf and pass true when
+     * FILTER is absent.
+     */
+    bool merge_or_null = merge && or_null;
+    if (merge_or_null) {
+        appendStringInfoString(buf, "OrNull");
+    }
+
+    if (node->aggfilter || sign_count_filter || merge_or_null) {
         aggfilter = true;
         appendStringInfoString(buf, "If");
+    }
+
+    if (or_null && !merge) {
+        appendStringInfoString(buf, "OrNull");
     }
 
     /*
@@ -6268,6 +6381,10 @@ deparseAggref(Aggref* node, deparse_expr_cxt* context) {
             appendStringInfoChar(buf, '(');
             deparseExpr((Expr*)((TargetEntry*)linitial(node->args))->expr, context);
             appendStringInfoString(buf, ") IS NOT NULL");
+        }
+
+        if (!node->aggfilter && !sign_count_filter) {
+            appendStringInfoString(buf, "true");
         }
     }
 

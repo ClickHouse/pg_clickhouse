@@ -499,7 +499,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY
  Foreign Scan
    Output: (percentile_cont('0.25'::double precision) WITHIN GROUP (ORDER BY ((a)::double precision)))
    Relations: Aggregate on (t1)
-   Remote SQL: SELECT quantile(0.25)(a) FROM functions_test.t1
+   Remote SQL: SELECT quantileOrNull(0.25)(a) FROM functions_test.t1
 (4 rows)
 
 SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
@@ -509,12 +509,12 @@ SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
-                                                               QUERY PLAN                                                                
------------------------------------------------------------------------------------------------------------------------------------------
+                                                                  QUERY PLAN                                                                   
+-----------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (percentile_cont('0.95'::double precision) WITHIN GROUP (ORDER BY (date_part('epoch'::text, timezone('UTC'::text, c)))))
    Relations: Aggregate on (t1)
-   Remote SQL: SELECT quantile(0.95)(toUnixTimestamp(toDateTime64(toString(c, 'America/Los_Angeles'), 6, 'UTC'))) FROM functions_test.t1
+   Remote SQL: SELECT quantileOrNull(0.95)(toUnixTimestamp(toDateTime64(toString(c, 'America/Los_Angeles'), 6, 'UTC'))) FROM functions_test.t1
 (4 rows)
 
 SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
@@ -529,7 +529,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY
  Foreign Scan
    Output: (percentile_cont('0.25'::double precision) WITHIN GROUP (ORDER BY ((a)::double precision)) FILTER (WHERE (b = 1)))
    Relations: Aggregate on (t1)
-   Remote SQL: SELECT quantileIf(0.25)(a,(((b = 1)) > 0)) FROM functions_test.t1
+   Remote SQL: SELECT quantileIfOrNull(0.25)(a,(((b = 1)) > 0)) FROM functions_test.t1
 (4 rows)
 
 SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
@@ -607,7 +607,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_disc(0.25) WITHIN GROUP (ORDER BY
  Foreign Scan
    Output: (percentile_disc('0.25'::double precision) WITHIN GROUP (ORDER BY a))
    Relations: Aggregate on (t1)
-   Remote SQL: SELECT quantileExactLow(0.25)(a) FROM functions_test.t1
+   Remote SQL: SELECT quantileExactLowOrNull(0.25)(a) FROM functions_test.t1
 (4 rows)
 
 SELECT percentile_disc(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
@@ -617,12 +617,12 @@ SELECT percentile_disc(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
 (1 row)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_disc(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
-                                                                   QUERY PLAN                                                                    
--------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                      QUERY PLAN                                                                       
+-------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (percentile_disc('0.95'::double precision) WITHIN GROUP (ORDER BY (date_part('epoch'::text, timezone('UTC'::text, c)))))
    Relations: Aggregate on (t1)
-   Remote SQL: SELECT quantileExactLow(0.95)(toUnixTimestamp(toDateTime64(toString(c, 'America/Los_Angeles'), 6, 'UTC'))) FROM functions_test.t1
+   Remote SQL: SELECT quantileExactLowOrNull(0.95)(toUnixTimestamp(toDateTime64(toString(c, 'America/Los_Angeles'), 6, 'UTC'))) FROM functions_test.t1
 (4 rows)
 
 SELECT percentile_disc(0.95) WITHIN GROUP (ORDER BY date_part('epoch', timezone('UTC', c))) FROM t1;
@@ -637,7 +637,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT percentile_disc(0.25) WITHIN GROUP (ORDER BY
  Foreign Scan
    Output: (percentile_disc('0.25'::double precision) WITHIN GROUP (ORDER BY a) FILTER (WHERE (b = 1)))
    Relations: Aggregate on (t1)
-   Remote SQL: SELECT quantileExactLowIf(0.25)(a,(((b = 1)) > 0)) FROM functions_test.t1
+   Remote SQL: SELECT quantileExactLowIfOrNull(0.25)(a,(((b = 1)) > 0)) FROM functions_test.t1
 (4 rows)
 
 SELECT percentile_disc(0.25) WITHIN GROUP (ORDER BY a) FILTER (WHERE b = 1) FROM t1;
@@ -2388,12 +2388,12 @@ SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
 -- round() pushes down over an aggregate.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT round(avg(f64)), avg(f64) FROM t6;
-                              QUERY PLAN                               
------------------------------------------------------------------------
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
  Foreign Scan
    Output: (round(avg(f64))), (avg(f64))
    Relations: Aggregate on (t6)
-   Remote SQL: SELECT round(avg(f64)), avg(f64) FROM functions_test.t6
+   Remote SQL: SELECT round(avgOrNull(f64)), avgOrNull(f64) FROM functions_test.t6
 (4 rows)
 
 SELECT round(avg(f64)), avg(f64) FROM t6;
@@ -2404,12 +2404,12 @@ SELECT round(avg(f64)), avg(f64) FROM t6;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
-                                                                   QUERY PLAN                                                                   
-------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                         QUERY PLAN                                                                         
+------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (round(avg((f64)::numeric), 4)), (avg((f64)::numeric))
    Relations: Aggregate on (t6)
-   Remote SQL: SELECT round(avg(cast(f64, 'Nullable(Decimal(76, 38))')), 4), avg(cast(f64, 'Nullable(Decimal(76, 38))')) FROM functions_test.t6
+   Remote SQL: SELECT round(avgOrNull(cast(f64, 'Nullable(Decimal(76, 38))')), 4), avgOrNull(cast(f64, 'Nullable(Decimal(76, 38))')) FROM functions_test.t6
 (4 rows)
 
 SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;

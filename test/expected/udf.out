@@ -34,12 +34,12 @@ SELECT id FROM udf_vals WHERE keep_local(id) = 1;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT keep_local(sum(id)) FROM udf_vals;
-                   QUERY PLAN                    
--------------------------------------------------
+                      QUERY PLAN                       
+-------------------------------------------------------
  Foreign Scan
    Output: keep_local((sum(id)))
    Relations: Aggregate on (udf_vals)
-   Remote SQL: SELECT sum(id) FROM udf_test.vals
+   Remote SQL: SELECT sumOrNull(id) FROM udf_test.vals
 (4 rows)
 
 SELECT keep_local(sum(id)) FROM udf_vals;

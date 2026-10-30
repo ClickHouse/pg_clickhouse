@@ -34,7 +34,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT count(*), sum(val), min(ts), max(ts) FROM ev
          ->  Foreign Scan
                Output: (PARTIAL count(*)), (PARTIAL sum(events_bin.val)), (PARTIAL min(events_bin.ts)), (PARTIAL max(events_bin.ts))
                Relations: Aggregate on (events_bin_cold events_bin)
-               Remote SQL: SELECT count(*), sum(val), min(ts), max(ts) FROM pwagg_bin_test.events
+               Remote SQL: SELECT count(*), sumOrNull(val), minOrNull(ts), maxOrNull(ts) FROM pwagg_bin_test.events
          ->  Partial Aggregate
                Output: PARTIAL count(*), PARTIAL sum(events_bin_1.val), PARTIAL min(events_bin_1.ts), PARTIAL max(events_bin_1.ts)
                ->  Seq Scan on public.events_bin_hot events_bin_1

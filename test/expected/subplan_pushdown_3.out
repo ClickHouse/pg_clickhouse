@@ -66,7 +66,7 @@ ORDER BY item_id;
      ->  Foreign Scan
            Output: (avg(items_1.price))
            Relations: Aggregate on (items)
-           Remote SQL: SELECT avg(price) FROM subplan_test.items
+           Remote SQL: SELECT avgOrNull(price) FROM subplan_test.items
 (8 rows)
 
 SELECT item_id, price FROM items
@@ -86,16 +86,16 @@ SELECT s.sale_id, s.amount FROM sales s
 WHERE s.amount > (SELECT 1.5 * avg(s2.amount) FROM sales s2
                   WHERE s2.item_id = s.item_id)
 ORDER BY s.sale_id;
-                                                                                                          QUERY PLAN                                                                                                           
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                             QUERY PLAN                                                                                                              
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on subplan_test.sales s
    Output: s.sale_id, s.amount
-   Remote SQL: SELECT sale_id, amount FROM subplan_test.sales r1 WHERE ((r1.amount > (SELECT (1.5 * avg(q1_1.amount)) FROM subplan_test.sales q1_1 WHERE ((q1_1.item_id = (r1.item_id)))))) ORDER BY r1.sale_id ASC NULLS LAST
+   Remote SQL: SELECT sale_id, amount FROM subplan_test.sales r1 WHERE ((r1.amount > (SELECT (1.5 * avgOrNull(q1_1.amount)) FROM subplan_test.sales q1_1 WHERE ((q1_1.item_id = (r1.item_id)))))) ORDER BY r1.sale_id ASC NULLS LAST
    SubPlan 1
      ->  Foreign Scan
            Output: ((1.5 * avg(s2.amount)))
            Relations: Aggregate on (sales s2)
-           Remote SQL: SELECT (1.5 * avg(amount)) FROM subplan_test.sales WHERE ((item_id = {p1:Int32}))
+           Remote SQL: SELECT (1.5 * avgOrNull(amount)) FROM subplan_test.sales WHERE ((item_id = {p1:Int32}))
 (8 rows)
 
 SELECT s.sale_id, s.amount FROM sales s
@@ -117,12 +117,12 @@ WHERE i.item_id = s.item_id
   AND s.amount = (SELECT max(s2.amount) FROM sales s2
                   WHERE s2.item_id = i.item_id)
 ORDER BY i.item_id;
-                                                                                                                                             QUERY PLAN                                                                                                                                             
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                QUERY PLAN                                                                                                                                                
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: i.item_id, s.amount
    Relations: (items i) INNER JOIN (sales s)
-   Remote SQL: SELECT r1.item_id, r2.amount FROM  subplan_test.items r1 ALL INNER JOIN subplan_test.sales r2 ON (((r1.item_id = r2.item_id))) WHERE (((SELECT max(q1_1.amount) FROM subplan_test.sales q1_1 WHERE ((q1_1.item_id = (r1.item_id)))) = r2.amount)) ORDER BY r1.item_id ASC NULLS LAST
+   Remote SQL: SELECT r1.item_id, r2.amount FROM  subplan_test.items r1 ALL INNER JOIN subplan_test.sales r2 ON (((r1.item_id = r2.item_id))) WHERE (((SELECT maxOrNull(q1_1.amount) FROM subplan_test.sales q1_1 WHERE ((q1_1.item_id = (r1.item_id)))) = r2.amount)) ORDER BY r1.item_id ASC NULLS LAST
 (4 rows)
 
 SELECT i.item_id, s.amount FROM items i, sales s
@@ -222,7 +222,7 @@ ORDER BY value DESC;
      ->  Foreign Scan
            Output: ((sum((items_1.price * (items_1.qty)::numeric)) * 0.2))
            Relations: Aggregate on (items)
-           Remote SQL: SELECT (sum((price * qty)) * 0.2) FROM subplan_test.items
+           Remote SQL: SELECT (sumOrNull((price * qty)) * 0.2) FROM subplan_test.items
 (9 rows)
 
 SELECT grp, sum(price * qty) AS value FROM items
@@ -252,12 +252,12 @@ ORDER BY item_id;
      ->  Foreign Scan
            Output: (avg(items_2.price))
            Relations: Aggregate on (items)
-           Remote SQL: SELECT avg(price) FROM subplan_test.items WHERE ((qty > {p1:Decimal(76, 38)}))
+           Remote SQL: SELECT avgOrNull(price) FROM subplan_test.items WHERE ((qty > {p1:Decimal(76, 38)}))
            InitPlan 1 (returns $0)
              ->  Foreign Scan
                    Output: (avg(items_1.qty))
                    Relations: Aggregate on (items)
-                   Remote SQL: SELECT avg(qty) FROM subplan_test.items
+                   Remote SQL: SELECT avgOrNull(qty) FROM subplan_test.items
 (13 rows)
 
 SELECT item_id FROM items
@@ -309,16 +309,16 @@ SELECT v.sale_id, v.amount FROM sales_v v
 WHERE v.amount > (SELECT 1.5 * avg(v2.amount) FROM sales_v v2
                   WHERE v2.item_id = v.item_id)
 ORDER BY v.sale_id;
-                                                                                                          QUERY PLAN                                                                                                           
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                             QUERY PLAN                                                                                                              
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on subplan_test.sales
    Output: sales.sale_id, sales.amount
-   Remote SQL: SELECT sale_id, amount FROM subplan_test.sales r4 WHERE ((r4.amount > (SELECT (1.5 * avg(q1_4.amount)) FROM subplan_test.sales q1_4 WHERE ((q1_4.item_id = (r4.item_id)))))) ORDER BY r4.sale_id ASC NULLS LAST
+   Remote SQL: SELECT sale_id, amount FROM subplan_test.sales r4 WHERE ((r4.amount > (SELECT (1.5 * avgOrNull(q1_4.amount)) FROM subplan_test.sales q1_4 WHERE ((q1_4.item_id = (r4.item_id)))))) ORDER BY r4.sale_id ASC NULLS LAST
    SubPlan 1
      ->  Foreign Scan
            Output: ((1.5 * avg(sales_1.amount)))
            Relations: Aggregate on (sales)
-           Remote SQL: SELECT (1.5 * avg(amount)) FROM subplan_test.sales WHERE ((item_id = {p1:Int32}))
+           Remote SQL: SELECT (1.5 * avgOrNull(amount)) FROM subplan_test.sales WHERE ((item_id = {p1:Int32}))
 (8 rows)
 
 SELECT v.sale_id, v.amount FROM sales_v v
