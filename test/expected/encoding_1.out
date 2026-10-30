@@ -26,8 +26,8 @@ CALL clickhouse_perform('encoding_admin', $$
            (2, 'nul byte', 'a\x00n')
            (3, 'nul & invalid octet', 'a\x00c\x80n'),
            (4, 'invalid octet & nul', 'a\x80n\x00e'),
-           (5, 'valid 2-octet sequence', 'a\x\xc3\xb1b'),
-           (6, 'invalid 2-octet sequence', 'a\xc\x28b')
+           (5, 'valid 2-octet sequence', 'a\xc3\xb1b'),
+           (6, 'invalid 2-octet sequence', 'a\xc3\x28b')
 $$);
 -- ===================================================================
 -- Create Foreign tables.
@@ -76,75 +76,75 @@ DETAIL:  Remote Query: SELECT id, name, value FROM encoding_test.things ORDER BY
 ALTER SERVER encoding_bin_svr OPTIONS (SET encoding_check 'truncate');
 ALTER SERVER encoding_http_svr OPTIONS (SET encoding_check 'TRUNCATE');
 SELECT * FROM encoding_bin.things ORDER BY id;
- id |           name           | value  
-----+--------------------------+--------
+ id |           name           | value 
+----+--------------------------+-------
   1 | valid                    | acn
   2 | nul byte                 | a
   3 | nul & invalid octet      | a
   4 | invalid octet & nul      | a€n
-  5 | valid 2-octet sequence   | aïc3±b
-  6 | invalid 2-octet sequence | a¿x28b
+  5 | valid 2-octet sequence   | aÃ±b
+  6 | invalid 2-octet sequence | aÃ(b
 (6 rows)
 
 SELECT * FROM encoding_http.things ORDER BY id;
- id |           name           | value  
-----+--------------------------+--------
+ id |           name           | value 
+----+--------------------------+-------
   1 | valid                    | acn
   2 | nul byte                 | a
   3 | nul & invalid octet      | a
   4 | invalid octet & nul      | a€n
-  5 | valid 2-octet sequence   | aïc3±b
-  6 | invalid 2-octet sequence | a¿x28b
+  5 | valid 2-octet sequence   | aÃ±b
+  6 | invalid 2-octet sequence | aÃ(b
 (6 rows)
 
 -- Replace.
 ALTER SERVER encoding_bin_svr OPTIONS (SET encoding_check 'replace');
 ALTER SERVER encoding_http_svr OPTIONS (SET encoding_check 'Replace');
 SELECT * FROM encoding_bin.things ORDER BY id;
- id |           name           | value  
-----+--------------------------+--------
+ id |           name           | value 
+----+--------------------------+-------
   1 | valid                    | acn
   2 | nul byte                 | an
   3 | nul & invalid octet      | ac€n
   4 | invalid octet & nul      | a€ne
-  5 | valid 2-octet sequence   | aïc3±b
-  6 | invalid 2-octet sequence | a¿x28b
+  5 | valid 2-octet sequence   | aÃ±b
+  6 | invalid 2-octet sequence | aÃ(b
 (6 rows)
 
 SELECT * FROM encoding_http.things ORDER BY id;
- id |           name           | value  
-----+--------------------------+--------
+ id |           name           | value 
+----+--------------------------+-------
   1 | valid                    | acn
   2 | nul byte                 | an
   3 | nul & invalid octet      | ac€n
   4 | invalid octet & nul      | a€ne
-  5 | valid 2-octet sequence   | aïc3±b
-  6 | invalid 2-octet sequence | a¿x28b
+  5 | valid 2-octet sequence   | aÃ±b
+  6 | invalid 2-octet sequence | aÃ(b
 (6 rows)
 
 -- Remove.
 ALTER SERVER encoding_bin_svr OPTIONS (SET encoding_check 'remove');
 ALTER SERVER encoding_http_svr OPTIONS (SET encoding_check 'reMove');
 SELECT * FROM encoding_bin.things ORDER BY id;
- id |           name           | value  
-----+--------------------------+--------
+ id |           name           | value 
+----+--------------------------+-------
   1 | valid                    | acn
   2 | nul byte                 | an
   3 | nul & invalid octet      | ac€n
   4 | invalid octet & nul      | a€ne
-  5 | valid 2-octet sequence   | aïc3±b
-  6 | invalid 2-octet sequence | a¿x28b
+  5 | valid 2-octet sequence   | aÃ±b
+  6 | invalid 2-octet sequence | aÃ(b
 (6 rows)
 
 SELECT * FROM encoding_http.things ORDER BY id;
- id |           name           | value  
-----+--------------------------+--------
+ id |           name           | value 
+----+--------------------------+-------
   1 | valid                    | acn
   2 | nul byte                 | an
   3 | nul & invalid octet      | ac€n
   4 | invalid octet & nul      | a€ne
-  5 | valid 2-octet sequence   | aïc3±b
-  6 | invalid 2-octet sequence | a¿x28b
+  5 | valid 2-octet sequence   | aÃ±b
+  6 | invalid 2-octet sequence | aÃ(b
 (6 rows)
 
 -- Invalid encoding_check.

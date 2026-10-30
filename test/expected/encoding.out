@@ -26,8 +26,8 @@ CALL clickhouse_perform('encoding_admin', $$
            (2, 'nul byte', 'a\x00n')
            (3, 'nul & invalid octet', 'a\x00c\x80n'),
            (4, 'invalid octet & nul', 'a\x80n\x00e'),
-           (5, 'valid 2-octet sequence', 'a\x\xc3\xb1b'),
-           (6, 'invalid 2-octet sequence', 'a\xc\x28b')
+           (5, 'valid 2-octet sequence', 'a\xc3\xb1b'),
+           (6, 'invalid 2-octet sequence', 'a\xc3\x28b')
 $$);
 -- ===================================================================
 -- Create Foreign tables.
@@ -82,7 +82,7 @@ SELECT * FROM encoding_bin.things ORDER BY id;
   2 | nul byte                 | a
   3 | nul & invalid octet      | a
   4 | invalid octet & nul      | a
-  5 | valid 2-octet sequence   | a
+  5 | valid 2-octet sequence   | añb
   6 | invalid 2-octet sequence | a
 (6 rows)
 
@@ -93,7 +93,7 @@ SELECT * FROM encoding_http.things ORDER BY id;
   2 | nul byte                 | a
   3 | nul & invalid octet      | a
   4 | invalid octet & nul      | a
-  5 | valid 2-octet sequence   | a
+  5 | valid 2-octet sequence   | añb
   6 | invalid 2-octet sequence | a
 (6 rows)
 
@@ -101,25 +101,25 @@ SELECT * FROM encoding_http.things ORDER BY id;
 ALTER SERVER encoding_bin_svr OPTIONS (SET encoding_check 'replace');
 ALTER SERVER encoding_http_svr OPTIONS (SET encoding_check 'Replace');
 SELECT * FROM encoding_bin.things ORDER BY id;
- id |           name           | value  
-----+--------------------------+--------
+ id |           name           | value 
+----+--------------------------+-------
   1 | valid                    | acn
   2 | nul byte                 | a�n
   3 | nul & invalid octet      | a�c�n
   4 | invalid octet & nul      | a�n�e
-  5 | valid 2-octet sequence   | a�c3�b
-  6 | invalid 2-octet sequence | a�x28b
+  5 | valid 2-octet sequence   | añb
+  6 | invalid 2-octet sequence | a�(b
 (6 rows)
 
 SELECT * FROM encoding_http.things ORDER BY id;
- id |           name           | value  
-----+--------------------------+--------
+ id |           name           | value 
+----+--------------------------+-------
   1 | valid                    | acn
   2 | nul byte                 | a�n
   3 | nul & invalid octet      | a�c�n
   4 | invalid octet & nul      | a�n�e
-  5 | valid 2-octet sequence   | a�c3�b
-  6 | invalid 2-octet sequence | a�x28b
+  5 | valid 2-octet sequence   | añb
+  6 | invalid 2-octet sequence | a�(b
 (6 rows)
 
 -- Remove.
@@ -132,8 +132,8 @@ SELECT * FROM encoding_bin.things ORDER BY id;
   2 | nul byte                 | an
   3 | nul & invalid octet      | acn
   4 | invalid octet & nul      | ane
-  5 | valid 2-octet sequence   | ac3b
-  6 | invalid 2-octet sequence | ax28b
+  5 | valid 2-octet sequence   | añb
+  6 | invalid 2-octet sequence | a(b
 (6 rows)
 
 SELECT * FROM encoding_http.things ORDER BY id;
@@ -143,8 +143,8 @@ SELECT * FROM encoding_http.things ORDER BY id;
   2 | nul byte                 | an
   3 | nul & invalid octet      | acn
   4 | invalid octet & nul      | ane
-  5 | valid 2-octet sequence   | ac3b
-  6 | invalid 2-octet sequence | ax28b
+  5 | valid 2-octet sequence   | añb
+  6 | invalid 2-octet sequence | a(b
 (6 rows)
 
 -- Invalid encoding_check.

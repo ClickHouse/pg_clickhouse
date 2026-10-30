@@ -43,8 +43,8 @@ CALL clickhouse_perform('encoding_admin', $$
            (2, 'nul byte', 'a\x00n')
            (3, 'nul & invalid octet', 'a\x00c\x80n'),
            (4, 'invalid octet & nul', 'a\x80n\x00e'),
-           (5, 'valid 2-octet sequence', 'a\x\xc3\xb1b'),
-           (6, 'invalid 2-octet sequence', 'a\xc\x28b')
+           (5, 'valid 2-octet sequence', 'a\xc3\xb1b'),
+           (6, 'invalid 2-octet sequence', 'a\xc3\x28b')
 $$);
 
 -- ===================================================================
