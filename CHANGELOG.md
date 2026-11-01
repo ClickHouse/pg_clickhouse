@@ -57,6 +57,9 @@ All notable changes to this project will be documented in this file. It uses the
     silence the warnings. pg_clickhouse caches the index definitions it reads
     from ClickHouse for `pg_clickhouse.vector_metadata_ttl` seconds;
     `clickhouse_refresh_vector_metadata()` clears the cache ([#414]).
+*   Added pushdown of `jsonb` subscripts with constant text keys, such as
+    `data['a']['b']`, as ClickHouse JSON sub-column dot notation. Numeric text
+    subscripts evaluate locally to preserve array indexing ([#456]).
 
 ### 🚀 Distribution
 
@@ -207,6 +210,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#450 Fix CollapsingMergeTree sign column quoting and import"
   [#451]: https://github.com/ClickHouse/pg_clickhouse/pull/451
     "ClickHouse/pg_clickhouse#451 Return NULL for empty aggregates"
+  [#456]: https://github.com/ClickHouse/pg_clickhouse/pull/456
+    "ClickHouse/pg_clickhouse#456 Add support for JSON subscripting pushdown"
   [#457]: https://github.com/ClickHouse/pg_clickhouse/pull/457
     "ClickHouse/pg_clickhouse#457 Use pgch_quote_ch_ident in deparse.c"
 

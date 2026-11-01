@@ -66,10 +66,7 @@ VALUES (6, '{"id": 6, "name": "curio", "size": "medium", "stocked": false}');
 SELECT * FROM json_bin.json_things ORDER BY id;
 SELECT * FROM json_http.json_things ORDER BY id;
 
--- Subscript access on JSON columns must not be pushed down to ClickHouse.
--- ClickHouse JSON does not support the jsonb `column['key']` syntax (it
--- requires dot notation), so subscripts must be evaluated locally by
--- PostgreSQL.
+-- jsonb subscripts push down as ClickHouse JSON dot notation.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data['name'] FROM json_http.things;
 SELECT data['name'] FROM json_http.things ORDER BY id;
@@ -78,7 +75,7 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data['name'] FROM json_bin.things;
 SELECT data['name'] FROM json_bin.things ORDER BY id;
 
--- DISTINCT forces an ORDER BY or HashAgg; the subscript must stay local.
+-- DISTINCT forces an ORDER BY or HashAgg.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT DISTINCT data['size'] FROM json_http.things;
 SELECT DISTINCT data['size'] FROM json_http.things;
@@ -89,12 +86,12 @@ SELECT DISTINCT data['size'] FROM json_bin.things;
 
 -- GROUP BY with a JSON subscript expression.
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'];
-SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'];
+SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'] ORDER BY 1;
+SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'] ORDER BY 1;
 
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT data['size'], count(*) FROM json_bin.things GROUP BY data['size'];
-SELECT data['size'], count(*) FROM json_bin.things GROUP BY data['size'];
+SELECT data['size'], count(*) FROM json_bin.things GROUP BY data['size'] ORDER BY 1;
+SELECT data['size'], count(*) FROM json_bin.things GROUP BY data['size'] ORDER BY 1;
 
 -- The jsonb ->> operator runs locally when used in SELECT target lists.
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -495,6 +492,18 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> '123numeric' = 'num';
 SELECT * FROM json_bin.json_special_keys WHERE data ->> '123numeric' = 'num';
 
+-- Backslashes in keys must be escaped for ClickHouse.
+INSERT INTO json_http.special_keys
+VALUES (3, '{"back\\nslash": "bsn", "trailing\\": "tbs"}');
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.special_keys WHERE data['back\nslash'] = '"bsn"';
+SELECT id FROM json_http.special_keys WHERE data['back\nslash'] = '"bsn"';
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.special_keys WHERE data ->> 'trailing\' = 'tbs';
+SELECT id FROM json_bin.special_keys WHERE data ->> 'trailing\' = 'tbs';
+
 -- =======================================================================
 -- jsonb_extract_path_text / jsonb_extract_path pushdown
 -- =======================================================================
@@ -509,8 +518,8 @@ CALL clickhouse_perform('json_admin', $$
 $$);
 CALL clickhouse_perform('json_admin', $$
     INSERT INTO json_test.events VALUES
-        (1, 'order', '{"customerId": "C100", "address": {"city": "Paris", "zip": "75001"}}'),
-        (2, 'order', '{"customerId": "C200", "address": {"city": "London", "zip": "SW1A"}}');
+        (1, 'order', '{"customerId": "C100", "address": {"city": "Paris", "zip": "75001"}, "a": [1, "2", null]}'),
+        (2, 'order', '{"customerId": "C200", "address": {"city": "London", "zip": "SW1A"}, "a": {"1": "key"}}');
 $$);
 
 CREATE FOREIGN TABLE json_http.events (
@@ -578,6 +587,32 @@ SELECT id FROM json_http.events WHERE jsonb_extract_path(props, 'address', 'city
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_bin.events WHERE jsonb_extract_path(props, 'address', 'city') = '"Paris"'::jsonb;
 SELECT id FROM json_bin.events WHERE jsonb_extract_path(props, 'address', 'city') = '"Paris"'::jsonb;
+
+-- WHERE: chained jsonb subscripts push down as dot notation.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props['address']['city'] = '"Paris"';
+SELECT id FROM json_http.events WHERE props['address']['city'] = '"Paris"';
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.events WHERE props['address']['city'] = '"Paris"';
+SELECT id FROM json_bin.events WHERE props['address']['city'] = '"Paris"';
+
+-- Integer and non-constant jsonb subscripts evaluate locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props[0] IS NULL;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props[event_name] IS NULL;
+
+-- PostgreSQL interprets numeric text subscripts as array indexes or object keys.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, props['a']['1'] FROM json_http.events ORDER BY id;
+SELECT id, props['a']['1'] AS indexed, props['a']['-2'] AS negative,
+       props['a']['+1'] AS signed, props['a'][' 1'] AS spaced, props['a']['01'] AS padded
+FROM json_http.events ORDER BY id;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.events WHERE props['a']['1'] = '"2"';
+SELECT id FROM json_bin.events WHERE props['a']['1'] = '"2"';
 
 -- NULL path elements must evaluate locally.
 EXPLAIN (VERBOSE, COSTS OFF)

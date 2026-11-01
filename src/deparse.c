@@ -25,6 +25,7 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "common/shortest_dec.h"
+#include "common/string.h"
 #include "fmgr.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
@@ -991,7 +992,30 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
 
-        if (!type_is_array(ar->refcontainertype)) {
+        if (ar->refcontainertype == JSONBOID) {
+            /* Only constant text keys on a column map to JSON sub-columns */
+            if (!IsA(ar->refexpr, Var)) {
+                return false;
+            }
+            ListCell* lc;
+            foreach (lc, ar->refupperindexpr) {
+                Const* key = lfirst(lc);
+                if (!IsA(key, Const) || key->consttype != TEXTOID || key->constisnull) {
+                    return false;
+                }
+
+                /* PostgreSQL also interprets numeric text as array indexes. */
+                char* value = TextDatumGetCString(key->constvalue);
+                char* end;
+                errno = 0;
+                strtoint(value, &end, 10);
+                bool numeric = end != value && *end == '\0' && errno == 0;
+                pfree(value);
+                if (numeric) {
+                    return false;
+                }
+            }
+        } else if (!type_is_array(ar->refcontainertype)) {
             return false;
         }
 
@@ -3933,13 +3957,28 @@ deparseGuardedNotIn(SubPlan* subplan, deparse_expr_cxt* context) {
 }
 
 /*
- * Deparse an array subscript expression.
+ * Deparse an array subscript expression, or jsonb subscripts as
+ * toJSONString(col."k1"."k2")
  */
 static void
 deparseSubscriptingRef(SubscriptingRef* node, deparse_expr_cxt* context) {
     StringInfo buf = context->buf;
 
-    if (node->reflowerindexpr != NIL) {
+    if (node->refcontainertype == JSONBOID) {
+        ListCell* lc;
+
+        appendStringInfoString(buf, "toJSONString(");
+        deparseExpr(node->refexpr, context);
+        foreach (lc, node->refupperindexpr) {
+            Const* key = lfirst(lc);
+
+            appendStringInfoChar(buf, '.');
+            appendStringInfoString(
+                buf, pgch_quote_ch_ident(TextDatumGetCString(key->constvalue))
+            );
+        }
+        appendStringInfoChar(buf, ')');
+    } else if (node->reflowerindexpr != NIL) {
         /*
          * Slice: CH doesn't support [L:U] syntax, emit arraySlice(). PG slice
          * is inclusive both ends, CH arraySlice takes (arr, offset, length).

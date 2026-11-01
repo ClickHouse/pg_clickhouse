@@ -1840,6 +1840,9 @@ equivalents as follows:
 *   `!~*` (case insensitive regexp not match): [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
 *   `->>` (JSON/JSONB extract element as text): [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
 *   `->` (JSON/JSONB extract): [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
+*   `jsonb` subscripts (`data['a']['b']`): [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns).
+    Pushdown requires a column with constant, non-NULL text subscripts.
+    Integer, numeric text, and non-constant subscripts evaluate locally.
 *   `/` (integer division): [intDiv](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#intDiv)
 *   `^` (exponent): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
 *   `|/` (square root): [sqrt](https://clickhouse.com/docs/sql-reference/functions/math-functions#sqrt)
