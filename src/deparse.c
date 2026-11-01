@@ -50,6 +50,7 @@
 
 #include "fdw.h"
 #include "pg-clickhouse-encode.h"
+#include "pg-clickhouse.h"
 
 #include <math.h>
 
@@ -2775,7 +2776,7 @@ deparseColumnRef(
     if (qualify_col) {
         ADD_REL_QUALIFIER(buf, varno);
     }
-    appendStringInfoString(buf, quote_identifier(colname));
+    appendStringInfoString(buf, pgch_quote_ch_ident(colname));
 }
 
 /*
@@ -2789,7 +2790,9 @@ deparseRelation(StringInfo buf, Relation rel) {
     char* relname;
 
     chfdw_remote_table_name(RelationGetRelid(rel), &dbname, &relname);
-    appendStringInfo(buf, "%s.%s", quote_identifier(dbname), quote_identifier(relname));
+    appendStringInfo(
+        buf, "%s.%s", pgch_quote_ch_ident(dbname), pgch_quote_ch_ident(relname)
+    );
 }
 
 /*
@@ -4023,7 +4026,7 @@ deparseJsonbExtractPath(FuncExpr* node, deparse_expr_cxt* context, bool wrap_jso
         char* key = TextDatumGetCString(elems[i]);
 
         appendStringInfoChar(buf, '.');
-        appendStringInfoString(buf, quote_identifier(key));
+        appendStringInfoString(buf, pgch_quote_ch_ident(key));
     }
 
     if (wrap_json) {
@@ -5247,7 +5250,7 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
 
                     deparseExpr(arg1, context);
                     appendStringInfoChar(buf, '.');
-                    appendStringInfoString(buf, quote_identifier(keyval));
+                    appendStringInfoString(buf, pgch_quote_ch_ident(keyval));
 
                     if (cdef->cf_type == CF_JSON_FETCHVAL) {
                         appendStringInfoChar(buf, ')');

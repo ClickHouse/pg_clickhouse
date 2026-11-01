@@ -65,6 +65,8 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### 🐞 Bug Fixes
 
+*   Fixed ClickHouse identifier quoting for database, table, column, and JSON
+    key names containing backslashes ([#457]).
 *   Fixed unconstrained numeric casts and parameters to use Decimal(76, 38),
     widening Float32 before casting to preserve fractional values ([#402]).
 *   Fixed precision loss in `float4` and `float8` query parameters sent to
@@ -205,6 +207,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#450 Fix CollapsingMergeTree sign column quoting and import"
   [#451]: https://github.com/ClickHouse/pg_clickhouse/pull/451
     "ClickHouse/pg_clickhouse#451 Return NULL for empty aggregates"
+  [#457]: https://github.com/ClickHouse/pg_clickhouse/pull/457
+    "ClickHouse/pg_clickhouse#457 Use pgch_quote_ch_ident in deparse.c"
 
 ## [v0.11.0] — 2026-09-30
 

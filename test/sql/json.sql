@@ -419,6 +419,14 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'back\slash' = 'bs';
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'back\slash' = 'bs';
 
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.special_keys
+WHERE jsonb_extract_path_text(data, 'back\slash') = 'bs';
+SELECT id FROM json_http.special_keys
+WHERE jsonb_extract_path_text(data, 'back\slash') = 'bs';
+SELECT id FROM json_bin.special_keys
+WHERE jsonb_extract_path_text(data, 'back\slash') = 'bs';
+
 -- Key containing a dot (must not be confused with nested access).
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'dotted.key' = 'dot';

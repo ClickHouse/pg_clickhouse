@@ -1022,11 +1022,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'my field' = 'hello';
 -- Key with mixed case.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'CamelCase' = 'world';
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan on json_http.special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data.CamelCase = 'world'))
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'CamelCase' = 'world';
@@ -1037,11 +1037,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'CamelCase' = 'world';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'CamelCase' = 'world';
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan on json_bin.special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data.CamelCase = 'world'))
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'CamelCase' = 'world';
@@ -1052,11 +1052,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'CamelCase' = 'world';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'CamelCase' = 'world';
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan on json_http.json_special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data.CamelCase = 'world'))
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'CamelCase' = 'world';
@@ -1067,11 +1067,11 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'CamelCase' = 'world';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'CamelCase' = 'world';
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan on json_bin.json_special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data.CamelCase = 'world'))
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'CamelCase' = 'world';
@@ -1205,11 +1205,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'The "meaning" of life' 
 -- Key containing a backslash.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'back\slash' = 'bs';
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
  Foreign Scan on json_http.special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\\slash" = 'bs'))
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'back\slash' = 'bs';
@@ -1220,11 +1220,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'back\slash' = 'bs';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'back\slash' = 'bs';
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
  Foreign Scan on json_bin.special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\\slash" = 'bs'))
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'back\slash' = 'bs';
@@ -1235,11 +1235,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'back\slash' = 'bs';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'back\slash' = 'bs';
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
  Foreign Scan on json_http.json_special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\\slash" = 'bs'))
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'back\slash' = 'bs';
@@ -1250,17 +1250,41 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'back\slash' = 'bs';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'back\slash' = 'bs';
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
  Foreign Scan on json_bin.json_special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\\slash" = 'bs'))
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'back\slash' = 'bs';
  id |                                                                       data                                                                       
 ----+--------------------------------------------------------------------------------------------------------------------------------------------------
   2 | {"123numeric":"num","The \"meaning\" of life":"42","back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.special_keys
+WHERE jsonb_extract_path_text(data, 'back\slash') = 'bs';
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on json_http.special_keys
+   Output: id
+   Remote SQL: SELECT id FROM json_test.special_keys WHERE ((data."back\\slash" = 'bs'))
+(3 rows)
+
+SELECT id FROM json_http.special_keys
+WHERE jsonb_extract_path_text(data, 'back\slash') = 'bs';
+ id 
+----
+  2
+(1 row)
+
+SELECT id FROM json_bin.special_keys
+WHERE jsonb_extract_path_text(data, 'back\slash') = 'bs';
+ id 
+----
+  2
 (1 row)
 
 -- Key containing a dot (must not be confused with nested access).
@@ -1635,11 +1659,11 @@ SELECT jsonb_extract_path(props, 'address') FROM json_bin.events;
 -- WHERE: single-level jsonb_extract_path_text pushes down as dot notation.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_http.events WHERE jsonb_extract_path_text(props, 'customerId') = 'C100';
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
  Foreign Scan on json_http.events
    Output: id
-   Remote SQL: SELECT id FROM json_test.events WHERE ((props."customerId" = 'C100'))
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.customerId = 'C100'))
 (3 rows)
 
 SELECT id FROM json_http.events WHERE jsonb_extract_path_text(props, 'customerId') = 'C100';
@@ -1650,11 +1674,11 @@ SELECT id FROM json_http.events WHERE jsonb_extract_path_text(props, 'customerId
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_bin.events WHERE jsonb_extract_path_text(props, 'customerId') = 'C100';
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
  Foreign Scan on json_bin.events
    Output: id
-   Remote SQL: SELECT id FROM json_test.events WHERE ((props."customerId" = 'C100'))
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.customerId = 'C100'))
 (3 rows)
 
 SELECT id FROM json_bin.events WHERE jsonb_extract_path_text(props, 'customerId') = 'C100';
@@ -1854,11 +1878,11 @@ SELECT json_extract_path(props, 'address') FROM json_bin.json_events;
 -- WHERE: single-level json_extract_path_text pushes down as dot notation.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_http.json_events WHERE json_extract_path_text(props, 'customerId') = 'C100';
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
  Foreign Scan on json_http.json_events
    Output: id
-   Remote SQL: SELECT id FROM json_test.events WHERE ((props."customerId" = 'C100'))
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.customerId = 'C100'))
 (3 rows)
 
 SELECT id FROM json_http.json_events WHERE json_extract_path_text(props, 'customerId') = 'C100';
@@ -1869,11 +1893,11 @@ SELECT id FROM json_http.json_events WHERE json_extract_path_text(props, 'custom
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_bin.json_events WHERE json_extract_path_text(props, 'customerId') = 'C100';
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
  Foreign Scan on json_bin.json_events
    Output: id
-   Remote SQL: SELECT id FROM json_test.events WHERE ((props."customerId" = 'C100'))
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.customerId = 'C100'))
 (3 rows)
 
 SELECT id FROM json_bin.json_events WHERE json_extract_path_text(props, 'customerId') = 'C100';
