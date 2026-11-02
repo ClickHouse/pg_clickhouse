@@ -282,8 +282,6 @@ adding DML features. Our road map:
 *   Allow server-level and session-level ClickHouse settings via CREATE SERVER
     and GUCs
 *   Support all ClickHouse data types
-*   Support lightweight DELETEs and UPDATEs
-*   Support batch insertion via COPY
 *   Add a function to execute an arbitrary ClickHouse query and return its
     results as a tables
 *   Add support for pushdown of UNION queries when they all query the remote

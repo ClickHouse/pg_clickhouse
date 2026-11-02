@@ -1,0 +1,9 @@
+CREATE SERVER lw_update_admin FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER lw_update_admin;
+\set ECHO errors
+\if :old_ch
+SET client_min_messages = warning;
+DROP SERVER lw_update_admin CASCADE;
+\echo 'SKIP: lightweight UPDATE requires ClickHouse 25.7'
+SKIP: lightweight UPDATE requires ClickHouse 25.7
+\quit

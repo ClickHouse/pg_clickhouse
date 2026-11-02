@@ -331,6 +331,18 @@ chfdw_deparse_insert_sql(
     Relation rel,
     List* targetAttrs
 );
+extern void
+chfdw_deparse_direct_modify_sql(
+    StringInfo buf,
+    PlannerInfo* root,
+    Index rtindex,
+    Relation rel,
+    RelOptInfo* foreignrel,
+    List* targetlist,
+    List* target_attrs,
+    List* remote_conds,
+    List** params_list
+);
 extern List*
 chfdw_build_tlist_to_deparse(RelOptInfo* foreignrel);
 extern void

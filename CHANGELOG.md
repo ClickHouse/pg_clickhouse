@@ -60,6 +60,11 @@ All notable changes to this project will be documented in this file. It uses the
 *   Added pushdown of `jsonb` subscripts with constant text keys, such as
     `data['a']['b']`, as ClickHouse JSON sub-column dot notation. Numeric text
     subscripts evaluate locally to preserve array indexing ([#456]).
+*   Added `UPDATE` and `DELETE` on foreign tables backed by MergeTree family
+    tables, run as a single ClickHouse lightweight `UPDATE` or `DELETE`
+    statement. Statements that cannot run entirely in ClickHouse, such as those
+    with `RETURNING`, joins, or conditions that require Postgres, raise an
+    error. `UPDATE` requires ClickHouse 25.7+ ([#458]).
 
 ### 🚀 Distribution
 
@@ -226,6 +231,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#456 Add support for JSON subscripting pushdown"
   [#457]: https://github.com/ClickHouse/pg_clickhouse/pull/457
     "ClickHouse/pg_clickhouse#457 Use pgch_quote_ch_ident in deparse.c"
+  [#458]: https://github.com/ClickHouse/pg_clickhouse/pull/458
+    "ClickHouse/pg_clickhouse#458 Support lightweight updates & deletes"
   [#460]: https://github.com/ClickHouse/pg_clickhouse/pull/460
     "ClickHouse/pg_clickhouse#460 Test Tuple & Map and update docs accordingly"
   [Tuple]: doc/pg_clickhouse.md#tuple

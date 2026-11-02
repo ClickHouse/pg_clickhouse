@@ -901,6 +901,44 @@ variant. Use that variant to copy rows out of a ClickHouse foreign table:
 try=# COPY (SELECT * FROM logs) TO stdout CSV;
 ```
 
+### UPDATE and DELETE
+
+pg_clickhouse runs [UPDATE] and [DELETE] on a foreign table as a single
+ClickHouse [lightweight UPDATE] or [lightweight DELETE] statement:
+
+```pgsql
+try=# EXPLAIN (VERBOSE, COSTS OFF)
+       DELETE FROM logs WHERE resource = '/search' AND response >= 500;
+                                              QUERY PLAN
+-------------------------------------------------------------------------------------------------------
+ Delete on public.logs
+   ->  Foreign Delete on public.logs
+         Remote SQL: DELETE FROM "default".logs WHERE ((response >= 500)) AND ((resource = '/search'))
+(3 rows)
+```
+
+The following cannot be pushed down:
+
+*   `RETURNING`
+*   Joins, as with `UPDATE ... FROM`, `DELETE ... USING`, or `IN (SELECT ...)`
+*   Row-level triggers on the foreign table, or `WITH CHECK OPTION` views
+
+Subqueries that do not reference outer query columns run in Postgres first,
+then pass their result to ClickHouse as a query parameter.
+
+With default settings, `UPDATE`s and `DELETE`s wait for the storage operation
+to complete before returning, so subsequent queries see their changes.
+ClickHouse reports no affected row count, so Postgres always reports `UPDATE 0`
+or `DELETE 0`.
+
+Lightweight `DELETE` requires a [MergeTree] family table. Lightweight
+`UPDATE` requires ClickHouse 25.7+ and a MergeTree family table, other than
+`SummingMergeTree`, `AggregatingMergeTree`, or `GraphiteMergeTree`, created with
+`SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1`.
+For ClickHouse 25.7, also set `allow_experimental_lightweight_update = 1`.
+Pass ClickHouse settings, such as `lightweight_deletes_sync`, as for other queries
+(see [Settings Precedence](#settings-precedence)).
+
 ### LOAD
 
 Use [LOAD] to load the pg_clickhouse shared library:
@@ -2432,6 +2470,16 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: INSERT"
   [COPY]: https://www.postgresql.org/docs/current/sql-copy.html
     "PostgreSQL Docs: COPY"
+  [UPDATE]: https://www.postgresql.org/docs/current/sql-update.html
+    "PostgreSQL Docs: UPDATE"
+  [DELETE]: https://www.postgresql.org/docs/current/sql-delete.html
+    "PostgreSQL Docs: DELETE"
+  [lightweight UPDATE]: https://clickhouse.com/docs/sql-reference/statements/update
+    "ClickHouse Docs: The Lightweight UPDATE Statement"
+  [lightweight DELETE]: https://clickhouse.com/docs/sql-reference/statements/delete
+    "ClickHouse Docs: The Lightweight DELETE Statement"
+  [MergeTree]: https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree
+    "ClickHouse Docs: MergeTree"
   [LOAD]: https://www.postgresql.org/docs/current/sql-load.html
     "PostgreSQL Docs: LOAD"
   [SET]: https://www.postgresql.org/docs/current/sql-set.html

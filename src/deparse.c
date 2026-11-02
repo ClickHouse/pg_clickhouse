@@ -2755,6 +2755,55 @@ chfdw_deparse_insert_sql(
 }
 
 /*
+ * Deparse lightweight UPDATE, setting target_attrs to targetlist expressions,
+ * or DELETE when targetlist is NIL
+ */
+void
+chfdw_deparse_direct_modify_sql(
+    StringInfo buf,
+    PlannerInfo* root,
+    Index rtindex,
+    Relation rel,
+    RelOptInfo* foreignrel,
+    List* targetlist,
+    List* target_attrs,
+    List* remote_conds,
+    List** params_list
+) {
+    deparse_expr_cxt context;
+    List* settings     = NIL;
+    RangeTblEntry* rte = planner_rt_fetch(rtindex, root);
+    ListCell *lc, *lc2;
+
+    memset(&context, 0, sizeof(context));
+    context.buf         = buf;
+    context.root        = root;
+    context.foreignrel  = foreignrel;
+    context.scanrel     = foreignrel;
+    context.params_list = params_list;
+    context.settings    = &settings;
+    context.fpinfo      = (CHFdwRelationInfo*)foreignrel->fdw_private;
+
+    appendStringInfoString(buf, targetlist ? "UPDATE " : "DELETE FROM ");
+    deparseRelation(buf, rel);
+
+    forboth(lc, targetlist, lc2, target_attrs) {
+        appendStringInfoString(buf, foreach_current_index(lc) ? ", " : " SET ");
+        deparseColumnRef(buf, NULL, rtindex, lfirst_int(lc2), rte, false);
+        appendStringInfoString(buf, " = ");
+        deparseExpr(lfirst_node(TargetEntry, lc)->expr, &context);
+    }
+
+    /* ClickHouse requires WHERE even when updating or deleting every row */
+    appendStringInfoString(buf, " WHERE ");
+    if (remote_conds == NIL) {
+        appendStringInfoString(buf, "true");
+    } else {
+        appendConditions(remote_conds, &context);
+    }
+}
+
+/*
  * Construct name to use for given column, and emit it into buf.
  * If it has a column_name FDW option, use that instead of attribute name.
  *
