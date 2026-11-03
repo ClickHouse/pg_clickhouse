@@ -66,6 +66,18 @@ All notable changes to this project will be documented in this file. It uses the
 *   Added Postgres 19beta4 image.
 *   Added [CloudNativePG] extension images.
 
+### 📚 Documentation
+
+*   Expanded [Tuple] section of the documentation to describe and provide
+    examples for the arrays of field values, and to link to the section that
+    covers using composite types ([#460]).
+*   Also added a link to the section that covers using composite types to the
+    [Map] documentation and clarified support for inserting composite values
+    ([#460]).
+*   Updated the [Manual Type Mappings] section of the docs to describe and
+    provide an example of support inserting composite type-mapped [Map],
+    [Tuple], and [Nested] columns ([#460]).
+
 ### 🐞 Bug Fixes
 
 *   Fixed ClickHouse identifier quoting for database, table, column, and JSON
@@ -214,6 +226,12 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#456 Add support for JSON subscripting pushdown"
   [#457]: https://github.com/ClickHouse/pg_clickhouse/pull/457
     "ClickHouse/pg_clickhouse#457 Use pgch_quote_ch_ident in deparse.c"
+  [#460]: https://github.com/ClickHouse/pg_clickhouse/pull/460
+    "ClickHouse/pg_clickhouse#460 Test Tuple & Map and update docs accordingly"
+  [Tuple]: doc/pg_clickhouse.md#tuple
+  [Map]: doc/pg_clickhouse.md#map
+  [Nested]: doc/pg_clickhouse.md#nested
+  [Manual Type Mappings]: doc/pg_clickhouse.md#manual-type-mappings
 
 ## [v0.11.0] — 2026-09-30
 

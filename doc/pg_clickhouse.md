@@ -1372,12 +1372,67 @@ SELECT id, vals FROM t1 WHERE vals[1:2] = ARRAY[10,20];
 SELECT id, vals FROM t1 WHERE vals[1:2][2] = 20; -- currently fails
 ```
 
+#### Tuple
+
+PostgreSQL provides no type corresponding to the ClickHouse [Tuple] type.
+[IMPORT FOREIGN SCHEMA](#import-foreign-schema) therefore maps [Tuple] columns
+map to `text[]`, with each element appearing in the order defined for the
+[Tuple]. pg_clickhouse emits a `NOTICE` when it makes such a mapping.
+
+For example, given this ClickHouse table:
+
+```sql
+CALL clickhouse_perform('ch_srv', $$
+    CREATE TABLE named_tuples (
+      a Tuple(s String, i Int64)
+    ) ENGINE = Memory
+$$);
+```
+
+[IMPORT FOREIGN SCHEMA](#import-foreign-schema) will import it as:
+
+```
+ attname |  type  | attndims | attnotnull
+---------+--------+----------+------------
+ a       | text[] |        1 | t
+```
+
+Insert tuples as arrays of values:
+
+```sql
+INSERT INTO named_tuples VALUES (ARRAY['y', '10']), (ARRAY['x', '-10']);
+```
+
+Each array must contain the correct number of elements expected by the
+ClickHouse tuple; incompatible values trigger an error.
+
+The data fetches as:
+
+```pgsql
+try=# SELECT * FROM named_tuples;
+    a
+---------
+ {y,10}
+ {x,-10}
+```
+
+Values cannot be accessed via array subscripts. In other words, this query
+returns an error:
+
+```sql
+SELECT * FROM named_tuples WHERE a[2] = '10';
+```
+
+But see [Manual Type Mappings](#manual-type-mappings) for how to use
+[composite type]s both to map tuple element data types and to query by field
+values.
+
 #### Map
 
 PostgreSQL provides no type corresponding to the ClickHouse [Map] type.
-pg_clickhouse therefore maps [Map] columns to `text[][]`, with each key-value
-pair as its own array. [IMPORT FOREIGN SCHEMA](#import-foreign-schema) uses
-this mapping. One can `INSERT` maps as arrays, as well. An example:
+pg_clickhouse therefore [Map] types to `text[][]`, with each key-value pair as
+its own array. [IMPORT FOREIGN SCHEMA](#import-foreign-schema) uses this
+mapping. One can `INSERT` maps as arrays, as well. An example:
 
 ```sql
 -- Create ClickHouse table with Map column.
@@ -1404,16 +1459,16 @@ try=# SELECT * FROM maps;
 Each nested array must contain exactly two text values. Values incompatible
 with corresponding ClickHouse key or value types trigger an error.
 
-> [!NOTE]
-> Inserting a `Map` requires the `binary` driver, which derives column types
-> from the ClickHouse sever. The `http` driver does not, so lacks the
-> information to format and insert the appropriate value.
+Values cannot be accessed via array subscripts. In other words, this query
+returns an error:
 
-#### Tuple
+```sql
+SELECT * FROM maps WHERE c2[1] = 'b';
+```
 
-Similarly, a ClickHouse [Tuple] columns map to `text[]` and supports `INSERT`s
-via the binary driver. `IMPORT FOREIGN SCHEMA` emits a `NOTICE` when it makes
-such a mapping.
+But see [Manual Type Mappings](#manual-type-mappings) for how to use
+[composite type]s both to map [Map] element data types and to query by field
+values.
 
 #### Nested
 
@@ -1496,7 +1551,7 @@ INSERT INTO nests
 VALUES (1, ARRAY[['42', 'Arthur'], ['99', 'Barbara']]);
 ```
 
-Pushdown of `text[][]` columns over Nested types fails, however:
+Pushdown of subscript access fails, however:
 
 ```pgsql
 SELECT * FROM nests WHERE c2[1][1] = '42`
@@ -1513,7 +1568,7 @@ pushdown works as long as the composite field names are identical to the
 Nested field names:
 
 ```sql
-SELECT * FROM nests WHERE c2[1].id = 42;
+SELECT * FROM nests WHERE (c2[1]).id = 42;
 ```
 
 ### Manual Type Mappings
@@ -1531,11 +1586,6 @@ CALL clickhouse_perform('ch_srv', $$
       labels Map(String, Int64),
       items  Nested(id Int32, name String)
     ) ORDER BY id SETTINGS flatten_nested = 0
-$$);
-
-CALL clickhouse_perform('ch_srv', $$
-    INSERT INTO events
-    VALUES(1, 'new', tuple(3, 4), {'k1': 5, 'k2': 6}, [tuple(100, 'xx')])
 $$);
 ```
 
@@ -1562,10 +1612,22 @@ CREATE FOREIGN TABLE events (
 > ClickHouse enum labels and `Nested` or `Tuple` field names to ensure that
 > pushdown specifies the proper names.
 
-Match composite field order and types to ClickHouse declarations. [Map] keys
-and values become first and second fields, respectively (`key` and `value` in
-this case). `Nested` and `Map` become arrays of composites, while `Tuple`
-becomes one composite value:
+To insert a row using the custom types, match composite field order and types
+to ClickHouse declarations. [Map] keys and values become first and second
+fields, respectively (`key` and `value` in this case). `Nested` and `Map`
+become arrays of composites, while `Tuple` becomes one composite value.
+Composite inserts into `Nested` columns require the `binary` driver.
+
+```sql
+INSERT INTO events
+VALUES(
+    1, 'new', (3, 4),
+    ARRAY[('k1', 5), ('k2', 6)]::event_label[],
+    ARRAY[(100, 'xx'), (101, 'yy')]::event_item[])
+;
+```
+
+And to fetch the values:
 
 ```pgsql
 SELECT * FROM events ORDER BY id;
@@ -1594,8 +1656,6 @@ identical:
 ```sql
 SELECT * FROM events WHERE items[1].name = 'xx';
 ```
-
-`INSERT` using such composites is not yet supported.
 
 ## Function and Operator Reference
 
