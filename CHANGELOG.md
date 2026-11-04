@@ -156,6 +156,11 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed aggregates such as `sum`, `avg`, and `min` to return `NULL` for
     empty input, matching PostgreSQL. This also applies when no rows pass
     an aggregate's `FILTER` clause ([#451]).
+*   Fixed `round()` and other expressions over an unconstrained numeric, which
+    previously kept the full 38 decimal places of `Decimal(76, 38)`. For
+    example, `round(avg(f64_column)::numeric)` now returns `3` instead of
+    `3.00000000000000000000000000000000000000`. Thanks to Niramay Kelkar for
+    the PR ([#459])!
 
   [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
@@ -233,6 +238,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#457 Use pgch_quote_ch_ident in deparse.c"
   [#458]: https://github.com/ClickHouse/pg_clickhouse/pull/458
     "ClickHouse/pg_clickhouse#458 Support lightweight updates & deletes"
+  [#459]: https://github.com/ClickHouse/pg_clickhouse/pull/459
+    "ClickHouse/pg_clickhouse#459 Trim unconstrained numeric scale from Decimal(76, 38)"
   [#460]: https://github.com/ClickHouse/pg_clickhouse/pull/460
     "ClickHouse/pg_clickhouse#460 Test Tuple & Map and update docs accordingly"
   [Tuple]: doc/pg_clickhouse.md#tuple
