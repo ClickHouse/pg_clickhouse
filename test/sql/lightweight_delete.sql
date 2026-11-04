@@ -99,6 +99,31 @@ EXPLAIN (VERBOSE, COSTS OFF) DELETE FROM items;
 DELETE FROM items;
 SELECT count(*) FROM items;
 
+-- Support ReplacingMergeTree and CollapsingMergeTree.
+CALL clickhouse_perform('lw_delete_admin', $$
+    CREATE TABLE lw_delete_test.replacing (id Int32, name String)
+    ENGINE = ReplacingMergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('lw_delete_admin', $$
+    INSERT INTO lw_delete_test.replacing VALUES (1, 'Sushi'), (2, 'Bagel')
+$$);
+CALL clickhouse_perform('lw_delete_admin', $$
+    CREATE TABLE lw_delete_test.collapsing (id Int32, name String, sign Int8)
+    ENGINE = CollapsingMergeTree(sign) ORDER BY id
+$$);
+CALL clickhouse_perform('lw_delete_admin', $$
+    INSERT INTO lw_delete_test.collapsing VALUES (1, 'Little Bit', 1), (2, 'Biscuit', 1)
+$$);
+CREATE FOREIGN TABLE replacing (id int, name text)
+    SERVER lw_delete_bin OPTIONS (table_name 'replacing');
+CREATE FOREIGN TABLE collapsing (id int, name text)
+    SERVER lw_delete_bin OPTIONS (table_name 'collapsing');
+
+DELETE FROM replacing WHERE id = 1;
+SELECT * FROM replacing;
+DELETE FROM collapsing WHERE id = 1;
+SELECT * FROM collapsing;
+
 CALL clickhouse_perform('lw_delete_admin', 'DROP DATABASE lw_delete_test');
 SET client_min_messages = warning;
 DROP SCHEMA lw_delete CASCADE;

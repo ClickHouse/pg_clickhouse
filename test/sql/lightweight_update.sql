@@ -97,6 +97,33 @@ EXPLAIN (VERBOSE, COSTS OFF) UPDATE items SET qty = 0;
 UPDATE items SET qty = 0;
 SELECT id, qty FROM items ORDER BY id;
 
+-- Support ReplacingMergeTree and CollapsingMergeTree.
+CALL clickhouse_perform('lw_update_admin', $$
+    CREATE TABLE lw_update_test.replacing (id Int32, name String)
+    ENGINE = ReplacingMergeTree ORDER BY id
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1
+$$);
+CALL clickhouse_perform('lw_update_admin', $$
+    INSERT INTO lw_update_test.replacing VALUES (1, 'Sushi'), (2, 'Bagel')
+$$);
+CALL clickhouse_perform('lw_update_admin', $$
+    CREATE TABLE lw_update_test.collapsing (id Int32, name String, sign Int8)
+    ENGINE = CollapsingMergeTree(sign) ORDER BY id
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1
+$$);
+CALL clickhouse_perform('lw_update_admin', $$
+    INSERT INTO lw_update_test.collapsing VALUES (1, 'Little Bit', 1), (2, 'Biscuit', 1)
+$$);
+CREATE FOREIGN TABLE replacing (id int, name text)
+    SERVER lw_update_bin OPTIONS (table_name 'replacing');
+CREATE FOREIGN TABLE collapsing (id int, name text)
+    SERVER lw_update_bin OPTIONS (table_name 'collapsing');
+
+UPDATE replacing SET name = 'Sushi May' WHERE id = 1;
+SELECT * FROM replacing ORDER BY id;
+UPDATE collapsing SET name = 'Sweet Pea' WHERE id = 1;
+SELECT * FROM collapsing ORDER BY id;
+
 CALL clickhouse_perform('lw_update_admin', 'DROP DATABASE lw_update_test');
 SET client_min_messages = warning;
 DROP SCHEMA lw_update CASCADE;
