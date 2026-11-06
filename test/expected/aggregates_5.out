@@ -307,12 +307,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- array_agg(DateTime64)
-                           QUERY PLAN                            
------------------------------------------------------------------
+                          QUERY PLAN                           
+---------------------------------------------------------------
  Foreign Scan
    Output: (array_agg("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupArray("timestamp") FROM agg_test.hits
+   Remote SQL: SELECT groupArray(timestamp) FROM agg_test.hits
 (4 rows)
 
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          array_agg                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
@@ -320,12 +320,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  {"2025-12-05 11:51:04.390884+00","2025-12-05 12:22:20.135213+00","2025-12-05 14:31:50.452533+00","2025-12-05 19:06:00.126014+00","2025-12-05 19:07:10.399278+00","2025-12-05 20:07:22.673831+00","2025-12-06 03:25:34.627161+00","2025-12-06 05:50:56.818572+00","2025-12-06 13:02:50.972837+00","2025-12-07 15:42:06.88149+00","2025-12-07 17:28:58.124117+00","2025-12-07 23:20:36.618385+00","2025-12-08 01:59:58.417052+00","2025-12-08 03:00:24.806643+00","2025-12-08 14:42:58.34422+00","2025-12-08 20:14:32.23635+00","2025-12-09 00:08:20.392948+00","2025-12-10 00:39:44.518284+00","2025-12-10 00:49:32.950914+00","2025-12-10 04:57:48.584719+00","2025-12-10 09:29:52.666577+00","2025-12-10 13:40:28.486178+00","2025-12-10 16:24:16.877779+00","2025-12-12 09:52:04.236867+00","2025-12-12 20:46:06.572602+00","2025-12-12 23:50:54.686406+00","2025-12-13 06:58:08.868876+00","2025-12-13 10:27:26.390655+00","2025-12-13 14:15:10.219085+00","2025-12-13 14:54:36.17439+00","2025-12-13 17:08:04.502729+00","2025-12-13 18:05:14.46441+00","2025-12-13 21:09:06.290341+00","2025-12-14 11:21:28.869821+00","2025-12-14 17:21:16.478761+00","2025-12-14 22:32:04.449588+00","2025-12-15 07:35:16.55788+00","2025-12-15 16:41:30.608217+00","2025-12-15 17:07:24.893024+00","2025-12-15 18:34:26.171566+00","2025-12-15 21:17:32.577173+00","2025-12-16 09:13:10.107266+00","2025-12-16 10:11:58.434566+00","2025-12-16 13:04:10.855999+00","2025-12-16 16:17:36.473802+00","2025-12-17 02:07:56.978358+00","2025-12-17 11:09:02.207676+00","2025-12-18 16:36:18.43735+00","2025-12-18 22:57:20.264686+00","2025-12-19 07:24:50.960198+00"}
 (1 row)
 
-                           QUERY PLAN                            
------------------------------------------------------------------
+                          QUERY PLAN                           
+---------------------------------------------------------------
  Foreign Scan
    Output: (array_agg("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupArray("timestamp") FROM agg_test.hits
+   Remote SQL: SELECT groupArray(timestamp) FROM agg_test.hits
 (4 rows)
 
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          array_agg                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
@@ -333,12 +333,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  {"2025-12-05 11:51:04.390884+00","2025-12-05 12:22:20.135213+00","2025-12-05 14:31:50.452533+00","2025-12-05 19:06:00.126014+00","2025-12-05 19:07:10.399278+00","2025-12-05 20:07:22.673831+00","2025-12-06 03:25:34.627161+00","2025-12-06 05:50:56.818572+00","2025-12-06 13:02:50.972837+00","2025-12-07 15:42:06.88149+00","2025-12-07 17:28:58.124117+00","2025-12-07 23:20:36.618385+00","2025-12-08 01:59:58.417052+00","2025-12-08 03:00:24.806643+00","2025-12-08 14:42:58.34422+00","2025-12-08 20:14:32.23635+00","2025-12-09 00:08:20.392948+00","2025-12-10 00:39:44.518284+00","2025-12-10 00:49:32.950914+00","2025-12-10 04:57:48.584719+00","2025-12-10 09:29:52.666577+00","2025-12-10 13:40:28.486178+00","2025-12-10 16:24:16.877779+00","2025-12-12 09:52:04.236867+00","2025-12-12 20:46:06.572602+00","2025-12-12 23:50:54.686406+00","2025-12-13 06:58:08.868876+00","2025-12-13 10:27:26.390655+00","2025-12-13 14:15:10.219085+00","2025-12-13 14:54:36.17439+00","2025-12-13 17:08:04.502729+00","2025-12-13 18:05:14.46441+00","2025-12-13 21:09:06.290341+00","2025-12-14 11:21:28.869821+00","2025-12-14 17:21:16.478761+00","2025-12-14 22:32:04.449588+00","2025-12-15 07:35:16.55788+00","2025-12-15 16:41:30.608217+00","2025-12-15 17:07:24.893024+00","2025-12-15 18:34:26.171566+00","2025-12-15 21:17:32.577173+00","2025-12-16 09:13:10.107266+00","2025-12-16 10:11:58.434566+00","2025-12-16 13:04:10.855999+00","2025-12-16 16:17:36.473802+00","2025-12-17 02:07:56.978358+00","2025-12-17 11:09:02.207676+00","2025-12-18 16:36:18.43735+00","2025-12-18 22:57:20.264686+00","2025-12-19 07:24:50.960198+00"}
 (1 row)
 
-                                           QUERY PLAN                                            
--------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (array_agg("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupArray("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT groupArray(timestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
                                                                                                                                                             array_agg                                                                                                                                                             
@@ -346,12 +346,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  {"2025-12-10 16:24:16.877779+00","2025-12-12 09:52:04.236867+00","2025-12-13 10:27:26.390655+00","2025-12-14 22:32:04.449588+00","2025-12-15 16:41:30.608217+00","2025-12-15 17:07:24.893024+00","2025-12-16 10:11:58.434566+00","2025-12-16 16:17:36.473802+00","2025-12-17 02:07:56.978358+00","2025-12-18 16:36:18.43735+00"}
 (1 row)
 
-                                           QUERY PLAN                                            
--------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (array_agg("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT groupArray("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT groupArray(timestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
                                                                                                                                                             array_agg                                                                                                                                                             
@@ -625,12 +625,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- min(DateTime64)
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Foreign Scan
    Output: (min("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT minOrNull("timestamp") FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(timestamp) FROM agg_test.hits
 (4 rows)
 
               min              
@@ -638,12 +638,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-05 11:51:04.390884+00
 (1 row)
 
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Foreign Scan
    Output: (min("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT minOrNull("timestamp") FROM agg_test.hits
+   Remote SQL: SELECT minOrNull(timestamp) FROM agg_test.hits
 (4 rows)
 
               min              
@@ -651,12 +651,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-05 11:51:04.390884+00
 (1 row)
 
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT minOrNull("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull(timestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
               min              
@@ -664,12 +664,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-10 16:24:16.877779+00
 (1 row)
 
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (min("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT minOrNull("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT minOrNull(timestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
               min              
@@ -943,12 +943,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
 (1 row)
 
 -- max(DateTime64)
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Foreign Scan
    Output: (max("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT maxOrNull("timestamp") FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(timestamp) FROM agg_test.hits
 (4 rows)
 
               max              
@@ -956,12 +956,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-19 07:24:50.960198+00
 (1 row)
 
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Foreign Scan
    Output: (max("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT maxOrNull("timestamp") FROM agg_test.hits
+   Remote SQL: SELECT maxOrNull(timestamp) FROM agg_test.hits
 (4 rows)
 
               max              
@@ -969,12 +969,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-19 07:24:50.960198+00
 (1 row)
 
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT maxOrNull("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull(timestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
              max              
@@ -982,12 +982,12 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  2025-12-18 16:36:18.43735+00
 (1 row)
 
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan
    Output: (max("timestamp"))
    Relations: Aggregate on (hits)
-   Remote SQL: SELECT maxOrNull("timestamp") FROM agg_test.hits WHERE ((duration < 1000000000))
+   Remote SQL: SELECT maxOrNull(timestamp) FROM agg_test.hits WHERE ((duration < 1000000000))
 (4 rows)
 
              max              

@@ -25,6 +25,7 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "common/shortest_dec.h"
+#include "common/string.h"
 #include "fmgr.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
@@ -50,6 +51,7 @@
 
 #include "fdw.h"
 #include "pg-clickhouse-encode.h"
+#include "pg-clickhouse.h"
 
 #include <math.h>
 
@@ -990,7 +992,30 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             return false;
         }
 
-        if (!type_is_array(ar->refcontainertype)) {
+        if (ar->refcontainertype == JSONBOID) {
+            /* Only constant text keys on a column map to JSON sub-columns */
+            if (!IsA(ar->refexpr, Var)) {
+                return false;
+            }
+            ListCell* lc;
+            foreach (lc, ar->refupperindexpr) {
+                Const* key = lfirst(lc);
+                if (!IsA(key, Const) || key->consttype != TEXTOID || key->constisnull) {
+                    return false;
+                }
+
+                /* PostgreSQL also interprets numeric text as array indexes. */
+                char* value = TextDatumGetCString(key->constvalue);
+                char* end;
+                errno = 0;
+                strtoint(value, &end, 10);
+                bool numeric = end != value && *end == '\0' && errno == 0;
+                pfree(value);
+                if (numeric) {
+                    return false;
+                }
+            }
+        } else if (!type_is_array(ar->refcontainertype)) {
             return false;
         }
 
@@ -2730,6 +2755,55 @@ chfdw_deparse_insert_sql(
 }
 
 /*
+ * Deparse lightweight UPDATE, setting target_attrs to targetlist expressions,
+ * or DELETE when targetlist is NIL
+ */
+void
+chfdw_deparse_direct_modify_sql(
+    StringInfo buf,
+    PlannerInfo* root,
+    Index rtindex,
+    Relation rel,
+    RelOptInfo* foreignrel,
+    List* targetlist,
+    List* target_attrs,
+    List* remote_conds,
+    List** params_list
+) {
+    deparse_expr_cxt context;
+    List* settings     = NIL;
+    RangeTblEntry* rte = planner_rt_fetch(rtindex, root);
+    ListCell *lc, *lc2;
+
+    memset(&context, 0, sizeof(context));
+    context.buf         = buf;
+    context.root        = root;
+    context.foreignrel  = foreignrel;
+    context.scanrel     = foreignrel;
+    context.params_list = params_list;
+    context.settings    = &settings;
+    context.fpinfo      = (CHFdwRelationInfo*)foreignrel->fdw_private;
+
+    appendStringInfoString(buf, targetlist ? "UPDATE " : "DELETE FROM ");
+    deparseRelation(buf, rel);
+
+    forboth(lc, targetlist, lc2, target_attrs) {
+        appendStringInfoString(buf, foreach_current_index(lc) ? ", " : " SET ");
+        deparseColumnRef(buf, NULL, rtindex, lfirst_int(lc2), rte, false);
+        appendStringInfoString(buf, " = ");
+        deparseExpr(lfirst_node(TargetEntry, lc)->expr, &context);
+    }
+
+    /* ClickHouse requires WHERE even when updating or deleting every row */
+    appendStringInfoString(buf, " WHERE ");
+    if (remote_conds == NIL) {
+        appendStringInfoString(buf, "true");
+    } else {
+        appendConditions(remote_conds, &context);
+    }
+}
+
+/*
  * Construct name to use for given column, and emit it into buf.
  * If it has a column_name FDW option, use that instead of attribute name.
  *
@@ -2775,7 +2849,7 @@ deparseColumnRef(
     if (qualify_col) {
         ADD_REL_QUALIFIER(buf, varno);
     }
-    appendStringInfoString(buf, quote_identifier(colname));
+    appendStringInfoString(buf, pgch_quote_ch_ident(colname));
 }
 
 /*
@@ -2789,7 +2863,9 @@ deparseRelation(StringInfo buf, Relation rel) {
     char* relname;
 
     chfdw_remote_table_name(RelationGetRelid(rel), &dbname, &relname);
-    appendStringInfo(buf, "%s.%s", quote_identifier(dbname), quote_identifier(relname));
+    appendStringInfo(
+        buf, "%s.%s", pgch_quote_ch_ident(dbname), pgch_quote_ch_ident(relname)
+    );
 }
 
 /*
@@ -3930,13 +4006,28 @@ deparseGuardedNotIn(SubPlan* subplan, deparse_expr_cxt* context) {
 }
 
 /*
- * Deparse an array subscript expression.
+ * Deparse an array subscript expression, or jsonb subscripts as
+ * toJSONString(col."k1"."k2")
  */
 static void
 deparseSubscriptingRef(SubscriptingRef* node, deparse_expr_cxt* context) {
     StringInfo buf = context->buf;
 
-    if (node->reflowerindexpr != NIL) {
+    if (node->refcontainertype == JSONBOID) {
+        ListCell* lc;
+
+        appendStringInfoString(buf, "toJSONString(");
+        deparseExpr(node->refexpr, context);
+        foreach (lc, node->refupperindexpr) {
+            Const* key = lfirst(lc);
+
+            appendStringInfoChar(buf, '.');
+            appendStringInfoString(
+                buf, pgch_quote_ch_ident(TextDatumGetCString(key->constvalue))
+            );
+        }
+        appendStringInfoChar(buf, ')');
+    } else if (node->reflowerindexpr != NIL) {
         /*
          * Slice: CH doesn't support [L:U] syntax, emit arraySlice(). PG slice
          * is inclusive both ends, CH arraySlice takes (arr, offset, length).
@@ -4023,7 +4114,7 @@ deparseJsonbExtractPath(FuncExpr* node, deparse_expr_cxt* context, bool wrap_jso
         char* key = TextDatumGetCString(elems[i]);
 
         appendStringInfoChar(buf, '.');
-        appendStringInfoString(buf, quote_identifier(key));
+        appendStringInfoString(buf, pgch_quote_ch_ident(key));
     }
 
     if (wrap_json) {
@@ -5298,7 +5389,7 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
 
                     deparseExpr(arg1, context);
                     appendStringInfoChar(buf, '.');
-                    appendStringInfoString(buf, quote_identifier(keyval));
+                    appendStringInfoString(buf, pgch_quote_ch_ident(keyval));
 
                     if (cdef->cf_type == CF_JSON_FETCHVAL) {
                         appendStringInfoChar(buf, ')');

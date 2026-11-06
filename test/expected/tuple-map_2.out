@@ -1,0 +1,246 @@
+\set ECHO errors
+/****************************************************************************/
+CALL clickhouse_perform('tuple_map_admin', $$
+    CREATE TABLE tuple_map_test.people (
+        id UInt32,
+        data Tuple(
+            name   String,
+            age    UInt8,
+            gender Enum('male', 'female', 'enby', 'other')
+        ),
+        sizes Map(String, UInt8)
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+IMPORT FOREIGN SCHEMA tuple_map_test FROM SERVER binary_tuple_map_loopback INTO tupmap_bin;
+NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "data"; please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Map> type was translated to <TEXT[][]> type for column "sizes"; please create composite type and alter the column if needed
+EXECUTE describe('tupmap_bin.people');
+ attname |  type  | attndims | attnotnull 
+---------+--------+----------+------------
+ id      | bigint |        0 | t
+ data    | text[] |        1 | t
+ sizes   | text[] |        2 | t
+(3 rows)
+
+IMPORT FOREIGN SCHEMA tuple_map_test FROM SERVER http_tuple_map_loopback INTO tupmap_http;
+NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "data"; please create composite type and alter the column if needed
+NOTICE:  pg_clickhouse: ClickHouse <Map> type was translated to <TEXT[][]> type for column "sizes"; please create composite type and alter the column if needed
+EXECUTE describe('tupmap_http.people');
+ attname |  type  | attndims | attnotnull 
+---------+--------+----------+------------
+ id      | bigint |        0 | t
+ data    | text[] |        1 | t
+ sizes   | text[] |        2 | t
+(3 rows)
+
+-- Insert values.
+INSERT INTO tupmap_bin.people
+VALUES (1, ('{Barrack,47,male}'::text[]), '{{head,32}, {neck,17}, {waist,34}}');
+INSERT INTO tupmap_http.people
+VALUES (2, ('{Vivian,22,female}'::text[]), '{{head,29}, {neck,14}, {shoe,9}}');
+SELECT * FROM tupmap_bin.people ORDER BY id;
+ id |        data        |              sizes               
+----+--------------------+----------------------------------
+  1 | {Barrack,47,male}  | {{head,32},{neck,17},{waist,34}}
+  2 | {Vivian,22,female} | {{head,29},{neck,14},{shoe,9}}
+(2 rows)
+
+SELECT * FROM tupmap_http.people ORDER BY id;
+ id |        data        |              sizes               
+----+--------------------+----------------------------------
+  1 | {Barrack,47,male}  | {{head,32},{neck,17},{waist,34}}
+  2 | {Vivian,22,female} | {{head,29},{neck,14},{shoe,9}}
+(2 rows)
+
+-- Pushdown array access fails. Failure expected: we would need to know that
+-- the column is a Tuple and thus should be converted to `data.age = 22`, or a
+-- Map and converted to `sizes['shoe'] = 9`.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tupmap_bin.people WHERE data[2] = '22';
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on tupmap_bin.people
+   Output: id
+   Remote SQL: SELECT id FROM tuple_map_test.people WHERE (((data[2]) = '22'))
+(3 rows)
+
+SELECT id FROM tupmap_bin.people WHERE data[2] = '22';
+ERROR:  pg_clickhouse: DB::Exception: First argument for function 'arrayElement' must be array, got 'Tuple(name String, age UInt8, gender Enum8('male' = 1, 'female' = 2, 'enby' = 3, 'other' = 4))' instead: In scope SELECT id FROM tuple_map_test.people WHERE (data[2]) = '22'
+DETAIL:  Remote Query: SELECT id FROM tuple_map_test.people WHERE (((data[2]) = '22'))
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tupmap_http.people WHERE data[2] = '22';
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on tupmap_http.people
+   Output: id
+   Remote SQL: SELECT id FROM tuple_map_test.people WHERE (((data[2]) = '22'))
+(3 rows)
+
+SELECT id FROM tupmap_http.people WHERE data[2] = '22';
+ERROR:  pg_clickhouse: Code: 43. DB::Exception: First argument for function 'arrayElement' must be array, got 'Tuple(name String, age UInt8, gender Enum8('male' = 1, 'female' = 2, 'enby' = 3, 'other' = 4))' instead: In scope SELECT id FROM tuple_map_test.people WHERE (data[2]) = '22'. (ILLEGAL_TYPE_OF_ARGUMENT)
+DETAIL:  Remote Query: SELECT id FROM tuple_map_test.people WHERE (((data[2]) = '22'))
+CONTEXT:  HTTP status code: 500
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tupmap_bin.people WHERE sizes[3] = '9';
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on tupmap_bin.people
+   Output: id
+   Remote SQL: SELECT id FROM tuple_map_test.people WHERE (((sizes[3]) = '9'))
+(3 rows)
+
+SELECT id FROM tupmap_bin.people WHERE sizes[3] = '9';
+ERROR:  pg_clickhouse: DB::Exception: Illegal types of arguments: Map(String, UInt8), UInt8 for function arrayElement
+DETAIL:  Remote Query: SELECT id FROM tuple_map_test.people WHERE (((sizes[3]) = '9'))
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tupmap_http.people WHERE sizes[3] = '9';
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on tupmap_http.people
+   Output: id
+   Remote SQL: SELECT id FROM tuple_map_test.people WHERE (((sizes[3]) = '9'))
+(3 rows)
+
+SELECT id FROM tupmap_http.people WHERE sizes[3] = '9';
+ERROR:  pg_clickhouse: Code: 43. DB::Exception: Illegal types of arguments: Map(String, UInt8), UInt8 for function arrayElement. (ILLEGAL_TYPE_OF_ARGUMENT)
+DETAIL:  Remote Query: SELECT id FROM tuple_map_test.people WHERE (((sizes[3]) = '9'))
+CONTEXT:  HTTP status code: 500
+/****************************************************************************/
+-- Create them manually with a composite type;
+CREATE TYPE gender AS ENUM('male', 'female', 'enby', 'other');
+CREATE TYPE profile AS (name text, age smallint, gender gender);
+CREATE TYPE pair AS (k text, v smallint);
+DROP FOREIGN TABLE tupmap_bin.people;
+CREATE FOREIGN TABLE tupmap_bin.people(
+    id          BIGINT  NOT NULL,
+    data        profile NOT NULL,
+    sizes       pair[]  NOT NULL
+) SERVER binary_tuple_map_loopback OPTIONS(table_name 'people');
+DROP FOREIGN TABLE tupmap_http.people;
+CREATE FOREIGN TABLE tupmap_http.people(
+    id          BIGINT  NOT NULL,
+    data        profile NOT NULL,
+    sizes       pair[]  NOT NULL
+) SERVER http_tuple_map_loopback OPTIONS(table_name 'people');
+-- Insert values.
+INSERT INTO tupmap_bin.people
+VALUES (3, ('Judith', 70, 'enby'), ARRAY[('head', 34), ('shoe', 7)]::pair[]);
+INSERT INTO tupmap_http.people
+VALUES (4, ('Bagel', 9, 'other'), ARRAY[('head', 10), ('neck', 8)]::pair[]);
+SELECT * FROM tupmap_bin.people ORDER BY id;
+ id |        data        |                 sizes                  
+----+--------------------+----------------------------------------
+  1 | (Barrack,47,male)  | {"(head,32)","(neck,17)","(waist,34)"}
+  2 | (Vivian,22,female) | {"(head,29)","(neck,14)","(shoe,9)"}
+  3 | (Judith,70,enby)   | {"(head,34)","(shoe,7)"}
+  4 | (Bagel,9,other)    | {"(head,10)","(neck,8)"}
+(4 rows)
+
+SELECT * FROM tupmap_http.people ORDER BY id;
+ id |        data        |                 sizes                  
+----+--------------------+----------------------------------------
+  1 | (Barrack,47,male)  | {"(head,32)","(neck,17)","(waist,34)"}
+  2 | (Vivian,22,female) | {"(head,29)","(neck,14)","(shoe,9)"}
+  3 | (Judith,70,enby)   | {"(head,34)","(shoe,7)"}
+  4 | (Bagel,9,other)    | {"(head,10)","(neck,8)"}
+(4 rows)
+
+-- Querying Tuple field access works but remains local for now.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tupmap_bin.people WHERE (data).age = 22;
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Foreign Scan on tupmap_bin.people
+   Output: id
+   Filter: ((people.data).age = 22)
+   Remote SQL: SELECT id, data FROM tuple_map_test.people
+(4 rows)
+
+SELECT id FROM tupmap_bin.people WHERE (data).age = 22;
+ id 
+----
+  2
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tupmap_http.people WHERE (data).age = 22;
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Foreign Scan on tupmap_http.people
+   Output: id
+   Filter: ((people.data).age = 22)
+   Remote SQL: SELECT id, data FROM tuple_map_test.people
+(4 rows)
+
+SELECT id FROM tupmap_http.people WHERE (data).age = 22;
+ id 
+----
+  2
+(1 row)
+
+-- Querying an array of composite fields also pushes down, but remains local
+-- for now.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tupmap_bin.people WHERE (sizes[1]).v = 10;
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Foreign Scan on tupmap_bin.people
+   Output: id
+   Filter: (people.sizes[1].v = 10)
+   Remote SQL: SELECT id, sizes FROM tuple_map_test.people
+(4 rows)
+
+SELECT id FROM tupmap_bin.people WHERE (sizes[1]).v = 10;
+ id 
+----
+  4
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM tupmap_http.people WHERE (sizes[1]).v = 10;
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Foreign Scan on tupmap_http.people
+   Output: id
+   Filter: (people.sizes[1].v = 10)
+   Remote SQL: SELECT id, sizes FROM tuple_map_test.people
+(4 rows)
+
+SELECT id FROM tupmap_http.people WHERE (sizes[1]).v = 10;
+ id 
+----
+  4
+(1 row)
+
+-- Add queries used for docs.
+CALL clickhouse_perform('tuple_map_admin', $$
+    CREATE TABLE tuple_map_test.named_tuples (a Tuple(s String, i Int64)) ENGINE = Memory;
+$$);
+CALL clickhouse_perform('tuple_map_admin', $$
+    INSERT INTO tuple_map_test.named_tuples VALUES (('y', 10)), (('x',-10));
+$$);
+IMPORT FOREIGN SCHEMA tuple_map_test LIMIT TO (named_tuples)
+  FROM SERVER binary_tuple_map_loopback INTO tupmap_bin ;
+NOTICE:  pg_clickhouse: ClickHouse <Tuple> type was translated to <TEXT[]> type for column "a"; please create composite type and alter the column if needed
+EXECUTE describe('tupmap_bin.named_tuples');
+ attname |  type  | attndims | attnotnull 
+---------+--------+----------+------------
+ a       | text[] |        1 | t
+(1 row)
+
+SELECT * FROM tupmap_bin.named_tuples;
+    a    
+---------
+ {y,10}
+ {x,-10}
+(2 rows)
+
+CALL clickhouse_perform('tuple_map_admin', 'DROP DATABASE tuple_map_test');
+DROP USER MAPPING FOR CURRENT_USER SERVER binary_tuple_map_loopback;
+DROP USER MAPPING FOR CURRENT_USER SERVER http_tuple_map_loopback;
+DROP SERVER binary_tuple_map_loopback CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table tupmap_bin.people
+drop cascades to foreign table tupmap_bin.named_tuples
+DROP SERVER http_tuple_map_loopback CASCADE;
+NOTICE:  drop cascades to foreign table tupmap_http.people

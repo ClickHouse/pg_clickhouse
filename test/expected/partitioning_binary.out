@@ -153,6 +153,26 @@ SELECT count(*) FROM events_bin a JOIN events_bin b ON a.id = b.id AND a.ts = b.
 (1 row)
 
 RESET enable_partitionwise_join;
+-- Route inserted rows to ClickHouse and local partitions
+INSERT INTO events_bin VALUES (5,'2023-05-01',50,50), (102,'2024-03-01',25,25);
+COPY events_bin FROM stdin;
+SELECT tableoid::regclass, * FROM events_bin WHERE id IN (5, 6, 102, 103) ORDER BY id;
+    tableoid     | id  |     ts     | val | amt 
+-----------------+-----+------------+-----+-----
+ events_bin_cold |   5 | 2023-05-01 |  50 |  50
+ events_bin_cold |   6 | 2023-06-01 |  60 |  60
+ events_bin_hot  | 102 | 2024-03-01 |  25 |  25
+ events_bin_hot  | 103 | 2024-04-01 |  35 |  35
+(4 rows)
+
+-- Move local row into ClickHouse partition
+UPDATE events_bin SET ts = '2023-03-01' WHERE ts = '2024-03-01' AND id = 102;
+SELECT tableoid::regclass, * FROM events_bin WHERE id = 102;
+    tableoid     | id  |     ts     | val | amt 
+-----------------+-----+------------+-----+-----
+ events_bin_cold | 102 | 2023-03-01 |  25 |  25
+(1 row)
+
 DROP TABLE events_bin;
 DROP USER MAPPING FOR CURRENT_USER SERVER pwagg_bin_svr;
 CALL clickhouse_perform('pwagg_bin_admin', 'DROP DATABASE pwagg_bin_test');

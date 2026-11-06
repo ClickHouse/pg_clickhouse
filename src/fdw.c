@@ -15,6 +15,7 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/parsenodes.h"
+#include "optimizer/appendinfo.h"
 #include "optimizer/clauses.h"
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
@@ -25,6 +26,7 @@
 #include "parser/parsetree.h"
 #include "utils/lsyscache.h"
 #include "utils/palloc.h"
+#include "utils/partcache.h"
 #include "utils/rel.h"
 #include "utils/tuplestore.h"
 #if PG_VERSION_NUM >= 160000
@@ -150,6 +152,17 @@ typedef struct CHFdwModifyState {
     MemoryContext temp_cxt; /* context for per-tuple temporary data */
 } CHFdwModifyState;
 
+typedef struct CHFdwDirectModifyState {
+    ch_scan_connection conn;
+    char* query;
+    kv_list* settings;
+
+    int numParams;
+    Oid* param_oids;
+    List* param_exprs;
+    const char** param_values;
+} CHFdwDirectModifyState;
+
 /*
  * This enum describes what's kept in the fdw_private list for a ForeignPath.
  * We store:
@@ -245,6 +258,30 @@ static void
 clickhouseBeginForeignInsert(ModifyTableState* mtstate, ResultRelInfo* resultRelInfo);
 static void
 clickhouseEndForeignInsert(EState* estate, ResultRelInfo* resultRelInfo);
+static TupleTableSlot*
+clickhouseExecForeignUpdateDelete(
+    EState* estate,
+    ResultRelInfo* resultRelInfo,
+    TupleTableSlot* slot,
+    TupleTableSlot* planSlot
+);
+static bool
+clickhousePlanDirectModify(
+    PlannerInfo* root,
+    ModifyTable* plan,
+    Index resultRelation,
+    int subplan_index
+);
+static void
+clickhouseBeginDirectModify(ForeignScanState* node, int eflags);
+static TupleTableSlot*
+clickhouseIterateDirectModify(ForeignScanState* node);
+static void
+clickhouseEndDirectModify(ForeignScanState* node);
+static void
+clickhouseExplainDirectModify(ForeignScanState* node, ExplainState* es);
+static void
+clickhouseExecForeignTruncate(List* rels, DropBehavior behavior, bool restart_seqs);
 static void
 clickhouseExplainForeignScan(ForeignScanState* node, ExplainState* es);
 static void
@@ -487,6 +524,16 @@ clickhouse_query(PG_FUNCTION_ARGS) {
 }
 
 /*
+ * Deleting cursor context drains connection so it can be reused
+ */
+static void
+perform_query(const ch_connection* gate, const ch_query* query) {
+    ch_cursor* cursor = gate->methods->simple_query(gate->conn, query);
+
+    MemoryContextDelete(cursor->memcxt);
+}
+
+/*
  * Execute a statement against a configured foreign server and discard any
  * result. Procedure counterpart of clickhouse_query() for statements such as
  * DDL, which return no results to describe in a column definition list.
@@ -498,7 +545,6 @@ clickhouse_perform(PG_FUNCTION_ARGS) {
     ForeignServer* server;
     UserMapping* user;
     ch_scan_connection sconn;
-    ch_cursor* cursor;
 
     /* procedures cannot be declared STRICT, so reject nulls here */
     if (PG_ARGISNULL(0) || PG_ARGISNULL(1)) {
@@ -517,9 +563,7 @@ clickhouse_perform(PG_FUNCTION_ARGS) {
 
     ch_query query = new_query(sql, 0, NULL, NULL, NULL, sconn.gate.encoding_check);
 
-    /* deleting the cursor context drains the connection so it stays reusable */
-    cursor = sconn.gate.methods->simple_query(sconn.gate.conn, &query);
-    MemoryContextDelete(cursor->memcxt);
+    perform_query(&sconn.gate, &query);
     chfdw_release_scan_connection(sconn);
 
     PG_RETURN_VOID();
@@ -1058,6 +1102,49 @@ clickhouseGetForeignPlan(
         outer_plan
     );
 }
+/*
+ * Identify the user with which to execute a remote scan. Necessary because
+ * the current session user is not always the user executing some part of a
+ * query, such as a `SECURITY DEFINER` function.
+ */
+static UserMapping*
+foreign_scan_user_mapping(ForeignScanState* node) {
+    Oid userid;
+    ForeignScan* fsplan = (ForeignScan*)node->ss.ps.plan;
+#if PG_VERSION_NUM < 160000
+    RangeTblEntry* rte;
+    int rtindex;
+#endif
+
+#if PG_VERSION_NUM >= 160000
+    userid = OidIsValid(fsplan->checkAsUser) ? fsplan->checkAsUser : GetUserId();
+#else
+    /*
+     * This should match what ExecCheckRTEPerms() does. In case of a join or
+     * aggregate, use a foreign-table member RTE as a representative.
+     * fs_relids can also contain synthetic join RTEs, which do not have a
+     * relation OID.
+     */
+    if (fsplan->scan.scanrelid > 0) {
+        rtindex = fsplan->scan.scanrelid;
+    } else {
+        rtindex = -1;
+        while ((rtindex = bms_next_member(fsplan->fs_relids, rtindex)) >= 0) {
+            rte = rt_fetch(rtindex, node->ss.ps.state->es_range_table);
+            if (rte->rtekind == RTE_RELATION && rte->relkind == RELKIND_FOREIGN_TABLE) {
+                break;
+            }
+        }
+        if (rtindex < 0) {
+            elog(ERROR, "could not find foreign table for pg_clickhouse scan");
+        }
+    }
+    rte    = rt_fetch(rtindex, node->ss.ps.state->es_range_table);
+    userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
+#endif
+
+    return GetUserMapping(userid, fsplan->fs_server);
+}
 
 /*
  * clickhouseBeginForeignScan
@@ -1068,12 +1155,6 @@ clickhouseBeginForeignScan(ForeignScanState* node, int eflags) {
     ForeignScan* fsplan = (ForeignScan*)node->ss.ps.plan;
     EState* estate      = node->ss.ps.state;
     ChFdwScanState* fsstate;
-#if PG_VERSION_NUM < 160000
-    RangeTblEntry* rte;
-    int rtindex;
-#endif
-    Oid userid;
-    UserMapping* user;
     int numParams;
 
     /*
@@ -1089,43 +1170,13 @@ clickhouseBeginForeignScan(ForeignScanState* node, int eflags) {
     fsstate         = (ChFdwScanState*)palloc0(sizeof(ChFdwScanState));
     node->fdw_state = (void*)fsstate;
 
-    /* Identify which user to do the remote access as. */
-#if PG_VERSION_NUM >= 160000
-    userid = OidIsValid(fsplan->checkAsUser) ? fsplan->checkAsUser : GetUserId();
-#else
-    /*
-     * This should match what ExecCheckRTEPerms() does. In case of a join or
-     * aggregate, use a foreign-table member RTE as a representative.
-     * fs_relids can also contain synthetic join RTEs, which do not have a
-     * relation OID.
-     */
-    if (fsplan->scan.scanrelid > 0) {
-        rtindex = fsplan->scan.scanrelid;
-    } else {
-        rtindex = -1;
-        while ((rtindex = bms_next_member(fsplan->fs_relids, rtindex)) >= 0) {
-            rte = rt_fetch(rtindex, estate->es_range_table);
-            if (rte->rtekind == RTE_RELATION && rte->relkind == RELKIND_FOREIGN_TABLE) {
-                break;
-            }
-        }
-        if (rtindex < 0) {
-            elog(ERROR, "could not find foreign table for pg_clickhouse scan");
-        }
-    }
-    rte    = rt_fetch(rtindex, estate->es_range_table);
-    userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
-#endif
-
-    user = GetUserMapping(userid, fsplan->fs_server);
-
     /*
      * Get connection to the foreign server. Connection manager will establish
      * a new connection if necessary. A scan whose ancestor already holds the
      * cached connection gets a private one, since ClickHouse permits only one
      * query in flight per connection.
      */
-    fsstate->scan_conn = chfdw_get_scan_connection(user);
+    fsstate->scan_conn = chfdw_get_scan_connection(foreign_scan_user_mapping(node));
 
     /* Get private info created by planner functions. */
     fsstate->query = strVal(list_nth(fsplan->fdw_private, FdwScanPrivateSelectSql));
@@ -1455,17 +1506,20 @@ clickhousePlanForeignModify(
             chfdw_deparse_insert_sql(&sql, rte, resultRelation, rel, targetAttrs);
         break;
     case CMD_UPDATE:
-        ereport(
-            ERROR,
-            errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-            errmsg("ClickHouse does not support updates")
-        );
-        break;
     case CMD_DELETE:
         ereport(
             ERROR,
             errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-            errmsg("ClickHouse does not support deletes")
+            errmsg(
+                "pg_clickhouse: cannot run %s on foreign table \"%s\" entirely in "
+                "ClickHouse",
+                operation == CMD_UPDATE ? "UPDATE" : "DELETE",
+                RelationGetRelationName(rel)
+            ),
+            errhint(
+                "Avoid RETURNING, joins, row triggers, and conditions or SET "
+                "expressions that require Postgres."
+            )
         );
         break;
     default:
@@ -1569,19 +1623,16 @@ clickhouseBeginForeignInsert(ModifyTableState* mtstate, ResultRelInfo* resultRel
     }
 
     /*
-     * If the foreign table is a partition, we need to create a new RTE
-     * describing the foreign table for use by chfdw_deparse_insert_sql and
-     * create_foreign_modify() below, after first copying the parent's RTE and
-     * modifying some fields to describe the foreign partition to work on.
-     * However, if this is invoked by UPDATE, the existing RTE may already
-     * correspond to this partition if it is one of the UPDATE subplan target
-     * rels; in that case, we can just use the existing RTE as-is.
+     * Row routing provides no range table entry for target partition.
+     * Copy root table's entry to describe it.
      */
-    rte = list_nth(estate->es_range_table, resultRelation - 1);
-    if (rte->relid != RelationGetRelid(rel)) {
-        rte          = (RangeTblEntry*)copyObjectImpl(rte);
-        rte->relid   = RelationGetRelid(rel);
-        rte->relkind = RELKIND_FOREIGN_TABLE;
+    if (resultRelation == 0) {
+        resultRelation = resultRelInfo->ri_RootResultRelInfo->ri_RangeTableIndex;
+        rte            = copyObject(exec_rt_fetch(resultRelation, estate));
+        rte->relid     = RelationGetRelid(rel);
+        rte->relkind   = RELKIND_FOREIGN_TABLE;
+    } else {
+        rte = exec_rt_fetch(resultRelation, estate);
     }
 
     initStringInfo(&sql);
@@ -1660,6 +1711,266 @@ clickhouseEndForeignInsert(EState* estate, ResultRelInfo* resultRelInfo) {
 }
 
 /*
+ * Postgres rejects UPDATE and DELETE on foreign tables lacking these callbacks,
+ * even when direct modify runs them. clickhousePlanForeignModify raises an
+ * error before either callback can run
+ */
+static TupleTableSlot*
+clickhouseExecForeignUpdateDelete(
+    EState* estate,
+    ResultRelInfo* resultRelInfo,
+    TupleTableSlot* slot,
+    TupleTableSlot* planSlot
+) {
+    elog(ERROR, "pg_clickhouse: row-level UPDATE and DELETE are not supported");
+}
+
+static ForeignScan*
+find_modifytable_subplan(ModifyTable* plan, Index rtindex, int subplan_index) {
+    Plan* subplan = outerPlan(plan);
+
+    if (IsA(subplan, Result) && outerPlan(subplan) != NULL &&
+        IsA(outerPlan(subplan), Append)) {
+        subplan = outerPlan(subplan);
+    }
+    if (IsA(subplan, Append)) {
+        Append* append = (Append*)subplan;
+
+        if (subplan_index < list_length(append->appendplans)) {
+            subplan = list_nth(append->appendplans, subplan_index);
+        }
+    }
+
+    if (IsA(subplan, ForeignScan) &&
+        ((ForeignScan*)subplan)->scan.scanrelid == rtindex) {
+        return (ForeignScan*)subplan;
+    }
+    return NULL;
+}
+
+/*
+ * ClickHouse provides no row identifier for modifying individual rows.
+ * Reject statements that cannot run entirely in ClickHouse
+ */
+static bool
+clickhousePlanDirectModify(
+    PlannerInfo* root,
+    ModifyTable* plan,
+    Index resultRelation,
+    int subplan_index
+) {
+    CmdType operation     = plan->operation;
+    List* processed_tlist = NIL;
+    List* target_attrs    = NIL;
+    List* params_list     = NIL;
+
+    if (operation != CMD_UPDATE && operation != CMD_DELETE) {
+        return false;
+    }
+
+    /* Local conditions, RETURNING, or UPDATE ... FROM need rows in Postgres */
+    ForeignScan* fscan = find_modifytable_subplan(plan, resultRelation, subplan_index);
+    if (fscan == NULL || fscan->scan.plan.qual != NIL || plan->returningLists != NIL) {
+        return false;
+    }
+
+    RelOptInfo* foreignrel    = root->simple_rel_array[resultRelation];
+    CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)foreignrel->fdw_private;
+
+    /*
+     * Subqueries qualify columns by table alias, which ClickHouse UPDATE and
+     * DELETE lack
+     */
+    List* remote_exprs = fpinfo->final_remote_exprs;
+    if (contain_subplans((Node*)remote_exprs)) {
+        return false;
+    }
+
+    if (operation == CMD_UPDATE) {
+        ListCell* lc;
+
+        get_translated_update_targetlist(
+            root, resultRelation, &processed_tlist, &target_attrs
+        );
+        foreach (lc, processed_tlist) {
+            TargetEntry* tle = lfirst_node(TargetEntry, lc);
+
+            if (tle->resjunk) {
+                continue;
+            }
+            Expr* expr = tle->expr;
+
+            if (!chfdw_is_foreign_expr(root, foreignrel, expr, true) ||
+                contain_subplans((Node*)expr)) {
+                return false;
+            }
+        }
+    }
+
+    StringInfoData sql;
+    Relation rel = table_open(planner_rt_fetch(resultRelation, root)->relid, NoLock);
+
+    if (operation == CMD_UPDATE && rel->rd_rel->relispartition) {
+        Bitmapset* partition_attrs = NULL;
+        ListCell* lc;
+
+        pull_varattnos((Node*)RelationGetPartitionQual(rel), 1, &partition_attrs);
+        foreach (lc, target_attrs) {
+            if (bms_is_member(
+                    lfirst_int(lc) - FirstLowInvalidHeapAttributeNumber, partition_attrs
+                )) {
+                ereport(
+                    ERROR,
+                    errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                    errmsg(
+                        "pg_clickhouse: cannot update partition key of foreign table "
+                        "\"%s\"",
+                        RelationGetRelationName(rel)
+                    ),
+                    errdetail("Moving rows out of foreign partitions is not supported.")
+                );
+            }
+        }
+        bms_free(partition_attrs);
+    }
+
+    initStringInfo(&sql);
+    chfdw_deparse_direct_modify_sql(
+        &sql,
+        root,
+        resultRelation,
+        rel,
+        foreignrel,
+        processed_tlist,
+        target_attrs,
+        remote_exprs,
+        &params_list
+    );
+    table_close(rel, NoLock);
+
+    fscan->operation      = operation;
+    fscan->resultRelation = resultRelation;
+    fscan->fdw_exprs      = params_list;
+    fscan->fdw_private    = list_make1(makeString(sql.data));
+    return true;
+}
+
+static void
+clickhouseBeginDirectModify(ForeignScanState* node, int eflags) {
+    ForeignScan* fsplan = (ForeignScan*)node->ss.ps.plan;
+    CHFdwDirectModifyState* dmstate;
+
+    if (eflags & EXEC_FLAG_EXPLAIN_ONLY) {
+        return;
+    }
+
+    dmstate         = (CHFdwDirectModifyState*)palloc0(sizeof(CHFdwDirectModifyState));
+    node->fdw_state = dmstate;
+
+    dmstate->conn     = chfdw_get_scan_connection(foreign_scan_user_mapping(node));
+    dmstate->query    = strVal(linitial(fsplan->fdw_private));
+    dmstate->settings = chfdw_query_settings(
+        fsplan->fs_server,
+        chfdw_table_settings(RelationGetRelid(node->ss.ss_currentRelation)),
+        &dmstate->conn.gate
+    );
+
+    dmstate->numParams = list_length(fsplan->fdw_exprs);
+    if (dmstate->numParams > 0) {
+        prepare_query_params(
+            (PlanState*)node,
+            fsplan->fdw_exprs,
+            dmstate->numParams,
+            &dmstate->param_oids,
+            &dmstate->param_exprs,
+            &dmstate->param_values
+        );
+    }
+}
+
+/*
+ * Executor stops at first empty slot, so this runs once. ClickHouse reports no
+ * affected row count; RETURNING is unsupported
+ */
+static TupleTableSlot*
+clickhouseIterateDirectModify(ForeignScanState* node) {
+    CHFdwDirectModifyState* dmstate = (CHFdwDirectModifyState*)node->fdw_state;
+    ch_query query                  = new_query_with_settings(
+        dmstate->query,
+        dmstate->numParams,
+        dmstate->param_values,
+        NULL,
+        NIL,
+        dmstate->settings,
+        dmstate->conn.gate.encoding_check
+    );
+
+    if (dmstate->numParams > 0) {
+        process_query_params(
+            node->ss.ps.ps_ExprContext,
+            dmstate->param_oids,
+            dmstate->param_exprs,
+            dmstate->param_values
+        );
+    }
+    perform_query(&dmstate->conn.gate, &query);
+
+    return ExecClearTuple(node->ss.ss_ScanTupleSlot);
+}
+
+static void
+clickhouseEndDirectModify(ForeignScanState* node) {
+    CHFdwDirectModifyState* dmstate = (CHFdwDirectModifyState*)node->fdw_state;
+
+    if (dmstate) {
+        chfdw_release_scan_connection(dmstate->conn);
+    }
+}
+
+static void
+clickhouseExplainDirectModify(ForeignScanState* node, ExplainState* es) {
+    if (es->verbose) {
+        List* fdw_private = ((ForeignScan*)node->ss.ps.plan)->fdw_private;
+
+        ExplainPropertyText("Remote SQL", strVal(linitial(fdw_private)), es);
+    }
+}
+
+/*
+ * ClickHouse has no foreign keys or sequences; ignore CASCADE and RESTART IDENTITY
+ */
+static void
+clickhouseExecForeignTruncate(List* rels, DropBehavior behavior, bool restart_seqs) {
+    Oid serverid =
+        GetForeignServerIdByRelId(RelationGetRelid((Relation)linitial(rels)));
+    ch_scan_connection sconn =
+        chfdw_get_scan_connection(GetUserMapping(GetUserId(), serverid));
+    ListCell* lc;
+
+    foreach (lc, rels) {
+        Oid relid = RelationGetRelid((Relation)lfirst(lc));
+        char *db, *table;
+
+        chfdw_remote_table_name(relid, &db, &table);
+        ch_query query = new_query_with_settings(
+            psprintf(
+                "TRUNCATE TABLE %s.%s",
+                pgch_quote_ch_ident(db),
+                pgch_quote_ch_ident(table)
+            ),
+            0,
+            NULL,
+            NULL,
+            NIL,
+            chfdw_query_settings(serverid, chfdw_table_settings(relid), &sconn.gate),
+            sconn.gate.encoding_check
+        );
+        perform_query(&sconn.gate, &query);
+    }
+    chfdw_release_scan_connection(sconn);
+}
+
+/*
  * clickhouseRecheckForeignScan
  *		Execute a local join execution plan for a foreign join
  */
@@ -1709,7 +2020,18 @@ clickhouseExplainForeignScan(ForeignScanState* node, ExplainState* es) {
         ExplainPropertyText("Relations", relations, es);
     }
 
-    chfdw_explain_vector_info(list_nth(fdw_private, FdwScanPrivateVectorInfo), es);
+    /*
+     * If the node is scanning a relation, add any vector search
+     * classifications to the EXPLAIN output.
+     */
+    if (node->ss.ss_currentRelation) {
+        chfdw_explain_vector_info(
+            list_nth(fdw_private, FdwScanPrivateVectorInfo),
+            RelationGetRelid(node->ss.ss_currentRelation),
+            foreign_scan_user_mapping(node),
+            es
+        );
+    }
 
     /*
      * Add remote query, when VERBOSE option is specified.
@@ -3602,23 +3924,31 @@ clickhouse_fdw_handler(PG_FUNCTION_ARGS) {
     routine->BeginForeignModify = clickhouseBeginForeignModify;
     routine->BeginForeignInsert = clickhouseBeginForeignInsert;
     routine->ExecForeignInsert  = clickhouseExecForeignInsert;
+    routine->ExecForeignUpdate  = clickhouseExecForeignUpdateDelete;
+    routine->ExecForeignDelete  = clickhouseExecForeignUpdateDelete;
 
     /*
      * No ExecForeignBatchInsert / GetForeignModifyBatchSize: both drivers
      * already buffer rows and stream them as a single INSERT to ClickHouse, so
      * PG's batch-insert API would add nothing.
-     *
-     * TODO ExecForeignUpdate / ExecForeignDelete via ClickHouse mutations.
      */
 
     routine->EndForeignInsert = clickhouseEndForeignInsert;
     routine->EndForeignModify = clickhouseEndForeignInsert;
 
+    routine->PlanDirectModify    = clickhousePlanDirectModify;
+    routine->BeginDirectModify   = clickhouseBeginDirectModify;
+    routine->IterateDirectModify = clickhouseIterateDirectModify;
+    routine->EndDirectModify     = clickhouseEndDirectModify;
+
+    routine->ExecForeignTruncate = clickhouseExecForeignTruncate;
+
     /* Function for EvalPlanQual rechecks */
     routine->RecheckForeignScan = clickhouseRecheckForeignScan;
 
     /* Support functions for EXPLAIN */
-    routine->ExplainForeignScan = clickhouseExplainForeignScan;
+    routine->ExplainForeignScan  = clickhouseExplainForeignScan;
+    routine->ExplainDirectModify = clickhouseExplainDirectModify;
 
     /* Support functions for ANALYZE */
     routine->AnalyzeForeignTable = clickhouseAnalyzeForeignTable;

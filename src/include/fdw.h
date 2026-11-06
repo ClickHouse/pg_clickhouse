@@ -273,8 +273,6 @@ bool
 chfdw_pushdown_regex_ok(void);
 extern bool
 chfdw_vector_planner_warnings(void);
-extern int
-chfdw_vector_metadata_ttl(void);
 
 extern void
 chfdw_extract_options(
@@ -330,6 +328,18 @@ chfdw_deparse_insert_sql(
     Index rtindex,
     Relation rel,
     List* targetAttrs
+);
+extern void
+chfdw_deparse_direct_modify_sql(
+    StringInfo buf,
+    PlannerInfo* root,
+    Index rtindex,
+    Relation rel,
+    RelOptInfo* foreignrel,
+    List* targetlist,
+    List* target_attrs,
+    List* remote_conds,
+    List** params_list
 );
 extern List*
 chfdw_build_tlist_to_deparse(RelOptInfo* foreignrel);
@@ -513,12 +523,11 @@ typedef struct VectorIndexInfo {
 typedef struct VectorTableMeta {
     List* indexes;   /* of VectorIndexInfo* */
     int64 limit_cap; /* max_limit_for_vector_search_queries, or -1 */
+    bool old_server; /* true when server version predates vector similarity indexes */
 } VectorTableMeta;
 
-extern const VectorTableMeta*
-chfdw_vector_table_meta(Oid relid, UserMapping* user);
-extern void
-chfdw_vector_meta_invalidate_all(void);
+extern bool
+chfdw_vector_table_meta(Oid relid, UserMapping* user, VectorTableMeta* meta);
 extern chfdw_vector_metric
 chfdw_vector_metric_from_ch(const char* name);
 
@@ -532,7 +541,12 @@ chfdw_vector_plan_info(
     bool has_limit
 );
 extern void
-chfdw_explain_vector_info(List* info, struct ExplainState* es);
+chfdw_explain_vector_info(
+    List* info,
+    Oid relid,
+    UserMapping* user,
+    struct ExplainState* es
+);
 
 /* Encode as ClickHouse literal text into buf, which needs MAXDATELEN + 1 bytes */
 extern void

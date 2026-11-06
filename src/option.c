@@ -74,7 +74,6 @@ static char* ch_session_settings         = NULL;
 static kv_list* ch_session_settings_list = NULL;
 static bool ch_pushdown_regex            = true;
 static bool ch_vector_planner_warnings   = true;
-static int ch_vector_metadata_ttl        = 60;
 
 /*
  * Helper functions
@@ -584,14 +583,6 @@ chfdw_vector_planner_warnings(void) {
 }
 
 /*
- * Return the current value of the `vector_metadata_ttl` GUC, in seconds.
- */
-int
-chfdw_vector_metadata_ttl(void) {
-    return ch_vector_metadata_ttl;
-}
-
-/*
  * Validates the provided settings key/value pairs.
  */
 static bool
@@ -696,22 +687,6 @@ _PG_init(void) {
         true,
         PGC_USERSET,
         0,
-        NULL,
-        NULL,
-        NULL
-    );
-
-    DefineCustomIntVariable(
-        "pg_clickhouse.vector_metadata_ttl",
-        "Sets how long to cache ClickHouse vector index metadata.",
-        "The planner reads vector similarity indexes from ClickHouse and caches "
-        "them for this many seconds. Zero reads them for every query.",
-        &ch_vector_metadata_ttl,
-        60,
-        0,
-        INT_MAX,
-        PGC_USERSET,
-        GUC_UNIT_S,
         NULL,
         NULL,
         NULL

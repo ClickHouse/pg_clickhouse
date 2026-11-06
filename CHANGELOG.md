@@ -52,19 +52,44 @@ All notable changes to this project will be documented in this file. It uses the
 *   Added pushdown for `^` `|/` `||/` `@` `&` `|` `#` `~` `<<` `>>` ([#443]).
 *   Added vector index reporting for pgvector nearest neighbor searches.
     `EXPLAIN` shows the ClickHouse vector similarity index a search can use,
-    or why ClickHouse will compare every row instead, and the planner warns in
-    the latter case. Set `pg_clickhouse.vector_planner_warnings` to false to
-    silence the warnings. pg_clickhouse caches the index definitions it reads
-    from ClickHouse for `pg_clickhouse.vector_metadata_ttl` seconds;
-    `clickhouse_refresh_vector_metadata()` clears the cache ([#414]).
+    or why ClickHouse will compare every row instead. Planner warnings report
+    `ORDER BY` or `LIMIT` clauses that prevent index use. Set
+    `pg_clickhouse.vector_planner_warnings` to false to silence them ([#414]).
+*   Added pushdown of `jsonb` subscripts with constant text keys, such as
+    `data['a']['b']`, as ClickHouse JSON sub-column dot notation. Numeric text
+    subscripts evaluate locally to preserve array indexing ([#456]).
+*   Added `UPDATE` and `DELETE` on foreign tables backed by MergeTree family
+    tables, run as a single ClickHouse lightweight `UPDATE` or `DELETE`
+    statement. Statements that cannot run entirely in ClickHouse, such as those
+    with `RETURNING`, joins, or conditions that require Postgres, raise an
+    error. `UPDATE` requires ClickHouse 25.7+ ([#458]).
+*   Added support for `TRUNCATE` on foreign tables. Sends one ClickHouse
+    `TRUNCATE TABLE` statement per table ([#463]).
 
 ### 🚀 Distribution
 
 *   Added Postgres 19beta4 image.
 *   Added [CloudNativePG] extension images.
 
+### 📚 Documentation
+
+*   Expanded [Tuple] section of the documentation to describe and provide
+    examples for the arrays of field values, and to link to the section that
+    covers using composite types ([#460]).
+*   Also added a link to the section that covers using composite types to the
+    [Map] documentation and clarified support for inserting composite values
+    ([#460]).
+*   Updated the [Manual Type Mappings] section of the docs to describe and
+    provide an example of support inserting composite type-mapped [Map],
+    [Tuple], and [Nested] columns ([#460]).
+
 ### 🐞 Bug Fixes
 
+*   Fixed `INSERT`, `COPY`, and `UPDATE` through partitioned parents with
+    ClickHouse foreign partitions. Reject partition-key updates on foreign
+    partitions to prevent rows from disappearing from pruned queries ([#464]).
+*   Fixed ClickHouse identifier quoting for database, table, column, and JSON
+    key names containing backslashes ([#457]).
 *   Fixed unconstrained numeric casts and parameters to use Decimal(76, 38),
     widening Float32 before casting to preserve fractional values ([#402]).
 *   Fixed precision loss in `float4` and `float8` query parameters sent to
@@ -134,6 +159,11 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed aggregates such as `sum`, `avg`, and `min` to return `NULL` for
     empty input, matching PostgreSQL. This also applies when no rows pass
     an aggregate's `FILTER` clause ([#451]).
+*   Fixed `round()` and other expressions over an unconstrained numeric, which
+    previously kept the full 38 decimal places of `Decimal(76, 38)`. For
+    example, `round(avg(f64_column)::numeric)` now returns `3` instead of
+    `3.00000000000000000000000000000000000000`. Thanks to Niramay Kelkar for
+    the PR ([#459])!
 *   Fixed the pushdown of `concat_ws()`, which returned NULL when any value
     was NULL instead of skipping NULL values as Postgres does. A non-constant
     separator, which ClickHouse rejected, and a `VARIADIC ARRAY[...]`
@@ -212,6 +242,24 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#450 Fix CollapsingMergeTree sign column quoting and import"
   [#451]: https://github.com/ClickHouse/pg_clickhouse/pull/451
     "ClickHouse/pg_clickhouse#451 Return NULL for empty aggregates"
+  [#456]: https://github.com/ClickHouse/pg_clickhouse/pull/456
+    "ClickHouse/pg_clickhouse#456 Add support for JSON subscripting pushdown"
+  [#457]: https://github.com/ClickHouse/pg_clickhouse/pull/457
+    "ClickHouse/pg_clickhouse#457 Use pgch_quote_ch_ident in deparse.c"
+  [#458]: https://github.com/ClickHouse/pg_clickhouse/pull/458
+    "ClickHouse/pg_clickhouse#458 Support lightweight updates & deletes"
+  [#459]: https://github.com/ClickHouse/pg_clickhouse/pull/459
+    "ClickHouse/pg_clickhouse#459 Trim unconstrained numeric scale from Decimal(76, 38)"
+  [#460]: https://github.com/ClickHouse/pg_clickhouse/pull/460
+    "ClickHouse/pg_clickhouse#460 Test Tuple & Map and update docs accordingly"
+  [#463]: https://github.com/ClickHouse/pg_clickhouse/pull/463
+    "ClickHouse/pg_clickhouse#463 TRUNCATE"
+  [#464]: https://github.com/ClickHouse/pg_clickhouse/pull/464
+    "ClickHouse/pg_clickhouse#464 Fix inserting into ClickHouse foreign partitions"
+  [Tuple]: doc/pg_clickhouse.md#tuple
+  [Map]: doc/pg_clickhouse.md#map
+  [Nested]: doc/pg_clickhouse.md#nested
+  [Manual Type Mappings]: doc/pg_clickhouse.md#manual-type-mappings
 
 ## [v0.11.0] — 2026-09-30
 

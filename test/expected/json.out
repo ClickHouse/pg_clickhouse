@@ -97,10 +97,7 @@ SELECT * FROM json_http.json_things ORDER BY id;
   6 | {"id":6,"name":"curio","size":"medium","stocked":false}
 (6 rows)
 
--- Subscript access on JSON columns must not be pushed down to ClickHouse.
--- ClickHouse JSON does not support the jsonb `column['key']` syntax (it
--- requires dot notation), so subscripts must be evaluated locally by
--- PostgreSQL.
+-- jsonb subscripts push down as ClickHouse JSON dot notation.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT data['name'] FROM json_http.things;
                    QUERY PLAN                    
@@ -141,86 +138,80 @@ SELECT data['name'] FROM json_bin.things ORDER BY id;
  "curio"
 (6 rows)
 
--- DISTINCT forces an ORDER BY or HashAgg; the subscript must stay local.
+-- DISTINCT forces an ORDER BY or HashAgg.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT DISTINCT data['size'] FROM json_http.things;
-                      QUERY PLAN                       
--------------------------------------------------------
- HashAggregate
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Unique
    Output: (data['size'::text])
-   Group Key: things.data['size'::text]
    ->  Foreign Scan on json_http.things
          Output: data['size'::text]
-         Remote SQL: SELECT data FROM json_test.things
-(6 rows)
+         Remote SQL: SELECT data FROM json_test.things ORDER BY toJSONString(data.size) ASC NULLS LAST
+(5 rows)
 
 SELECT DISTINCT data['size'] FROM json_http.things;
    data   
 ----------
+ "large"
  "medium"
  "small"
- "large"
 (3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT DISTINCT data['size'] FROM json_bin.things;
-                      QUERY PLAN                       
--------------------------------------------------------
- HashAggregate
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Unique
    Output: (data['size'::text])
-   Group Key: things.data['size'::text]
    ->  Foreign Scan on json_bin.things
          Output: data['size'::text]
-         Remote SQL: SELECT data FROM json_test.things
-(6 rows)
+         Remote SQL: SELECT data FROM json_test.things ORDER BY toJSONString(data.size) ASC NULLS LAST
+(5 rows)
 
 SELECT DISTINCT data['size'] FROM json_bin.things;
    data   
 ----------
+ "large"
  "medium"
  "small"
- "large"
 (3 rows)
 
 -- GROUP BY with a JSON subscript expression.
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'];
-                      QUERY PLAN                       
--------------------------------------------------------
- HashAggregate
-   Output: (data['size'::text]), count(*)
-   Group Key: things.data['size'::text]
-   ->  Foreign Scan on json_http.things
-         Output: data['size'::text]
-         Remote SQL: SELECT data FROM json_test.things
-(6 rows)
+SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'] ORDER BY 1;
+                                                                           QUERY PLAN                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (data['size'::text]), (count(*))
+   Relations: Aggregate on (things)
+   Remote SQL: SELECT toJSONString(data.size), count(*) FROM json_test.things GROUP BY (toJSONString(data.size)) ORDER BY toJSONString(data.size) ASC NULLS LAST
+(4 rows)
 
-SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'];
+SELECT data['size'], count(*) FROM json_http.things GROUP BY data['size'] ORDER BY 1;
    data   | count 
 ----------+-------
+ "large"  |     2
  "medium" |     2
  "small"  |     2
- "large"  |     2
 (3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT data['size'], count(*) FROM json_bin.things GROUP BY data['size'];
-                      QUERY PLAN                       
--------------------------------------------------------
- HashAggregate
-   Output: (data['size'::text]), count(*)
-   Group Key: things.data['size'::text]
-   ->  Foreign Scan on json_bin.things
-         Output: data['size'::text]
-         Remote SQL: SELECT data FROM json_test.things
-(6 rows)
+SELECT data['size'], count(*) FROM json_bin.things GROUP BY data['size'] ORDER BY 1;
+                                                                           QUERY PLAN                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (data['size'::text]), (count(*))
+   Relations: Aggregate on (things)
+   Remote SQL: SELECT toJSONString(data.size), count(*) FROM json_test.things GROUP BY (toJSONString(data.size)) ORDER BY toJSONString(data.size) ASC NULLS LAST
+(4 rows)
 
-SELECT data['size'], count(*) FROM json_bin.things GROUP BY data['size'];
+SELECT data['size'], count(*) FROM json_bin.things GROUP BY data['size'] ORDER BY 1;
    data   | count 
 ----------+-------
+ "large"  |     2
  "medium" |     2
  "small"  |     2
- "large"  |     2
 (3 rows)
 
 -- The jsonb ->> operator runs locally when used in SELECT target lists.
@@ -1022,11 +1013,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'my field' = 'hello';
 -- Key with mixed case.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'CamelCase' = 'world';
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan on json_http.special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data.CamelCase = 'world'))
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'CamelCase' = 'world';
@@ -1037,11 +1028,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'CamelCase' = 'world';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'CamelCase' = 'world';
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan on json_bin.special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data.CamelCase = 'world'))
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'CamelCase' = 'world';
@@ -1052,11 +1043,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'CamelCase' = 'world';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'CamelCase' = 'world';
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan on json_http.json_special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data.CamelCase = 'world'))
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'CamelCase' = 'world';
@@ -1067,11 +1058,11 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'CamelCase' = 'world';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'CamelCase' = 'world';
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
  Foreign Scan on json_bin.json_special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."CamelCase" = 'world'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data.CamelCase = 'world'))
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'CamelCase' = 'world';
@@ -1205,11 +1196,11 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> 'The "meaning" of life' 
 -- Key containing a backslash.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.special_keys WHERE data ->> 'back\slash' = 'bs';
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
  Foreign Scan on json_http.special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\\slash" = 'bs'))
 (3 rows)
 
 SELECT * FROM json_http.special_keys WHERE data ->> 'back\slash' = 'bs';
@@ -1220,11 +1211,11 @@ SELECT * FROM json_http.special_keys WHERE data ->> 'back\slash' = 'bs';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.special_keys WHERE data ->> 'back\slash' = 'bs';
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
  Foreign Scan on json_bin.special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\\slash" = 'bs'))
 (3 rows)
 
 SELECT * FROM json_bin.special_keys WHERE data ->> 'back\slash' = 'bs';
@@ -1235,11 +1226,11 @@ SELECT * FROM json_bin.special_keys WHERE data ->> 'back\slash' = 'bs';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'back\slash' = 'bs';
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
  Foreign Scan on json_http.json_special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\\slash" = 'bs'))
 (3 rows)
 
 SELECT * FROM json_http.json_special_keys WHERE data ->> 'back\slash' = 'bs';
@@ -1250,17 +1241,41 @@ SELECT * FROM json_http.json_special_keys WHERE data ->> 'back\slash' = 'bs';
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'back\slash' = 'bs';
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
  Foreign Scan on json_bin.json_special_keys
    Output: id, data
-   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\slash" = 'bs'))
+   Remote SQL: SELECT id, data FROM json_test.special_keys WHERE ((data."back\\slash" = 'bs'))
 (3 rows)
 
 SELECT * FROM json_bin.json_special_keys WHERE data ->> 'back\slash' = 'bs';
  id |                                                                      data                                                                      
 ----+------------------------------------------------------------------------------------------------------------------------------------------------
   2 | {"123numeric":"num","The \"meaning\" of life":42,"back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.special_keys
+WHERE jsonb_extract_path_text(data, 'back\slash') = 'bs';
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on json_http.special_keys
+   Output: id
+   Remote SQL: SELECT id FROM json_test.special_keys WHERE ((data."back\\slash" = 'bs'))
+(3 rows)
+
+SELECT id FROM json_http.special_keys
+WHERE jsonb_extract_path_text(data, 'back\slash') = 'bs';
+ id 
+----
+  2
+(1 row)
+
+SELECT id FROM json_bin.special_keys
+WHERE jsonb_extract_path_text(data, 'back\slash') = 'bs';
+ id 
+----
+  2
 (1 row)
 
 -- Key containing a dot (must not be confused with nested access).
@@ -1507,6 +1522,39 @@ SELECT * FROM json_bin.json_special_keys WHERE data ->> '123numeric' = 'num';
   2 | {"123numeric":"num","The \"meaning\" of life":42,"back\\slash":"bs","dotted":{"key":"dot"},"it's":"apos","key\/with!special@chars#":"special"}
 (1 row)
 
+-- Backslashes in keys must be escaped for ClickHouse.
+INSERT INTO json_http.special_keys
+VALUES (3, '{"back\\nslash": "bsn", "trailing\\": "tbs"}');
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.special_keys WHERE data['back\nslash'] = '"bsn"';
+                                                QUERY PLAN                                                 
+-----------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.special_keys
+   Output: id
+   Remote SQL: SELECT id FROM json_test.special_keys WHERE ((toJSONString(data."back\\nslash") = '"bsn"'))
+(3 rows)
+
+SELECT id FROM json_http.special_keys WHERE data['back\nslash'] = '"bsn"';
+ id 
+----
+  3
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.special_keys WHERE data ->> 'trailing\' = 'tbs';
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.special_keys
+   Output: id
+   Remote SQL: SELECT id FROM json_test.special_keys WHERE ((data."trailing\\" = 'tbs'))
+(3 rows)
+
+SELECT id FROM json_bin.special_keys WHERE data ->> 'trailing\' = 'tbs';
+ id 
+----
+  3
+(1 row)
+
 -- =======================================================================
 -- jsonb_extract_path_text / jsonb_extract_path pushdown
 -- =======================================================================
@@ -1520,8 +1568,8 @@ CALL clickhouse_perform('json_admin', $$
 $$);
 CALL clickhouse_perform('json_admin', $$
     INSERT INTO json_test.events VALUES
-        (1, 'order', '{"customerId": "C100", "address": {"city": "Paris", "zip": "75001"}}'),
-        (2, 'order', '{"customerId": "C200", "address": {"city": "London", "zip": "SW1A"}}');
+        (1, 'order', '{"customerId": "C100", "address": {"city": "Paris", "zip": "75001"}, "a": [1, "2", null]}'),
+        (2, 'order', '{"customerId": "C200", "address": {"city": "London", "zip": "SW1A"}, "a": {"1": "key"}}');
 $$);
 CREATE FOREIGN TABLE json_http.events (
     id         integer,
@@ -1635,11 +1683,11 @@ SELECT jsonb_extract_path(props, 'address') FROM json_bin.events;
 -- WHERE: single-level jsonb_extract_path_text pushes down as dot notation.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_http.events WHERE jsonb_extract_path_text(props, 'customerId') = 'C100';
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
  Foreign Scan on json_http.events
    Output: id
-   Remote SQL: SELECT id FROM json_test.events WHERE ((props."customerId" = 'C100'))
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.customerId = 'C100'))
 (3 rows)
 
 SELECT id FROM json_http.events WHERE jsonb_extract_path_text(props, 'customerId') = 'C100';
@@ -1650,11 +1698,11 @@ SELECT id FROM json_http.events WHERE jsonb_extract_path_text(props, 'customerId
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_bin.events WHERE jsonb_extract_path_text(props, 'customerId') = 'C100';
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
  Foreign Scan on json_bin.events
    Output: id
-   Remote SQL: SELECT id FROM json_test.events WHERE ((props."customerId" = 'C100'))
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.customerId = 'C100'))
 (3 rows)
 
 SELECT id FROM json_bin.events WHERE jsonb_extract_path_text(props, 'customerId') = 'C100';
@@ -1720,6 +1768,93 @@ SELECT id FROM json_bin.events WHERE jsonb_extract_path(props, 'address', 'city'
 (3 rows)
 
 SELECT id FROM json_bin.events WHERE jsonb_extract_path(props, 'address', 'city') = '"Paris"'::jsonb;
+ id 
+----
+  1
+(1 row)
+
+-- WHERE: chained jsonb subscripts push down as dot notation.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props['address']['city'] = '"Paris"';
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Remote SQL: SELECT id FROM json_test.events WHERE ((toJSONString(props.address.city) = '"Paris"'))
+(3 rows)
+
+SELECT id FROM json_http.events WHERE props['address']['city'] = '"Paris"';
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.events WHERE props['address']['city'] = '"Paris"';
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.events
+   Output: id
+   Remote SQL: SELECT id FROM json_test.events WHERE ((toJSONString(props.address.city) = '"Paris"'))
+(3 rows)
+
+SELECT id FROM json_bin.events WHERE props['address']['city'] = '"Paris"';
+ id 
+----
+  1
+(1 row)
+
+-- Integer and non-constant jsonb subscripts evaluate locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props[0] IS NULL;
+                      QUERY PLAN                      
+------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Filter: (events.props[0] IS NULL)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props[event_name] IS NULL;
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Filter: (events.props[events.event_name] IS NULL)
+   Remote SQL: SELECT id, event_name, props FROM json_test.events
+(4 rows)
+
+-- PostgreSQL interprets numeric text subscripts as array indexes or object keys.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, props['a']['1'] FROM json_http.events ORDER BY id;
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id, props['a'::text]['1'::text]
+   Remote SQL: SELECT id, props FROM json_test.events ORDER BY id ASC NULLS LAST
+(3 rows)
+
+SELECT id, props['a']['1'] AS indexed, props['a']['-2'] AS negative,
+       props['a']['+1'] AS signed, props['a'][' 1'] AS spaced, props['a']['01'] AS padded
+FROM json_http.events ORDER BY id;
+ id | indexed | negative | signed | spaced | padded 
+----+---------+----------+--------+--------+--------
+  1 | "2"     | "2"      | "2"    | "2"    | "2"
+  2 | "key"   |          |        |        | 
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.events WHERE props['a']['1'] = '"2"';
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ Foreign Scan on json_bin.events
+   Output: id
+   Filter: (events.props['a'::text]['1'::text] = '"2"'::jsonb)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
+
+SELECT id FROM json_bin.events WHERE props['a']['1'] = '"2"';
  id 
 ----
   1
@@ -1854,11 +1989,11 @@ SELECT json_extract_path(props, 'address') FROM json_bin.json_events;
 -- WHERE: single-level json_extract_path_text pushes down as dot notation.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_http.json_events WHERE json_extract_path_text(props, 'customerId') = 'C100';
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
  Foreign Scan on json_http.json_events
    Output: id
-   Remote SQL: SELECT id FROM json_test.events WHERE ((props."customerId" = 'C100'))
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.customerId = 'C100'))
 (3 rows)
 
 SELECT id FROM json_http.json_events WHERE json_extract_path_text(props, 'customerId') = 'C100';
@@ -1869,11 +2004,11 @@ SELECT id FROM json_http.json_events WHERE json_extract_path_text(props, 'custom
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT id FROM json_bin.json_events WHERE json_extract_path_text(props, 'customerId') = 'C100';
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
  Foreign Scan on json_bin.json_events
    Output: id
-   Remote SQL: SELECT id FROM json_test.events WHERE ((props."customerId" = 'C100'))
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.customerId = 'C100'))
 (3 rows)
 
 SELECT id FROM json_bin.json_events WHERE json_extract_path_text(props, 'customerId') = 'C100';

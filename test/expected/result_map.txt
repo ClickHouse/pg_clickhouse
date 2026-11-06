@@ -335,6 +335,20 @@ timezone.sql
 ----------|--------------
  14-19    | timezone.out
 
+tuple-map.sql
+--------------
+
+ Postgres | File
+----------|------------
+ 14-19    | tuple-map.out
+
+ ClickHouse | File
+------------|-----------------
+ 26.8+      | tuple-map.out
+ 25.8-26.3  | tuple-map_1.out
+ 24.8-25.3  | tuple-map_2.out
+ 23+        | tuple-map_3.out
+
 vector_pushdown.sql
 -------------------
 

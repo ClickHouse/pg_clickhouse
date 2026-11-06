@@ -137,7 +137,7 @@ CREATE FOREIGN TABLE nest_http.visits(
 INSERT INTO nest_bin.visits
 VALUES (3, 3, ARRAY[row(5, 'jj'), row(6, 'zz')]::goal_type[]);
 
-INSERT INTO nest_bin.visits
+INSERT INTO nest_http.visits
 VALUES (4, 4, ARRAY[row(7, 'mm'), row(8, 'uu')]::goal_type[]);
 
 SELECT * FROM nest_bin.visits ORDER BY visit_id;
@@ -164,11 +164,6 @@ CALL clickhouse_perform('nested_admin', $$
     ) ORDER BY id SETTINGS flatten_nested = 0
 $$);
 
-CALL clickhouse_perform('nested_admin', $$
-    INSERT INTO nested_test.events
-    VALUES(1, 'new', tuple(3, 4), {'k1': 5, 'k2': 6}, [tuple(100, 'xx'), tuple(101, 'yy')])
-$$);
-
 CREATE TYPE event_status AS ENUM ('new', 'done');
 CREATE TYPE event_point AS (x integer, y integer);
 CREATE TYPE event_label AS (key text, value bigint);
@@ -181,6 +176,14 @@ CREATE FOREIGN TABLE nest_bin.events (
     labels event_label[],
     items  event_item[]
 ) SERVER binary_nested_loopback OPTIONS(table_name 'events');
+
+-- Insert values.
+INSERT INTO nest_bin.events
+VALUES(
+    1, 'new', (3, 4),
+    ARRAY[('k1', 5), ('k2', 6)]::event_label[],
+    ARRAY[(100, 'xx'), (101, 'yy')]::event_item[])
+;
 
 SELECT * FROM nest_bin.events ORDER BY id;
 SELECT (point).x, (point).y,
