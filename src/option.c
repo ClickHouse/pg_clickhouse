@@ -59,6 +59,7 @@ static const ChFdwOption ch_options[] = {
     { "host", 0, false },
     { "secure", 0, false },
     { "min_tls_version", 0, false },
+    { "tls_server_name", 0, false },
     { "port", 0, false },
     { "dbname", 0, false },
     { "user", 0, false },
@@ -171,6 +172,19 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
         /* Check the syntax; ClickHouse checks the values */
         if (strcmp(def->defname, "settings") == 0) {
             chfdw_parse_options(defGetString(def));
+        }
+
+        if (strcmp(def->defname, "tls_server_name") == 0) {
+            const char* val = defGetString(def);
+
+            if (val[0] == '\0') {
+                ereport(
+                    ERROR,
+                    errcode(ERRCODE_FDW_INVALID_STRING_FORMAT),
+                    errmsg("invalid value for option \"tls_server_name\": \"%s\"", val),
+                    errhint("Specify the DNS name on the server certificate.")
+                );
+            }
         }
 
         if (strcmp(def->defname, "encoding_check") == 0) {
@@ -339,6 +353,7 @@ chfdw_extract_options(
     char** compression,
     tls_mode* tls,
     tls_version* min_tls_version,
+    char** tls_server_name,
     pgch_encoding_check* encoding_check
 ) {
     ListCell* lc;
@@ -396,6 +411,10 @@ chfdw_extract_options(
             ) {
                 /* invalid values rejected by the validator; ignore here */
                 parse_min_tls_version(defGetString(def), min_tls_version);
+            } else if (
+                tls_server_name && strcmp(def->defname, "tls_server_name") == 0
+            ) {
+                *tls_server_name = defGetString(def);
             }
         }
     }

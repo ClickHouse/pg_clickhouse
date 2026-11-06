@@ -65,6 +65,13 @@ All notable changes to this project will be documented in this file. It uses the
     statement. Statements that cannot run entirely in ClickHouse, such as those
     with `RETURNING`, joins, or conditions that require Postgres, raise an
     error. `UPDATE` requires ClickHouse 25.7+ ([#458]).
+*   Added a `tls_server_name` server option to set the name sent as TLS
+    Server Name Indication (SNI) and matched against the server certificate,
+    so that `host` can be an IP address or a DNS name that differs from the
+    name on the certificate, such as a private endpoint for a ClickHouse Cloud
+    service. Defaults to `host`. Applies to both drivers, and the `secure`
+    option's `auto` mode treats a ClickHouse Cloud `tls_server_name` like a
+    cloud `host` ([#462]).
 
 ### 🚀 Distribution
 
@@ -242,6 +249,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#459 Trim unconstrained numeric scale from Decimal(76, 38)"
   [#460]: https://github.com/ClickHouse/pg_clickhouse/pull/460
     "ClickHouse/pg_clickhouse#460 Test Tuple & Map and update docs accordingly"
+  [#462]: https://github.com/ClickHouse/pg_clickhouse/pull/462
+    "ClickHouse/pg_clickhouse#462 Add tls_server_name option for SNI independent of host"
   [Tuple]: doc/pg_clickhouse.md#tuple
   [Map]: doc/pg_clickhouse.md#map
   [Nested]: doc/pg_clickhouse.md#nested

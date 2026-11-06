@@ -34,6 +34,14 @@ ch_is_cloud_host(const char* host) {
            ends_with(host, ".clickhouse-dev.com");
 }
 
+const char*
+ch_tls_name(const ch_connection_details* details) {
+    if (details->tls_server_name && details->tls_server_name[0] != '\0') {
+        return details->tls_server_name;
+    }
+    return details->host;
+}
+
 void
 ch_resolve_endpoint(
     const ch_connection_details* details,
@@ -55,9 +63,9 @@ ch_resolve_endpoint(
         *out_port = port ? port : plain;
         *out_tls  = false;
         return;
-    default: /* CH_TLS_AUTO uses the host and port. */
+    default: /* CH_TLS_AUTO uses the TLS name (or host) and port. */
         if (!port) {
-            port = ch_is_cloud_host(details->host) ? secure : plain;
+            port = ch_is_cloud_host(ch_tls_name(details)) ? secure : plain;
         }
         *out_port = port;
         *out_tls  = port == secure || (http && port == CH_HTTPS_PORT);

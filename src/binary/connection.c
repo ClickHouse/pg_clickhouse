@@ -173,8 +173,16 @@ openssl_min_proto_version(tls_version v) {
     }
 }
 
+/*
+ * Wrap conn->fd in TLS. tls_name is sent as SNI and the server certificate is
+ * verified against it; it may differ from the host the socket was dialed to.
+ */
 static void
-tls_connect(ch_binary_connection_t* conn, const char* host, tls_version min_version) {
+tls_connect(
+    ch_binary_connection_t* conn,
+    const char* tls_name,
+    tls_version min_version
+) {
     static int openssl_init_done = 0;
 
     if (!openssl_init_done) {
@@ -225,9 +233,9 @@ tls_connect(ch_binary_connection_t* conn, const char* host, tls_version min_vers
             errdetail("SSL_new failed")
         );
     }
-    SSL_set_tlsext_host_name(conn->ssl, host);
+    SSL_set_tlsext_host_name(conn->ssl, tls_name);
     SSL_set_hostflags(conn->ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-    if (SSL_set1_host(conn->ssl, host) != 1) {
+    if (SSL_set1_host(conn->ssl, tls_name) != 1) {
         ereport(
             ERROR,
             errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
@@ -289,11 +297,12 @@ ch_binary_connect(ch_connection_details* details) {
         conn->reset_cb.arg  = conn;
         MemoryContextRegisterResetCallback(cxt, &conn->reset_cb);
 
-        const char* host = details->host ? details->host : "127.0.0.1";
+        const char* host     = details->host ? details->host : "127.0.0.1";
+        const char* tls_name = ch_tls_name(details);
 
         conn->fd = tcp_connect(host, port);
         if (tls) {
-            tls_connect(conn, host, details->min_tls_version);
+            tls_connect(conn, tls_name ? tls_name : host, details->min_tls_version);
             chc_openssl_io_init(
                 &conn->openssl_state, &conn->io, conn->ssl, cancel_adapter, conn
             );

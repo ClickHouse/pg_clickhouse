@@ -288,6 +288,7 @@ chfdw_extract_options(
     char** compression,
     tls_mode* tls,
     tls_version* min_tls_version,
+    char** tls_server_name,
     pgch_encoding_check* encoding_check
 );
 extern List*

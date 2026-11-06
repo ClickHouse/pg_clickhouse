@@ -2882,7 +2882,7 @@ chfdw_remote_table_name(Oid relid, char** db, char** table) {
     *db    = "default";
     *table = NULL;
     chfdw_extract_options(
-        server->options, NULL, NULL, NULL, db, NULL, NULL, NULL, NULL, NULL, NULL
+        server->options, NULL, NULL, NULL, db, NULL, NULL, NULL, NULL, NULL, NULL, NULL
     );
 
     /* Use value of FDW options if any, instead of the name of object itself. */

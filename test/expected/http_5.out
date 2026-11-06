@@ -1054,6 +1054,26 @@ $$);
 
 DROP FUNCTION late_error;
 DROP FOREIGN TABLE late_error;
+/* ===== tls_server_name option tests ===== */
+/* A DNS name is accepted by both drivers; validation does not connect. */
+CREATE SERVER http_sni FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', host '127.0.0.1',
+            tls_server_name 'svc.clickhouse.cloud');
+DROP SERVER http_sni;
+CREATE SERVER binary_sni FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'binary', host '127.0.0.1',
+            tls_server_name 'svc.clickhouse.cloud');
+DROP SERVER binary_sni;
+/* An empty value must be rejected. */
+CREATE SERVER http_sni_empty FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', tls_server_name '');
+ERROR:  invalid value for option "tls_server_name": ""
+HINT:  Specify the DNS name on the server certificate.
+/* It is a server option, not a user mapping option. */
+ALTER USER MAPPING FOR CURRENT_USER SERVER http_loopback
+    OPTIONS(ADD tls_server_name 'svc.clickhouse.cloud');
+ERROR:  invalid option "tls_server_name"
+HINT:  Valid options in this context are: user, password
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback_bad;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback2;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_loopback;

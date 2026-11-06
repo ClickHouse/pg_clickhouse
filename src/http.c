@@ -35,6 +35,13 @@ struct ch_http_connection_t {
     char* dbname;
     char* base_url;   /* Allocated by curl_url_get and freed by curl_free. */
     long ssl_version; /* Minimum CURLOPT_SSLVERSION, or DEFAULT when unset. */
+    /*
+     * CURLOPT_CONNECT_TO list, set only when tls_server_name differs from host:
+     * base_url then names the TLS server name (so SNI, certificate verification
+     * and the Host header use it) while this list redirects the TCP connection
+     * to the configured host and port. NULL otherwise.
+     */
+    struct curl_slist* connect_to;
     ch_server_version version;
     bool version_fetched; /* True after a version lookup, including failure. */
 };
@@ -45,6 +52,8 @@ struct ch_http_connection_t {
 
 #define DATABASE_HEADER "X-ClickHouse-Database"
 #define INITIAL_BUF_SIZE (64 * 1024)
+/* "::" + host (max 255 bytes for a DNS name) + ":" + port + NUL */
+#define CH_HTTP_CONNECT_TO_LEN 280
 
 static long curl_verbose     = 0;
 static bool curl_initialized = false;
@@ -113,10 +122,44 @@ ch_http_connection(ch_connection_details* details, const char** error) {
     }
 
     bool use_tls;
+    const char* url_host = host;
 
     ch_resolve_endpoint(details, CH_PORTS_HTTP, &port, &use_tls);
 
     snprintf(port_buf, sizeof(port_buf), "%d", port);
+
+    /*
+     * When TLS is on and tls_server_name is set, put that name in the URL so
+     * curl sends it as SNI and verifies the certificate against it, and use
+     * CURLOPT_CONNECT_TO to dial the configured host instead. The empty source
+     * host and port ("::") match every request on this handle.
+     */
+    if (use_tls && details->tls_server_name && *details->tls_server_name &&
+        strcmp(details->tls_server_name, host) != 0) {
+        char connect_to[CH_HTTP_CONNECT_TO_LEN];
+        /* An IPv6 literal must be bracketed to separate it from the port. */
+        bool ipv6 = strchr(host, ':') != NULL && host[0] != '[';
+
+        *error = "host too long";
+        if (snprintf(
+                connect_to,
+                sizeof(connect_to),
+                "::%s%s%s:%d",
+                ipv6 ? "[" : "",
+                host,
+                ipv6 ? "]" : "",
+                port
+            ) >= (int)sizeof(connect_to)) {
+            goto cleanup;
+        }
+
+        *error           = "out of memory";
+        conn->connect_to = curl_slist_append(NULL, connect_to);
+        if (conn->connect_to == NULL) {
+            goto cleanup;
+        }
+        url_host = details->tls_server_name;
+    }
 
     cu = curl_url();
     if (cu == NULL) {
@@ -127,7 +170,7 @@ ch_http_connection(ch_connection_details* details, const char** error) {
     *error = "could not build ClickHouse URL";
     if (curl_url_set(cu, CURLUPART_SCHEME, use_tls ? "https" : "http", 0) !=
             CURLUE_OK ||
-        curl_url_set(cu, CURLUPART_HOST, host, 0) != CURLUE_OK ||
+        curl_url_set(cu, CURLUPART_HOST, url_host, 0) != CURLUE_OK ||
         curl_url_set(cu, CURLUPART_PORT, port_buf, 0) != CURLUE_OK ||
         curl_url_set(cu, CURLUPART_PATH, "/", 0) != CURLUE_OK) {
         goto cleanup;
@@ -155,6 +198,7 @@ ch_http_connection(ch_connection_details* details, const char** error) {
 
 cleanup:
     curl_url_cleanup(cu);
+    curl_slist_free_all(conn->connect_to);
     free(conn->dbname);
     free(conn);
 
@@ -164,6 +208,7 @@ cleanup:
 void
 ch_http_close(ch_http_connection_t* conn) {
     curl_free(conn->base_url);
+    curl_slist_free_all(conn->connect_to);
     free(conn->dbname);
     free(conn);
 }
@@ -334,6 +379,10 @@ setup_curl(HttpStream* stream, const ch_http_request* req) {
 
     if (stream->conn->ssl_version != CURL_SSLVERSION_DEFAULT) {
         curl_easy_setopt(stream->curl, CURLOPT_SSLVERSION, stream->conn->ssl_version);
+    }
+
+    if (stream->conn->connect_to != NULL) {
+        curl_easy_setopt(stream->curl, CURLOPT_CONNECT_TO, stream->conn->connect_to);
     }
 
     if (stream->cancel) {
