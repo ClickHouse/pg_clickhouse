@@ -562,6 +562,29 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM t1 WHERE concat_ws(',', a, b, 'foo', c) = '2,3,foo,2019-01-02 10:00:00';
 SELECT * FROM t1 WHERE concat_ws(',', a, b, 'foo', c) = '2,3,foo,2019-01-02 10:00:00';
 
+-- concat_ws skips NULL values.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE concat_ws('/', a, nullif(b, 3)) = '2';
+SELECT a FROM t3 WHERE concat_ws('/', a, nullif(b, 3)) = '2';
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE concat_ws('/', NULL, a, NULL, b) = '2/3';
+SELECT a FROM t3 WHERE concat_ws('/', NULL, a, NULL, b) = '2/3';
+
+-- concat_ws with a NULL separator returns NULL.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE concat_ws(nullif(b::text, '3'), a, b) IS NULL ORDER BY a;
+SELECT a FROM t3 WHERE concat_ws(nullif(b::text, '3'), a, b) IS NULL ORDER BY a;
+
+-- concat_ws with a non-constant separator or VARIADIC array.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE concat_ws(b::text, a, a) = '232';
+SELECT a FROM t3 WHERE concat_ws(b::text, a, a) = '232';
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE concat_ws('/', VARIADIC ARRAY[a, b]) = '2/3';
+SELECT a FROM t3 WHERE concat_ws('/', VARIADIC ARRAY[a, b]) = '2/3';
+
 -- Test fuzzystrmatch pushdown.
 CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
 
