@@ -63,6 +63,8 @@ All notable changes to this project will be documented in this file. It uses the
     statement. Statements that cannot run entirely in ClickHouse, such as those
     with `RETURNING`, joins, or conditions that require Postgres, raise an
     error. `UPDATE` requires ClickHouse 25.7+ ([#458]).
+*   Added support for `TRUNCATE` on foreign tables. Sends one ClickHouse
+    `TRUNCATE TABLE` statement per table ([#463]).
 
 ### 🚀 Distribution
 
@@ -243,6 +245,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#459 Trim unconstrained numeric scale from Decimal(76, 38)"
   [#460]: https://github.com/ClickHouse/pg_clickhouse/pull/460
     "ClickHouse/pg_clickhouse#460 Test Tuple & Map and update docs accordingly"
+  [#463]: https://github.com/ClickHouse/pg_clickhouse/pull/463
+    "ClickHouse/pg_clickhouse#463 TRUNCATE"
   [#464]: https://github.com/ClickHouse/pg_clickhouse/pull/464
     "ClickHouse/pg_clickhouse#464 Fix inserting into ClickHouse foreign partitions"
   [Tuple]: doc/pg_clickhouse.md#tuple

@@ -1,0 +1,123 @@
+CREATE SERVER truncate_http FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'truncate_test', driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER truncate_http;
+CREATE SERVER truncate_bin FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'truncate_test', driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER truncate_bin;
+CREATE SERVER truncate_admin FOREIGN DATA WRAPPER clickhouse_fdw OPTIONS(driver 'http');
+CREATE USER MAPPING FOR CURRENT_USER SERVER truncate_admin;
+CALL clickhouse_perform('truncate_admin', 'DROP DATABASE IF EXISTS truncate_test');
+CALL clickhouse_perform('truncate_admin', 'DROP DATABASE IF EXISTS truncate_other');
+CALL clickhouse_perform('truncate_admin', 'CREATE DATABASE truncate_test');
+CALL clickhouse_perform('truncate_admin', 'CREATE DATABASE truncate_other');
+CALL clickhouse_perform('truncate_admin', $$
+    CREATE TABLE truncate_test.items (id Int32) ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('truncate_admin', $$
+    CREATE TABLE truncate_test.events (id Int32, ts Date) ENGINE = MergeTree ORDER BY id
+$$);
+CALL clickhouse_perform('truncate_admin', $$
+    CREATE TABLE truncate_other."odd name" (id Int32) ENGINE = Memory
+$$);
+CREATE SCHEMA truncate_fdw;
+SET search_path = truncate_fdw, public;
+CREATE FOREIGN TABLE items (id int) SERVER truncate_http;
+CREATE FOREIGN TABLE items_bin (id int) SERVER truncate_bin OPTIONS (table_name 'items');
+CREATE FOREIGN TABLE odd (id int)
+    SERVER truncate_bin OPTIONS (database 'truncate_other', table_name 'odd name');
+-- HTTP driver
+INSERT INTO items SELECT generate_series(1, 5);
+TRUNCATE items;
+SELECT count(*) FROM items;
+ count 
+-------
+     0
+(1 row)
+
+-- Binary driver, database and table_name options
+INSERT INTO items_bin SELECT generate_series(1, 5);
+INSERT INTO odd SELECT generate_series(1, 5);
+TRUNCATE items_bin, odd;
+SELECT count(*) FROM items_bin;
+ count 
+-------
+     0
+(1 row)
+
+SELECT count(*) FROM odd;
+ count 
+-------
+     0
+(1 row)
+
+-- Truncate tables across servers, apply RESTART IDENTITY and CASCADE locally
+CREATE TABLE local_items (id int GENERATED ALWAYS AS IDENTITY, v int);
+INSERT INTO items SELECT generate_series(1, 5);
+INSERT INTO odd SELECT generate_series(1, 5);
+INSERT INTO local_items (v) SELECT generate_series(1, 5);
+TRUNCATE items, odd, local_items RESTART IDENTITY CASCADE;
+SELECT count(*) FROM items;
+ count 
+-------
+     0
+(1 row)
+
+SELECT count(*) FROM odd;
+ count 
+-------
+     0
+(1 row)
+
+-- Verify RESTART IDENTITY resets local table sequence
+INSERT INTO local_items (v) VALUES (1) RETURNING id;
+ id 
+----
+  1
+(1 row)
+
+-- Truncate local and ClickHouse partitions together
+CREATE TABLE events (id int, ts date) PARTITION BY RANGE (ts);
+CREATE FOREIGN TABLE events_cold PARTITION OF events
+    FOR VALUES FROM ('2023-01-01') TO ('2024-01-01')
+    SERVER truncate_http OPTIONS (table_name 'events');
+CREATE TABLE events_hot PARTITION OF events
+    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+INSERT INTO events_cold VALUES (1, '2023-01-15');
+INSERT INTO events_hot VALUES (2, '2024-01-10');
+SELECT count(*) FROM events;
+ count 
+-------
+     2
+(1 row)
+
+TRUNCATE events;
+SELECT count(*) FROM events;
+ count 
+-------
+     0
+(1 row)
+
+-- ClickHouse truncates immediately, so rollback cannot restore rows
+INSERT INTO items SELECT generate_series(1, 5);
+SELECT count(*) FROM items;
+ count 
+-------
+     5
+(1 row)
+
+BEGIN;
+TRUNCATE items;
+ROLLBACK;
+SELECT count(*) FROM items;
+ count 
+-------
+     0
+(1 row)
+
+CALL clickhouse_perform('truncate_admin', 'DROP DATABASE truncate_test');
+CALL clickhouse_perform('truncate_admin', 'DROP DATABASE truncate_other');
+SET client_min_messages = warning;
+DROP SCHEMA truncate_fdw CASCADE;
+DROP SERVER truncate_http CASCADE;
+DROP SERVER truncate_bin CASCADE;
+DROP SERVER truncate_admin CASCADE;

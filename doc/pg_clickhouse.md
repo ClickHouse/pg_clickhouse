@@ -939,6 +939,19 @@ For ClickHouse 25.7, also set `allow_experimental_lightweight_update = 1`.
 Pass ClickHouse settings, such as `lightweight_deletes_sync`, as for other queries
 (see [Settings Precedence](#settings-precedence)).
 
+### TRUNCATE
+
+Use [TRUNCATE] to remove all rows from foreign tables. pg_clickhouse sends one
+ClickHouse [TRUNCATE TABLE] statement per table:
+
+```pgsql
+try=# TRUNCATE logs;
+TRUNCATE TABLE
+```
+
+ClickHouse truncates immediately. ROLLBACK does not restore them. If truncating
+a table fails partway through, already truncated tables remain truncated.
+
 ### LOAD
 
 Use [LOAD] to load the pg_clickhouse shared library:
@@ -2460,6 +2473,10 @@ Copyright (c) 2025-2026, ClickHouse.
     "ClickHouse Docs: The Lightweight DELETE Statement"
   [MergeTree]: https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree
     "ClickHouse Docs: MergeTree"
+  [TRUNCATE]: https://www.postgresql.org/docs/current/sql-truncate.html
+    "PostgreSQL Docs: TRUNCATE"
+  [TRUNCATE TABLE]: https://clickhouse.com/docs/sql-reference/statements/truncate
+    "ClickHouse Docs: TRUNCATE"
   [LOAD]: https://www.postgresql.org/docs/current/sql-load.html
     "PostgreSQL Docs: LOAD"
   [SET]: https://www.postgresql.org/docs/current/sql-set.html

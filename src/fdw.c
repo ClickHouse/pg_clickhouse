@@ -281,6 +281,8 @@ clickhouseEndDirectModify(ForeignScanState* node);
 static void
 clickhouseExplainDirectModify(ForeignScanState* node, ExplainState* es);
 static void
+clickhouseExecForeignTruncate(List* rels, DropBehavior behavior, bool restart_seqs);
+static void
 clickhouseExplainForeignScan(ForeignScanState* node, ExplainState* es);
 static void
 clickhouseGetForeignUpperPaths(
@@ -1932,6 +1934,40 @@ clickhouseExplainDirectModify(ForeignScanState* node, ExplainState* es) {
 
         ExplainPropertyText("Remote SQL", strVal(linitial(fdw_private)), es);
     }
+}
+
+/*
+ * ClickHouse has no foreign keys or sequences; ignore CASCADE and RESTART IDENTITY
+ */
+static void
+clickhouseExecForeignTruncate(List* rels, DropBehavior behavior, bool restart_seqs) {
+    Oid serverid =
+        GetForeignServerIdByRelId(RelationGetRelid((Relation)linitial(rels)));
+    ch_scan_connection sconn =
+        chfdw_get_scan_connection(GetUserMapping(GetUserId(), serverid));
+    ListCell* lc;
+
+    foreach (lc, rels) {
+        Oid relid = RelationGetRelid((Relation)lfirst(lc));
+        char *db, *table;
+
+        chfdw_remote_table_name(relid, &db, &table);
+        ch_query query = new_query_with_settings(
+            psprintf(
+                "TRUNCATE TABLE %s.%s",
+                pgch_quote_ch_ident(db),
+                pgch_quote_ch_ident(table)
+            ),
+            0,
+            NULL,
+            NULL,
+            NIL,
+            chfdw_query_settings(serverid, chfdw_table_settings(relid), &sconn.gate),
+            sconn.gate.encoding_check
+        );
+        perform_query(&sconn.gate, &query);
+    }
+    chfdw_release_scan_connection(sconn);
 }
 
 /*
@@ -3904,6 +3940,8 @@ clickhouse_fdw_handler(PG_FUNCTION_ARGS) {
     routine->BeginDirectModify   = clickhouseBeginDirectModify;
     routine->IterateDirectModify = clickhouseIterateDirectModify;
     routine->EndDirectModify     = clickhouseEndDirectModify;
+
+    routine->ExecForeignTruncate = clickhouseExecForeignTruncate;
 
     /* Function for EvalPlanQual rechecks */
     routine->RecheckForeignScan = clickhouseRecheckForeignScan;
