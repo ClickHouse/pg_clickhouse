@@ -1100,13 +1100,15 @@ clickhouseGetForeignPlan(
         outer_plan
     );
 }
-
 /*
- * Identify which user to do remote access as
+ * Identify the user with which to execute a remote scan. Necessary because
+ * the current session user is not always the user executing some part of a
+ * query, such as a `SECURITY DEFINER` function.
  */
 static UserMapping*
-foreign_scan_user_mapping(ForeignScan* fsplan, EState* estate) {
+foreign_scan_user_mapping(ForeignScanState* node) {
     Oid userid;
+    ForeignScan* fsplan = (ForeignScan*)node->ss.ps.plan;
 #if PG_VERSION_NUM < 160000
     RangeTblEntry* rte;
     int rtindex;
@@ -1126,7 +1128,7 @@ foreign_scan_user_mapping(ForeignScan* fsplan, EState* estate) {
     } else {
         rtindex = -1;
         while ((rtindex = bms_next_member(fsplan->fs_relids, rtindex)) >= 0) {
-            rte = rt_fetch(rtindex, estate->es_range_table);
+            rte = rt_fetch(rtindex, node->ss.ps.state->es_range_table);
             if (rte->rtekind == RTE_RELATION && rte->relkind == RELKIND_FOREIGN_TABLE) {
                 break;
             }
@@ -1135,7 +1137,7 @@ foreign_scan_user_mapping(ForeignScan* fsplan, EState* estate) {
             elog(ERROR, "could not find foreign table for pg_clickhouse scan");
         }
     }
-    rte    = rt_fetch(rtindex, estate->es_range_table);
+    rte    = rt_fetch(rtindex, node->ss.ps.state->es_range_table);
     userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
 #endif
 
@@ -1172,8 +1174,7 @@ clickhouseBeginForeignScan(ForeignScanState* node, int eflags) {
      * cached connection gets a private one, since ClickHouse permits only one
      * query in flight per connection.
      */
-    fsstate->scan_conn =
-        chfdw_get_scan_connection(foreign_scan_user_mapping(fsplan, estate));
+    fsstate->scan_conn = chfdw_get_scan_connection(foreign_scan_user_mapping(node));
 
     /* Get private info created by planner functions. */
     fsstate->query = strVal(list_nth(fsplan->fdw_private, FdwScanPrivateSelectSql));
@@ -1864,8 +1865,7 @@ clickhouseBeginDirectModify(ForeignScanState* node, int eflags) {
     dmstate         = (CHFdwDirectModifyState*)palloc0(sizeof(CHFdwDirectModifyState));
     node->fdw_state = dmstate;
 
-    dmstate->conn =
-        chfdw_get_scan_connection(foreign_scan_user_mapping(fsplan, node->ss.ps.state));
+    dmstate->conn     = chfdw_get_scan_connection(foreign_scan_user_mapping(node));
     dmstate->query    = strVal(linitial(fsplan->fdw_private));
     dmstate->settings = chfdw_query_settings(
         fsplan->fs_server,
@@ -1984,7 +1984,18 @@ clickhouseExplainForeignScan(ForeignScanState* node, ExplainState* es) {
         ExplainPropertyText("Relations", relations, es);
     }
 
-    chfdw_explain_vector_info(list_nth(fdw_private, FdwScanPrivateVectorInfo), es);
+    /*
+     * If the node is scanning a relation, add any vector search
+     * classifications to the EXPLAIN output.
+     */
+    if (node->ss.ss_currentRelation) {
+        chfdw_explain_vector_info(
+            list_nth(fdw_private, FdwScanPrivateVectorInfo),
+            RelationGetRelid(node->ss.ss_currentRelation),
+            foreign_scan_user_mapping(node),
+            es
+        );
+    }
 
     /*
      * Add remote query, when VERBOSE option is specified.

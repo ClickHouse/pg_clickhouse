@@ -27,7 +27,6 @@
 #include "optimizer/optimizer.h"
 #include "parser/parsetree.h"
 #include "utils/lsyscache.h"
-#include "utils/memutils.h"
 
 #include "fdw.h"
 
@@ -41,9 +40,6 @@ static const struct {
     [VECTOR_METRIC_DOT]    = { "dotProduct",     "<#>" },
     [VECTOR_METRIC_L1]     = { "L1Distance",     "<+>" },
 };
-
-/* Servers already warned about lacking vector indexes */
-static List* warned_old_servers = NIL;
 
 /*
  * Return true if args are a column of rel and an expression free of rel's
@@ -128,25 +124,18 @@ const_count(Node* node) {
 }
 
 /*
- * Return why ClickHouse cannot serve the vector search of a scan from an
- * index, or NULL when it can. Sets *index_name to the index it would use, and
- * clears *warn for a reason already reported once per backend.
+ * Return why query shape prevents vector index use, or NULL when structural
+ * checks pass.
  */
 static const char*
-fallback_reason(
+shape_reason(
     PlannerInfo* root,
     RelOptInfo* rel,
     ForeignPath* path,
     bool has_limit,
-    Oid relid,
-    const char* column,
-    chfdw_vector_metric metric,
-    bool index_asc,
-    const char** index_name,
-    bool* warn
+    bool index_asc
 ) {
     CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)rel->fdw_private;
-    UserMapping* user         = chfdw_rel_user_mapping(root, rel);
     PathKey* first            = linitial(root->query_pathkeys);
 #if PG_VERSION_NUM >= 180000
     bool asc = first->pk_cmptype == BTLessStrategyNumber;
@@ -154,29 +143,6 @@ fallback_reason(
     bool asc = first->pk_strategy == BTLessStrategyNumber;
 #endif
 
-    if (path->path.pathkeys == NIL) {
-        return "the ORDER BY cannot be pushed down, so Postgres sorts every row";
-    }
-    if (!user) {
-        return NULL;
-    }
-
-    /* Look up the indexes first: that survives an unreachable server */
-    const VectorTableMeta* meta = chfdw_vector_table_meta(relid, user);
-
-    if (!meta) {
-        return NULL;
-    }
-    if (!chfdw_version_ge(chfdw_get_server_version(user), 25, 8)) {
-        *warn = !list_member_oid(warned_old_servers, user->serverid);
-        if (*warn) {
-            MemoryContext old = MemoryContextSwitchTo(TopMemoryContext);
-
-            warned_old_servers = lappend_oid(warned_old_servers, user->serverid);
-            MemoryContextSwitchTo(old);
-        }
-        return "vector similarity indexes require ClickHouse 25.8 or later";
-    }
     if (!has_limit) {
         return fpinfo->local_conds
                    ? "a WHERE condition cannot be pushed down, so neither can LIMIT"
@@ -188,26 +154,38 @@ fallback_reason(
     if (asc != index_asc) {
         return "the ORDER BY sorts farthest first";
     }
+    return NULL;
+}
 
+/*
+ * Return the reason why ClickHouse cannot serve vector search from an index,
+ * or NULL when it can, in which case it also sets *index_name to the index it
+ * would use.
+ */
+static const char*
+index_reason(
+    const VectorTableMeta* meta,
+    const char* func,
+    const char* column,
+    int64 limit,
+    const char** index_name
+) {
     const VectorIndexInfo* other = NULL;
     ListCell* lc;
+
     foreach (lc, meta->indexes) {
         const VectorIndexInfo* index = lfirst(lc);
 
         if (strcmp(index->column, column) != 0) {
             continue;
         }
-        if (index->metric == metric) {
-            *index_name  = index->name;
-            int64 limit  = const_count(root->parse->limitCount);
-            int64 offset = const_count(root->parse->limitOffset);
-
-            if (meta->limit_cap >= 0 && limit >= 0 && offset >= 0 &&
-                limit + offset > meta->limit_cap) {
+        if (strcmp(metrics[index->metric].func, func) == 0) {
+            *index_name = index->name;
+            if (meta->limit_cap >= 0 && limit > meta->limit_cap) {
                 return psprintf(
                     "LIMIT " INT64_FORMAT
                     " exceeds max_limit_for_vector_search_queries (" INT64_FORMAT ")",
-                    limit + offset,
+                    limit,
                     meta->limit_cap
                 );
             }
@@ -221,18 +199,18 @@ fallback_reason(
             other->name,
             metrics[other->metric].func,
             metrics[other->metric].op,
-            metrics[metric].func
+            func
         );
     }
     return psprintf("column \"%s\" has no vector index", column);
 }
 
 /*
- * Classify the vector search of a foreign scan, if any, and warn when
- * ClickHouse cannot serve it from a vector index. Returns what EXPLAIN shows
- * as a List of String nodes for the scan's fdw_private: the distance
- * function, column, index, and fallback reason. Returns NIL when the scan
- * does not sort by a vector distance.
+ * Classify the vector search for a foreign scan, if any, and warn when its
+ * shape keeps ClickHouse from serving it from a vector index. Returns what
+ * EXPLAIN needs as a List for the scan's fdw_private: the distance function,
+ * column, fallback reason, whether the sort is pushed down, and LIMIT plus
+ * OFFSET or -1. Returns NIL when the scan does not sort by a vector distance.
  */
 List*
 chfdw_vector_plan_info(
@@ -261,13 +239,12 @@ chfdw_vector_plan_info(
     const char* column      = cinfo && cinfo->colname
                                   ? cinfo->colname
                                   : get_attname(relid, var->varattno, false);
-    const char* index       = "";
-    bool warn               = true;
-    const char* reason      = fallback_reason(
-        root, rel, path, has_limit, relid, column, metric, index_asc, &index, &warn
-    );
+    bool pushed             = path->path.pathkeys != NIL;
+    const char* reason =
+        pushed ? shape_reason(root, rel, path, has_limit, index_asc)
+               : "the ORDER BY cannot be pushed down, so Postgres sorts every row";
 
-    if (reason && warn && chfdw_vector_planner_warnings()) {
+    if (reason && chfdw_vector_planner_warnings()) {
         ereport(
             WARNING,
             errmsg(
@@ -282,33 +259,58 @@ chfdw_vector_plan_info(
         );
     }
 
-    return list_make4(
+    int64 limit  = const_count(root->parse->limitCount);
+    int64 offset = const_count(root->parse->limitOffset);
+
+    return list_make5(
         makeString(pstrdup(metrics[metric].func)),
         makeString(pstrdup(column)),
-        makeString(pstrdup(index)),
-        makeString(pstrdup(reason ? reason : ""))
+        makeString(pstrdup(reason ? reason : "")),
+        makeInteger(pushed),
+        makeString(
+            psprintf(INT64_FORMAT, limit >= 0 && offset >= 0 ? limit + offset : -1)
+        )
     );
 }
 
 /*
- * Show the vector search classification of a scan in EXPLAIN.
+ * Add vector search and index properties to EXPLAIN, reading the indexes of
+ * foreign table relid from ClickHouse when the query shape allows an index.
+ * `info` must be a list generated by `chfdw_vector_plan_info()` (or NIL).
  */
 void
-chfdw_explain_vector_info(List* info, struct ExplainState* es) {
+chfdw_explain_vector_info(
+    List* info,
+    Oid relid,
+    UserMapping* user,
+    struct ExplainState* es
+) {
     if (info == NIL) {
+        /* Not a vector search. */
         return;
     }
 
-    const char* index  = strVal(lthird(info));
-    const char* reason = strVal(lfourth(info));
+    /* Read data generated by chfdw_vector_plan_info(). */
+    const char* func   = strVal(linitial(info));
+    const char* column = strVal(lsecond(info));
+    const char* reason = strVal(lthird(info));
+    const char* index  = NULL;
+    VectorTableMeta meta;
 
-    ExplainPropertyText(
-        "Vector Search",
-        psprintf("%s on %s", strVal(linitial(info)), strVal(lsecond(info))),
-        es
-    );
-    ExplainPropertyText("Vector Index", *index ? index : "none", es);
-    if (*reason) {
+    /* Fourth item of info indicates whether the `ORDER BY` was pushed down. */
+    if (intVal(lfourth(info)) && chfdw_vector_table_meta(relid, user, &meta)) {
+        if (meta.old_server) {
+            reason = "vector similarity indexes require ClickHouse 25.8 or later";
+        } else if (!*reason) {
+            int64 limit = strtoll(strVal(list_nth(info, 4)), NULL, 10);
+
+            reason = index_reason(&meta, func, column, limit, &index);
+        }
+    }
+
+    ExplainPropertyText("Vector Search", psprintf("%s on %s", func, column), es);
+    ExplainPropertyText("Vector Index", index ? index : "none", es);
+    if (reason && *reason) {
         ExplainPropertyText("Vector Index Not Used", reason, es);
     }
 }

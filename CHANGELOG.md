@@ -52,11 +52,9 @@ All notable changes to this project will be documented in this file. It uses the
 *   Added pushdown for `^` `|/` `||/` `@` `&` `|` `#` `~` `<<` `>>` ([#443]).
 *   Added vector index reporting for pgvector nearest neighbor searches.
     `EXPLAIN` shows the ClickHouse vector similarity index a search can use,
-    or why ClickHouse will compare every row instead, and the planner warns in
-    the latter case. Set `pg_clickhouse.vector_planner_warnings` to false to
-    silence the warnings. pg_clickhouse caches the index definitions it reads
-    from ClickHouse for `pg_clickhouse.vector_metadata_ttl` seconds;
-    `clickhouse_refresh_vector_metadata()` clears the cache ([#414]).
+    or why ClickHouse will compare every row instead. Planner warnings report
+    `ORDER BY` or `LIMIT` clauses that prevent index use. Set
+    `pg_clickhouse.vector_planner_warnings` to false to silence them ([#414]).
 *   Added pushdown of `jsonb` subscripts with constant text keys, such as
     `data['a']['b']`, as ClickHouse JSON sub-column dot notation. Numeric text
     subscripts evaluate locally to preserve array indexing ([#456]).

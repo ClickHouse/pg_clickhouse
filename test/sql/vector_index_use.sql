@@ -42,7 +42,8 @@ CREATE FOREIGN TABLE docs (id int, v vector(2), w vector(2))
 -- The index serves a single-key ascending L2 sort with a LIMIT under the cap.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY v <-> '[1,0]' LIMIT 5;
 
--- Each of these makes ClickHouse search exactly, with a warning.
+-- Each of these makes ClickHouse search exactly, warn when a ClickHouse
+-- vector index cannot be used.
 EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY v <=> '[1,0]' LIMIT 5;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY w <-> '[1,0]' LIMIT 5;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY v <-> '[1,0]' DESC LIMIT 5;
@@ -52,18 +53,11 @@ SET pg_clickhouse.pushdown_regex = off;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs WHERE id::text ~ '1' ORDER BY v <-> '[1,0]' LIMIT 5;
 RESET pg_clickhouse.pushdown_regex;
 
--- The planner reads indexes added in ClickHouse once the cache is refreshed,
--- however long its time to live.
-SET pg_clickhouse.vector_metadata_ttl = '30d';
+-- EXPLAIN reads indexes added in ClickHouse at once.
 CALL clickhouse_perform('vector_index_use_svr', $$
     ALTER TABLE vector_index_use_test.docs ADD INDEX w_idx w TYPE vector_similarity('hnsw', 'cosineDistance', 2)
 $$);
-SET pg_clickhouse.vector_planner_warnings = off;
 EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY w <=> '[1,0]' LIMIT 5;
-SELECT clickhouse_refresh_vector_metadata();
-EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM docs ORDER BY w <=> '[1,0]' LIMIT 5;
-RESET pg_clickhouse.vector_planner_warnings;
-RESET pg_clickhouse.vector_metadata_ttl;
 
 -- ClickHouse puts backticks around a column name that needs them.
 CALL clickhouse_perform('vector_index_use_svr', $$
