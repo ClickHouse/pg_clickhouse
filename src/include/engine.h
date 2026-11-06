@@ -35,8 +35,19 @@ typedef struct {
     tls_mode tls;                /* TLS mode; CH_TLS_AUTO when not specified */
     tls_version min_tls_version; /* minimum TLS version; CH_TLS_DEFAULT
                                   * when not specified */
+    char* tls_server_name;       /* name sent as TLS SNI and matched against
+                                  * the server certificate; NULL uses host */
     pgch_encoding_check encoding_check;
 } ch_connection_details;
+
+/*
+ * Returns the name to send as TLS SNI and verify the server certificate
+ * against: tls_server_name when set and non-empty, else host. Lets host be an
+ * IP or another DNS name while the handshake still names what the certificate
+ * was issued for. Returns NULL only when both are unset.
+ */
+extern const char*
+ch_tls_name(const ch_connection_details* details);
 
 /* Identifies the protocol family used to choose default ports. */
 typedef enum {

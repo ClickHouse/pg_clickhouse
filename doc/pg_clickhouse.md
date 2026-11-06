@@ -147,18 +147,33 @@ The supported options are:
     that use TLS. One of `TLSv1`, `TLSv1.1`, `TLSv1.2`, or `TLSv1.3`. Defaults
     to the TLS library's own minimum. Applies to both drivers.
 *   `port`: The port to connect to on the ClickHouse server. Defaults as
-    follows:
-    *   9440 if `driver` is "binary" and `host` is a ClickHouse Cloud host
-    *   9004 if `driver` is "binary" and `host` is not a ClickHouse Cloud host
-    *   8443 if `driver` is "http" and `host` is a ClickHouse Cloud host
-    *   8123 if `driver` is "http" and `host` is not a ClickHouse Cloud host
+    follows, where "cloud host" means `host`, or `tls_server_name` when set,
+    is a ClickHouse Cloud host name:
+    *   9440 if `driver` is "binary" and connecting to a cloud host
+    *   9004 if `driver` is "binary" and not connecting to a cloud host
+    *   8443 if `driver` is "http" and connecting to a cloud host
+    *   8123 if `driver` is "http" and not connecting to a cloud host
 *   `secure`: Controls TLS for the connection. One of:
-    *   `auto` (default): use TLS when `host` is a ClickHouse Cloud host or
-        `port` is a secure port; plaintext otherwise.
+    *   `auto` (default): use TLS when `host` (or `tls_server_name` when set)
+        is a ClickHouse Cloud host or `port` is a secure port; plaintext
+        otherwise.
     *   `on` (or `true`/`yes`/`1`): always use TLS. Defaults `port` to 8443
         ("http") or 9440 ("binary").
     *   `off` (or `false`/`no`/`0`): never use TLS. Defaults `port` to 8123
         ("http") or 9000 ("binary").
+*   `tls_server_name`: The name to send as TLS Server Name Indication (SNI)
+    and to match against the server certificate on connections that use TLS.
+    Use it when `host` is an IP address or a DNS name that differs from the
+    name on the certificate, such as a private endpoint for a ClickHouse Cloud
+    service. Defaults to `host`. Ignored for plaintext connections. Applies to
+    both drivers. For the "http" driver the name is also sent as the HTTP
+    `Host` header. Example:
+
+    ```sql
+    CREATE SERVER cloud_srv FOREIGN DATA WRAPPER clickhouse_fdw
+           OPTIONS(driver 'binary', host '10.0.0.5',
+                   tls_server_name 'abc123.us-east-1.aws.clickhouse.cloud');
+    ```
 *   `encoding_check`: Defines how to to handle invalid characters under the
     [database encoding] when converting ClickHouse String and JSON values. One
     of:

@@ -95,6 +95,7 @@ clickhouse_connect(ForeignServer* server, UserMapping* user) {
         &details.compression,
         &details.tls,
         &details.min_tls_version,
+        &details.tls_server_name,
         &details.encoding_check
     );
     chfdw_extract_options(
@@ -108,6 +109,7 @@ clickhouse_connect(ForeignServer* server, UserMapping* user) {
         &details.compression,
         &details.tls,
         &details.min_tls_version,
+        &details.tls_server_name,
         &details.encoding_check
     );
 
