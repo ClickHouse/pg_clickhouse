@@ -748,7 +748,7 @@ For example on how to move data from local to foreign partitions, see
 Aggregates spanning both local and foreign partitions need [partitionwise
 aggregation], which PostgreSQL disables by default:
 
-```pgsql
+```sql
 SET enable_partitionwise_aggregate = on;
 ```
 
@@ -1261,7 +1261,7 @@ or `bigint` to read and write counts of their units. For example, an
 When the [pgvector] extension is installed, declare ClickHouse float array
 columns as `vector` to read and write them as pgvector values:
 
-```pgsql
+```sql
 CREATE FOREIGN TABLE items (
     id        bigint NOT NULL,
     embedding vector(768) NOT NULL
@@ -1359,7 +1359,6 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER B
 The text columns will be correct:
 
 ```pgsql
-
  c1 |                          encode                          |              encode
 ----+----------------------------------------------------------+----------------------------------
   1 | 1bf7f0cc821d31178616a55a8e0c52677735397cdde6f4153a9fd3d7 | ae3b28cde02542f81acce8783245430d
@@ -1372,7 +1371,7 @@ The text columns will be correct:
 But reading them as [BYTEA] will not:
 
 ```pgsql
-# SELECT * FROM bytes;
+try=# SELECT * FROM bytes;
  c1 |                                                           c2                                                           |                                   c3
 ----+------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------
   1 | \x5c783162663766306363383231643331313738363136613535613865306335323637373733353339376364646536663431353361396664336437 | \x5c786165336232386364653032353432663831616363653837383332343534333064
@@ -1597,7 +1596,7 @@ VALUES (1, ARRAY[['42', 'Arthur'], ['99', 'Barbara']]);
 Pushdown of subscript access fails, however:
 
 ```pgsql
-SELECT * FROM nests WHERE c2[1][1] = '42`
+try=# SELECT * FROM nests WHERE c2[1][1] = '42`
 ERROR:  pg_clickhouse: DB::Exception: First argument for function 'arrayElement' must be array, got 'Tuple(serial UInt32, order_id String)' instead
 ```
 
@@ -1663,17 +1662,17 @@ Composite inserts into `Nested` columns require the `binary` driver.
 
 ```sql
 INSERT INTO events
-VALUES(
+VALUES (
     1, 'new', (3, 4),
     ARRAY[('k1', 5), ('k2', 6)]::event_label[],
-    ARRAY[(100, 'xx'), (101, 'yy')]::event_item[])
-;
+    ARRAY[(100, 'xx'), (101, 'yy')]::event_item[]
+);
 ```
 
 And to fetch the values:
 
 ```pgsql
-SELECT * FROM events ORDER BY id;
+try=# SELECT * FROM events ORDER BY id;
  id | status | point |       labels        |          items
 ----+--------+-------+---------------------+-------------------------
   1 | new    | (3,4) | {"(k1,5)","(k2,6)"} | {"(100,xx)","(101,yy)"}
@@ -1684,9 +1683,9 @@ Of course you can use the composite type field names, too, both in a `SELECT`
 list:
 
 ```pgsql
-SELECT (point).x,       (point).y,
-       (labels[1]).key, (labels[1]).value,
-       (items[1]).id,   (items[1]).name
+try=# SELECT (point).x,       (point).y,
+             (labels[1]).key, (labels[1]).value,
+             (items[1]).id,   (items[1]).name
   FROM events ORDER BY id;
  x | y | key | value | id  | name
 ---+---+-----+-------+-----+------
@@ -2036,7 +2035,7 @@ ClickHouse:
 A nearest-neighbor query pushes its distance sort and `LIMIT` to ClickHouse,
 along with any `WHERE` conditions:
 
-```pgsql
+```sql
 SELECT id FROM items
  WHERE category = 'footwear'
  ORDER BY embedding <=> '[0.12, 0.03, 0.4]'
