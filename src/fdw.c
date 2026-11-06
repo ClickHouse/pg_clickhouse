@@ -26,6 +26,7 @@
 #include "parser/parsetree.h"
 #include "utils/lsyscache.h"
 #include "utils/palloc.h"
+#include "utils/partcache.h"
 #include "utils/rel.h"
 #include "utils/tuplestore.h"
 #if PG_VERSION_NUM >= 160000
@@ -1619,19 +1620,16 @@ clickhouseBeginForeignInsert(ModifyTableState* mtstate, ResultRelInfo* resultRel
     }
 
     /*
-     * If the foreign table is a partition, we need to create a new RTE
-     * describing the foreign table for use by chfdw_deparse_insert_sql and
-     * create_foreign_modify() below, after first copying the parent's RTE and
-     * modifying some fields to describe the foreign partition to work on.
-     * However, if this is invoked by UPDATE, the existing RTE may already
-     * correspond to this partition if it is one of the UPDATE subplan target
-     * rels; in that case, we can just use the existing RTE as-is.
+     * Row routing provides no range table entry for target partition.
+     * Copy root table's entry to describe it.
      */
-    rte = list_nth(estate->es_range_table, resultRelation - 1);
-    if (rte->relid != RelationGetRelid(rel)) {
-        rte          = (RangeTblEntry*)copyObjectImpl(rte);
-        rte->relid   = RelationGetRelid(rel);
-        rte->relkind = RELKIND_FOREIGN_TABLE;
+    if (resultRelation == 0) {
+        resultRelation = resultRelInfo->ri_RootResultRelInfo->ri_RangeTableIndex;
+        rte            = copyObject(exec_rt_fetch(resultRelation, estate));
+        rte->relid     = RelationGetRelid(rel);
+        rte->relkind   = RELKIND_FOREIGN_TABLE;
+    } else {
+        rte = exec_rt_fetch(resultRelation, estate);
     }
 
     initStringInfo(&sql);
@@ -1792,7 +1790,12 @@ clickhousePlanDirectModify(
             root, resultRelation, &processed_tlist, &target_attrs
         );
         foreach (lc, processed_tlist) {
-            Expr* expr = lfirst_node(TargetEntry, lc)->expr;
+            TargetEntry* tle = lfirst_node(TargetEntry, lc);
+
+            if (tle->resjunk) {
+                continue;
+            }
+            Expr* expr = tle->expr;
 
             if (!chfdw_is_foreign_expr(root, foreignrel, expr, true) ||
                 contain_subplans((Node*)expr)) {
@@ -1803,6 +1806,30 @@ clickhousePlanDirectModify(
 
     StringInfoData sql;
     Relation rel = table_open(planner_rt_fetch(resultRelation, root)->relid, NoLock);
+
+    if (operation == CMD_UPDATE && rel->rd_rel->relispartition) {
+        Bitmapset* partition_attrs = NULL;
+        ListCell* lc;
+
+        pull_varattnos((Node*)RelationGetPartitionQual(rel), 1, &partition_attrs);
+        foreach (lc, target_attrs) {
+            if (bms_is_member(
+                    lfirst_int(lc) - FirstLowInvalidHeapAttributeNumber, partition_attrs
+                )) {
+                ereport(
+                    ERROR,
+                    errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                    errmsg(
+                        "pg_clickhouse: cannot update partition key of foreign table "
+                        "\"%s\"",
+                        RelationGetRelationName(rel)
+                    ),
+                    errdetail("Moving rows out of foreign partitions is not supported.")
+                );
+            }
+        }
+        bms_free(partition_attrs);
+    }
 
     initStringInfo(&sql);
     chfdw_deparse_direct_modify_sql(

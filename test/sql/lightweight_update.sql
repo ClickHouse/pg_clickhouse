@@ -80,6 +80,46 @@ INSERT INTO local_ids VALUES (1, 100);
 UPDATE items SET qty = (SELECT max(qty) FROM local_ids) WHERE id = 1;
 SELECT * FROM items WHERE id = 1;
 
+-- Update local and ClickHouse partitions in same statement
+SET datestyle = 'ISO';
+CALL clickhouse_perform('lw_update_admin', $$
+    CREATE TABLE lw_update_test.events (id Int32, ts Date, qty Int32)
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1
+$$);
+CALL clickhouse_perform('lw_update_admin', $$
+    INSERT INTO lw_update_test.events VALUES (1, '2023-01-15', 10), (2, '2023-06-01', 20)
+$$);
+CREATE TABLE events (id int, ts date, qty int) PARTITION BY RANGE (ts);
+CREATE FOREIGN TABLE events_cold PARTITION OF events
+    FOR VALUES FROM ('2023-01-01') TO ('2024-01-01')
+    SERVER lw_update_svr OPTIONS (table_name 'events');
+CREATE TABLE events_hot PARTITION OF events
+    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+INSERT INTO events_hot VALUES (3, '2024-01-10', 30), (4, '2024-02-15', 40);
+EXPLAIN (VERBOSE, COSTS OFF) UPDATE events SET qty = qty + 1 WHERE id IN (2, 4);
+UPDATE events SET qty = qty + 1 WHERE id IN (2, 4);
+SELECT id, ts, qty FROM events ORDER BY id;
+
+-- Reject partition key updates through parent and leaf
+UPDATE events SET ts = '2024-06-01' WHERE ts = '2023-06-01' AND id = 2;
+UPDATE events_cold SET ts = '2024-06-01' WHERE id = 2;
+SELECT tableoid::regclass, id, ts, qty FROM events WHERE ts = '2023-06-01';
+SELECT id FROM events WHERE ts = '2024-06-01';
+
+-- Include ancestor expressions and default partition constraints
+CREATE TABLE events_expr (id int, ts date, qty int)
+    PARTITION BY RANGE ((extract(year FROM ts)));
+CREATE TABLE events_expr_2023 PARTITION OF events_expr
+    FOR VALUES FROM (2023) TO (2024) PARTITION BY LIST (id);
+CREATE TABLE events_expr_other PARTITION OF events_expr_2023 FOR VALUES IN (99);
+CREATE FOREIGN TABLE events_expr_default PARTITION OF events_expr_2023 DEFAULT
+    SERVER lw_update_bin OPTIONS (table_name 'events');
+UPDATE events_expr_default SET ts = '2024-06-01' WHERE id = 2;
+UPDATE events_expr_default SET id = 99 WHERE id = 2;
+UPDATE events_expr SET qty = qty + 1 WHERE id = 1;
+SELECT id, ts, qty FROM events_expr WHERE id = 1;
+
 -- Reject statements that cannot run entirely in ClickHouse
 UPDATE items SET qty = 0 WHERE id = 1 RETURNING id;
 CREATE FUNCTION local_double(int) RETURNS int LANGUAGE plpgsql AS 'BEGIN RETURN $1 * 2; END';

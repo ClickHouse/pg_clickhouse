@@ -85,6 +85,9 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### 🐞 Bug Fixes
 
+*   Fixed `INSERT`, `COPY`, and `UPDATE` through partitioned parents with
+    ClickHouse foreign partitions. Reject partition-key updates on foreign
+    partitions to prevent rows from disappearing from pruned queries ([#464]).
 *   Fixed ClickHouse identifier quoting for database, table, column, and JSON
     key names containing backslashes ([#457]).
 *   Fixed unconstrained numeric casts and parameters to use Decimal(76, 38),
@@ -242,6 +245,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#459 Trim unconstrained numeric scale from Decimal(76, 38)"
   [#460]: https://github.com/ClickHouse/pg_clickhouse/pull/460
     "ClickHouse/pg_clickhouse#460 Test Tuple & Map and update docs accordingly"
+  [#464]: https://github.com/ClickHouse/pg_clickhouse/pull/464
+    "ClickHouse/pg_clickhouse#464 Fix inserting into ClickHouse foreign partitions"
   [Tuple]: doc/pg_clickhouse.md#tuple
   [Map]: doc/pg_clickhouse.md#map
   [Nested]: doc/pg_clickhouse.md#nested

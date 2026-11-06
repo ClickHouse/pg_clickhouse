@@ -57,6 +57,18 @@ SET enable_partitionwise_join = on;
 SELECT count(*) FROM events a JOIN events b ON a.id = b.id AND a.ts = b.ts;
 RESET enable_partitionwise_join;
 
+-- Route inserted rows to ClickHouse and local partitions
+INSERT INTO events VALUES (5,'2023-05-01',50,50), (102,'2024-03-01',25,25);
+COPY events FROM stdin;
+6	2023-06-01	60	60
+103	2024-04-01	35	35
+\.
+SELECT tableoid::regclass, * FROM events WHERE id IN (5, 6, 102, 103) ORDER BY id;
+
+-- Move local row into ClickHouse partition
+UPDATE events SET ts = '2023-03-01' WHERE ts = '2024-03-01' AND id = 102;
+SELECT tableoid::regclass, * FROM events WHERE id = 102;
+
 DROP TABLE events;
 DROP USER MAPPING FOR CURRENT_USER SERVER pwagg_svr;
 CALL clickhouse_perform('pwagg_admin', 'DROP DATABASE pwagg_test');
