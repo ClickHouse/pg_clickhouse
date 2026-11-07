@@ -316,6 +316,8 @@ deparseRangeTblRef(
 static void
 deparseAggref(Aggref* node, deparse_expr_cxt* context);
 static void
+deparseGroupingFunc(GroupingFunc* node, deparse_expr_cxt* context);
+static void
 deparseWindowFunc(WindowFunc* node, deparse_expr_cxt* context);
 static void
 appendGroupByClause(List* tlist, deparse_expr_cxt* context);
@@ -1311,6 +1313,24 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
 
         /* FILTER only qualifies rows, so it keeps NULL/FALSE equivalence */
         if (!foreign_expr_walker((Node*)agg->aggfilter, glob_cxt, EXPR_CTX_TRUTH)) {
+            return false;
+        }
+    } break;
+    case T_GroupingFunc: {
+        GroupingFunc* gf = (GroupingFunc*)node;
+
+        if (!IS_UPPER_REL(glob_cxt->foreignrel) || gf->agglevelsup != 0) {
+            return false;
+        }
+
+        /*
+         * Require ClickHouse 26.6+ for grouping() with group_by_use_nulls:
+         * ClickHouse#77545
+         */
+        if (!server_version_ge(glob_cxt->root, glob_cxt->foreignrel, 26, 6)) {
+            return false;
+        }
+        if (!foreign_expr_walker((Node*)gf->args, glob_cxt, EXPR_CTX_EXACT)) {
             return false;
         }
     } break;
@@ -3016,6 +3036,9 @@ deparseExpr(Expr* node, deparse_expr_cxt* context) {
         break;
     case T_Aggref:
         deparseAggref((Aggref*)node, context);
+        break;
+    case T_GroupingFunc:
+        deparseGroupingFunc((GroupingFunc*)node, context);
         break;
     case T_WindowFunc:
         deparseWindowFunc((WindowFunc*)node, context);
@@ -6146,7 +6169,11 @@ deparsePartialStatArray(Aggref* node, AggPartialKind kind, deparse_expr_cxt* con
  */
 static bool
 agg_needs_or_null(Aggref* node, deparse_expr_cxt* context) {
-    if (!node->aggfilter && context->root->parse->groupClause != NIL) {
+    Query* query = context->root->parse;
+
+    /* Postgres sorts expanded grouping sets by size, with empty sets first */
+    bool empty_set = query->groupingSets && linitial(query->groupingSets) == NIL;
+    if (!node->aggfilter && query->groupClause != NIL && !empty_set) {
         return false;
     }
 
@@ -6761,6 +6788,29 @@ deparseRowExpr(RowExpr* node, deparse_expr_cxt* context) {
 }
 
 static void
+deparseGroupingFunc(GroupingFunc* node, deparse_expr_cxt* context) {
+    StringInfo buf = context->buf;
+    ListCell* lc;
+
+    appendStringInfoString(buf, "grouping(");
+    foreach (lc, node->args) {
+        if (lc != list_head(node->args)) {
+            appendStringInfoString(buf, ", ");
+        }
+        if (IsA(lfirst(lc), Const)) {
+            /*
+             * deparseExpr passes false for deparseConst showtype,
+             * which is ambiguous with enable_positional_arguments.
+             */
+            deparseConst((Const*)lfirst(lc), context, true);
+        } else {
+            deparseExpr(lfirst(lc), context);
+        }
+    }
+    appendStringInfoChar(buf, ')');
+}
+
+static void
 deparseCoerceViaIO(CoerceViaIO* node, deparse_expr_cxt* context) {
     StringInfo buf = context->buf;
 
@@ -6854,18 +6904,34 @@ appendGroupByClause(List* tlist, deparse_expr_cxt* context) {
     ListCell* lc;
     bool first = true;
 
+    if (query->groupingSets) {
+        appendStringInfoString(buf, " GROUP BY GROUPING SETS (");
+        foreach (lc, query->groupingSets) {
+            List* set = lfirst(lc);
+            ListCell* lcr;
+
+            if (lc != list_head(query->groupingSets)) {
+                appendStringInfoString(buf, ", ");
+            }
+            appendStringInfoChar(buf, '(');
+            foreach (lcr, set) {
+                if (lcr != list_head(set)) {
+                    appendStringInfoString(buf, ", ");
+                }
+                deparseSortGroupClause(lfirst_int(lcr), tlist, true, context);
+            }
+            appendStringInfoChar(buf, ')');
+        }
+        appendStringInfoChar(buf, ')');
+        return;
+    }
+
     /* Nothing to be done, if there's no GROUP BY clause in the query. */
     if (!query->groupClause) {
         return;
     }
 
     appendStringInfoString(buf, " GROUP BY ");
-
-    /*
-     * Queries with grouping sets are not pushed down, so we don't expect
-     * grouping sets here.
-     */
-    Assert(!query->groupingSets);
 
     foreach (lc, query->groupClause) {
         SortGroupClause* grp = (SortGroupClause*)lfirst(lc);

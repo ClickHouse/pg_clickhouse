@@ -2953,11 +2953,6 @@ foreign_grouping_ok(PlannerInfo* root, RelOptInfo* grouped_rel, Node* havingQual
     int i;
     List* tlist = NIL;
 
-    /* We currently don't support pushing Grouping Sets. */
-    if (query->groupingSets) {
-        return false;
-    }
-
     /* Get the fpinfo of the underlying scan relation. */
     ofpinfo = (CHFdwRelationInfo*)fpinfo->outerrel->fdw_private;
 
