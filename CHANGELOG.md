@@ -68,6 +68,11 @@ pg_clickhouse v0.11 will get its benefits on reload without needing to
     error. `UPDATE` requires ClickHouse 25.7+ ([#458]).
 *   Added support for `TRUNCATE` on foreign tables. Sends one ClickHouse
     `TRUNCATE TABLE` statement per table ([#463]).
+*   Added support for running `GROUPING SETS`, `ROLLUP`, `CUBE`, and `GROUPING()`
+    in ClickHouse. Queries using `GROUPING()` aggregate in Postgres with
+    ClickHouse versions before 26.6. For array keys and other types that cannot be
+    `Nullable`, grouping sets return empty values instead of NULL when leaving
+    out those keys ([#465]).
 
 ### 🚀 Distribution
 
@@ -253,6 +258,8 @@ pg_clickhouse v0.11 will get its benefits on reload without needing to
     "ClickHouse/pg_clickhouse#463 TRUNCATE"
   [#464]: https://github.com/ClickHouse/pg_clickhouse/pull/464
     "ClickHouse/pg_clickhouse#464 Fix inserting into ClickHouse foreign partitions"
+  [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
+    "ClickHouse/pg_clickhouse#465 Support grouping sets"
   [Tuple]: doc/pg_clickhouse.md#tuple
   [Map]: doc/pg_clickhouse.md#map
   [Nested]: doc/pg_clickhouse.md#nested

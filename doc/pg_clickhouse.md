@@ -722,6 +722,16 @@ try=# EXPLAIN (ANALYZE, VERBOSE)
  the number of rows that must be pulled back into Postgres from 1000 (all of
  them) to just 8, one for each node.
 
+#### Grouping Sets
+
+pg_clickhouse runs `GROUPING SETS`, `ROLLUP`, `CUBE`, and `GROUPING()` in
+ClickHouse using a `GROUPING SETS` clause. `GROUPING()` pushdown requires
+ClickHouse 26.6+.
+
+Postgres returns NULL for keys left out of a grouping set. ClickHouse does too,
+except for types that cannot be `Nullable`, such as `Array` and `Map`. Keys of
+these types return empty values instead, such as `{}` for an array.
+
 ### Partitioned Tables
 
 A PostgreSQL [partitioned table] can mix local partitions with foreign
@@ -988,8 +998,9 @@ settings, which this parameter overrides by key:
 join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0
 ```
 
-Pushdown correctness depends on some of them: `join_use_nulls` for outer joins
-and `transform_null_in` for the `IN` family (see
+Correct results depend on `join_use_nulls` for outer joins,
+`group_by_use_nulls` for [grouping sets](#grouping-sets), and
+`transform_null_in` for the `IN` family (see
 [IN and NULL Semantics](#in-and-null-semantics)).
 
 The syntax is a comma-delimited list of key/value pairs separated by one or
