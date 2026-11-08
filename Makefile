@@ -83,6 +83,7 @@ src/include/version.h: src/include/version.h.in
 	sed -e 's,__VERSION__,$(DISTVERSION),g' $< > $@
 
 # Build a PGXN distribution bundle.
+.PHONY: dist
 dist: $(EXTENSION)-$(DISTVERSION).zip
 
 $(EXTENSION)-$(DISTVERSION).zip:

@@ -7,7 +7,11 @@ All notable changes to this project will be documented in this file. It uses the
   [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
     "Semantic Versioning 2.0.0"
 
-## [v0.11.1] — Unreleased
+## [v0.11.1] — 2026-11-09
+
+This release makes binary-only changes. Once installed, any existing use of
+pg_clickhouse v0.11 will get its benefits on reload without needing to
+`ALTER EXTENSION UPDATE`.
 
 ### 🚨 Compatibility
 
@@ -15,9 +19,9 @@ All notable changes to this project will be documented in this file. It uses the
     `OPTIONS(driver 'http')` to restore use of the HTTP driver if needed.
 *   Changed `pg_clickhouse.session_settings` to override built-in settings by
     key rather than replace them. It now defaults to an empty string, and
-    pg_clickhouse always sends `join_use_nulls 1, group_by_use_nulls 1,
-    final 1, transform_null_in 0` unless overridden. Setting it to an empty
-    string no longer drops these settings ([#412]).
+    pg_clickhouse always sends `join_use_nulls 1, group_by_use_nulls 1, final
+    1, transform_null_in 0` unless overridden. Setting it to an empty string
+    no longer drops these settings ([#412]).
 
 ### ⚡ Improvements
 
@@ -31,25 +35,24 @@ All notable changes to this project will be documented in this file. It uses the
     *   [regr_sxx]
     *   [regr_sxy]
     *   [regr_syy]
-*   Added support for [pgvector] `vector` columns stored in ClickHouse
-    `Array(Float32)`, `Array(Float64)`, and `Array(BFloat16)` columns, for
-    reads, inserts, and `COPY`. pgvector is not required; pg_clickhouse
-    recognizes its `vector` type when installed. `vector` constants and
-    parameters push down as `Array(Float32)`, as do the pgvector `=` and `<>`
-    operators ([#410]).
+*   Added pushdown support for [pgvector] `vector` columns stored in
+    ClickHouse as `Array(Float32)`, `Array(Float64)`, and `Array(BFloat16)`
+    columns. `vector` constants and parameters push down as `Array(Float32)`,
+    and the pgvector `=` and `<>` operators also push down ([#410]).
 *   Added pushdown of the [pgvector] distance operators `<->`, `<=>`, `<#>`,
-    and `<+>`, and the `l2_distance`, `cosine_distance`, `inner_product`,
-    `l1_distance`, and `vector_dims` functions, so that nearest-neighbor
-    queries sort and limit in ClickHouse. `<#>` sorts as `dotProduct(...)
-    DESC`, the form ClickHouse vector similarity indexes serve, and
-    requires ClickHouse 23.8 or later ([#411]).
+    and `<+>`, as well as the `l2_distance`, `cosine_distance`,
+    `inner_product`, `l1_distance`, and `vector_dims` functions, to allow
+    nearest-neighbor queries sort and limit in ClickHouse. `<#>` sorts as
+    `dotProduct(...) DESC`, the form ClickHouse vector similarity indexes
+    serve, and requires ClickHouse 23.8 or later ([#411]).
 *   Added the `settings` option for foreign servers and foreign tables to send
     [ClickHouse settings] with foreign table queries and inserts. Uses
     [`pg_clickhouse.session_settings` syntax]. Table settings override server
     settings, and `pg_clickhouse.session_settings` overrides both for matching
-    keys. Vector search settings unsupported by older servers are skipped with
-    a warning ([#412]).
-*   Added pushdown for `^` `|/` `||/` `@` `&` `|` `#` `~` `<<` `>>` ([#443]).
+    keys. Includes a warning for certain settings unsupported by older servers
+    (currently vector search settings) ([#412]).
+*   Added pushdown the math operators `^`, `|/`, `||/`, `@`, `&`, `|`, `#`,
+    `~`, `<<`, and `>>` ([#443]).
 *   Added vector index reporting for pgvector nearest neighbor searches.
     `EXPLAIN` shows the ClickHouse vector similarity index a search can use,
     or why ClickHouse will compare every row instead. Planner warnings report
@@ -68,109 +71,110 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### 🚀 Distribution
 
-*   Added Postgres 19beta4 image.
+*   Added Postgres 19rc1 OCI image.
 *   Added [CloudNativePG] extension images.
 
 ### 📚 Documentation
 
-*   Expanded [Tuple] section of the documentation to describe and provide
-    examples for the arrays of field values, and to link to the section that
-    covers using composite types ([#460]).
-*   Also added a link to the section that covers using composite types to the
-    [Map] documentation and clarified support for inserting composite values
+*   Expanded the [Tuple] section of the documentation to describe and provide
+    examples for mapping to arrays of field values, and to link to the section
+    that covers using composite types ([#460]).
+*   Added a link to the [Manual Type Mappings] section to the [Map]
+    documentation and clarified support for inserting composite values
     ([#460]).
 *   Updated the [Manual Type Mappings] section of the docs to describe and
-    provide an example of support inserting composite type-mapped [Map],
-    [Tuple], and [Nested] columns ([#460]).
+    provide an example of inserting composite types mapped to [Map], [Tuple],
+    and [Nested] columns ([#460]).
 
 ### 🐞 Bug Fixes
 
-*   Fixed `INSERT`, `COPY`, and `UPDATE` through partitioned parents with
-    ClickHouse foreign partitions. Reject partition-key updates on foreign
-    partitions to prevent rows from disappearing from pruned queries ([#464]).
-*   Fixed ClickHouse identifier quoting for database, table, column, and JSON
-    key names containing backslashes ([#457]).
-*   Fixed unconstrained numeric casts and parameters to use Decimal(76, 38),
-    widening Float32 before casting to preserve fractional values ([#402]).
-*   Fixed precision loss in `float4` and `float8` query parameters sent to
-    ClickHouse. They were formatted with six decimal places, so ClickHouse
-    parsed a different value, such as zero for `1e-10`. They now use the
-    shortest text that parses back to the same value. Column values were not
-    affected ([#403]).
-*   Fixed ClickHouse type mappings for pushed-down casts and parameters,
-    where previously invalid casts would cause remote query failures ([#401]).
-*   Fixed time zone handling in pushed down Date/time functions and casts by
+*   Fixed unconstrained numeric casts and parameters to use `Decimal(76, 38)`,
+    widening `Float32` before casting to preserve fractional values ([#402]).
+*   Fixed precision loss in `float4` and `float8` query parameter literals
+    sent to ClickHouse. They were formatted with six decimal places, so
+    ClickHouse parsed a different value, such as zero for `1e-10`. They now
+    use the shortest text that parses back to the same value. Column values
+    were not affected ([#403]).
+*   Fixed ClickHouse type mappings for pushed-down casts and parameters, where
+    previously invalid casts would cause remote query failures ([#401]).
+*   Fixed time zone handling in pushed down date/time functions and casts by
     using PostgreSQL's `TimeZone`, including fixed UTC offsets such as
     `SET TIME ZONE 5`. `AT TIME ZONE` and epoch extraction now correctly
     handle `timestamp` values without a time zone, matching PostgreSQL
     results. Connections to ClickHouse 23.6+ now also set `session_timezone`
     to match the PostgreSQL `TimeZone` ([#413]).
-*   Fixed GCC 15 build failure caused by a `-Wclobbered` error in binary
+*   Fixed a GCC 15 build failure caused by a `-Wclobbered` error in the binary
     driver connection setup ([#395]).
 *   Added checks to prevent the pushdown of custom functions or
     pg_clickhouse's own local functions ([#397]).
-*   Prevented pushdown of types and operators from extensions without known
-    ClickHouse equivalents, such as [citext] and [intarray] operators, which
-    previously caused ClickHouse syntax errors ([#405]).
-*   Fixed interval parameters in datetime arithmetic, such as `ts + $1`,
-    which failed once prepared statements switched to generic plans. Other
+*   Added checks to prevent pushdown of types and operators from extensions
+    without known ClickHouse equivalents, such as [citext] and [intarray]
+    operators, which previously caused ClickHouse syntax errors ([#405]).
+*   Fixed datetime arithmetic interval parameters, such as `ts + $1`, which
+    failed once prepared statements switched to generic plans. Other
     expressions using interval parameters now evaluate locally ([#406]).
-*   Fixed backend crashes, heap corruption, and hangs when a connection
-    closed while a scan or binary INSERT still used it: after a PL/pgSQL
-    block caught an error from a binary INSERT or from the middle of a
-    scan, and after `ALTER SERVER` or `ALTER USER MAPPING` while a cursor
+*   Fixed backend crashes, heap corruption, and hangs when a connection closed
+    while a scan or binary `INSERT` still used it, for example after a
+    PL/pgSQL block caught an error from a binary `INSERT` or from the middle
+    of a scan, and after `ALTER SERVER` or `ALTER USER MAPPING` while a cursor
     was open ([#415]).
-*   Fixed the pushdown of aggregates with `ORDER BY`, such as
-    `array_agg(x ORDER BY y)`, which dropped the `ORDER BY`. They now run
-    in Postgres ([#416]).
+*   Removed pushdown for aggregates with `ORDER BY`, such as `array_agg(x
+    ORDER BY y)`; previously they dropped the `ORDER BY`. They now run in
+    Postgres ([#416]).
 *   Fixed `INSERT INTO foreign_table SELECT ... FROM foreign_table` with the
     binary driver when both tables belong to the same server, which failed
     with "Unexpected packet Query received from client" ([#417]).
-*   Fixed a leak of connections whose user mapping or server was dropped,
-    which stayed open, with their sockets and memory, until the session
-    ended. ([#430]).
+*   Fixed failure to close connections for dropped user mappings or servers,
+    which stayed open with their sockets and memory until the session ended
+    ([#430]).
 *   Fixed memory growth in PL/pgSQL loops and procedures that run many
-    `INSERT`s into foreign tables. Each `INSERT` kept its writer and
-    buffers, up to the size of its largest batch, until the outermost
-    statement ended. ([#431]).
-*   Fixed leaks and a crash when a PL/pgSQL block catches an error raised
-    by a query to ClickHouse. A foreign scan's cursor and response stayed in
-    memory until the outermost statement ended, and the connection stayed
-    leased until the transaction ended, so that later queries each opened a
-    connection of their own. Catching two errors from `clickhouse_query()`
-    in one transaction crashed the backend ([#432]).
-*   Fixed growth of the cache of pushed-down function, type, and operator
-    definitions, which kept entries for dropped objects ([#434]).
+    `INSERT`s into foreign tables. Each `INSERT` kept its writer and buffers,
+    up to the size of its largest batch, until the outermost statement ended
+    ([#431]).
+*   Fixed leaks and a crash when a PL/pgSQL block caught an error raised by a
+    ClickHouse query. A foreign scan's cursor and response remained in memory
+    until the outermost statement ended, and the connection remained until the
+    transaction ended, so that later queries each opened a connection of their
+    own. Catching two errors from `clickhouse_query()` in one transaction
+    crashed the backend ([#432]).
+*   Eliminated entries for dropped function, type, and operator definitions
+    from the push-down cache ([#434]).
 *   Fixed the HTTP driver's reporting of exceptions that ClickHouse raises
-    after it starts sending results, which appeared as garbled errors such
-    as "unknown type: f". It now reports the ClickHouse exception ([#436]).
-*   Fixed a heap overflow in pushed-down joins that fetch no columns, such
-    as a partitionwise `count(*)` self-join of foreign partitions. Each row
+    after it starts sending results, which appeared as garbled errors such as
+    "unknown type: f". It now properly reports the ClickHouse exception
+    ([#436]).
+*   Fixed a heap overflow in pushed-down joins that fetch no columns, such as
+    a partition-wise `COUNT(*)` self-join of foreign partitions. Each row
     wrote one byte past the end of a zero-length array ([#438]).
-*   Fixed remote queries that truncated `column_name` values longer than
-    63 bytes. `IMPORT FOREIGN SCHEMA` now preserves full column names
-    in `column_name` options when PostgreSQL truncates local names. It also
+*   Fixed remote queries that truncated `column_name` values longer than 63
+    bytes. `IMPORT FOREIGN SCHEMA` now preserves full column names in
+    `column_name` options when PostgreSQL truncates local names. It also
     matches `LIMIT TO` and `EXCEPT` against truncated table names ([#446]).
-    wrote one byte past the end of a zero-length array ([#438]).
 *   Fixed `CollapsingMergeTree` sign column validation and quoting, which
     allowed SQL expressions in malformed quoted names and failed to escape
-    backslashes in unquoted names. `IMPORT FOREIGN SCHEMA` now preserves
-    sign column names containing closing parentheses ([#450]).
+    backslashes in unquoted names. `IMPORT FOREIGN SCHEMA` now preserves sign
+    column names containing closing parentheses ([#450]).
 *   Fixed aggregates such as `sum`, `avg`, and `min` to return `NULL` for
-    empty input, matching PostgreSQL. This also applies when no rows pass
-    an aggregate's `FILTER` clause ([#451]).
+    empty input, matching PostgreSQL. This also applies when no rows pass an
+    aggregate's `FILTER` clause ([#451]).
 *   Fixed `round()` and other expressions over an unconstrained numeric, which
     previously kept the full 38 decimal places of `Decimal(76, 38)`. For
     example, `round(avg(f64_column)::numeric)` now returns `3` instead of
     `3.00000000000000000000000000000000000000`. Thanks to Niramay Kelkar for
     the PR ([#459])!
+*   Fixed ClickHouse identifier quoting for database, table, column, and JSON
+    key names containing backslashes ([#457]).
+*   Fixed `INSERT`, `COPY`, and `UPDATE` through partitioned parents with
+    ClickHouse foreign partitions. pg_clickhouse now rejects partition-key
+    updates on foreign partitions to prevent rows from disappearing from
+    pruned queries ([#464]).
 *   Fixed the pushdown of `concat_ws()`, which returned NULL when any value
     was NULL instead of skipping NULL values as Postgres does. A non-constant
     separator, which ClickHouse rejected, and a `VARIADIC ARRAY[...]`
     argument, which returned wrong results, now also push down correctly
     ([#445]).
 
-  [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
+  [v0.12.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.12.0
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
   [regr_avgx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgx
   [regr_avgy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgy
