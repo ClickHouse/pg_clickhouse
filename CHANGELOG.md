@@ -7,6 +7,20 @@ All notable changes to this project will be documented in this file. It uses the
   [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
     "Semantic Versioning 2.0.0"
 
+## [v0.11.2] — Unreleased
+
+### ⚡ Improvements
+
+*   Added support for pushing down `GROUPING SETS`, `ROLLUP`, `CUBE`, and
+    `GROUPING()` in ClickHouse 26.6 and later. `GROUPING()` aggregates execute
+    in Postgres for earlier ClickHouse versions. For array keys and other
+    types that cannot be `Nullable`, grouping sets return empty values instead
+    of `NULL` when leaving out those keys ([#465]).
+
+  [v0.11.2]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.1...v0.11.2
+  [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
+    "ClickHouse/pg_clickhouse#465 Support grouping sets"
+
 ## [v0.11.1] — 2026-11-09
 
 This release makes binary-only changes. Once installed, any existing use of
@@ -68,11 +82,6 @@ pg_clickhouse v0.11 will get its benefits on reload without needing to
     error. `UPDATE` requires ClickHouse 25.7+ ([#458]).
 *   Added support for `TRUNCATE` on foreign tables. Sends one ClickHouse
     `TRUNCATE TABLE` statement per table ([#463]).
-*   Added support for pushing down `GROUPING SETS`, `ROLLUP`, `CUBE`, and
-    `GROUPING()` in ClickHouse 26.6 and later. `GROUPING()` aggregates execute
-    in Postgres for earlier ClickHouse versions. For array keys and other
-    types that cannot be `Nullable`, grouping sets return empty values instead
-    of `NULL` when leaving out those keys ([#465]).
 
 ### 🚀 Distribution
 
@@ -174,7 +183,7 @@ pg_clickhouse v0.11 will get its benefits on reload without needing to
     updates on foreign partitions to prevent rows from disappearing from
     pruned queries ([#464]).
 
-  [v0.12.0]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.12.0
+  [v0.11.1]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.0...v0.11.1
   [CloudNativePG]: https://cloudnative-pg.io/ "Run PostgreSQL The Kubernetes way"
   [regr_avgx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgx
   [regr_avgy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgy
@@ -258,8 +267,6 @@ pg_clickhouse v0.11 will get its benefits on reload without needing to
     "ClickHouse/pg_clickhouse#463 TRUNCATE"
   [#464]: https://github.com/ClickHouse/pg_clickhouse/pull/464
     "ClickHouse/pg_clickhouse#464 Fix inserting into ClickHouse foreign partitions"
-  [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
-    "ClickHouse/pg_clickhouse#465 Support grouping sets"
   [Tuple]: doc/pg_clickhouse.md#tuple
   [Map]: doc/pg_clickhouse.md#map
   [Nested]: doc/pg_clickhouse.md#nested
