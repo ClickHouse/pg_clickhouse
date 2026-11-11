@@ -786,6 +786,19 @@ clickhouseGetForeignPaths(PlannerInfo* root, RelOptInfo* baserel, Oid foreigntab
     );
 
     add_path(baserel, (Path*)path);
+
+    /*
+    if (baserel->relispartition) {
+        for (part in baserel->get_other_partitions) {
+            if (part->is_local) {
+                rt = part->rte->id;
+                root->glob->prunableRelids =
+                    bms_add_member(root->glob->prunableRelids, part->rte->id);
+            }
+        }
+    }
+    */
+
     add_paths_with_pathkeys_for_rel(root, baserel, NULL);
 }
 
@@ -909,6 +922,29 @@ clickhouseGetForeignPlan(
          * For base relations, set scan_relid as the relid of the relation.
          */
         scan_relid = foreignrel->relid;
+        if (foreignrel->parent && IS_PARTITIONED_REL(foreignrel->parent)) {
+            /* Prune local partitions. XXX Check for option on thee table. */
+            for (int i = 0; i < foreignrel->parent->nparts; i++) {
+                RelOptInfo* part   = foreignrel->parent->part_rels[i];
+                RangeTblEntry* rte = planner_rt_fetch(part->relid, root);
+                if (rte->relkind != RELKIND_FOREIGN_TABLE) {
+                    Expr* op = make_opclause(
+                        BooleanEqualOperator,
+                        BOOLOID,
+                        false,
+                        (Expr*)makeBoolConst(true, false),
+                        (Expr*)makeBoolConst(false, false),
+                        InvalidOid,
+                        InvalidOid
+                    );
+                    part->baserestrictinfo = lappend(
+                        part->baserestrictinfo, make_simple_restrictinfo(root, op)
+                    );
+                    // root->glob->prunableRelids =
+                    //     bms_add_member(root->glob->prunableRelids, part->relid);
+                }
+            }
+        }
 
         /*
          * In a base-relation scan, we must apply the given scan_clauses.
@@ -1823,7 +1859,8 @@ clickhousePlanDirectModify(
                     ERROR,
                     errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
                     errmsg(
-                        "pg_clickhouse: cannot update partition key of foreign table "
+                        "pg_clickhouse: cannot update partition key of foreign "
+                        "table "
                         "\"%s\"",
                         RelationGetRelationName(rel)
                     ),
@@ -3932,6 +3969,8 @@ clickhouse_fdw_handler(PG_FUNCTION_ARGS) {
      * already buffer rows and stream them as a single INSERT to ClickHouse, so
      * PG's batch-insert API would add nothing.
      */
+    routine->ExecForeignBatchInsert    = NULL;
+    routine->GetForeignModifyBatchSize = NULL;
 
     routine->EndForeignInsert = clickhouseEndForeignInsert;
     routine->EndForeignModify = clickhouseEndForeignInsert;
@@ -3961,6 +4000,26 @@ clickhouse_fdw_handler(PG_FUNCTION_ARGS) {
 
     /* IMPORT FOREIGN SCHEMA */
     routine->ImportForeignSchema = clickhouseImportForeignSchema;
+
+    /* Currently not implemented.
+    routine->AddForeignUpdateTargets          = NULL;
+    routine->IsForeignRelUpdatable            = NULL;
+    routine->GetForeignRowMarkType            = NULL;
+    routine->RefetchForeignRow                = NULL;
+    routine->ExplainForeignModify             = NULL;
+    routine->ImportForeignStatistics          = NULL;
+    routine->IsForeignScanParallelSafe        = NULL;
+    routine->EstimateDSMForeignScan           = NULL;
+    routine->InitializeDSMForeignScan         = NULL;
+    routine->ReInitializeDSMForeignScan       = NULL;
+    routine->InitializeWorkerForeignScan      = NULL;
+    routine->ShutdownForeignScan              = NULL;
+    routine->ReparameterizeForeignPathByChild = NULL;
+    routine->IsForeignPathAsyncCapable        = NULL;
+    routine->ForeignAsyncRequest              = NULL;
+    routine->ForeignAsyncConfigureWait        = NULL;
+    routine->ForeignAsyncNotify               = NULL;
+    */
 
     PG_RETURN_POINTER(routine);
 }
