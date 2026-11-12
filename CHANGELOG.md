@@ -17,6 +17,10 @@ All notable changes to this project will be documented in this file. It uses the
     types that cannot be `Nullable`, grouping sets return empty values instead
     of `NULL` when leaving out those keys ([#465]).
 
+### 🚀 Distribution
+
+*   Updated the Postgres 19 OCI image to rc2.
+
   [v0.11.2]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.1...v0.11.2
   [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
     "ClickHouse/pg_clickhouse#465 Support grouping sets"
