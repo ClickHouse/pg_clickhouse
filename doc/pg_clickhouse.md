@@ -1046,9 +1046,8 @@ operation of pg_clickhouse itself. These include:
 *   `date_time_output_format`: the http driver requires it to be "iso"
 *   `format_tsv_null_representation`: the http driver requires the default
 *   `output_format_tsv_crlf_end_of_line` the http driver requires the default
-*   `session_timezone`: pg_clickhouse sets it to PostgreSQL's
-    [TimeZone](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-TIMEZONE)
-    on ClickHouse 23.6 and later
+*   `session_timezone`: pg_clickhouse sets it to PostgreSQL's [TimeZone] on
+    ClickHouse 23.6 and later
 
 Otherwise, pg_clickhouse does not validate the settings, but passes them on to
 ClickHouse for every query. It thus supports all settings for each ClickHouse
@@ -1279,10 +1278,10 @@ CREATE FOREIGN TABLE items (
 ) SERVER ch OPTIONS (table_name 'items');
 ```
 
-| ClickHouse        | PostgreSQL  | Notes                                                    |
-|-------------------|-------------|----------------------------------------------------------|
-| `Array(Float32)`  | `vector(n)` | Lossless                                                 |
-| `Array(Float64)`  | `vector(n)` | Reads round to `real`; writes are exact                  |
+| ClickHouse        | PostgreSQL  | Notes                                                     |
+|-------------------|-------------|-----------------------------------------------------------|
+| `Array(Float32)`  | `vector(n)` | Lossless                                                  |
+| `Array(Float64)`  | `vector(n)` | Reads round to `real`; writes are exact                   |
 | `Array(BFloat16)` | `vector(n)` | Reads are exact; writes truncate to the bfloat16 mantissa |
 
 ### BYTEA
@@ -1795,130 +1794,117 @@ GRANT EXECUTE ON PROCEDURE clickhouse_perform(text, text) TO ch_admin;
 in conditionals (`HAVING` and `WHERE` clauses). That subset maps to ClickHouse
 equivalents as follows:
 
-*   `abs`: [abs](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#abs)
-*   `factorial`: [factorial](https://clickhouse.com/docs/sql-reference/functions/math-functions#factorial)
-*   `mod` (int2/int4/int8/numeric): [modulo](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#modulo)
-*   `pow` & `power` (float8, not numeric): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
-*   `round`: [round](https://clickhouse.com/docs/sql-reference/functions/rounding-functions#round)
+*   `abs`: [abs]
+*   `factorial`: [factorial]
+*   `mod` (int2/int4/int8/numeric): [modulo]
+*   `pow` & `power` (float8, not numeric): [pow]
+*   `round`: [round]
 *   `sin`, `cos`, `tan`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`,
-    `degrees`, `radians`, `pi`: [ClickHouse math functions](https://clickhouse.com/docs/sql-reference/functions/math-functions)
-    of the same name. `asin`, `acos`, `atanh`, `acosh` are not pushed
-    down: PG raises on out-of-range input where CH returns `NaN`.
-*   `date_part`: passes PostgreSQL's
-    [TimeZone](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-TIMEZONE)
-    to ClickHouse for `timestamp` and `timestamptz` values.
-    *   `date_part('day')`: [toDayOfMonth](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfMonth)
-    *   `date_part('doy')`: [toDayOfYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfYear)
-    *   `date_part('dow')`: [toDayOfWeek](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfWeek)
-    *   `date_part('year')`: [toYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toYear)
-    *   `date_part('month')`: [toMonth](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toMonth)
-    *   `date_part('hour')`: [toHour](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toHour)
-    *   `date_part('minute')`: [toMinute](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toMinute)
-    *   `date_part('second')`: [toSecond](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toSecond)
-    *   `date_part('quarter')`: [toQuarter](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toQuarter)
-    *   `date_part('isoyear')`: [toISOYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toISOYear)
-    *   `date_part('week')`: [toISOYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toISOWeek)
-    *   `date_part('epoch')`: [toISOYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toUnixTimestamp)
+    `degrees`, `radians`, `pi`: [ClickHouse math functions] of the same name.
+    `asin`, `acos`, `atanh`, `acosh` are not pushed down: PG raises on
+    out-of-range input where CH returns `NaN`.
+*   `date_part`: passes PostgreSQL's [TimeZone] to ClickHouse for `timestamp`
+    and `timestamptz` values.
+    *   `date_part('day')`: [toDayOfMonth]
+    *   `date_part('doy')`: [toDayOfYear]
+    *   `date_part('dow')`: [toDayOfWeek]
+    *   `date_part('year')`: [toYear]
+    *   `date_part('month')`: [toMonth]
+    *   `date_part('hour')`: [toHour]
+    *   `date_part('minute')`: [toMinute]
+    *   `date_part('second')`: [toSecond]
+    *   `date_part('quarter')`: [toQuarter]
+    *   `date_part('isoyear')`: [toISOYear]
+    *   `date_part('week')`: [toISOWeek]
+    *   `date_part('epoch')`: [toUnixTimestamp]
 *   `date_trunc`: passes PostgreSQL's `TimeZone` to ClickHouse for `timestamp`
     and `timestamptz` values.
-    *   `date_trunc('week')`: [toMonday](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toMonday)
-    *   `date_trunc('second')`: [toStartOfSecond](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfSecond)
-    *   `date_trunc('minute')`: [toStartOfMinute](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfMinute)
-    *   `date_trunc('hour')`: [toStartOfHour](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfHour)
-    *   `date_trunc('day')`: [toStartOfDay](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfDay)
-    *   `date_trunc('month')`: [toStartOfMonth](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfMonth)
-    *   `date_trunc('quarter')`: [toStartOfQuarter](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfQuarter)
-    *   `date_trunc('year')`: [toStartOfYear](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfYear)
-*   `extract(field FROM source)`: same mappings as `date_part`; passes PostgreSQL's
-    `TimeZone` to ClickHouse for `timestamp` and `timestamptz` values.
-*   `date(timestamp)` & `date(timestamptz)`: [toDate32](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#toDate32);
-    passes PostgreSQL's `TimeZone` to ClickHouse, as do casts between `date`
-    and `timestamp` or `timestamptz`.
-*   `AT TIME ZONE` & `timezone(zone, source)`: uses [toString](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#tostring)
-    followed by [toDateTime64](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#todatetime64)
-    to preserve local date and time while changing time zone. When converting
-    `timestamp` to `timestamptz`, local times skipped or repeated during
-    daylight saving changes produce different results: ClickHouse chooses
-    an earlier time than PostgreSQL.
-*   `array_position`: [indexOf](https://clickhouse.com/docs/sql-reference/functions/array-functions#indexOf) with
-    [nullIf](https://clickhouse.com/docs/reference/functions/regular-functions/functions-for-nulls#nullif)
-    to convert `0` to `NULL` and
-    [arraySlice](https://clickhouse.com/docs/sql-reference/functions/array-functions#arraySlice)
-    when there's a third argument for the search starting index; note that `nan` currently [does not match](https://github.com/ClickHouse/ClickHouse/issues/113169)
-*   `array_cat`: [arrayConcat](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayConcat)
-*   `array_append`: [arrayPushBack](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayPushBack)
-*   `array_prepend`: [arrayPushFront](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayPushFront)
-*   `array_remove`: [arrayRemove](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayRemove)
-*   `cardinality`: [arrayFlattenedLength](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayFlattenedLength)
-    on ClickHouse 26.9+, otherwise
-    [length](https://clickhouse.com/docs/sql-reference/functions/array-functions#length),
-    which counts only the outer array
+    *   `date_trunc('week')`: [toMonday]
+    *   `date_trunc('second')`: [toStartOfSecond]
+    *   `date_trunc('minute')`: [toStartOfMinute]
+    *   `date_trunc('hour')`: [toStartOfHour]
+    *   `date_trunc('day')`: [toStartOfDay]
+    *   `date_trunc('month')`: [toStartOfMonth]
+    *   `date_trunc('quarter')`: [toStartOfQuarter]
+    *   `date_trunc('year')`: [toStartOfYear]
+*   `extract(field FROM source)`: same mappings as `date_part`; passes
+    PostgreSQL's `TimeZone` to ClickHouse for `timestamp` and `timestamptz`
+    values.
+*   `date(timestamp)` & `date(timestamptz)`: [toDate32]; passes PostgreSQL's
+    `TimeZone` to ClickHouse, as do casts between `date` and `timestamp` or
+    `timestamptz`.
+*   `AT TIME ZONE` & `timezone(zone, source)`: uses [toString] followed by
+    [toDateTime64] to preserve local date and time while changing time zone.
+    When converting `timestamp` to `timestamptz`, local times skipped or
+    repeated during daylight saving changes produce different results:
+    ClickHouse chooses an earlier time than PostgreSQL.
+*   `array_position`: [indexOf] with [nullIf] to convert `0` to `NULL` and
+    [arraySlice] when there's a third argument for the search starting index;
+    note that `nan` currently [does not match]
+*   `array_cat`: [arrayConcat]
+*   `array_append`: [arrayPushBack]
+*   `array_prepend`: [arrayPushFront]
+*   `array_remove`: [arrayRemove]
+*   `cardinality`: [arrayFlattenedLength] on ClickHouse 26.9+, otherwise
+    [length], which counts only the outer array
 *   `array_length(array, 1)`: `nullIf(length(array), 0)`
-*   `array_to_string`: [arrayStringConcat](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayStringConcat)
-*   `string_to_array`: [splitByString](https://clickhouse.com/docs/sql-reference/functions/splitting-merging-functions#splitByString)
-*   `split_part`: [splitByString](https://clickhouse.com/docs/sql-reference/functions/splitting-merging-functions#splitByString) + array subscript
-*   `trim_array`: [arrayResize](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayResize)
-*   `array_fill`: [arrayWithConstant](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayWithConstant)
-*   `array_reverse`: [arrayReverse](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayReverse)
-*   `array_shuffle`: [arrayShuffle](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayShuffle)
-*   `array_sample`: [arrayRandomSample](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayRandomSample)
-*   `array_sort`: [arraySort](https://clickhouse.com/docs/sql-reference/functions/array-functions#arraySort) / [arrayReverseSort](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayReverseSort)
-*   `btrim`: [trimBoth](https://clickhouse.com/docs/sql-reference/functions/string-functions#trimboth)
-*   `ltrim`: [trimLeft](https://clickhouse.com/docs/sql-reference/functions/string-functions#trimLeft)
-*   `rtrim`: [trimRight](https://clickhouse.com/docs/sql-reference/functions/string-functions#trimRight)
-*   `concat_ws`: [concatWithSeparator](https://clickhouse.com/docs/sql-reference/functions/string-functions#concatwithseparator)
-*   `lower(text)`: [lowerUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#lowerutf8)
-*   `upper(text)`: [upperUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#upperutf8)
-*   `substring(text, ...)` & `substr(text, ...)`: [substringUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#substringutf8)
-*   `substring(bytea, ...)` & `substr(bytea, ...)`: [substring](https://clickhouse.com/docs/sql-reference/functions/string-functions#substring)
-*   `length(text)`: [lengthUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#lengthutf8)
-*   `length(bytea)` & `octet_length`: [length](https://clickhouse.com/docs/sql-reference/functions/array-functions#length)
-*   `reverse(text)`: [reverseUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#reverseutf8)
-*   `reverse(bytea)`: [reverse](https://clickhouse.com/docs/sql-reference/functions/string-functions#reverse)
-*   `strpos`: [positionUTF8](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#positionutf8)
-*   `regexp_like`: [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
-*   `regexp_match`: [extractGroups](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#extractGroups)
-    if the regular expression contains parenthesized subexpressions; otherwise
-    [extractAll](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#extractAll)
-    sliced with [arraySlice](https://clickhouse.com/docs/sql-reference/functions/array-functions#arraySlice).
-*   `regexp_replace`: [replaceRegexpOne](https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpOne) or [replaceRegexpOne](https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpAll) when the `g` flag is present
-*   `regexp_split_to_array`: [splitByRegexp](https://clickhouse.com/docs/sql-reference/functions/splitting-merging-functions#splitByRegexp)
-*   `md5`: [MD5](https://clickhouse.com/docs/sql-reference/functions/hash-functions#MD5)
-*   `sha224`, `sha256`, `sha384`, and `sha512`: Corresponding ClickHouse
-    [SHA functions](https://clickhouse.com/docs/sql-reference/functions/hash-functions#sha224)
+*   `array_to_string`: [arrayStringConcat]
+*   `string_to_array`: [splitByString]
+*   `split_part`: [splitByString] + array subscript
+*   `trim_array`: [arrayResize]
+*   `array_fill`: [arrayWithConstant]
+*   `array_reverse`: [arrayReverse]
+*   `array_shuffle`: [arrayShuffle]
+*   `array_sample`: [arrayRandomSample]
+*   `array_sort`: [arraySort] / [arrayReverseSort]
+*   `btrim`: [trimBoth]
+*   `ltrim`: [trimLeft]
+*   `rtrim`: [trimRight]
+*   `concat_ws`: [concatWithSeparator]
+*   `lower(text)`: [lowerUTF8]
+*   `upper(text)`: [upperUTF8]
+*   `substring(text, ...)` & `substr(text, ...)`: [substringUTF8]
+*   `substring(bytea, ...)` & `substr(bytea, ...)`: [substring]
+*   `length(text)`: [lengthUTF8]
+*   `length(bytea)` & `octet_length`: [length]
+*   `reverse(text)`: [reverseUTF8]
+*   `reverse(bytea)`: [reverse]
+*   `strpos`: [positionUTF8]
+*   `regexp_like`: [match]
+*   `regexp_match`: [extractGroups] if the regular expression contains
+    parenthesized subexpressions; otherwise [extractAll] sliced with
+    [arraySlice].
+*   `regexp_replace`: [replaceRegexpOne] or [replaceRegexpOne] when the `g` flag is present
+*   `regexp_split_to_array`: [splitByRegexp]
+*   `md5`: [MD5]
+*   `sha224`, `sha256`, `sha384`, and `sha512`: Corresponding ClickHouse [SHA
+    functions]
 *   `encode(bytea, fmt)` when `fmt` is a string constant (case-insensitive):
-    *   `encode(bytea, 'hex')`: [hex](https://clickhouse.com/docs/sql-reference/functions/encoding-functions#hex)
-        wrapped in [lower](https://clickhouse.com/docs/sql-reference/functions/string-functions#lower),
-        since PostgreSQL emits lowercase hex.
-    *   `encode(bytea, 'base64')`: [base64Encode](https://clickhouse.com/docs/sql-reference/functions/encoding-functions#base64encode)
-        wrapped in [replaceRegexpAll](https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpAll)
-        to reproduce PostgreSQL's MIME (RFC 2045) line break every 76 characters.
-    *   `encode(bytea, 'base64url')` (PostgreSQL 19+): [base64URLEncode](https://clickhouse.com/docs/sql-reference/functions/encoding-functions#base64urlencode),
+    *   `encode(bytea, 'hex')`: [hex] wrapped in [lower], since PostgreSQL
+        emits lowercase hex.
+    *   `encode(bytea, 'base64')`: [base64Encode] wrapped in
+        [replaceRegexpAll] to reproduce PostgreSQL's MIME (RFC 2045) line
+        break every 76 characters.
+    *   `encode(bytea, 'base64url')` (PostgreSQL 19+): [base64URLEncode],
         which matches PostgreSQL's RFC 4648 URL alphabet without padding.
-*   `json_extract_path_text`: [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
-*   `json_extract_path`: [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
-*   `jsonb_extract_path_text`: [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
-*   `jsonb_extract_path`: [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
-*   `bit_count(bytea)`: [bitCount](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitcount)
-*   `to_timestamp(float8)`: [toDateTime64](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#todatetime64)
-*   `to_char(timestamp[tz], fmt)`: [formatDateTime](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#formatDateTime)
-    when `fmt` is a string constant whose every keyword has a faithful
-    ClickHouse equivalent. See [to_char()](#to_char) under Compatibility
-    Notes for the supported keywords. Otherwise the function evaluates
-    locally in PostgreSQL. Passes PostgreSQL's `TimeZone` to ClickHouse for
-    `timestamp` and `timestamptz` values.
+*   `json_extract_path_text`: [sub-column syntax]
+*   `json_extract_path`: [toJSONString] + [sub-column syntax]
+*   `jsonb_extract_path_text`: [sub-column syntax]
+*   `jsonb_extract_path`: [toJSONString] + [sub-column syntax]
+*   `bit_count(bytea)`: [bitCount]
+*   `to_timestamp(float8)`: [toDateTime64]
+*   `to_char(timestamp[tz], fmt)`: [formatDateTime] when `fmt` is a string
+    constant whose every keyword has a faithful ClickHouse equivalent. See
+    [to_char()](#to_char) under Compatibility Notes for the supported
+    keywords. Otherwise the function evaluates locally in PostgreSQL. Passes
+    PostgreSQL's `TimeZone` to ClickHouse for `timestamp` and `timestamptz`
+    values.
 *   `statement_timestamp`, `transaction_timestamp`, & `clock_timestamp`:
-    [nowInBlock64](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#nowInBlock64)
-    (`nowInBlock64(9, $session_timezone)`)
-*   `CURRENT_DATE`:
-    [now](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#now) and
-    [toDate](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#toDate)
-    (`toDate(now($session_timezone))`)
-*   `now`, `CURRENT_TIMESTAMP`, & `LOCALTIMESTAMP`:
-    [now64](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#now64)
+    [nowInBlock64][] (`nowInBlock64(9, $session_timezone)`)
+*   `CURRENT_DATE`: [now] and [toDate] (`toDate(now($session_timezone))`)
+*   `now`, `CURRENT_TIMESTAMP`, & `LOCALTIMESTAMP`: [now64]
     (`now64(9, $session_timezone)`)
-*   `CURRENT_TIMESTAMP(n)` & `LOCALTIMESTAMP(n)`:
-    [now64](https://clickhouse.com/docs/sql-reference/functions/date-time-functions#now64)
+*   `CURRENT_TIMESTAMP(n)` & `LOCALTIMESTAMP(n)`: [now64]
     (`now64(n, $session_timezone)`)
 *   `CURRENT_DATABASE`: Passed as value from PostgreSQL function.
 *   `CURRENT_SCHEMA`: Passed as value from PostgreSQL function.
@@ -1930,30 +1916,31 @@ equivalents as follows:
 
 ### Pushdown Operators
 
-*   Array slice (`arr[L:U]`): [arraySlice](https://clickhouse.com/docs/sql-reference/functions/array-functions#arraySlice)
-*   `@>` (array contains): [hasAll](https://clickhouse.com/docs/sql-reference/functions/array-functions#hasAll)
-*   `<@` (array contained by): [hasAll](https://clickhouse.com/docs/sql-reference/functions/array-functions#hasAll)
-*   `&&` (array overlap): [hasAny](https://clickhouse.com/docs/sql-reference/functions/array-functions#hasAny)
-*   `~` (regexp match): [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
-*   `!~` (regexp not match): [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
-*   `~*` (case insensitive regexp no match): [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
-*   `!~*` (case insensitive regexp not match): [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
-*   `->>` (JSON/JSONB extract element as text): [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
-*   `->` (JSON/JSONB extract): [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns)
-*   `jsonb` subscripts (`data['a']['b']`): [toJSONString](https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString) + [sub-column syntax](https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns).
-    Pushdown requires a column with constant, non-NULL text subscripts.
-    Integer, numeric text, and non-constant subscripts evaluate locally.
-*   `/` (integer division): [intDiv](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#intDiv)
-*   `^` (exponent): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
-*   `|/` (square root): [sqrt](https://clickhouse.com/docs/sql-reference/functions/math-functions#sqrt)
-*   `||/` (cube root): [cbrt](https://clickhouse.com/docs/sql-reference/functions/math-functions#cbrt)
-*   `@` (absolute value): [abs](https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#abs)
-*   `&` (bitwise and): [bitAnd](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitAnd)
-*   `|` (bitwise or): [bitOr](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitOr)
-*   `#` (bitwise xor): [bitXor](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitXor)
-*   `~` (bitwise not): [bitNot](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitNot)
-*   `<<` (shift left): [bitShiftLeft](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitShiftLeft)
-*   `>>` (shift right): [bitShiftRight](https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitShiftRight)
+*   Array slice (`arr[L:U]`): [arraySlice]
+*   `@>` (array contains): [hasAll]
+*   `<@` (array contained by): [hasAll]
+*   `&&` (array overlap): [hasAny]
+*   `~` (regexp match): [match]
+*   `!~` (regexp not match): [match]
+*   `~*` (case insensitive regexp no match): [match]
+*   `!~*` (case insensitive regexp not match): [match]
+*   `->>` (JSON/JSONB extract element as text): [sub-column syntax]
+*   `->` (JSON/JSONB extract): [toJSONString] + [sub-column syntax]
+*   `jsonb` subscripts (`data['a']['b']`): [toJSONString] + [sub-column
+    syntax]. Pushdown requires a column with constant, non-NULL text
+    subscripts. Integer, numeric text, and non-constant subscripts evaluate
+    locally.
+*   `/` (integer division): [intDiv]
+*   `^` (exponent): [pow]
+*   `|/` (square root): [sqrt]
+*   `||/` (cube root): [cbrt]
+*   `@` (absolute value): [abs]
+*   `&` (bitwise and): [bitAnd]
+*   `|` (bitwise or): [bitOr]
+*   `#` (bitwise xor): [bitXor]
+*   `~` (bitwise not): [bitNot]
+*   `<<` (shift left): [bitShiftLeft]
+*   `>>` (shift right): [bitShiftRight]
 
 ### IN and NULL Semantics
 
@@ -1991,7 +1978,7 @@ These custom functions created by `pg_clickhouse` provide foreign query
 pushdown for select ClickHouse functions with no PostgreSQL equivalents. If
 any of these functions cannot be pushed down they will raise an exception.
 
-*   [dictGet](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull)
+*   [dictGet]
 
 ### Extension Pushdown
 
@@ -2002,46 +1989,46 @@ extensions, pushing them down to their ClickHouse equivalents.
 
 All [re2 extension] operators and functions push down 1:1 to ClickHouse:
 
-*   `@~` → [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
-*   `re2match` → [match](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match)
-*   `re2extract` → [extract](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#extract)
-*   `re2extractall` → [extractAll](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#extractAll)
-*   `re2regexpextract` → [regexpExtract](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#regexpExtract)
-*   `re2extractgroups` → [extractGroups](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#extractGroups)
-*   `re2replaceregexpone` → [replaceRegexpOne](https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpOne)
-*   `re2replaceregexpall` → [replaceRegexpAll](https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpAll)
-*   `re2countmatches` → [countMatches](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#countMatches)
-*   `re2countmatchescaseinsensitive` → [countMatchesCaseInsensitive](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#countMatchesCaseInsensitive)
-*   `re2multimatchany` → [multiMatchAny](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#multiMatchAny)
-*   `re2multimatchanyindex` → [multiMatchAnyIndex](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#multiMatchAnyIndex)
-*   `re2multimatchallindices` → [multiMatchAllIndices](https://clickhouse.com/docs/sql-reference/functions/string-search-functions#multiMatchAllIndices)
+*   `@~` → [match]
+*   `re2match` → [match]
+*   `re2extract` → [extract]
+*   `re2extractall` → [extractAll]
+*   `re2regexpextract` → [regexpExtract]
+*   `re2extractgroups` → [extractGroups]
+*   `re2replaceregexpone` → [replaceRegexpOne]
+*   `re2replaceregexpall` → [replaceRegexpAll]
+*   `re2countmatches` → [countMatches]
+*   `re2countmatchescaseinsensitive` → [countMatchesCaseInsensitive]
+*   `re2multimatchany` → [multiMatchAny]
+*   `re2multimatchanyindex` → [multiMatchAnyIndex]
+*   `re2multimatchallindices` → [multiMatchAllIndices]
 
 #### intarray
 
 One [intarray] function pushes down to ClickHouse:
 
-*   `idx` → [indexOf](https://clickhouse.com/docs/sql-reference/functions/array-functions#indexOf)
+*   `idx` → [indexOf]
 
 #### fuzzystrmatch
 
 Two [fuzzystrmatch] functions push down to ClickHouse:
 
-*   `soundex`: [soundex](https://clickhouse.com/docs/sql-reference/functions/string-functions#soundex)
-*   `levenshtein` (2-arg): [editDistanceUTF8](https://clickhouse.com/docs/sql-reference/functions/string-functions#editDistanceUTF8)
+*   `soundex`: [soundex]
+*   `levenshtein` (2-arg): [editDistanceUTF8]
 
 #### pgvector
 
 These [pgvector] operators and functions on the `vector` type push down to
 ClickHouse:
 
-*   `<->`, `l2_distance`: [L2Distance](https://clickhouse.com/docs/sql-reference/functions/distance-functions#L2Distance)
-*   `<=>`, `cosine_distance`: [cosineDistance](https://clickhouse.com/docs/sql-reference/functions/distance-functions#cosineDistance)
-*   `<#>`: negated [dotProduct](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayDotProduct)
-*   `inner_product`: [dotProduct](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayDotProduct)
-*   `<+>`, `l1_distance`: [L1Distance](https://clickhouse.com/docs/sql-reference/functions/distance-functions#L1Distance)
-*   `vector_dims`: [length](https://clickhouse.com/docs/sql-reference/functions/array-functions#length)
-*   `=`: [equals](https://clickhouse.com/docs/sql-reference/operators#equals)
-*   `<>`: [notEquals](https://clickhouse.com/docs/sql-reference/operators#notEquals)
+*   `<->`, `l2_distance`: [L2Distance]
+*   `<=>`, `cosine_distance`: [cosineDistance]
+*   `<#>`: negated [dotProduct]
+*   `inner_product`: [dotProduct]
+*   `<+>`, `l1_distance`: [L1Distance]
+*   `vector_dims`: [length]
+*   `=`: [equals]
+*   `<>`: [notEquals]
 
 A nearest-neighbor query pushes its distance sort and `LIMIT` to ClickHouse,
 along with any `WHERE` conditions:
@@ -2125,8 +2112,7 @@ under Data Types for supported column types.
 #### pgcyrpto
 
 *   `digest(text, text)` and `digest(bytea, text)`: Corresponding ClickHouse
-    [hash function](https://clickhouse.com/docs/sql-reference/functions/hash-functions)
-    when the algorithm is a constant `md5`, `sha1`, `sha224`,
+    [hash function] when the algorithm is a constant `md5`, `sha1`, `sha224`,
     `sha256`, `sha384`, or `sha512` (matched case-insensitively).
 
 ### Pushdown Casts
@@ -2139,49 +2125,49 @@ In order to push down casts to incompatible data types, pg_clickhouse provides
 the following functions. They raise an exception in PostgreSQL if they are not
 pushed down.
 
-*   [toUInt8](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint8)
-*   [toUInt16](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint16)
-*   [toUInt32](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint32)
-*   [toUInt64](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint64)
-*   [toUInt128](https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint128)
+*   [toUInt8]
+*   [toUInt16]
+*   [toUInt32]
+*   [toUInt64]
+*   [toUInt128]
 
 ### Pushdown Aggregates
 
 These PostgreSQL aggregate functions pushdown to ClickHouse.
 
-*   [any_value](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/any)
-*   [array_agg](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/grouparray)
-*   [avg](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/avg)
-*   [bit_and](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitand)
-*   [bit_or](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitor)
-*   [bit_xor](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitxor)
-*   [bool_and / every](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitand)
-*   [bool_or](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitor)
-*   [count](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/count)
-*   [corr](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/corr)
-*   [covarpop](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/covarpop)
-*   [covarsamp](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/covarsamp)
-*   [min](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/min)
-*   [max](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/max)
-*   [stddev_pop](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/stddevpop)
-*   [stddev_samp / stddev](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/stddevsamp)
-*   [string_agg](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupconcat)
-*   [sum](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/sum)
-*   [var_op](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varPop)
-*   [var_samp /variance](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varSamp)
+*   [any_value]
+*   [array_agg]
+*   [avg]
+*   [bit_and]
+*   [bit_or]
+*   [bit_xor]
+*   [bool_and / every]
+*   [bool_or]
+*   [count]
+*   [corr]
+*   [covarpop]
+*   [covarsamp]
+*   [min]
+*   [max]
+*   [stddev_pop]
+*   [stddev_samp / stddev]
+*   [string_agg]
+*   [sum]
+*   [var_op]
+*   [var_samp /variance]
 
 These PostgreSQL regression aggregate functions pushdown to ClickHouse 26.9
 and later, but stay local to Postgres for earlier ClickHouse versions:
 
-*   [regr_avgx](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgx)
-*   [regr_avgy](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgy)
-*   [regr_count](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_count)
-*   [regr_intercept](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_intercept)
-*   [regr_r2](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_r2)
-*   [regr_slope](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_slope)
-*   [regr_sxx](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxx)
-*   [regr_sxy](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxy)
-*   [regr_syy](https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_syy)
+*   [regr_avgx]
+*   [regr_avgy]
+*   [regr_count]
+*   [regr_intercept]
+*   [regr_r2]
+*   [regr_slope]
+*   [regr_sxx]
+*   [regr_sxy]
+*   [regr_syy]
 
 ### Custom Aggregates
 
@@ -2190,16 +2176,16 @@ query pushdown for select ClickHouse aggregate functions with no PostgreSQL
 equivalents. If any of these functions cannot be pushed down they will raise
 an exception.
 
-*   [argMax](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax)
-*   [argMin](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmin)
-*   [uniq](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniq)
-*   [uniqCombined](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqcombined)
-*   [uniqCombined64](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqcombined64)
-*   [uniqExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqexact)
-*   [uniqHLL12](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqhll12)
-*   [uniqTheta](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqthetasketch)
-*   [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
-*   [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
+*   [argMax]
+*   [argMin]
+*   [uniq]
+*   [uniqCombined]
+*   [uniqCombined64]
+*   [uniqExact]
+*   [uniqHLL12]
+*   [uniqTheta]
+*   [quantile]
+*   [quantileExact]
 
 ### Pushdown Ordered Set Aggregates
 
@@ -2220,10 +2206,10 @@ SELECT quantileOrNull(0.25)(a) FROM t1;
 Note that the non-default `ORDER BY` suffixes `DESC` and `NULLS FIRST`
 are not supported and will raise an error.
 
-*   `percentile_cont(double)`: [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
-*   `percentile_cont(double[])`: [quantiles](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantiles)
-*   `percentile_disc(double)`: [quantileExactLow](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileExactLow)
-*   `percentile_disc(double[])`: [quantilesExactLow](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantilesExactLow)
+*   `percentile_cont(double)` → [quantile]
+*   `percentile_cont(double[])` → [quantiles]
+*   `percentile_disc(double)` → [quantileExactLow]
+*   `percentile_disc(double[])` → [quantilesExactLow]
 
 ### Custom Ordered Set Aggregates
 
@@ -2232,8 +2218,8 @@ provide foreign query pushdown for select ClickHouse [parametric aggregate
 functions]. If any of these functions cannot be pushed down they will raise an
 exception.
 
-*   [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
-*   [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
+*   [quantile]
+*   [quantileExact]
 
 ### Pushdown Window Functions
 
@@ -2241,17 +2227,17 @@ These PostgreSQL [window functions] push down to ClickHouse with
 `OVER (PARTITION BY ... ORDER BY ...)` clauses, including frame specifications
 where applicable.
 
-*   [row_number](https://clickhouse.com/docs/sql-reference/window-functions/row_number)
-*   [rank](https://clickhouse.com/docs/sql-reference/window-functions/rank)
-*   [dense_rank](https://clickhouse.com/docs/sql-reference/window-functions/dense_rank)
-*   [ntile](https://clickhouse.com/docs/sql-reference/window-functions/ntile)
-*   [cume_dist](https://clickhouse.com/docs/sql-reference/window-functions/cume_dist)
-*   [percent_rank](https://clickhouse.com/docs/sql-reference/window-functions/percent_rank)
-*   [lead](https://clickhouse.com/docs/sql-reference/window-functions/lead)
-*   [lag](https://clickhouse.com/docs/sql-reference/window-functions/lag)
-*   [first_value](https://clickhouse.com/docs/sql-reference/window-functions/first_value)
-*   [last_value](https://clickhouse.com/docs/sql-reference/window-functions/last_value)
-*   [nth_value](https://clickhouse.com/docs/sql-reference/window-functions/nth_value)
+*   [row_number]
+*   [rank]
+*   [dense_rank]
+*   [ntile]
+*   [cume_dist]
+*   [percent_rank]
+*   [lead]
+*   [lag]
+*   [first_value]
+*   [last_value]
+*   [nth_value]
 *   `min` / `max` (with `OVER` clause)
 
 Ranking functions (`row_number`, `rank`, `dense_rank`, `ntile`, `cume_dist`,
@@ -2397,10 +2383,10 @@ other backslash sequences are treated as literal text.
 
 ## Authors
 
-*   [David E. Wheeler](https://justatheory.com/)
-*   [serprex](https://github.com/serprex)
-*   [Josh Ventura](https://github.com/JoshDreamland)
-*   [Kaushik Iska](https://github.com/iskakaushik)
+*   [David E. Wheeler]
+*   [serprex]
+*   [Josh Ventura]
+*   [Kaushik Iska]
 
 ## Copyright
 
@@ -2491,6 +2477,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: LOAD"
   [SET]: https://www.postgresql.org/docs/current/sql-set.html
     "PostgreSQL Docs: SET"
+  [TimeZone]: https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-TIMEZONE
+    "PostgreSQL Docs: TimeZone"
   [ALTER ROLE]: https://www.postgresql.org/docs/current/sql-alterrole.html
     "PostgreSQL Docs: ALTER ROLE"
   [shared library preloading]: https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-PRELOAD
@@ -2517,7 +2505,7 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: Declaring Composite Types"
   [CALL]: https://www.postgresql.org/docs/current/sql-call.html
     "PostgreSQL Docs: CALL"
-  [Array] https://clickhouse.com/docs/reference/data-types/array
+  [Array]: https://clickhouse.com/docs/reference/data-types/array
     "ClickHouse Docs: Array(T)"
   [Map]: https://clickhouse.com/docs/sql-reference/data-types/map
     "ClickHouse Docs: Map"
@@ -2552,3 +2540,336 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: Data Type Formatting Functions"
   [formatDateTime]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#formatDateTime
     "ClickHouse Docs: formatDateTime"
+  [abs]: https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#abs
+    "ClickHouse Docs: abs"
+  [factorial]: https://clickhouse.com/docs/sql-reference/functions/math-functions#factorial
+    "ClickHouse Docs: factorial"
+  [modulo]: https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#modulo
+    "ClickHouse Docs: modulo"
+  [pow]: https://clickhouse.com/docs/sql-reference/functions/math-functions#pow
+    "ClickHouse Docs: pow"
+  [round]: https://clickhouse.com/docs/sql-reference/functions/rounding-functions#round
+    "ClickHouse Docs: round"
+  [ClickHouse math functions]: https://clickhouse.com/docs/sql-reference/functions/math-functions
+    "ClickHouse Docs: ClickHouse math functions"
+  [toDayOfMonth]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfMonth
+    "ClickHouse Docs: toDayOfMonth"
+  [toDayOfYear]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfYear
+    "ClickHouse Docs: toDayOfYear"
+  [toDayOfWeek]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfWeek
+    "ClickHouse Docs: toDayOfWeek"
+  [toYear]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toYear
+    "ClickHouse Docs: toYear"
+  [toMonth]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toMonth
+    "ClickHouse Docs: toMonth"
+  [toHour]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toHour
+    "ClickHouse Docs: toHour"
+  [toMinute]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toMinute
+    "ClickHouse Docs: toMinute"
+  [toSecond]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toSecond
+    "ClickHouse Docs: toSecond"
+  [toQuarter]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toQuarter
+    "ClickHouse Docs: toQuarter"
+  [toISOYear]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toISOYear
+    "ClickHouse Docs: toISOYear"
+  [toISOWeek]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toISOWeek
+    "ClickHouse Docs: toISOWeek"
+  [toUnixTimestamp]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toUnixTimestamp
+    "ClickHouse Docs: toUnixTimestamp"
+  [toMonday]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toMonday
+    "ClickHouse Docs: toMonday"
+  [toStartOfSecond]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfSecond
+    "ClickHouse Docs: toStartOfSecond"
+  [toStartOfMinute]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfMinute
+    "ClickHouse Docs: toStartOfMinute"
+  [toStartOfHour]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfHour
+    "ClickHouse Docs: toStartOfHour"
+  [toStartOfDay]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfDay
+    "ClickHouse Docs: toStartOfDay"
+  [toStartOfMonth]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfMonth
+    "ClickHouse Docs: toStartOfMonth"
+  [toStartOfQuarter]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfQuarter
+    "ClickHouse Docs: toStartOfQuarter"
+  [toStartOfYear]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfYear
+    "ClickHouse Docs: toStartOfYear"
+  [toDate32]: https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#toDate32
+    "ClickHouse Docs: toDate32"
+  [toString]: https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#tostring
+    "ClickHouse Docs: toString"
+  [toDateTime64]: https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#todatetime64
+    "ClickHouse Docs: toDateTime64"
+  [indexOf]: https://clickhouse.com/docs/sql-reference/functions/array-functions#indexOf
+    "ClickHouse Docs: indexOf"
+  [nullIf]: https://clickhouse.com/docs/reference/functions/regular-functions/functions-for-nulls#nullif
+    "ClickHouse Docs: nullIf"
+  [arraySlice]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arraySlice
+    "ClickHouse Docs: arraySlice"
+  [does not match]: https://github.com/ClickHouse/ClickHouse/issues/113169
+  [arrayConcat]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayConcat
+    "ClickHouse Docs: arrayConcat"
+  [arrayPushBack]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayPushBack
+    "ClickHouse Docs: arrayPushBack"
+  [arrayPushFront]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayPushFront
+    "ClickHouse Docs: arrayPushFront"
+  [arrayRemove]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayRemove
+    "ClickHouse Docs: arrayRemove"
+  [arrayFlattenedLength]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayFlattenedLength
+    "ClickHouse Docs: arrayFlattenedLength"
+  [length]: https://clickhouse.com/docs/sql-reference/functions/array-functions#length
+    "ClickHouse Docs: length"
+  [arrayStringConcat]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayStringConcat
+    "ClickHouse Docs: arrayStringConcat"
+  [splitByString]: https://clickhouse.com/docs/sql-reference/functions/splitting-merging-functions#splitByString
+    "ClickHouse Docs: splitByString"
+  [arrayResize]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayResize
+    "ClickHouse Docs: arrayResize"
+  [arrayWithConstant]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayWithConstant
+    "ClickHouse Docs: arrayWithConstant"
+  [arrayReverse]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayReverse
+    "ClickHouse Docs: arrayReverse"
+  [arrayShuffle]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayShuffle
+    "ClickHouse Docs: arrayShuffle"
+  [arrayRandomSample]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayRandomSample
+    "ClickHouse Docs: arrayRandomSample"
+  [arraySort]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arraySort
+    "ClickHouse Docs: arraySort"
+  [trimBoth]: https://clickhouse.com/docs/sql-reference/functions/string-functions#trimboth
+    "ClickHouse Docs: trimBoth"
+  [trimLeft]: https://clickhouse.com/docs/sql-reference/functions/string-functions#trimLeft
+    "ClickHouse Docs: trimLeft"
+  [trimRight]: https://clickhouse.com/docs/sql-reference/functions/string-functions#trimRight
+    "ClickHouse Docs: trimRight"
+  [concatWithSeparator]: https://clickhouse.com/docs/sql-reference/functions/string-functions#concatwithseparator
+    "ClickHouse Docs: concatWithSeparator"
+  [lowerUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-functions#lowerutf8
+    "ClickHouse Docs: lowerUTF8"
+  [upperUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-functions#upperutf8
+    "ClickHouse Docs: upperUTF8"
+  [substringUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-functions#substringutf8
+    "ClickHouse Docs: substringUTF8"
+  [substring]: https://clickhouse.com/docs/sql-reference/functions/string-functions#substring
+    "ClickHouse Docs: substring"
+  [lengthUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-functions#lengthutf8
+    "ClickHouse Docs: lengthUTF8"
+  [reverseUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-functions#reverseutf8
+    "ClickHouse Docs: reverseUTF8"
+  [reverse]: https://clickhouse.com/docs/sql-reference/functions/string-functions#reverse
+    "ClickHouse Docs: reverse"
+  [positionUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#positionutf8
+    "ClickHouse Docs: positionUTF8"
+  [match]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match
+    "ClickHouse Docs: match"
+  [extractGroups]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#extractGroups
+    "ClickHouse Docs: extractGroups"
+  [extractAll]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#extractAll
+    "ClickHouse Docs: extractAll"
+  [replaceRegexpOne]: https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpOne
+    "ClickHouse Docs: replaceRegexpOne"
+  [splitByRegexp]: https://clickhouse.com/docs/sql-reference/functions/splitting-merging-functions#splitByRegexp
+    "ClickHouse Docs: splitByRegexp"
+  [MD5]: https://clickhouse.com/docs/sql-reference/functions/hash-functions#MD5
+    "ClickHouse Docs: MD5"
+  [SHA functions]: https://clickhouse.com/docs/sql-reference/functions/hash-functions#sha224
+    "ClickHouse Docs: SHA functions"
+  [hex]: https://clickhouse.com/docs/sql-reference/functions/encoding-functions#hex
+    "ClickHouse Docs: hex"
+  [lower]: https://clickhouse.com/docs/sql-reference/functions/string-functions#lower
+    "ClickHouse Docs: lower"
+  [base64Encode]: https://clickhouse.com/docs/sql-reference/functions/encoding-functions#base64encode
+    "ClickHouse Docs: base64Encode"
+  [replaceRegexpAll]: https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpAll
+    "ClickHouse Docs: replaceRegexpAll"
+  [base64URLEncode]: https://clickhouse.com/docs/sql-reference/functions/encoding-functions#base64urlencode
+    "ClickHouse Docs: base64URLEncode"
+  [sub-column syntax]: https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns
+    "ClickHouse Docs: sub-column syntax"
+  [toJSONString]: https://clickhouse.com/docs/sql-reference/functions/json-functions#toJSONString
+    "ClickHouse Docs: toJSONString"
+  [bitCount]: https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitcount
+    "ClickHouse Docs: bitCount"
+  [formatDateTime]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#formatDateTime
+    "ClickHouse Docs: formatDateTime"
+  [nowInBlock64]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#nowInBlock64
+    "ClickHouse Docs: nowInBlock64"
+  [now]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#now
+    "ClickHouse Docs: now"
+  [toDate]: https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#toDate
+    "ClickHouse Docs: toDate"
+  [now64]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#now64
+    "ClickHouse Docs: now64"
+  [hasAll]: https://clickhouse.com/docs/sql-reference/functions/array-functions#hasAll
+    "ClickHouse Docs: hasAll"
+  [hasAny]: https://clickhouse.com/docs/sql-reference/functions/array-functions#hasAny
+    "ClickHouse Docs: hasAny"
+  [intDiv]: https://clickhouse.com/docs/sql-reference/functions/arithmetic-functions#intDiv
+    "ClickHouse Docs: intDiv"
+  [sqrt]: https://clickhouse.com/docs/sql-reference/functions/math-functions#sqrt
+    "ClickHouse Docs: sqrt"
+  [cbrt]: https://clickhouse.com/docs/sql-reference/functions/math-functions#cbrt
+    "ClickHouse Docs: cbrt"
+  [bitAnd]: https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitAnd
+    "ClickHouse Docs: bitAnd"
+  [bitOr]: https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitOr
+    "ClickHouse Docs: bitOr"
+  [bitXor]: https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitXor
+    "ClickHouse Docs: bitXor"
+  [bitNot]: https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitNot
+    "ClickHouse Docs: bitNot"
+  [bitShiftLeft]: https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitShiftLeft
+    "ClickHouse Docs: bitShiftLeft"
+  [bitShiftRight]: https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitShiftRight
+    "ClickHouse Docs: bitShiftRight"
+  [dictGet]: https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull
+    "ClickHouse Docs: dictGet"
+  [extract]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#extract
+    "ClickHouse Docs: extract"
+  [regexpExtract]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#regexpExtract
+    "ClickHouse Docs: regexpExtract"
+  [countMatches]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#countMatches
+    "ClickHouse Docs: countMatches"
+  [countMatchesCaseInsensitive]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#countMatchesCaseInsensitive
+    "ClickHouse Docs: countMatchesCaseInsensitive"
+  [multiMatchAny]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#multiMatchAny
+    "ClickHouse Docs: multiMatchAny"
+  [multiMatchAnyIndex]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#multiMatchAnyIndex
+    "ClickHouse Docs: multiMatchAnyIndex"
+  [multiMatchAllIndices]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#multiMatchAllIndices
+    "ClickHouse Docs: multiMatchAllIndices"
+  [soundex]: https://clickhouse.com/docs/sql-reference/functions/string-functions#soundex
+    "ClickHouse Docs: soundex"
+  [editDistanceUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-functions#editDistanceUTF8
+    "ClickHouse Docs: editDistanceUTF8"
+  [L2Distance]: https://clickhouse.com/docs/sql-reference/functions/distance-functions#L2Distance
+    "ClickHouse Docs: L2Distance"
+  [cosineDistance]: https://clickhouse.com/docs/sql-reference/functions/distance-functions#cosineDistance
+    "ClickHouse Docs: cosineDistance"
+  [dotProduct]: https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayDotProduct
+    "ClickHouse Docs: dotProduct"
+  [L1Distance]: https://clickhouse.com/docs/sql-reference/functions/distance-functions#L1Distance
+    "ClickHouse Docs: L1Distance"
+  [equals]: https://clickhouse.com/docs/sql-reference/operators#equals
+    "ClickHouse Docs: equals"
+  [notEquals]: https://clickhouse.com/docs/sql-reference/operators#notEquals
+    "ClickHouse Docs: notEquals"
+  [hash function]: https://clickhouse.com/docs/sql-reference/functions/hash-functions
+    "ClickHouse Docs: hash function"
+  [toUInt8]: https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint8
+    "ClickHouse Docs: toUInt8"
+  [toUInt16]: https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint16
+    "ClickHouse Docs: toUInt16"
+  [toUInt32]: https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint32
+    "ClickHouse Docs: toUInt32"
+  [toUInt64]: https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint64
+    "ClickHouse Docs: toUInt64"
+  [toUInt128]: https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#touint128
+    "ClickHouse Docs: toUInt128"
+  [any_value]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/any
+    "ClickHouse Docs: any_value"
+  [array_agg]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/grouparray
+    "ClickHouse Docs: array_agg"
+  [avg]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/avg
+    "ClickHouse Docs: avg"
+  [bit_and]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitand
+    "ClickHouse Docs: bit_and"
+  [bit_or]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitor
+    "ClickHouse Docs: bit_or"
+  [bit_xor]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitxor
+    "ClickHouse Docs: bit_xor"
+  [bool_and / every]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitand
+    "ClickHouse Docs: bool_and / every"
+  [bool_or]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitor
+    "ClickHouse Docs: bool_or"
+  [count]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/count
+    "ClickHouse Docs: count"
+  [corr]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/corr
+    "ClickHouse Docs: corr"
+  [covarpop]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/covarpop
+    "ClickHouse Docs: covarpop"
+  [covarsamp]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/covarsamp
+    "ClickHouse Docs: covarsamp"
+  [min]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/min
+    "ClickHouse Docs: min"
+  [max]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/max
+    "ClickHouse Docs: max"
+  [stddev_pop]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/stddevpop
+    "ClickHouse Docs: stddev_pop"
+  [stddev_samp / stddev]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/stddevsamp
+    "ClickHouse Docs: stddev_samp / stddev"
+  [string_agg]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupconcat
+    "ClickHouse Docs: string_agg"
+  [sum]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/sum
+    "ClickHouse Docs: sum"
+  [var_op]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varPop
+    "ClickHouse Docs: var_op"
+  [var_samp /variance]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varSamp
+    "ClickHouse Docs: var_samp /variance"
+  [regr_avgx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgx
+    "ClickHouse Docs: regr_avgx"
+  [regr_avgy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_avgy
+    "ClickHouse Docs: regr_avgy"
+  [regr_count]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_count
+    "ClickHouse Docs: regr_count"
+  [regr_intercept]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_intercept
+    "ClickHouse Docs: regr_intercept"
+  [regr_r2]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_r2
+    "ClickHouse Docs: regr_r2"
+  [regr_slope]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_slope
+    "ClickHouse Docs: regr_slope"
+  [regr_sxx]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxx
+    "ClickHouse Docs: regr_sxx"
+  [regr_sxy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_sxy
+    "ClickHouse Docs: regr_sxy"
+  [regr_syy]: https://clickhouse.com/docs/reference/functions/aggregate-functions/regr_syy
+    "ClickHouse Docs: regr_syy"
+  [argMax]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax
+    "ClickHouse Docs: argMax"
+  [argMin]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmin
+    "ClickHouse Docs: argMin"
+  [uniq]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniq
+    "ClickHouse Docs: uniq"
+  [uniqCombined]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqcombined
+    "ClickHouse Docs: uniqCombined"
+  [uniqCombined64]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqcombined64
+    "ClickHouse Docs: uniqCombined64"
+  [uniqExact]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqexact
+    "ClickHouse Docs: uniqExact"
+  [uniqHLL12]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqhll12
+    "ClickHouse Docs: uniqHLL12"
+  [uniqTheta]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqthetasketch
+    "ClickHouse Docs: uniqTheta"
+  [quantile]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile
+    "ClickHouse Docs: quantile"
+  [quantileExact]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact
+    "ClickHouse Docs: quantileExact"
+  [quantiles]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantiles
+    "ClickHouse Docs: quantiles"
+  [quantileExactLow]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileExactLow
+    "ClickHouse Docs: quantileExactLow"
+  [quantilesExactLow]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantilesExactLow
+    "ClickHouse Docs: quantilesExactLow"
+  [row_number]: https://clickhouse.com/docs/sql-reference/window-functions/row_number
+    "ClickHouse Docs: row_number"
+  [rank]: https://clickhouse.com/docs/sql-reference/window-functions/rank
+    "ClickHouse Docs: rank"
+  [dense_rank]: https://clickhouse.com/docs/sql-reference/window-functions/dense_rank
+    "ClickHouse Docs: dense_rank"
+  [ntile]: https://clickhouse.com/docs/sql-reference/window-functions/ntile
+    "ClickHouse Docs: ntile"
+  [cume_dist]: https://clickhouse.com/docs/sql-reference/window-functions/cume_dist
+    "ClickHouse Docs: cume_dist"
+  [percent_rank]: https://clickhouse.com/docs/sql-reference/window-functions/percent_rank
+    "ClickHouse Docs: percent_rank"
+  [lead]: https://clickhouse.com/docs/sql-reference/window-functions/lead
+    "ClickHouse Docs: lead"
+  [lag]: https://clickhouse.com/docs/sql-reference/window-functions/lag
+    "ClickHouse Docs: lag"
+  [first_value]: https://clickhouse.com/docs/sql-reference/window-functions/first_value
+    "ClickHouse Docs: first_value"
+  [last_value]: https://clickhouse.com/docs/sql-reference/window-functions/last_value
+    "ClickHouse Docs: last_value"
+  [nth_value]: https://clickhouse.com/docs/sql-reference/window-functions/nth_value
+    "ClickHouse Docs: nth_value"
+  [David E. Wheeler]: https://justatheory.com/
+  [serprex]: https://github.com/serprex
+  [Josh Ventura]: https://github.com/JoshDreamland
+  [Kaushik Iska]: https://github.com/iskakaushik

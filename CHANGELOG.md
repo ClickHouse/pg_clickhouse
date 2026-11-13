@@ -573,7 +573,7 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.10';
 *   Fixed the encoding of `bytea` array elements to use the same ClickHouse
     binary-literal serializer previously for scalar values, preventing
     PostgreSQL `IN` lists from producing invalid or mismatched `FixedString`
-    comparisons. Thanks to @jxom for the PR (#333)!
+    comparisons. Thanks to @jxom for the PR ([#333])!
 *   Fixed `array_position()` pushdown to return `NULL`, rather than zero, when
     ClickHouse does not find an element. Thanks to Minh Vu for the PR ([#334])!
 *   Fixed `array_length()` pushdown to preserve empty-array and requested
@@ -1101,17 +1101,18 @@ pg_clickhouse v0.1 will get its benefits on reload without needing to
 
 ### ⚡ Improvements
 
-*   Added support for the PostgreSQL `to_timestamp(float8)` function, mapped to
-    `fromUnixTimestamp(toInt64())` in ClickHouse.
+*   Added support for the PostgreSQL `to_timestamp(float8)` function, mapped
+    to `fromUnixTimestamp(toInt64())` in ClickHouse.
 
 ### 🪲 Bug Fixes
 
 *   Disabled query pushdown for JSONB subscript syntax (e.g.,
-    `col_name['field']`) for now. Thanks Kaushik Iska for the PR (#161).
+    `col_name['field']`) for now. Thanks Kaushik Iska for the PR ([#161]).
 *   Added query cancellation via Ctrl-C and `statement_timeout` to the binary
-    driver. Thanks Kaushik Iska for the PR (#162) that fixed this issue (#41).
+    driver. Thanks Kaushik Iska for the PR ([#162]) that fixed this issue
+    ([#41]).
 *   Fixed `LIKE`, `ILIKE`, and regex operator pushdown, including `~~*`,
-    `!~~*`, `~`, `!~`, `~*`, `!~*`. Thanks Kaushik Iska for the PR (#164).
+    `!~~*`, `~`, `!~`, `~*`, `!~*`. Thanks Kaushik Iska for the PR ([#164]).
 
   [v0.1.6]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.1.5...v0.1.6
 
@@ -1133,13 +1134,25 @@ pg_clickhouse v0.1 will get its benefits on reload without needing to
 ### 🪲 Bug Fixes
 
 *   Fixed a crash due to an unexpected EOF while the http driver parses a
-    response. Thanks to @serprex for the fix (#153)
+    response. Thanks to @serprex for the fix ([#153])
 *   Fixed a crash due to an unchecked memory allocation while the http driver
-    reads a response. Thanks to @serprex for the fix (#154).
+    reads a response. Thanks to @serprex for the fix ([#154]).
 
   [v0.1.5]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.1.4...v0.1.5
+  [#153]: https://github.com/ClickHouse/pg_clickhouse/pull/153
+    "ClickHouse/pg_clickhouse#153 Fix parsing ClickHouse string with \ at end"
+  [#154]: https://github.com/ClickHouse/pg_clickhouse/pull/154
+    "ClickHouse/pg_clickhouse#154 Detect allocation failure & abort curl write in that circumstance"
   [#155]: https://github.com/ClickHouse/pg_clickhouse/pull/155
     "ClickHouse/pg_clickhouse#155 Prevent line endings in http dbname header"
+  [#161]: https://github.com/ClickHouse/pg_clickhouse/pull/161
+    "ClickHouse/pg_clickhouse#161 Fix jsonb subscript pushdown on ClickHouse JSON columns"
+  [#162]: https://github.com/ClickHouse/pg_clickhouse/pull/162
+    "ClickHouse/pg_clickhouse#162 Support query cancellation for the binary driver"
+  [#41]: https://github.com/ClickHouse/pg_clickhouse/pull/41
+    "ClickHouse/pg_clickhouse#41 Support Immediate Interrupt"
+  [#164]: https://github.com/ClickHouse/pg_clickhouse/pull/164
+    "ClickHouse/pg_clickhouse#164 Fix ILIKE and POSIX regex operator pushdown"
   [9b10133]: https://github.com/ClickHouse/pg_clickhouse/commit/9b10133
 
 ## [v0.1.4] — 2026-02-17
@@ -1164,7 +1177,7 @@ pg_clickhouse v0.1 will get its benefits on reload without needing to
 
 *   Fixed binary driver errors when attempting to insert a `NULL` value into
     `Nullable` Numeric, Text, `Enum`, `UUID`, and `INET` columns. Thanks to
-    Rahul Mehta for the report (#140).
+    Rahul Mehta for the report ([#140]).
 *   Fixed http driver array parsing, which previously did not properly parse
     string values and would raise an error on values containing brackets
     (`[]`). Thanks to serprex for the spot (#142).
@@ -1182,6 +1195,10 @@ pg_clickhouse v0.1 will get its benefits on reload without needing to
     and `output_format_tsv_crlf_end_of_line`.
 
   [v0.1.4]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.1.3...v0.1.4
+  [#140]: https://github.com/ClickHouse/pg_clickhouse/pull/140
+    "ClickHouse/pg_clickhouse#140 Connection Terminates Unexpectedly When Using NULL Value for UUID"
+  [#141]: https://github.com/ClickHouse/pg_clickhouse/pull/141
+    "ClickHouse/pg_clickhouse#141 Refactor http_fetch_row to resemble binary_fetch_row"
 
 ## [v0.1.3] — 2026-01-23
 
@@ -1266,7 +1283,7 @@ pg_clickhouse v0.1 will get its benefits on reload without needing to
     23.8.
 *   Fixed the precision of fractional seconds in the binary engine's
     conversion of ClickHouse `DateTime64` values to Postgres `TIMESTAMP`
-    (#114).
+    ([#114]).
 
 ### 📔 Notes
 
@@ -1292,6 +1309,8 @@ pg_clickhouse v0.1 will get its benefits on reload without needing to
   [country]: https://pgxn.org/dist/country/ "country on PGXN"
   [istore]: https://pgxn.org/dist/istore/ "istore on PGXN"
   [tutorial]: ./doc/tutorial.md
+  [#114]: https://github.com/ClickHouse/pg_clickhouse/pull/114
+    "ClickHouse/pg_clickhouse#114 Binary Engine DateTime64 Parsing Loses Precision"
 
 ## [v0.1.1] — 2025-12-17
 
@@ -1314,7 +1333,7 @@ pg_clickhouse v0.1 will get its benefits on reload without needing to
 
 ### 🪲 Bug Fixes
 
-*   Fixed a crash when sending an empty `COPY FROM` via the binary driver
+*   Fixed a crash when sending an empty `COPY FROM` via the binary driver.
 
 ### ⬆️ Dependency Updates
 
