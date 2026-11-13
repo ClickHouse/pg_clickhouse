@@ -469,7 +469,7 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.10';
     *   [var_samp/variance]
     *   [any_value]
 *   Mapped the following PostgreSQL ordered set aggregate functions to push
-    down to corresponding ClickHouse parametric aggregate functions ([#291]):
+    down to corresponding ClickHouse parametric aggregate functions ([#292]):
     *   `percentile_cont(double[])` → `quantiles()`
     *   `percentile_disc(double)` → `quantileExactLow()`
     *   `percentile_disc(double[])` → `quantilesExactLow()`
@@ -547,11 +547,6 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.10';
     that could corrupt memory and hang ([#296]).
 *   Fixed subsecond precision lost inserting timestamps over HTTP ([#300]).
 *   Fixed the binary driver to use `pg_clickhouse.session_settings` with inserts.
-*   Fixed undefined behavior: out-of-bounds reads in key/value iteration, and the
-    binary driver's simple query path; `CollapsingMergeTree` validation; missing
-    rejection of non-`Const`/null units in `date_trunc`/`date_part` pushdown;
-    NULL handling in record conversion; unchecked `curl_easy_escape` failures;
-    and unbounded `DateTime64` scale lookups ([#313]).
 *   Fixed incorrect results from pushed-down `= ANY`/`<> ALL` expressions and
     `IN` expressions over constant lists and when a `NULL` could reach the
     comparison, compensating for ClickHouse evaluating `IN` under two-valued
@@ -585,6 +580,17 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.10';
 *   Fixed loss of subsecond precision in `to_timestamp(float8)` by mapping it
     to the ClickHouse `toDateTime64()` function instead of
     `fromUnixTimestamp()`. Thanks to Minh Vu for the PR ([#338]).
+
+### 🔏 Security Fixes
+
+*   Fixed out-of-bounds issues in the binary driver's decoder. Thanks to
+    Mehmet Ince for the report ([#291])!
+*   Fixed undefined behavior: out-of-bounds reads in key/value iteration, and
+    the binary driver's simple query path; `CollapsingMergeTree` validation;
+    missing rejection of non-`Const`/null units in `date_trunc`/`date_part`
+    pushdown; NULL handling in record conversion; unchecked `curl_easy_escape`
+    failures; and unbounded `DateTime64` scale lookups. Thanks to Mehmet Ince
+    for reporting the `DateTime64` scale issue ([#313])!
 
 ### 📚 Documentation
 
@@ -620,7 +626,9 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.10';
   [var_samp/variance]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varSamp
   [any_value]: https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/any
   [#291]: https://github.com/ClickHouse/pg_clickhouse/pull/291
-    "ClickHouse/pg_clickhouse#291 Push down ordered set aggregate functions"
+    "ClickHouse/pg_clickhouse#291 add basic bounds checking to binary decode"
+  [#292]: https://github.com/ClickHouse/pg_clickhouse/pull/292
+    "ClickHouse/pg_clickhouse#292 Push down ordered set aggregate functions"
   [#293]: https://github.com/ClickHouse/pg_clickhouse/pull/293
     "ClickHouse/pg_clickhouse#293 Add ClickHouse server-version detection plumbing"
   [#296]: https://github.com/ClickHouse/pg_clickhouse/pull/296
@@ -877,7 +885,7 @@ ALTER EXTENSION pg_clickhouse UPDATE TO '0.3';
 *   Added the [ca-certificates package] and the [re2 extension] to the OCI
     (née Docker) images.
 
-### 🚨 Security Fixes
+### 🔏 Security Fixes
 
 *   Added SQL to revoke `EXECUTE` permission on `clickhouse_raw_query()` from
     `PUBLIC`. Leaving it executable by `PUBLIC` would allow any database user
@@ -1109,13 +1117,14 @@ This release makes binary-only changes. Once installed, any existing use of
 pg_clickhouse v0.1 will get its benefits on reload without needing to
 `ALTER EXTENSION UPDATE`.
 
-### 🚨 Security Fixes
+### 🔏 Security Fixes
 
 *   Changed the http driver connection function to raise an error if the
     database name contains line ending characters to prevent HTTP header
-    injection.
+    injection ([#155]).
 *   Fixed an SQL injection vulnerability in parsing of parameters to the
     `engine 'CollapsingMergeTree($sign)` option to `CREATE FOREIGN TABLE`.
+    Thanks to theinfosecguy for the report ([9b10133])!
 
 ### 🪲 Bug Fixes
 
@@ -1125,6 +1134,9 @@ pg_clickhouse v0.1 will get its benefits on reload without needing to
     reads a response. Thanks to @serprex for the fix (#154).
 
   [v0.1.5]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.1.4...v0.1.5
+  [#155]: https://github.com/ClickHouse/pg_clickhouse/pull/155
+    "ClickHouse/pg_clickhouse#155 Prevent line endings in http dbname header"
+  [9b10133]: https://github.com/ClickHouse/pg_clickhouse/commit/9b10133
 
 ## [v0.1.4] — 2026-02-17
 
@@ -1289,12 +1301,12 @@ pg_clickhouse v0.1 will get its benefits on reload without needing to
     GUC to parse the settings only once rather than for every query sent to
     ClickHouse
 
-### 🚨 Security Fixes
+### 🔏 Security Fixes
 
 *   Updated the SQL query rewriting to properly quote strings and identifiers
     in SQL queries sent to ClickHouse, fixing potential SQL injection
     vulnerabilities, notably via `IMPORT SCHEMA`. This has the effect of
-    preserving mixed-case and uppercase identifiers.
+    preserving mixed-case and uppercase identifiers. ([54342bb])
 
 ### 🪲 Bug Fixes
 
@@ -1318,6 +1330,7 @@ pg_clickhouse v0.1 will get its benefits on reload without needing to
   [v0.1.1]: https://github.com/clickhouse/pg_clickhouse/compare/v0.1.0...v0.1.1
   [versioning policy]: ./doc/pg_clickhouse.md#versioning-policy
   [README.md]: README.md
+  [54342bb]: https://github.com/ClickHouse/pg_clickhouse/commit/54342bb
 
 ## [v0.1.0] — 2025-12-09
 
