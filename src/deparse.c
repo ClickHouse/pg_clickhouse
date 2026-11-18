@@ -4510,6 +4510,51 @@ unwrapTimeZone(Expr** arg) {
 }
 
 /*
+ * Deparse source binned into stride microseconds, aligned to origin, as
+ * PostgreSQL date_bin() does.
+ *
+ * ClickHouse intervals of an hour or longer align to local midnight, and
+ * intervals of a second or longer return DateTime, which cannot hold a time
+ * before 1970. Microsecond intervals on DateTime64 do neither. They align to
+ * the Unix epoch, so shift source by the offset of origin from the epoch.
+ */
+static void
+deparseDateBin(
+    Expr* source,
+    int64 stride,
+    TimestampTz origin,
+    deparse_expr_cxt* context
+) {
+    StringInfo buf = context->buf;
+    int64 epoch    = (int64)(POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * USECS_PER_DAY;
+    int64 offset   = origin % stride;
+
+    /* Sum the two remainders modulo stride without overflow */
+    if (offset < 0) {
+        offset += stride;
+    }
+    epoch %= stride;
+    offset = offset >= stride - epoch ? offset - (stride - epoch) : offset + epoch;
+
+    appendStringInfoString(buf, offset ? "(" : "");
+    appendStringInfoString(buf, "toStartOfInterval(toDateTime64(");
+    deparseExpr(source, context);
+    appendStringInfoString(buf, ", 6");
+    if (exprType(strip_implicit_coercions((Node*)source)) == DATEOID) {
+        /* Implicit cast deparses as Date, which PostgreSQL reads in TimeZone */
+        appendStringInfo(buf, ", %s", QUOTED_TZ);
+    }
+    appendStringInfoChar(buf, ')');
+    if (offset) {
+        appendStringInfo(buf, " - INTERVAL " INT64_FORMAT " MICROSECOND", offset);
+    }
+    appendStringInfo(buf, ", INTERVAL " INT64_FORMAT " MICROSECOND)", stride);
+    if (offset) {
+        appendStringInfo(buf, " + INTERVAL " INT64_FORMAT " MICROSECOND)", offset);
+    }
+}
+
+/*
  * Format timestamp arg as wall clock string in zone, NULL for TimeZone.
  * Decoder casts DateTime to timestamp in TimeZone, so timestamp wall clock is
  * in TimeZone. Date takes midnight in TimeZone, as PostgreSQL casts it
@@ -4682,6 +4727,20 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             }
             appendTimeZoneArg(list_nth(node->args, 1), NULL, context);
             appendStringInfoChar(buf, ')');
+            return;
+        }
+        case CF_DATE_BIN: {
+            int64 stride;
+
+            if (!chfdw_fixed_interval_usecs(linitial(node->args), &stride)) {
+                elog(ERROR, "date_bin stride is not a fixed interval");
+            }
+            deparseDateBin(
+                lsecond(node->args),
+                stride,
+                DatumGetTimestampTz(((Const*)lthird(node->args))->constvalue),
+                context
+            );
             return;
         }
         case CF_DATE_PART: {

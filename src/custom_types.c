@@ -9,6 +9,7 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "commands/extension.h"
+#include "common/int.h"
 #include "parser/parse_func.h"
 #include "strings.h"
 #include "utils/builtins.h"
@@ -18,6 +19,7 @@
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
+#include "utils/timestamp.h"
 
 #include "fdw.h"
 #include "pg-clickhouse.h"
@@ -267,6 +269,33 @@ chfdw_digest_func_name(const char* algorithm) {
 }
 
 /*
+ * Set usecs to the length of a constant, positive interval without months and
+ * return true. Return false for any other node: months have no fixed length,
+ * and PostgreSQL raises errors for strides that are not positive.
+ */
+bool
+chfdw_fixed_interval_usecs(Node* node, int64* usecs) {
+    Const* stride = (Const*)node;
+    Interval* ival;
+    int64 result;
+
+    if (!IsA(stride, Const) || stride->constisnull ||
+        stride->consttype != INTERVALOID) {
+        return false;
+    }
+
+    /* Infinite intervals have months, too */
+    ival = DatumGetIntervalP(stride->constvalue);
+    if (ival->month != 0 || pg_mul_s64_overflow(ival->day, USECS_PER_DAY, &result) ||
+        pg_add_s64_overflow(result, ival->time, &result) || result <= 0) {
+        return false;
+    }
+
+    *usecs = result;
+    return true;
+}
+
+/*
  * Describes how a recognized builtin maps to ClickHouse.
  *   ch_name = literal: deparse emits ch_name
  *   ch_name = NULL:    deparse emits PG name
@@ -302,6 +331,11 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         def->cf_type = CF_DATE_PART;
         def->ch_name = "\1";
         return true;
+    case F_DATE_BIN_INTERVAL_TIMESTAMPTZ_TIMESTAMPTZ:
+        def->cf_type = CF_DATE_BIN;
+        def->ch_name = "\1";
+        return true;
+        /* date_bin(timestamp) bins wall clock time, which varies by zone */
     case F_TIMEZONE_TEXT_TIMESTAMP:
     case F_TIMEZONE_TEXT_TIMESTAMPTZ:
         def->cf_type = CF_TIMEZONE;
