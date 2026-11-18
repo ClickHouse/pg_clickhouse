@@ -26,6 +26,7 @@
 #include "utils/hsearch.h"
 #include "utils/inval.h"
 #include "utils/syscache.h"
+#include "utils/timestamp.h"
 
 /* Hash table for caching the results of shippability lookups */
 static HTAB* ShippableCacheHash = NULL;
@@ -239,6 +240,24 @@ chfdw_is_shippable(
 
                 if (!IsA(unit, Const) || ((Const*)unit)->constisnull) {
                     return false;
+                }
+            } break;
+            case CF_DATE_BIN:
+            case CF_TIME_BUCKET: {
+                /* Deparse needs a fixed stride and a finite origin, if any */
+                List* args = ((FuncExpr*)node)->args;
+                int64 stride;
+
+                if (!chfdw_fixed_interval_usecs(linitial(args), &stride)) {
+                    return false;
+                }
+                if (list_length(args) == 3) {
+                    Const* origin = (Const*)lthird(args);
+
+                    if (!IsA(origin, Const) || origin->constisnull ||
+                        TIMESTAMP_NOT_FINITE(DatumGetTimestampTz(origin->constvalue))) {
+                        return false;
+                    }
                 }
             } break;
             case CF_ARRAY_SORT_DESC: {

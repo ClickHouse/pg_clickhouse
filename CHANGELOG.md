@@ -16,6 +16,12 @@ All notable changes to this project will be documented in this file. It uses the
     in Postgres for earlier ClickHouse versions. For array keys and other
     types that cannot be `Nullable`, grouping sets return empty values instead
     of `NULL` when leaving out those keys ([#465]).
+*   Added pushdown of `date_bin(interval, timestamptz, timestamptz)` to
+    `toStartOfInterval` when the stride is a constant interval without months
+    and the origin is a constant ([#472]).
+*   Added pushdown of TimescaleDB `time_bucket(interval, timestamptz)`, with
+    or without an origin, to `toStartOfInterval`, and of TimescaleDB `first()`
+    and `last()` to `argMin` and `argMax` ([#471]).
 
 ### 🚀 Distribution
 
@@ -24,6 +30,10 @@ All notable changes to this project will be documented in this file. It uses the
   [v0.11.2]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.1...v0.11.2
   [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
     "ClickHouse/pg_clickhouse#465 Support grouping sets"
+  [#472]: https://github.com/ClickHouse/pg_clickhouse/pull/472
+    "ClickHouse/pg_clickhouse#472 Push down date_bin() to toStartOfInterval"
+  [#471]: https://github.com/ClickHouse/pg_clickhouse/issues/471
+    "ClickHouse/pg_clickhouse#471 Push down TimescaleDB time_bucket(), first(), and last()"
 
 ## [v0.11.1] — 2026-11-09
 

@@ -404,6 +404,9 @@ typedef enum {
     CF_SIGN_COUNT,           /* COUNT aggregation */
     CF_DATE_TRUNC,           /* date_trunc function */
     CF_DATE_PART,            /* date_part function */
+    CF_DATE_BIN,             /* date_bin → toStartOfInterval */
+    CF_TIME_BUCKET,          /* timescaledb time_bucket → toStartOfInterval */
+    CF_FIRST_LAST,           /* timescaledb first, last → argMin, argMax */
     CF_DATETIME_PL_INTERVAL, /* date/timestamp/timestamptz + interval */
     CF_DATETIME_MI_INTERVAL, /* date/timestamp/timestamptz - interval */
     CF_TIMEZONE,             /* timezone */
@@ -488,6 +491,8 @@ extern CustomObjectDef*
 chfdw_check_for_custom_function(Oid funcid);
 extern const char*
 chfdw_digest_func_name(const char* algorithm);
+extern bool
+chfdw_fixed_interval_usecs(Node* node, int64* usecs);
 extern CustomObjectDef*
 chfdw_check_for_custom_type(Oid typeoid);
 extern void

@@ -4510,6 +4510,51 @@ unwrapTimeZone(Expr** arg) {
 }
 
 /*
+ * Deparse source binned into stride microseconds, aligned to origin, as
+ * PostgreSQL date_bin() and TimescaleDB time_bucket() do.
+ *
+ * ClickHouse intervals of an hour or longer align to local midnight, and
+ * intervals of a second or longer return DateTime, which cannot hold a time
+ * before 1970. Microsecond intervals on DateTime64 do neither. They align to
+ * the Unix epoch, so shift source by the offset of origin from the epoch.
+ */
+static void
+deparseDateBin(
+    Expr* source,
+    int64 stride,
+    TimestampTz origin,
+    deparse_expr_cxt* context
+) {
+    StringInfo buf = context->buf;
+    int64 epoch    = (int64)(POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * USECS_PER_DAY;
+    int64 offset   = origin % stride;
+
+    /* Sum the two remainders modulo stride without overflow */
+    if (offset < 0) {
+        offset += stride;
+    }
+    epoch %= stride;
+    offset = offset >= stride - epoch ? offset - (stride - epoch) : offset + epoch;
+
+    appendStringInfoString(buf, offset ? "(" : "");
+    appendStringInfoString(buf, "toStartOfInterval(toDateTime64(");
+    deparseExpr(source, context);
+    appendStringInfoString(buf, ", 6");
+    if (exprType(strip_implicit_coercions((Node*)source)) == DATEOID) {
+        /* Implicit cast deparses as Date, which PostgreSQL reads in TimeZone */
+        appendStringInfo(buf, ", %s", QUOTED_TZ);
+    }
+    appendStringInfoChar(buf, ')');
+    if (offset) {
+        appendStringInfo(buf, " - INTERVAL " INT64_FORMAT " MICROSECOND", offset);
+    }
+    appendStringInfo(buf, ", INTERVAL " INT64_FORMAT " MICROSECOND)", stride);
+    if (offset) {
+        appendStringInfo(buf, " + INTERVAL " INT64_FORMAT " MICROSECOND)", offset);
+    }
+}
+
+/*
  * Format timestamp arg as wall clock string in zone, NULL for TimeZone.
  * Decoder casts DateTime to timestamp in TimeZone, so timestamp wall clock is
  * in TimeZone. Date takes midnight in TimeZone, as PostgreSQL casts it
@@ -4682,6 +4727,21 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             }
             appendTimeZoneArg(list_nth(node->args, 1), NULL, context);
             appendStringInfoChar(buf, ')');
+            return;
+        }
+        case CF_DATE_BIN:
+        case CF_TIME_BUCKET: {
+            /* time_bucket() defaults to Monday, 2000-01-03 00:00:00 UTC */
+            TimestampTz origin = 2 * USECS_PER_DAY;
+            int64 stride;
+
+            if (!chfdw_fixed_interval_usecs(linitial(node->args), &stride)) {
+                elog(ERROR, "stride is not a fixed interval");
+            }
+            if (list_length(node->args) == 3) {
+                origin = DatumGetTimestampTz(((Const*)lthird(node->args))->constvalue);
+            }
+            deparseDateBin(lsecond(node->args), stride, origin, context);
             return;
         }
         case CF_DATE_PART: {
@@ -6265,6 +6325,44 @@ agg_needs_or_null(Aggref* node, deparse_expr_cxt* context) {
 }
 
 /*
+ * Deparse TimescaleDB first(value, time) and last(value, time) as argMin and
+ * argMax. They skip rows with a NULL value, where TimescaleDB returns the
+ * NULL, so wrap the value in a tuple. Without rows with a time they return a
+ * default value rather than NULL, and older ClickHouse versions reject OrNull
+ * on a tuple, so count the times.
+ */
+static void
+deparseFirstLast(Aggref* node, deparse_expr_cxt* context) {
+    StringInfo buf   = context->buf;
+    Expr* value      = ((TargetEntry*)linitial(node->args))->expr;
+    Expr* time       = ((TargetEntry*)lsecond(node->args))->expr;
+    char* name       = get_func_name(node->aggfnoid);
+    const char* func = strcmp(name, "first") == 0 ? "argMin" : "argMax";
+    const char* cond = node->aggfilter ? "If" : "";
+
+    pfree(name);
+    for (int pass = 0; pass < 2; pass++) {
+        if (pass == 0) {
+            appendStringInfo(buf, "if(count%s(", cond);
+        } else {
+            appendStringInfo(buf, " > 0, %s%s(tuple(", func, cond);
+            deparseExpr(value, context);
+            appendStringInfoString(buf, "), ");
+        }
+        deparseExpr(time, context);
+        if (node->aggfilter) {
+            appendStringInfoString(buf, ", ((");
+            context->truth_ctx = true; /* FILTER only qualifies rows */
+            deparseExpr((Expr*)node->aggfilter, context);
+            context->truth_ctx = false;
+            appendStringInfoString(buf, ") > 0)");
+        }
+        appendStringInfoChar(buf, ')');
+    }
+    appendStringInfoString(buf, ".1, NULL)");
+}
+
+/*
  * Deparse an Aggref node.
  */
 static void
@@ -6303,6 +6401,12 @@ deparseAggref(Aggref* node, deparse_expr_cxt* context) {
     /* 'If' part */
     if (context->func && context->func->cf_type == CF_SIGN_COUNT && !node->aggstar) {
         sign_count_filter = true;
+    }
+
+    if (context->func && context->func->cf_type == CF_FIRST_LAST) {
+        deparseFirstLast(node, context);
+        context->func = cdef;
+        return;
     }
 
     bool merge   = aggref_on_aggregate_function(node, context);

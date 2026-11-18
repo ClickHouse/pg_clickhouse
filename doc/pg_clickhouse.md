@@ -1827,6 +1827,12 @@ equivalents as follows:
     *   `date_trunc('month')`: [toStartOfMonth]
     *   `date_trunc('quarter')`: [toStartOfQuarter]
     *   `date_trunc('year')`: [toStartOfYear]
+*   `date_bin(stride, timestamptz, origin)`: [toStartOfInterval]. `stride`
+    must be a constant, positive interval without months, and `origin` must
+    be a constant. The interval deparses in microseconds on a
+    `DateTime64(6)`, which ClickHouse aligns to the Unix epoch, so the value
+    shifts by the offset of `origin`. `date_bin` on `timestamp` values does
+    not push down.
 *   `extract(field FROM source)`: same mappings as `date_part`; passes
     PostgreSQL's `TimeZone` to ClickHouse for `timestamp` and `timestamptz`
     values.
@@ -2114,6 +2120,27 @@ under Data Types for supported column types.
 *   `digest(text, text)` and `digest(bytea, text)`: Corresponding ClickHouse
     [hash function] when the algorithm is a constant `md5`, `sha1`, `sha224`,
     `sha256`, `sha384`, or `sha512` (matched case-insensitively).
+
+#### TimescaleDB
+
+These [TimescaleDB] functions push down to ClickHouse:
+
+*   `time_bucket(interval, timestamptz)` and
+    `time_bucket(interval, timestamptz, origin)`: [toStartOfInterval], with
+    the same conditions and the same SQL as `date_bin`. Without an `origin`,
+    buckets align to Monday, 2000-01-03 UTC, as in TimescaleDB.
+*   `first(value, time)`: [argMin]
+*   `last(value, time)`: [argMax]
+
+ClickHouse ignores rows with a `NULL` value in `argMin` and `argMax`.
+TimescaleDB returns the `NULL` when it is on the first or last row. To get
+the same result, `first` and `last` deparse as `argMin(tuple(value), time).1`
+and `argMax(tuple(value), time).1`. They return `NULL` when no row has a
+time.
+
+The other `time_bucket` variants do not push down. These are the variants
+for `timestamp`, `date`, integer, and UUID values, and the variants with an
+offset or a time zone. `time_bucket_gapfill` does not push down.
 
 ### Pushdown Casts
 
@@ -2534,6 +2561,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: fuzzystrmatch"
   [pgvector]: https://github.com/pgvector/pgvector
     "pgvector: Open-source vector similarity search for Postgres"
+  [TimescaleDB]: https://github.com/timescale/timescaledb
+    "TimescaleDB: time-series database packaged as a Postgres extension"
   [vector similarity index]: https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/annindexes
     "ClickHouse Docs: Exact and Approximate Vector Search"
   [`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html
@@ -2586,6 +2615,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "ClickHouse Docs: toStartOfHour"
   [toStartOfDay]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfDay
     "ClickHouse Docs: toStartOfDay"
+  [toStartOfInterval]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfInterval
+    "ClickHouse Docs: toStartOfInterval"
   [toStartOfMonth]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfMonth
     "ClickHouse Docs: toStartOfMonth"
   [toStartOfQuarter]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfQuarter

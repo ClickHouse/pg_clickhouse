@@ -9,6 +9,7 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "commands/extension.h"
+#include "common/int.h"
 #include "parser/parse_func.h"
 #include "strings.h"
 #include "utils/builtins.h"
@@ -18,6 +19,7 @@
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
+#include "utils/timestamp.h"
 
 #include "fdw.h"
 #include "pg-clickhouse.h"
@@ -267,6 +269,33 @@ chfdw_digest_func_name(const char* algorithm) {
 }
 
 /*
+ * Set usecs to the length of a constant, positive interval without months and
+ * return true. Return false for any other node: months have no fixed length,
+ * and PostgreSQL raises errors for strides that are not positive.
+ */
+bool
+chfdw_fixed_interval_usecs(Node* node, int64* usecs) {
+    Const* stride = (Const*)node;
+    Interval* ival;
+    int64 result;
+
+    if (!IsA(stride, Const) || stride->constisnull ||
+        stride->consttype != INTERVALOID) {
+        return false;
+    }
+
+    /* Infinite intervals have months, too */
+    ival = DatumGetIntervalP(stride->constvalue);
+    if (ival->month != 0 || pg_mul_s64_overflow(ival->day, USECS_PER_DAY, &result) ||
+        pg_add_s64_overflow(result, ival->time, &result) || result <= 0) {
+        return false;
+    }
+
+    *usecs = result;
+    return true;
+}
+
+/*
  * Describes how a recognized builtin maps to ClickHouse.
  *   ch_name = literal: deparse emits ch_name
  *   ch_name = NULL:    deparse emits PG name
@@ -302,6 +331,11 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         def->cf_type = CF_DATE_PART;
         def->ch_name = "\1";
         return true;
+    case F_DATE_BIN_INTERVAL_TIMESTAMPTZ_TIMESTAMPTZ:
+        def->cf_type = CF_DATE_BIN;
+        def->ch_name = "\1";
+        return true;
+        /* date_bin(timestamp) bins wall clock time, which varies by zone */
     case F_TIMEZONE_TEXT_TIMESTAMP:
     case F_TIMEZONE_TEXT_TIMESTAMPTZ:
         def->cf_type = CF_TIMEZONE;
@@ -750,6 +784,41 @@ pgvector_function(Form_pg_proc procform, CustomObjectDef* entry) {
     return true;
 }
 
+/*
+ * Map a TimescaleDB function to its ClickHouse function. Returns false for
+ * functions without an equivalent, including the time_bucket() variants that
+ * bin wall clock time, integers, and UUIDs, or take an offset or time zone.
+ */
+static bool
+timescaledb_function(Form_pg_proc procform, CustomObjectDef* entry) {
+    const char* proname = NameStr(procform->proname);
+    Oid* argtypes       = procform->proargtypes.values;
+
+    if (STR_EQUAL(proname, "time_bucket")) {
+        /* time_bucket(interval, timestamptz [, origin timestamptz]) */
+        if (procform->pronargs < 2 || procform->pronargs > 3 ||
+            argtypes[0] != INTERVALOID || argtypes[1] != TIMESTAMPTZOID ||
+            (procform->pronargs == 3 && argtypes[2] != TIMESTAMPTZOID)) {
+            return false;
+        }
+        entry->cf_type = CF_TIME_BUCKET;
+        strcpy(entry->custom_name, "\1");
+        return true;
+    }
+
+    if (procform->prokind != PROKIND_AGGREGATE || procform->pronargs != 2) {
+        return false;
+    }
+
+    /* first(value, time) and last(value, time) */
+    if (!(STR_EQUAL(proname, "first")) && !(STR_EQUAL(proname, "last"))) {
+        return false;
+    }
+    entry->cf_type = CF_FIRST_LAST;
+    strcpy(entry->custom_name, "\1");
+    return true;
+}
+
 CustomObjectDef*
 chfdw_check_for_custom_function(Oid funcid) {
     CustomObjectDef* entry;
@@ -805,6 +874,15 @@ chfdw_check_for_custom_function(Oid funcid) {
                 strlcpy(entry->custom_name, re2_func_name(proname), NAMEDATALEN);
             } else if (STR_EQUAL(extname, "vector")) {
                 if (!pgvector_function(procform, entry)) {
+                    ReleaseSysCache(proctup);
+                    pfree(extname);
+                    hash_search(
+                        custom_objects_cache, (void*)&funcid, HASH_REMOVE, NULL
+                    );
+                    return NULL;
+                }
+            } else if (STR_EQUAL(extname, "timescaledb")) {
+                if (!timescaledb_function(procform, entry)) {
                     ReleaseSysCache(proctup);
                     pfree(extname);
                     hash_search(
