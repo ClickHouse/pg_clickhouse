@@ -19,6 +19,9 @@ All notable changes to this project will be documented in this file. It uses the
 *   Added pushdown of `date_bin(interval, timestamptz, timestamptz)` to
     `toStartOfInterval` when the stride is a constant interval without months
     and the origin is a constant ([#472]).
+*   Added pushdown of TimescaleDB `time_bucket(interval, timestamptz)`, with
+    or without an origin, to `toStartOfInterval`, and of TimescaleDB `first()`
+    and `last()` to `argMin` and `argMax` ([#471]).
 
 ### 🚀 Distribution
 
@@ -29,6 +32,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#465 Support grouping sets"
   [#472]: https://github.com/ClickHouse/pg_clickhouse/pull/472
     "ClickHouse/pg_clickhouse#472 Push down date_bin() to toStartOfInterval"
+  [#471]: https://github.com/ClickHouse/pg_clickhouse/issues/471
+    "ClickHouse/pg_clickhouse#471 Push down TimescaleDB time_bucket(), first(), and last()"
 
 ## [v0.11.1] — 2026-11-09
 

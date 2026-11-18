@@ -1,0 +1,6 @@
+SELECT NOT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = 'timescaledb')
+    OR current_setting('shared_preload_libraries') !~ 'timescaledb' AS no_timescaledb \gset
+\if :no_timescaledb
+\echo 'SKIP: timescaledb extension not available'
+SKIP: timescaledb extension not available
+\quit

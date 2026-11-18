@@ -2121,6 +2121,27 @@ under Data Types for supported column types.
     [hash function] when the algorithm is a constant `md5`, `sha1`, `sha224`,
     `sha256`, `sha384`, or `sha512` (matched case-insensitively).
 
+#### TimescaleDB
+
+These [TimescaleDB] functions push down to ClickHouse:
+
+*   `time_bucket(interval, timestamptz)` and
+    `time_bucket(interval, timestamptz, origin)`: [toStartOfInterval], with
+    the same conditions and the same SQL as `date_bin`. Without an `origin`,
+    buckets align to Monday, 2000-01-03 UTC, as in TimescaleDB.
+*   `first(value, time)`: [argMin]
+*   `last(value, time)`: [argMax]
+
+ClickHouse ignores rows with a `NULL` value in `argMin` and `argMax`.
+TimescaleDB returns the `NULL` when it is on the first or last row. To get
+the same result, `first` and `last` deparse as `argMin(tuple(value), time).1`
+and `argMax(tuple(value), time).1`. They return `NULL` when no row has a
+time.
+
+The other `time_bucket` variants do not push down. These are the variants
+for `timestamp`, `date`, integer, and UUID values, and the variants with an
+offset or a time zone. `time_bucket_gapfill` does not push down.
+
 ### Pushdown Casts
 
 pg_clickhouse pushes down casts such as `CAST(x AS bigint)` for compatible
@@ -2540,6 +2561,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: fuzzystrmatch"
   [pgvector]: https://github.com/pgvector/pgvector
     "pgvector: Open-source vector similarity search for Postgres"
+  [TimescaleDB]: https://github.com/timescale/timescaledb
+    "TimescaleDB: time-series database packaged as a Postgres extension"
   [vector similarity index]: https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/annindexes
     "ClickHouse Docs: Exact and Approximate Vector Search"
   [`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html

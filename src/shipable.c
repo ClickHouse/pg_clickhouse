@@ -242,16 +242,22 @@ chfdw_is_shippable(
                     return false;
                 }
             } break;
-            case CF_DATE_BIN: {
-                /* Deparse needs a fixed stride and a finite origin */
-                List* args    = ((FuncExpr*)node)->args;
-                Const* origin = (Const*)lthird(args);
+            case CF_DATE_BIN:
+            case CF_TIME_BUCKET: {
+                /* Deparse needs a fixed stride and a finite origin, if any */
+                List* args = ((FuncExpr*)node)->args;
                 int64 stride;
 
-                if (!chfdw_fixed_interval_usecs(linitial(args), &stride) ||
-                    !IsA(origin, Const) || origin->constisnull ||
-                    TIMESTAMP_NOT_FINITE(DatumGetTimestampTz(origin->constvalue))) {
+                if (!chfdw_fixed_interval_usecs(linitial(args), &stride)) {
                     return false;
+                }
+                if (list_length(args) == 3) {
+                    Const* origin = (Const*)lthird(args);
+
+                    if (!IsA(origin, Const) || origin->constisnull ||
+                        TIMESTAMP_NOT_FINITE(DatumGetTimestampTz(origin->constvalue))) {
+                        return false;
+                    }
                 }
             } break;
             case CF_ARRAY_SORT_DESC: {
