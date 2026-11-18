@@ -709,6 +709,73 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT jsonb_agg(id) FROM json_http.json_events;
 SELECT jsonb_agg(id ORDER BY id) FROM json_http.json_events;
 
+-- jsonb #>> and #> path operators push down as dot notation.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #>> '{address,city}' = 'Paris';
+SELECT id FROM json_http.events WHERE props #>> '{address,city}' = 'Paris';
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #> '{address,city}' = '"Paris"'::jsonb;
+SELECT id FROM json_http.events WHERE props #> '{address,city}' = '"Paris"'::jsonb;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.events WHERE props #>> '{address,city}' = 'Paris';
+SELECT id FROM json_bin.events WHERE props #>> '{address,city}' = 'Paris';
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.events WHERE props #> '{address,city}' = '"Paris"'::jsonb;
+SELECT id FROM json_bin.events WHERE props #> '{address,city}' = '"Paris"'::jsonb;
+
+-- An empty path pushes down as the whole document.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #>> '{}' IS NOT NULL;
+SELECT id FROM json_http.events WHERE props #>> '{}' IS NOT NULL;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.events WHERE props #> '{}' IS NOT NULL;
+SELECT id FROM json_bin.events WHERE props #> '{}' IS NOT NULL;
+
+-- Target-list: #>> is evaluated locally (like ->> and jsonb_extract_path_text).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT props #>> '{address,city}' FROM json_http.events;
+SELECT props #>> '{address,city}' FROM json_http.events ORDER BY id;
+
+-- json #>> and #> path operators push down as dot notation.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.json_events WHERE props #>> '{address,city}' = 'Paris';
+SELECT id FROM json_http.json_events WHERE props #>> '{address,city}' = 'Paris';
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.json_events WHERE props #> '{address,city}' IS NOT NULL;
+SELECT id FROM json_http.json_events WHERE props #> '{address,city}' IS NOT NULL;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.json_events WHERE props #>> '{address,city}' = 'Paris';
+SELECT id FROM json_bin.json_events WHERE props #>> '{address,city}' = 'Paris';
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.json_events WHERE props #> '{address,city}' IS NOT NULL;
+SELECT id FROM json_bin.json_events WHERE props #> '{address,city}' IS NOT NULL;
+
+-- Non-constant, NULL-bearing, and numeric-key paths evaluate locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #>> ARRAY['address', event_name] IS NULL;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #>> ARRAY['address', NULL, 'city']::text[] IS NULL;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #>> '{a,1}' = '2';
+SELECT id FROM json_http.events WHERE props #>> '{a,1}' = '2';
+
+-- Chained JSON path operations evaluate locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE (props -> 'address') ->> 'city' = 'Paris';
+SELECT id FROM json_http.events WHERE (props -> 'address') ->> 'city' = 'Paris';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE (props #> '{address}') #>> '{city}' = 'Paris';
+SELECT id FROM json_http.events WHERE (props #> '{address}') #>> '{city}' = 'Paris';
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.events WHERE jsonb_extract_path_text(props #> '{address}', 'city') = 'Paris';
+SELECT id FROM json_bin.events WHERE jsonb_extract_path_text(props #> '{address}', 'city') = 'Paris';
+
 CALL clickhouse_perform('json_admin', 'DROP DATABASE json_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;

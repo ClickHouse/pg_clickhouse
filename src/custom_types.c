@@ -977,6 +977,12 @@ classify_builtin_operator(Oid opoid, const char** ch_name) {
     case F_JSONB_OBJECT_FIELD_TEXT:
     case F_JSON_OBJECT_FIELD_TEXT:
         return CF_JSON_FETCHVAL_TEXT;
+    case F_JSONB_EXTRACT_PATH:
+    case F_JSON_EXTRACT_PATH:
+        return CF_JSON_EXTRACT_PATH;
+    case F_JSONB_EXTRACT_PATH_TEXT:
+    case F_JSON_EXTRACT_PATH_TEXT:
+        return CF_JSON_EXTRACT_PATH_TEXT;
     case F_ARRAYCONTAINS:
         *ch_name = "hasAll";
         break;

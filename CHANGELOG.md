@@ -22,6 +22,11 @@ All notable changes to this project will be documented in this file. It uses the
 *   Run `erf()`, `erfc()`, `cbrt()`, `trunc()`, `sign()`, `position()`,
     `left()`, `right()`, `crc32()`, `to_hex()`, and `to_bin()` in ClickHouse
     ([#479]).
+*   Added support for pushing down the JSON/JSONB `#>` and `#>>` path
+    operators when the path is a constant `text[]` with no `NULL` or numeric
+    elements. Chained JSON paths such as `(data -> 'a') ->> 'b'` now
+    evaluate in Postgres instead of failing in ClickHouse. Thanks to @deeox
+    for the PR ([#470])!
 
 ### 🐞 Bug Fixes
 
@@ -43,6 +48,8 @@ All notable changes to this project will be documented in this file. It uses the
   [v0.11.2]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.1...v0.11.2
   [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
     "ClickHouse/pg_clickhouse#465 Support grouping sets"
+  [#470]: https://github.com/ClickHouse/pg_clickhouse/pull/470
+    "ClickHouse/pg_clickhouse#470 Push down JSON/JSONB #> and #>> path operators"
   [#475]: https://github.com/ClickHouse/pg_clickhouse/pull/475
     "ClickHouse/pg_clickhouse#475 Fix lag/lead with OVER"
   [#476]: https://github.com/ClickHouse/pg_clickhouse/pull/476
