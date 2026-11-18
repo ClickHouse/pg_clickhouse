@@ -2159,6 +2159,243 @@ SELECT jsonb_agg(id ORDER BY id) FROM json_http.json_events;
  [1, 2]
 (1 row)
 
+-- jsonb #>> and #> path operators push down as dot notation.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #>> '{address,city}' = 'Paris';
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.address.city = 'Paris'))
+(3 rows)
+
+SELECT id FROM json_http.events WHERE props #>> '{address,city}' = 'Paris';
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #> '{address,city}' = '"Paris"'::jsonb;
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Remote SQL: SELECT id FROM json_test.events WHERE ((toJSONString(props.address.city) = '"Paris"'))
+(3 rows)
+
+SELECT id FROM json_http.events WHERE props #> '{address,city}' = '"Paris"'::jsonb;
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.events WHERE props #>> '{address,city}' = 'Paris';
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.events
+   Output: id
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.address.city = 'Paris'))
+(3 rows)
+
+SELECT id FROM json_bin.events WHERE props #>> '{address,city}' = 'Paris';
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.events WHERE props #> '{address,city}' = '"Paris"'::jsonb;
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.events
+   Output: id
+   Remote SQL: SELECT id FROM json_test.events WHERE ((toJSONString(props.address.city) = '"Paris"'))
+(3 rows)
+
+SELECT id FROM json_bin.events WHERE props #> '{address,city}' = '"Paris"'::jsonb;
+ id 
+----
+  1
+(1 row)
+
+-- Target-list: #>> is evaluated locally (like ->> and jsonb_extract_path_text).
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT props #>> '{address,city}' FROM json_http.events;
+                    QUERY PLAN                    
+--------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: (props #>> '{address,city}'::text[])
+   Remote SQL: SELECT props FROM json_test.events
+(3 rows)
+
+SELECT props #>> '{address,city}' FROM json_http.events ORDER BY id;
+ ?column? 
+----------
+ Paris
+ London
+(2 rows)
+
+-- json #>> and #> path operators push down as dot notation.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.json_events WHERE props #>> '{address,city}' = 'Paris';
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Foreign Scan on json_http.json_events
+   Output: id
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.address.city = 'Paris'))
+(3 rows)
+
+SELECT id FROM json_http.json_events WHERE props #>> '{address,city}' = 'Paris';
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.json_events WHERE props #> '{address,city}' IS NOT NULL;
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.json_events
+   Output: id
+   Remote SQL: SELECT id FROM json_test.events WHERE ((toJSONString(props.address.city) IS NOT NULL))
+(3 rows)
+
+SELECT id FROM json_http.json_events WHERE props #> '{address,city}' IS NOT NULL;
+ id 
+----
+  1
+  2
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.json_events WHERE props #>> '{address,city}' = 'Paris';
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.json_events
+   Output: id
+   Remote SQL: SELECT id FROM json_test.events WHERE ((props.address.city = 'Paris'))
+(3 rows)
+
+SELECT id FROM json_bin.json_events WHERE props #>> '{address,city}' = 'Paris';
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.json_events WHERE props #> '{address,city}' IS NOT NULL;
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.json_events
+   Output: id
+   Remote SQL: SELECT id FROM json_test.events WHERE ((toJSONString(props.address.city) IS NOT NULL))
+(3 rows)
+
+SELECT id FROM json_bin.json_events WHERE props #> '{address,city}' IS NOT NULL;
+ id 
+----
+  1
+  2
+(2 rows)
+
+-- Non-constant, NULL-bearing, empty, and numeric-key paths evaluate locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #>> ARRAY['address', event_name] IS NULL;
+                                    QUERY PLAN                                    
+----------------------------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Filter: ((events.props #>> ARRAY['address'::text, events.event_name]) IS NULL)
+   Remote SQL: SELECT id, event_name, props FROM json_test.events
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #>> ARRAY['address', NULL, 'city']::text[] IS NULL;
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Filter: ((events.props #>> '{address,NULL,city}'::text[]) IS NULL)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #>> '{}' IS NULL;
+                      QUERY PLAN                      
+------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Filter: ((events.props #>> '{}'::text[]) IS NULL)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE props #>> '{a,1}' = '2';
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Filter: ((events.props #>> '{a,1}'::text[]) = '2'::text)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
+
+SELECT id FROM json_http.events WHERE props #>> '{a,1}' = '2';
+ id 
+----
+  1
+(1 row)
+
+-- JSON paths on non-column expressions evaluate locally.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE (props -> 'address') ->> 'city' = 'Paris';
+                                    QUERY PLAN                                    
+----------------------------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Filter: (((events.props -> 'address'::text) ->> 'city'::text) = 'Paris'::text)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
+
+SELECT id FROM json_http.events WHERE (props -> 'address') ->> 'city' = 'Paris';
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_http.events WHERE (props #> '{address}') #>> '{city}' = 'Paris';
+                                        QUERY PLAN                                        
+------------------------------------------------------------------------------------------
+ Foreign Scan on json_http.events
+   Output: id
+   Filter: (((events.props #> '{address}'::text[]) #>> '{city}'::text[]) = 'Paris'::text)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
+
+SELECT id FROM json_http.events WHERE (props #> '{address}') #>> '{city}' = 'Paris';
+ id 
+----
+  1
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM json_bin.events WHERE jsonb_extract_path_text(props #> '{address}', 'city') = 'Paris';
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on json_bin.events
+   Output: id
+   Filter: (jsonb_extract_path_text((events.props #> '{address}'::text[]), VARIADIC '{city}'::text[]) = 'Paris'::text)
+   Remote SQL: SELECT id, props FROM json_test.events
+(4 rows)
+
+SELECT id FROM json_bin.events WHERE jsonb_extract_path_text(props #> '{address}', 'city') = 'Paris';
+ id 
+----
+  1
+(1 row)
+
 CALL clickhouse_perform('json_admin', 'DROP DATABASE json_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER binary_json_loopback;
 DROP USER MAPPING FOR CURRENT_USER SERVER http_json_loopback;

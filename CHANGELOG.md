@@ -16,14 +16,28 @@ All notable changes to this project will be documented in this file. It uses the
     in Postgres for earlier ClickHouse versions. For array keys and other
     types that cannot be `Nullable`, grouping sets return empty values instead
     of `NULL` when leaving out those keys ([#465]).
+*   Added support for pushing down the JSON/JSONB `#>` and `#>>` path
+    operators when the path is a constant `text[]` with no `NULL` or numeric
+    elements ([#248]).
+
+### 🐞 Bug Fixes
+
+*   Fixed errors from chained JSON/JSONB paths such as
+    `(data -> 'a') ->> 'b'`, which deparsed to invalid dot notation. JSON
+    paths now push down only when applied directly to a column; others
+    evaluate in Postgres ([#470]).
 
 ### 🚀 Distribution
 
 *   Updated the Postgres 19 OCI image to rc2.
 
   [v0.11.2]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.1...v0.11.2
+  [#248]: https://github.com/ClickHouse/pg_clickhouse/issues/248
+    "ClickHouse/pg_clickhouse#248 Support JSON/JSONB #> array and #>> array path operators"
   [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
     "ClickHouse/pg_clickhouse#465 Support grouping sets"
+  [#470]: https://github.com/ClickHouse/pg_clickhouse/pull/470
+    "ClickHouse/pg_clickhouse#470 Push down JSON/JSONB #> and #>> path operators"
 
 ## [v0.11.1] — 2026-11-09
 
