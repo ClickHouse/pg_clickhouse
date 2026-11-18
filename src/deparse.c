@@ -889,6 +889,23 @@ classify_notin_subplan(SubPlan* subplan, PlannerInfo* root, Relids relids) {
     return NOTIN_SHIP_NONE;
 }
 
+/*
+ * True if text parses as an int the way PostgreSQL's JSON array index does:
+ * '1', '+1', ' 1', and '-2' do; '1a', '', and '99999999999' do not.
+ */
+static bool
+is_numeric_text(Datum d) {
+    char* value = TextDatumGetCString(d);
+    char* end;
+    bool numeric;
+
+    errno = 0;
+    strtoint(value, &end, 10);
+    numeric = end != value && *end == '\0' && errno == 0;
+    pfree(value);
+    return numeric;
+}
+
 /* Datetime +/- interval Param, which deparseIntervalOp splits into parts */
 static bool
 is_interval_param_op(OpExpr* oe) {
@@ -1007,13 +1024,7 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
                 }
 
                 /* PostgreSQL also interprets numeric text as array indexes. */
-                char* value = TextDatumGetCString(key->constvalue);
-                char* end;
-                errno = 0;
-                strtoint(value, &end, 10);
-                bool numeric = end != value && *end == '\0' && errno == 0;
-                pfree(value);
-                if (numeric) {
+                if (is_numeric_text(key->constvalue)) {
                     return false;
                 }
             }
@@ -1055,11 +1066,12 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
          * jsonb?_extract_path_text / jsonb?_extract_path are always
          * presented by the planner in variadic form: two args where
          * the second is a text[] constant.  Allow them through the
-         * variadic gate; only recurse on the column argument.
+         * variadic gate when the first is a column; only recurse on it.
          */
         if (cdef && (cdef->cf_type == CF_JSON_EXTRACT_PATH_TEXT ||
                      cdef->cf_type == CF_JSON_EXTRACT_PATH)) {
-            if (list_length(fe->args) != 2 || !IsA(lsecond(fe->args), Const) ||
+            if (list_length(fe->args) != 2 || !IsA(linitial(fe->args), Var) ||
+                !IsA(lsecond(fe->args), Const) ||
                 ((Const*)lsecond(fe->args))->constisnull) {
                 return false;
             }
@@ -1115,6 +1127,7 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
     case T_DistinctExpr: /* struct-equivalent to OpExpr */
     {
         OpExpr* oe = (OpExpr*)node;
+        CustomObjectDef* cdef;
 
         /*
          * Similarly, only shippable operators can be sent to remote.
@@ -1123,6 +1136,59 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
          */
         if (!chfdw_is_shippable(node, oe->opno, OperatorRelationId, fpinfo, NULL)) {
             return false;
+        }
+
+        cdef = chfdw_check_for_custom_operator(oe->opno, NULL);
+
+        /*
+         * Only JSON paths on a column map to ClickHouse sub-columns. A path
+         * on another expression, such as (col -> 'a') ->> 'b', deparses to
+         * invalid dot notation on toJSONString().
+         */
+        if (cdef &&
+            (cdef->cf_type == CF_JSON_FETCHVAL ||
+             cdef->cf_type == CF_JSON_FETCHVAL_TEXT ||
+             cdef->cf_type == CF_JSON_EXTRACT_PATH_TEXT ||
+             cdef->cf_type == CF_JSON_EXTRACT_PATH) &&
+            !IsA(linitial(oe->args), Var)) {
+            return false;
+        }
+
+        /*
+         * #> and #>> deparse their text[] path as dot-notation keys, so only
+         * the column needs walking. An empty path returns the whole
+         * document, which dot notation can't express.
+         */
+        if (cdef && (cdef->cf_type == CF_JSON_EXTRACT_PATH_TEXT ||
+                     cdef->cf_type == CF_JSON_EXTRACT_PATH)) {
+            if (list_length(oe->args) != 2 || !IsA(lsecond(oe->args), Const) ||
+                ((Const*)lsecond(oe->args))->constisnull) {
+                return false;
+            }
+
+            ArrayType* path =
+                DatumGetArrayTypeP(((Const*)lsecond(oe->args))->constvalue);
+            if (ArrayGetNItems(ARR_NDIM(path), ARR_DIMS(path)) == 0 ||
+                array_contains_nulls(path)) {
+                return false;
+            }
+
+            /* PostgreSQL also interprets numeric text as array indexes. */
+            Datum* keys;
+            int nkeys;
+            deconstruct_array(
+                path, TEXTOID, -1, false, TYPALIGN_INT, &keys, NULL, &nkeys
+            );
+            for (int i = 0; i < nkeys; i++) {
+                if (is_numeric_text(keys[i])) {
+                    return false;
+                }
+            }
+
+            if (!foreign_expr_walker(linitial(oe->args), glob_cxt, EXPR_CTX_EXACT)) {
+                return false;
+            }
+            break;
         }
 
         if (is_interval_param_op(oe)) {
@@ -4104,19 +4170,22 @@ deparseSubscriptingRef(SubscriptingRef* node, deparse_expr_cxt* context) {
 }
 
 /*
- * Deparse jsonb_extract_path_text() / jsonb_extract_path() into ClickHouse
- * JSON dot notation.
+ * Deparse jsonb_extract_path_text() / jsonb_extract_path() and the #>> / #>
+ * operators into ClickHouse JSON dot notation.
  *
  *   jsonb_extract_path_text(col, 'k1', 'k2') → col."k1"."k2"
+ *   col #>> '{k1,k2}'                        → col."k1"."k2"
  *   jsonb_extract_path(col, 'k1')            → toJSONString(col."k1")
+ *   col #> '{k1}'                            → toJSONString(col."k1")
  *
- * The planner presents these in variadic form: two args where the second
- * is a text[] constant holding the path keys.
+ * The planner presents the functions in variadic form, and the operators
+ * natively: two args where the second is a text[] constant holding the path
+ * keys.
  */
 static void
-deparseJsonbExtractPath(FuncExpr* node, deparse_expr_cxt* context, bool wrap_json) {
+deparseJsonbExtractPath(List* args, deparse_expr_cxt* context, bool wrap_json) {
     StringInfo buf = context->buf;
-    Const* arr     = (Const*)lsecond(node->args);
+    Const* arr     = (Const*)lsecond(args);
     ArrayType* array;
     Datum* elems;
     bool* nulls;
@@ -4127,7 +4196,7 @@ deparseJsonbExtractPath(FuncExpr* node, deparse_expr_cxt* context, bool wrap_jso
     }
 
     /* First arg is the JSONB column expression. */
-    deparseExpr((Expr*)linitial(node->args), context);
+    deparseExpr((Expr*)linitial(args), context);
 
     /* Second arg is text[] with path keys → dot notation. */
     array = DatumGetArrayTypeP(arr->constvalue);
@@ -4611,7 +4680,7 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
         case CF_JSON_EXTRACT_PATH_TEXT:
         case CF_JSON_EXTRACT_PATH: {
             deparseJsonbExtractPath(
-                node, context, cdef->cf_type == CF_JSON_EXTRACT_PATH
+                node->args, context, cdef->cf_type == CF_JSON_EXTRACT_PATH
             );
             return;
         }
@@ -5373,6 +5442,12 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             }
             /* Non-text key: fall through to standard deparse */
         } break;
+        case CF_JSON_EXTRACT_PATH_TEXT:
+        case CF_JSON_EXTRACT_PATH:
+            deparseJsonbExtractPath(
+                node->args, context, cdef->cf_type == CF_JSON_EXTRACT_PATH
+            );
+            goto cleanup;
         case CF_OPERATOR_FUNC: {
             /* ClickHouse picks narrower or unsigned types from integer args */
             char* cast = node->opresulttype == INT2OID ||

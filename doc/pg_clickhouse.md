@@ -1926,6 +1926,11 @@ equivalents as follows:
 *   `!~*` (case insensitive regexp not match): [match]
 *   `->>` (JSON/JSONB extract element as text): [sub-column syntax]
 *   `->` (JSON/JSONB extract): [toJSONString] + [sub-column syntax]
+*   `#>>` (JSON/JSONB extract path as text): [sub-column syntax]. Pushdown
+    requires a constant `text[]` path with at least one element, and no
+    `NULL` or numeric (array index) elements.
+*   `#>` (JSON/JSONB extract path): [toJSONString] + [sub-column syntax].
+    Same path requirements as `#>>`.
 *   `jsonb` subscripts (`data['a']['b']`): [toJSONString] + [sub-column
     syntax]. Pushdown requires a column with constant, non-NULL text
     subscripts. Integer, numeric text, and non-constant subscripts evaluate
