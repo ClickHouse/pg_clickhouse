@@ -1,0 +1,294 @@
+SET datestyle = 'ISO';
+SET timezone = 'America/New_York';
+CREATE SERVER date_bin_svr FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'date_bin_test', driver 'binary');
+CREATE USER MAPPING FOR CURRENT_USER SERVER date_bin_svr;
+CREATE SERVER date_bin_admin FOREIGN DATA WRAPPER clickhouse_fdw;
+CREATE USER MAPPING FOR CURRENT_USER SERVER date_bin_admin;
+CALL clickhouse_perform('date_bin_admin', 'DROP DATABASE IF EXISTS date_bin_test');
+CALL clickhouse_perform('date_bin_admin', 'CREATE DATABASE date_bin_test');
+CALL clickhouse_perform('date_bin_admin', $$
+    CREATE TABLE date_bin_test.events (
+        id   Int32,
+        ts   DateTime('UTC'),
+        ts64 DateTime64(6, 'Asia/Kolkata'),
+        nts  Nullable(DateTime('UTC')),
+        d    Date,
+        val  Int32
+    ) ENGINE = MergeTree ORDER BY id
+$$);
+CREATE FOREIGN TABLE date_bin_events (
+    id   int,
+    ts   timestamptz,
+    ts64 timestamptz,
+    nts  timestamptz,
+    d    date,
+    val  int
+) SERVER date_bin_svr OPTIONS (table_name 'events');
+-- Rows straddle a bucket boundary, both DST changes, and the Unix epoch.
+INSERT INTO date_bin_events VALUES
+    (1, '2024-03-10 06:59:59+00', '2024-03-10 06:59:59.999999+00', '2024-03-10 06:59:59+00', '2024-03-10', 1),
+    (2, '2024-03-10 07:00:00+00', '2024-03-10 07:00:00+00',        NULL,                     '2024-03-10', 2),
+    (3, '2024-03-10 07:17:42+00', '2024-03-10 07:17:42.5+00',      '2024-03-10 07:17:42+00', '2024-03-11', 3),
+    (4, '2024-11-03 05:30:00+00', '2024-11-03 05:30:00.000001+00', '2024-11-03 05:30:00+00', '2024-11-03', 4),
+    (5, '2024-11-03 06:30:00+00', '2024-11-03 06:30:00+00',        NULL,                     '2024-11-04', 5),
+    (6, '1970-01-01 00:00:00+00', '1969-12-31 23:17:01.5+00',      '1970-01-01 00:00:00+00', '1970-01-01', 6),
+    (7, '2000-01-01 00:00:00+00', '1900-01-01 00:00:00+00',        '2000-01-01 00:00:00+00', '2000-01-01', 7),
+    (8, '2105-12-31 23:59:59+00', '2262-01-01 12:34:56.789012+00', '2105-12-31 23:59:59+00', '2100-06-15', 8);
+-- Postgres evaluates date_bin() on a local copy of the rows for comparison.
+CREATE TABLE date_bin_local AS SELECT * FROM date_bin_events;
+-- A stride that divides the offset between origin and the Unix epoch needs
+-- no shift.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_bin('15 minutes', ts, '2001-01-01 00:00:00+00') AS b, count(*)
+  FROM date_bin_events GROUP BY b ORDER BY b;
+                                                                                                                                                    QUERY PLAN                                                                                                                                                    
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_bin('@ 15 mins'::interval, ts, '2000-12-31 19:00:00-05'::timestamp with time zone)), (count(*))
+   Relations: Aggregate on (date_bin_events)
+   Remote SQL: SELECT toStartOfInterval(toDateTime64(ts, 6), INTERVAL 900000000 MICROSECOND), count(*) FROM date_bin_test.events GROUP BY (toStartOfInterval(toDateTime64(ts, 6), INTERVAL 900000000 MICROSECOND)) ORDER BY toStartOfInterval(toDateTime64(ts, 6), INTERVAL 900000000 MICROSECOND) ASC NULLS LAST
+(4 rows)
+
+SELECT date_bin('15 minutes', ts, '2001-01-01 00:00:00+00') AS b, count(*)
+  FROM date_bin_events GROUP BY b ORDER BY b;
+           b            | count 
+------------------------+-------
+ 1969-12-31 19:00:00-05 |     1
+ 1999-12-31 19:00:00-05 |     1
+ 2024-03-10 01:45:00-05 |     1
+ 2024-03-10 03:00:00-04 |     1
+ 2024-03-10 03:15:00-04 |     1
+ 2024-11-03 01:30:00-04 |     1
+ 2024-11-03 01:30:00-05 |     1
+ 2105-12-31 18:45:00-05 |     1
+(8 rows)
+
+-- Any other origin shifts the buckets.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_bin('15 minutes', ts, '2001-01-01 00:02:30+00') AS b, sum(val)
+  FROM date_bin_events GROUP BY b ORDER BY b;
+                                                                                                                                                                                                                                                          QUERY PLAN                                                                                                                                                                                                                                                          
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_bin('@ 15 mins'::interval, ts, '2000-12-31 19:02:30-05'::timestamp with time zone)), (sum(val))
+   Relations: Aggregate on (date_bin_events)
+   Remote SQL: SELECT (toStartOfInterval(toDateTime64(ts, 6) - INTERVAL 150000000 MICROSECOND, INTERVAL 900000000 MICROSECOND) + INTERVAL 150000000 MICROSECOND), sum(val) FROM date_bin_test.events GROUP BY ((toStartOfInterval(toDateTime64(ts, 6) - INTERVAL 150000000 MICROSECOND, INTERVAL 900000000 MICROSECOND) + INTERVAL 150000000 MICROSECOND)) ORDER BY (toStartOfInterval(toDateTime64(ts, 6) - INTERVAL 150000000 MICROSECOND, INTERVAL 900000000 MICROSECOND) + INTERVAL 150000000 MICROSECOND) ASC NULLS LAST
+(4 rows)
+
+SELECT date_bin('15 minutes', ts, '2001-01-01 00:02:30+00') AS b, sum(val)
+  FROM date_bin_events GROUP BY b ORDER BY b;
+           b            | sum 
+------------------------+-----
+ 1969-12-31 18:47:30-05 |   6
+ 1999-12-31 18:47:30-05 |   7
+ 2024-03-10 01:47:30-05 |   3
+ 2024-03-10 03:17:30-04 |   3
+ 2024-11-03 01:17:30-04 |   4
+ 2024-11-03 01:17:30-05 |   5
+ 2105-12-31 18:47:30-05 |   8
+(7 rows)
+
+-- Pushes down in WHERE and ORDER BY.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id FROM date_bin_events
+ WHERE date_bin('1 hour', ts, '2001-01-01') = '2024-03-10 02:00:00-05'
+ ORDER BY date_bin('1 day', ts64, '2001-01-01'), id;
+                                                                                                                                                                                          QUERY PLAN                                                                                                                                                                                           
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.date_bin_events
+   Output: id, date_bin('@ 1 day'::interval, ts64, '2001-01-01 00:00:00-05'::timestamp with time zone)
+   Remote SQL: SELECT id, ts64 FROM date_bin_test.events WHERE ((toStartOfInterval(toDateTime64(ts, 6), INTERVAL 3600000000 MICROSECOND) = cast('2024-03-10 07:00:00' as DateTime64(6, 'UTC')))) ORDER BY (toStartOfInterval(toDateTime64(ts64, 6) - INTERVAL 18000000000 MICROSECOND, INTERVAL 86400000000 MICROSECOND) + INTERVAL 18000000000 MICROSECOND) ASC NULLS LAST, id ASC NULLS LAST
+(3 rows)
+
+SELECT id FROM date_bin_events
+ WHERE date_bin('1 hour', ts, '2001-01-01') = '2024-03-10 02:00:00-05'
+ ORDER BY date_bin('1 day', ts64, '2001-01-01'), id;
+ id 
+----
+  2
+  3
+(2 rows)
+
+-- Every stride and origin must match Postgres for every row and column:
+-- strides that do not divide a day, day strides across DST changes, sub-second
+-- strides, and origins after the data and before the Unix epoch. Grouping
+-- pushes the remote date_bin() down.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT id, date_bin('5 hours', ts64, '2300-05-05 05:05:05.5+00') AS b
+  FROM date_bin_events GROUP BY id, b;
+                                                                                                                                                                             QUERY PLAN                                                                                                                                                                              
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: id, (date_bin('@ 5 hours'::interval, ts64, '2300-05-05 01:05:05.5-04'::timestamp with time zone))
+   Relations: Aggregate on (date_bin_events)
+   Remote SQL: SELECT id, (toStartOfInterval(toDateTime64(ts64, 6) - INTERVAL 3905500000 MICROSECOND, INTERVAL 18000000000 MICROSECOND) + INTERVAL 3905500000 MICROSECOND) FROM date_bin_test.events GROUP BY id, ((toStartOfInterval(toDateTime64(ts64, 6) - INTERVAL 3905500000 MICROSECOND, INTERVAL 18000000000 MICROSECOND) + INTERVAL 3905500000 MICROSECOND))
+(4 rows)
+
+-- A date casts to midnight in TimeZone, not in the ClickHouse time zone.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_bin('7 days', d, '2001-01-01') AS b FROM date_bin_events GROUP BY b;
+                                                                                                                                                                                               QUERY PLAN                                                                                                                                                                                                
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (date_bin('@ 7 days'::interval, (d)::timestamp with time zone, '2001-01-01 00:00:00-05'::timestamp with time zone))
+   Relations: Aggregate on (date_bin_events)
+   Remote SQL: SELECT (toStartOfInterval(toDateTime64(d, 6, 'America/New_York') - INTERVAL 363600000000 MICROSECOND, INTERVAL 604800000000 MICROSECOND) + INTERVAL 363600000000 MICROSECOND) FROM date_bin_test.events GROUP BY ((toStartOfInterval(toDateTime64(d, 6, 'America/New_York') - INTERVAL 363600000000 MICROSECOND, INTERVAL 604800000000 MICROSECOND) + INTERVAL 363600000000 MICROSECOND))
+(4 rows)
+
+CREATE FUNCTION date_bin_diff(stride interval, origin timestamptz)
+RETURNS TABLE (id int, col text, remote timestamptz, local timestamptz)
+LANGUAGE plpgsql AS $$
+DECLARE
+    c text;
+BEGIN
+    FOREACH c IN ARRAY ARRAY['ts', 'ts64', 'nts', 'd'] LOOP
+        RETURN QUERY EXECUTE format($q$
+            SELECT r.id, %L, r.b, l.b
+              FROM (
+                  SELECT id, date_bin(%L, %I, %L) AS b FROM date_bin_events GROUP BY id, b
+              ) r
+              JOIN (SELECT id, date_bin(%L, %I, %L) AS b FROM date_bin_local) l USING (id)
+             WHERE r.b IS DISTINCT FROM l.b
+        $q$, c, stride, c, origin, stride, c, origin);
+    END LOOP;
+END;
+$$;
+SELECT s.stride, o.origin, d.*
+  FROM (VALUES
+        ('1 second'::interval), ('7 seconds'), ('5 minutes'), ('15 minutes'),
+        ('1 hour'), ('5 hours'), ('1 day'), ('7 days'), ('1 day 02:30:00'),
+        ('00:00:00.25'), ('00:00:00.000007'), ('30 days'), ('10000 days')
+       ) AS s(stride),
+       (VALUES
+        ('2001-01-01 00:00:00+00'::timestamptz), ('2001-01-01 00:02:30+00'),
+        ('2000-01-03 00:00:00+00'), ('1970-01-01 00:00:00+00'),
+        ('1969-07-20 20:17:40.123456+00'), ('2300-05-05 05:05:05.5+00'),
+        ('2001-01-01 00:00:00')
+       ) AS o(origin),
+       date_bin_diff(s.stride, o.origin) AS d
+ ORDER BY 1, 2, 3, 4;
+ stride | origin | id | col | remote | local 
+--------+--------+----+-----+--------+-------
+(0 rows)
+
+-- The buckets themselves.
+SELECT id,
+       date_bin('5 hours', ts, '2001-01-01 00:00:00+00') AS ts_5h,
+       date_bin('00:00:00.25', ts64, '2001-01-01 00:00:00+00') AS ts64_250ms,
+       date_bin('1 day', nts, '2001-01-01') AS nts_day,
+       date_bin('7 days', d, '2001-01-01') AS d_week
+  FROM date_bin_events GROUP BY 1, 2, 3, 4, 5 ORDER BY id;
+ id |         ts_5h          |        ts64_250ms         |        nts_day         |         d_week         
+----+------------------------+---------------------------+------------------------+------------------------
+  1 | 2024-03-09 23:00:00-05 | 2024-03-10 01:59:59.75-05 | 2024-03-10 00:00:00-05 | 2024-03-04 00:00:00-05
+  2 | 2024-03-09 23:00:00-05 | 2024-03-10 03:00:00-04    |                        | 2024-03-04 00:00:00-05
+  3 | 2024-03-09 23:00:00-05 | 2024-03-10 03:17:42.5-04  | 2024-03-10 00:00:00-05 | 2024-03-04 00:00:00-05
+  4 | 2024-11-02 22:00:00-04 | 2024-11-03 01:30:00-04    | 2024-11-03 01:00:00-04 | 2024-10-28 01:00:00-04
+  5 | 2024-11-02 22:00:00-04 | 2024-11-03 01:30:00-05    |                        | 2024-11-04 00:00:00-05
+  6 | 1969-12-31 16:00:00-05 | 1969-12-31 18:17:01.5-05  | 1969-12-31 00:00:00-05 | 1969-12-29 00:00:00-05
+  7 | 1999-12-31 18:00:00-05 | 1899-12-31 19:00:00-05    | 1999-12-31 00:00:00-05 | 1999-12-27 00:00:00-05
+  8 | 2105-12-31 14:00:00-05 | 2262-01-01 07:34:56.75-05 | 2105-12-31 00:00:00-05 | 2100-06-14 01:00:00-04
+(8 rows)
+
+-- A stride with months, a stride that is not positive, a stride or origin
+-- that is not constant, and an infinite origin all evaluate in Postgres,
+-- which raises errors for the invalid ones.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_bin('1 month', ts, '2001-01-01') AS b FROM date_bin_events GROUP BY b;
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
+ HashAggregate
+   Output: (date_bin('@ 1 mon'::interval, ts, '2001-01-01 00:00:00-05'::timestamp with time zone))
+   Group Key: date_bin('@ 1 mon'::interval, date_bin_events.ts, '2001-01-01 00:00:00-05'::timestamp with time zone)
+   ->  Foreign Scan on public.date_bin_events
+         Output: date_bin('@ 1 mon'::interval, ts, '2001-01-01 00:00:00-05'::timestamp with time zone)
+         Remote SQL: SELECT ts FROM date_bin_test.events
+(6 rows)
+
+SELECT date_bin('1 month', ts, '2001-01-01') AS b FROM date_bin_events GROUP BY b;
+ERROR:  timestamps cannot be binned into intervals containing months or years
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_bin('-1 hour', ts, '2001-01-01') AS b FROM date_bin_events GROUP BY b;
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ HashAggregate
+   Output: (date_bin('@ 1 hour ago'::interval, ts, '2001-01-01 00:00:00-05'::timestamp with time zone))
+   Group Key: date_bin('@ 1 hour ago'::interval, date_bin_events.ts, '2001-01-01 00:00:00-05'::timestamp with time zone)
+   ->  Foreign Scan on public.date_bin_events
+         Output: date_bin('@ 1 hour ago'::interval, ts, '2001-01-01 00:00:00-05'::timestamp with time zone)
+         Remote SQL: SELECT ts FROM date_bin_test.events
+(6 rows)
+
+SELECT date_bin('-1 hour', ts, '2001-01-01') AS b FROM date_bin_events GROUP BY b;
+ERROR:  stride must be greater than zero
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_bin('0 seconds', ts, '2001-01-01') AS b FROM date_bin_events GROUP BY b;
+                                                   QUERY PLAN                                                   
+----------------------------------------------------------------------------------------------------------------
+ HashAggregate
+   Output: (date_bin('@ 0'::interval, ts, '2001-01-01 00:00:00-05'::timestamp with time zone))
+   Group Key: date_bin('@ 0'::interval, date_bin_events.ts, '2001-01-01 00:00:00-05'::timestamp with time zone)
+   ->  Foreign Scan on public.date_bin_events
+         Output: date_bin('@ 0'::interval, ts, '2001-01-01 00:00:00-05'::timestamp with time zone)
+         Remote SQL: SELECT ts FROM date_bin_test.events
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_bin(make_interval(mins => val), ts, '2001-01-01') AS b FROM date_bin_events GROUP BY b;
+                                                                               QUERY PLAN                                                                                
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ HashAggregate
+   Output: (date_bin(make_interval(0, 0, 0, 0, 0, val, '0'::double precision), ts, '2001-01-01 00:00:00-05'::timestamp with time zone))
+   Group Key: date_bin(make_interval(0, 0, 0, 0, 0, date_bin_events.val, '0'::double precision), date_bin_events.ts, '2001-01-01 00:00:00-05'::timestamp with time zone)
+   ->  Foreign Scan on public.date_bin_events
+         Output: date_bin(make_interval(0, 0, 0, 0, 0, val, '0'::double precision), ts, '2001-01-01 00:00:00-05'::timestamp with time zone)
+         Remote SQL: SELECT ts, val FROM date_bin_test.events
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_bin('1 hour', ts, ts64) AS b FROM date_bin_events GROUP BY b;
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ HashAggregate
+   Output: (date_bin('@ 1 hour'::interval, ts, ts64))
+   Group Key: date_bin('@ 1 hour'::interval, date_bin_events.ts, date_bin_events.ts64)
+   ->  Foreign Scan on public.date_bin_events
+         Output: date_bin('@ 1 hour'::interval, ts, ts64)
+         Remote SQL: SELECT ts, ts64 FROM date_bin_test.events
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_bin('1 hour', ts, 'infinity') AS b FROM date_bin_events GROUP BY b;
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ HashAggregate
+   Output: (date_bin('@ 1 hour'::interval, ts, 'infinity'::timestamp with time zone))
+   Group Key: date_bin('@ 1 hour'::interval, date_bin_events.ts, 'infinity'::timestamp with time zone)
+   ->  Foreign Scan on public.date_bin_events
+         Output: date_bin('@ 1 hour'::interval, ts, 'infinity'::timestamp with time zone)
+         Remote SQL: SELECT ts FROM date_bin_test.events
+(6 rows)
+
+-- date_bin(interval, timestamp, timestamp) bins wall clock time and
+-- evaluates in Postgres.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT date_bin('1 hour', ts::timestamp, '2001-01-01') AS b FROM date_bin_events GROUP BY b;
+                                                                     QUERY PLAN                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------------
+ HashAggregate
+   Output: (date_bin('@ 1 hour'::interval, (ts)::timestamp without time zone, '2001-01-01 00:00:00'::timestamp without time zone))
+   Group Key: date_bin('@ 1 hour'::interval, (date_bin_events.ts)::timestamp without time zone, '2001-01-01 00:00:00'::timestamp without time zone)
+   ->  Foreign Scan on public.date_bin_events
+         Output: date_bin('@ 1 hour'::interval, (ts)::timestamp without time zone, '2001-01-01 00:00:00'::timestamp without time zone)
+         Remote SQL: SELECT ts FROM date_bin_test.events
+(6 rows)
+
+DROP FUNCTION date_bin_diff;
+DROP TABLE date_bin_local;
+DROP FOREIGN TABLE date_bin_events;
+CALL clickhouse_perform('date_bin_admin', 'DROP DATABASE date_bin_test');
+DROP USER MAPPING FOR CURRENT_USER SERVER date_bin_svr;
+DROP SERVER date_bin_svr;
+DROP USER MAPPING FOR CURRENT_USER SERVER date_bin_admin;
+DROP SERVER date_bin_admin;

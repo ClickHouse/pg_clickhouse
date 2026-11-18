@@ -1827,6 +1827,12 @@ equivalents as follows:
     *   `date_trunc('month')`: [toStartOfMonth]
     *   `date_trunc('quarter')`: [toStartOfQuarter]
     *   `date_trunc('year')`: [toStartOfYear]
+*   `date_bin(stride, timestamptz, origin)`: [toStartOfInterval]. `stride`
+    must be a constant, positive interval without months, and `origin` must
+    be a constant. The interval deparses in microseconds on a
+    `DateTime64(6)`, which ClickHouse aligns to the Unix epoch, so the value
+    shifts by the offset of `origin`. `date_bin` on `timestamp` values does
+    not push down.
 *   `extract(field FROM source)`: same mappings as `date_part`; passes
     PostgreSQL's `TimeZone` to ClickHouse for `timestamp` and `timestamptz`
     values.
@@ -2586,6 +2592,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "ClickHouse Docs: toStartOfHour"
   [toStartOfDay]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfDay
     "ClickHouse Docs: toStartOfDay"
+  [toStartOfInterval]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfInterval
+    "ClickHouse Docs: toStartOfInterval"
   [toStartOfMonth]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfMonth
     "ClickHouse Docs: toStartOfMonth"
   [toStartOfQuarter]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toStartOfQuarter
