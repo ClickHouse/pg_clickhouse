@@ -31,7 +31,7 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### 🚀 Distribution
 
-*   Updated the Postgres 19 OCI image to rc2.
+*   Updated the Postgres 19 OCI image to 19.0.
 
   [v0.11.2]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.1...v0.11.2
   [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
