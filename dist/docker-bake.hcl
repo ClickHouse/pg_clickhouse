@@ -142,5 +142,5 @@ target "cnpg" {
 # the introduction of 20beta1.
 function base_version {
   params = [ pgv ]
-  result =  pgv == 19 ? "${pgv}rc1" : pgv
+  result =  pgv == 19 ? "${pgv}rc2" : pgv
 }

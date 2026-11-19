@@ -1,0 +1,158 @@
+\unset ECHO
+                                                                                       QUERY PLAN                                                                                        
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: region, product, (sum(qty))
+   Relations: Aggregate on (sales)
+   Remote SQL: SELECT region, product, sumOrNull(qty) FROM gs_test.sales GROUP BY GROUPING SETS ((), (region), (region, product)) ORDER BY region ASC NULLS LAST, product ASC NULLS LAST
+(4 rows)
+
+ region | product | sum 
+--------+---------+-----
+ east   | apple   |   3
+ east   | pear    |   5
+ east   |         |   8
+ north  | pear    |   2
+ north  |         |   2
+ west   | apple   |   7
+ west   | plum    |   1
+ west   |         |   8
+        |         |  18
+(9 rows)
+
+                                                                                          QUERY PLAN                                                                                          
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: region, product, (count(*))
+   Relations: Aggregate on (sales)
+   Remote SQL: SELECT region, product, count(*) FROM gs_test.sales GROUP BY GROUPING SETS ((), (region), (product), (region, product)) ORDER BY region ASC NULLS LAST, product ASC NULLS LAST
+(4 rows)
+
+ region | product | count 
+--------+---------+-------
+ east   | apple   |     1
+ east   | pear    |     1
+ east   |         |     2
+ north  | pear    |     1
+ north  |         |     1
+ west   | apple   |     1
+ west   | plum    |     1
+ west   |         |     2
+        | apple   |     2
+        | pear    |     2
+        | plum    |     1
+        |         |     5
+(12 rows)
+
+                                                                                                      QUERY PLAN                                                                                                       
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: region, product, qty, (count(*))
+   Relations: Aggregate on (sales)
+   Remote SQL: SELECT region, product, qty, count(*) FROM gs_test.sales GROUP BY GROUPING SETS ((region), (region, product), (region, qty)) ORDER BY region ASC NULLS LAST, product ASC NULLS LAST, qty ASC NULLS LAST
+(4 rows)
+
+ region | product | qty | count 
+--------+---------+-----+-------
+ east   | apple   |     |     1
+ east   | pear    |     |     1
+ east   |         |   3 |     1
+ east   |         |   5 |     1
+ east   |         |     |     2
+ north  | pear    |     |     1
+ north  |         |   2 |     1
+ north  |         |     |     1
+ west   | apple   |     |     1
+ west   | plum    |     |     1
+ west   |         |   1 |     1
+ west   |         |   7 |     1
+ west   |         |     |     2
+(13 rows)
+
+                                                                                                          QUERY PLAN                                                                                                           
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: region, product, (GROUPING(region, product)), (sum(price))
+   Relations: Aggregate on (sales)
+   Remote SQL: SELECT region, product, grouping(region, product), sumOrNull(price) FROM gs_test.sales GROUP BY GROUPING SETS ((), (region), (region, product)) HAVING ((grouping(product) = 1)) ORDER BY region ASC NULLS LAST
+(4 rows)
+
+ region | product | grouping | sum 
+--------+---------+----------+-----
+ east   |         |        1 | 1.5
+ north  |         |        1 |   3
+ west   |         |        1 | 6.5
+        |         |        3 |  11
+(4 rows)
+
+                                                                                         QUERY PLAN                                                                                         
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (upper(region)), (COALESCE(region, 'all'::text)), (max(qty)), region
+   Relations: Aggregate on (sales)
+   Remote SQL: SELECT upperUTF8(region), COALESCE(region, 'all'), maxOrNull(qty), region FROM gs_test.sales GROUP BY GROUPING SETS ((), (region)) ORDER BY upperUTF8(region) ASC NULLS LAST
+(4 rows)
+
+ upper | coalesce | max 
+-------+----------+-----
+ EAST  | east     |   5
+ NORTH | north    |   2
+ WEST  | west     |   7
+       | all      |   7
+(4 rows)
+
+ mismatches 
+------------
+          0
+(1 row)
+
+ region | count 
+--------+-------
+ east   |     2
+ east   |     2
+ north  |     1
+ north  |     1
+ west   |     2
+ west   |     2
+        |     5
+        |     5
+(8 rows)
+
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: a, (count(*)), (sum(b))
+   Relations: Aggregate on (empty)
+   Remote SQL: SELECT a, count(*), sumOrNull(b) FROM gs_test.empty GROUP BY GROUPING SETS ((), (a))
+(4 rows)
+
+ a | count | sum 
+---+-------+-----
+   |     0 |    
+(1 row)
+
+ a | count | sum 
+---+-------+-----
+   |     0 |    
+(1 row)
+
+ count 
+-------
+     0
+     0
+(2 rows)
+
+ tags | count 
+------+-------
+ {}   |     1
+ {1}  |     2
+ {2}  |     2
+ {}   |     5
+(4 rows)
+
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table gs_bin.empty
+drop cascades to foreign table gs_bin.sales
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table gs_http.empty
+drop cascades to foreign table gs_http.sales
