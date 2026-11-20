@@ -27,13 +27,21 @@
 #define F_REGEXP_LIKE_TEXT_TEXT 6263
 #define F_REGEXP_LIKE_TEXT_TEXT_TEXT 6264
 #endif
-/* array_shuffle, array_sample added in Postgres 16 */
+/* array_shuffle, array_sample, erf, erfc added in Postgres 16 */
 #if PG_VERSION_NUM < 160000
 #define F_ARRAY_SHUFFLE 6215
 #define F_ARRAY_SAMPLE 6216
+#define F_ERF 6219
+#define F_ERFC 6220
 #endif
-/* array_reverse, array_sort, reverse(bytea) added in Postgres 18 */
+/* to_bin added in Postgres 17 */
+#if PG_VERSION_NUM < 170000
+#define F_TO_BIN_INT4 6330
+#define F_TO_BIN_INT8 6331
+#endif
+/* array_reverse, array_sort, reverse(bytea), crc32 added in Postgres 18 */
 #if PG_VERSION_NUM < 180000
+#define F_CRC32 6364
 #define F_ARRAY_REVERSE 6381
 #define F_ARRAY_SORT_ANYARRAY 6388
 #define F_ARRAY_SORT_ANYARRAY_BOOL 6389
@@ -317,6 +325,7 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         def->ch_name = "trimBoth";
         return true;
     case F_STRPOS:
+    case F_POSITION_TEXT_TEXT:
         def->ch_name = "positionUTF8";
         return true;
         /* PG strpos counts code points, CH position counts bytes */
@@ -340,6 +349,33 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     case F_SUBSTRING_BYTEA_INT4_INT4:
     case F_SUBSTRING_BYTEA_INT4:
         def->ch_name = "substring";
+        return true;
+    case F_POSITION_BYTEA_BYTEA:
+        def->ch_name = "position";
+        return true;
+    case F_LEFT:
+        def->ch_name = "leftUTF8";
+        return true;
+    case F_RIGHT:
+        def->cf_type = CF_RIGHT;
+        def->ch_name = "\1";
+        return true;
+    case F_CRC32:
+        def->ch_name = "CRC32";
+        return true;
+    case F_TO_HEX_INT4:
+    case F_TO_HEX_INT8:
+        def->cf_type = CF_TO_HEX;
+        def->ch_name = "\1";
+        return true;
+    case F_TO_BIN_INT4:
+    case F_TO_BIN_INT8:
+        def->cf_type = CF_TO_BIN;
+        def->ch_name = "\1";
+        return true;
+    case F_SIGN_FLOAT8:
+        def->cf_type = CF_FLOAT_SIGN;
+        def->ch_name = "\1";
         return true;
         /* bytea variant is byte-based; CH substring matches */
     case F_REGEXP_LIKE_TEXT_TEXT:
@@ -677,6 +713,9 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     case F_COSH:
     case F_TANH:
     case F_ASINH:
+    case F_ERF:
+    case F_ERFC:
+    case F_CBRT:
     case F_DEGREES:
     case F_RADIANS:
     case F_PI:
@@ -691,12 +730,15 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     case F_ROUND_FLOAT8:
     case F_ROUND_NUMERIC:
     case F_ROUND_NUMERIC_INT4:
+    case F_TRUNC_NUMERIC_INT4:
+    case F_SIGN_NUMERIC:
     case F_FLOOR_FLOAT8:
     case F_FLOOR_NUMERIC:
     case F_CEIL_FLOAT8:
     case F_CEIL_NUMERIC:
     case F_CEILING_FLOAT8:
     case F_CEILING_NUMERIC:
+    case F_TRUNC_FLOAT8:
     case F_FACTORIAL:
         /* string functions: CH ltrim/rtrim/concat_ws are aliases */
     case F_LTRIM_TEXT:

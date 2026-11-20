@@ -455,6 +455,10 @@ typedef enum {
     CF_VECTOR_NEG_IP,          /* pgvector <#> → -dotProduct */
     CF_VECTOR_DOT,             /* pgvector inner_product → dotProduct */
     CF_OPERATOR_FUNC,          /* operator → function */
+    CF_TO_HEX,
+    CF_TO_BIN,
+    CF_FLOAT_SIGN,
+    CF_RIGHT,
 } custom_object_type;
 
 typedef enum {

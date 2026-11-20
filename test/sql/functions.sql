@@ -749,11 +749,64 @@ SELECT i64 FROM t6 WHERE i64 = 0 AND degrees(f64) = 0;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT i64 FROM t6 WHERE i64 = 0 AND radians(f64) = 0;
 SELECT i64 FROM t6 WHERE i64 = 0 AND radians(f64) = 0;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE i64 = 0 AND cbrt(f64) = 0;
+SELECT i64 FROM t6 WHERE i64 = 0 AND cbrt(f64) = 0;
 
 -- pi() is immutable so PG constant-folds before deparse; the function name
 -- itself is never sent to CH but the remote literal proves the call worked.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT i64 FROM t6 WHERE f64 < pi();
+
+-- Run trunc() and sign() in ClickHouse for float8. Return 0 for sign(NaN),
+-- as in Postgres.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT trunc(f64) t, sign(f64 - 20423.123) s, sign(f64 * 'NaN'::float8) n
+FROM t6 GROUP BY t, s, n ORDER BY t;
+SELECT trunc(f64) t, sign(f64 - 20423.123) s, sign(f64 * 'NaN'::float8) n
+FROM t6 GROUP BY t, s, n ORDER BY t;
+
+-- Run trunc() and sign() in ClickHouse for numeric. Truncate toward zero.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sign(a::numeric - 5) s, trunc((a::numeric - 5) / 3) t
+FROM t3 GROUP BY s, t ORDER BY s, t;
+SELECT sign(a::numeric - 5) s, trunc((a::numeric - 5) / 3) t
+FROM t3 GROUP BY s, t ORDER BY s, t;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT count(*) FROM t9 WHERE trunc(-v, 4) = -1.2345 AND trunc(v, -1) = 0;
+SELECT count(*) FROM t9 WHERE trunc(-v, 4) = -1.2345 AND trunc(v, -1) = 0;
+
+-- Run to_hex() in ClickHouse. Keep lowercase output and use all bits
+-- of the integer type for negative values, as in Postgres.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT to_hex(i64 - 20423) h8, to_hex((i64 - 20423)::int) h4
+FROM t6 GROUP BY h8, h4 ORDER BY h8;
+SELECT to_hex(i64 - 20423) h8, to_hex((i64 - 20423)::int) h4
+FROM t6 GROUP BY h8, h4 ORDER BY h8;
+
+-- Count characters for text and bytes for position(bytea) in ClickHouse.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT left(val, 2) l, right(val, -1) r, position('α' IN val) p,
+       position('l'::bytea IN val::bytea) b
+FROM t4 GROUP BY l, r, p, b ORDER BY l, r;
+SELECT left(val, 2) l, right(val, -1) r, position('α' IN val) p,
+       position('l'::bytea IN val::bytea) b
+FROM t4 GROUP BY l, r, p, b ORDER BY l, r;
+
+-- Run erf(), erfc(), to_bin(), and crc32() together on Postgres 18+.
+SELECT current_setting('server_version_num')::int >= 180000 AS pg18 \gset
+\if :pg18
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT erf(f64 / 1e9::float8) e, erfc(f64 / 1e9::float8) c,
+       to_bin(i64 - 20423) b8, to_bin((i64 - 20423)::int) b4
+FROM t6 GROUP BY e, c, b8, b4 ORDER BY e;
+SELECT erf(f64 / 1e9::float8) e, erfc(f64 / 1e9::float8) c,
+       to_bin(i64 - 20423) b8, to_bin((i64 - 20423)::int) b4
+FROM t6 GROUP BY e, c, b8, b4 ORDER BY e;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT crc32(val::bytea) c FROM t4 GROUP BY c ORDER BY c;
+SELECT crc32(val::bytea) c FROM t4 GROUP BY c ORDER BY c;
+\endif
 
 -- lower(text) / upper(text) push down as lowerUTF8 / upperUTF8.
 CALL clickhouse_perform('functions_admin', $$

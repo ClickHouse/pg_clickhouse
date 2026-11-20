@@ -1801,8 +1801,13 @@ equivalents as follows:
 *   `round`: [round]
 *   `floor`: [floor]
 *   `ceil` & `ceiling`: [ceil]
+*   `trunc`: [trunc]
+*   `sign(numeric)`: [sign]
+*   `sign(float8)`: Compare the input with zero and return a `Float64`.
+    This gives `0` for `NaN`. ClickHouse [sign] returns `1` for `NaN`.
 *   `sin`, `cos`, `tan`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`,
-    `degrees`, `radians`, `pi`: [ClickHouse math functions] of the same name.
+    `erf`, `erfc`, `cbrt`, `degrees`, `radians`, `pi`: [ClickHouse math
+    functions] of the same name.
     `asin`, `acos`, `atanh`, `acosh` are not pushed down: PG raises on
     out-of-range input where CH returns `NaN`.
 *   `date_part`: passes PostgreSQL's [TimeZone] to ClickHouse for `timestamp`
@@ -1873,7 +1878,9 @@ equivalents as follows:
 *   `length(bytea)` & `octet_length`: [length]
 *   `reverse(text)`: [reverseUTF8]
 *   `reverse(bytea)`: [reverse]
-*   `strpos`: [positionUTF8]
+*   `strpos` & `position(text)`: [positionUTF8]
+*   `position(bytea)`: [position]
+*   `left` & `right`: [leftUTF8] & [rightUTF8]
 *   `regexp_like`: [match]
 *   `regexp_match`: [extractGroups] if the regular expression contains
     parenthesized subexpressions; otherwise [extractAll] sliced with
@@ -1883,6 +1890,10 @@ equivalents as follows:
 *   `md5`: [MD5]
 *   `sha224`, `sha256`, `sha384`, and `sha512`: Corresponding ClickHouse [SHA
     functions]
+*   `crc32`: [CRC32]
+*   `to_hex`: Use [hex], convert to lowercase with [lower], and remove
+    leading zeros with [replaceRegexpOne].
+*   `to_bin`: Use [bin] and remove leading zeros with [replaceRegexpOne].
 *   `encode(bytea, fmt)` when `fmt` is a string constant (case-insensitive):
     *   `encode(bytea, 'hex')`: [hex] wrapped in [lower], since PostgreSQL
         emits lowercase hex.
@@ -2558,6 +2569,10 @@ Copyright (c) 2025-2026, ClickHouse.
     "ClickHouse Docs: floor"
   [ceil]: https://clickhouse.com/docs/sql-reference/functions/rounding-functions#ceil
     "ClickHouse Docs: ceil"
+  [trunc]: https://clickhouse.com/docs/sql-reference/functions/rounding-functions#truncate
+    "ClickHouse Docs: trunc"
+  [sign]: https://clickhouse.com/docs/sql-reference/functions/math-functions#sign
+    "ClickHouse Docs: sign"
   [ClickHouse math functions]: https://clickhouse.com/docs/sql-reference/functions/math-functions
     "ClickHouse Docs: ClickHouse math functions"
   [toDayOfMonth]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfMonth
@@ -2665,6 +2680,12 @@ Copyright (c) 2025-2026, ClickHouse.
     "ClickHouse Docs: reverse"
   [positionUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#positionutf8
     "ClickHouse Docs: positionUTF8"
+  [position]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#position
+    "ClickHouse Docs: position"
+  [leftUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-functions#leftUTF8
+    "ClickHouse Docs: leftUTF8"
+  [rightUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-functions#rightUTF8
+    "ClickHouse Docs: rightUTF8"
   [match]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#match
     "ClickHouse Docs: match"
   [extractGroups]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#extractGroups
@@ -2681,6 +2702,10 @@ Copyright (c) 2025-2026, ClickHouse.
     "ClickHouse Docs: SHA functions"
   [hex]: https://clickhouse.com/docs/sql-reference/functions/encoding-functions#hex
     "ClickHouse Docs: hex"
+  [bin]: https://clickhouse.com/docs/sql-reference/functions/encoding-functions#bin
+    "ClickHouse Docs: bin"
+  [CRC32]: https://clickhouse.com/docs/sql-reference/functions/string-functions#CRC32
+    "ClickHouse Docs: CRC32"
   [lower]: https://clickhouse.com/docs/sql-reference/functions/string-functions#lower
     "ClickHouse Docs: lower"
   [base64Encode]: https://clickhouse.com/docs/sql-reference/functions/encoding-functions#base64encode
