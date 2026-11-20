@@ -3234,6 +3234,27 @@ chfdw_encode_timestamp(Timestamp timestamp, char* buf) {
 }
 
 /*
+ * Quote only special values such as 'NaN', see get_const_expr(). ClickHouse
+ * treats quoted floats as String, so use its nan and inf literals
+ */
+static void
+deparseNumberLiteral(StringInfo buf, Oid type, const char* extval) {
+    if (strspn(extval, "0123456789+-eE.") == strlen(extval)) {
+        if (extval[0] == '+' || extval[0] == '-') {
+            appendStringInfo(buf, "(%s)", extval);
+        } else {
+            appendStringInfoString(buf, extval);
+        }
+    } else if (type == NUMERICOID) {
+        deparseStringLiteral(buf, extval);
+    } else if (strcmp(extval, "NaN") == 0) {
+        appendStringInfoString(buf, "nan");
+    } else {
+        appendStringInfoString(buf, extval[0] == '-' ? "(-inf)" : "inf");
+    }
+}
+
+/*
  * Emit printable ASCII as-is and \xHH for everything else. PG's bytea_out
  * hex format (\xHHHH...) does not round-trip through CH's string lexer past
  * a single byte: \x consumes exactly two hex digits.
@@ -3314,21 +3335,9 @@ emitArrayElement(
     case OIDOID:
     case FLOAT4OID:
     case FLOAT8OID:
-    case NUMERICOID: {
-        /*
-         * No need to quote unless it's a special value such as 'NaN'.
-         * See comments in get_const_expr().
-         */
-        if (strspn(extval, "0123456789+-eE.") == strlen(extval)) {
-            if (extval[0] == '+' || extval[0] == '-') {
-                appendStringInfo(buf, "(%s)", extval);
-            } else {
-                appendStringInfoString(buf, extval);
-            }
-        } else {
-            appendStringInfo(buf, "'%s'", extval);
-        }
-    } break;
+    case NUMERICOID:
+        deparseNumberLiteral(buf, element_type, extval);
+        break;
     case BOOLOID:
         if (strcmp(extval, "t") == 0) {
             appendStringInfoString(buf, "true");
@@ -3586,21 +3595,9 @@ deparseConst(Const* node, deparse_expr_cxt* context, bool showtype) {
     case OIDOID:
     case FLOAT4OID:
     case FLOAT8OID:
-    case NUMERICOID: {
-        /*
-         * No need to quote unless it's a special value such as 'NaN'.
-         * See comments in get_const_expr().
-         */
-        if (strspn(extval, "0123456789+-eE.") == strlen(extval)) {
-            if (extval[0] == '+' || extval[0] == '-') {
-                appendStringInfo(buf, "(%s)", extval);
-            } else {
-                appendStringInfoString(buf, extval);
-            }
-        } else {
-            deparseStringLiteral(buf, extval);
-        }
-    } break;
+    case NUMERICOID:
+        deparseNumberLiteral(buf, node->consttype, extval);
+        break;
     case BITOID:
     case VARBITOID:
         appendStringInfo(buf, "B'%s'", extval);
@@ -4860,6 +4857,41 @@ deparseFuncExpr(FuncExpr* node, deparse_expr_cxt* context) {
             appendStringInfoString(buf, "(nullIf(length(");
             deparseExpr((Expr*)linitial(node->args), context);
             appendStringInfoString(buf, "), 0))");
+            return;
+        case CF_TO_HEX:
+        case CF_TO_BIN: {
+            /* PostgreSQL uses lowercase hex and omits leading zeros */
+            Expr* arg = linitial(node->args);
+            bool hex  = cdef->cf_type == CF_TO_HEX;
+
+            appendStringInfo(
+                buf,
+                "replaceRegexpOne(%s(%s(",
+                hex ? "lower(hex" : "bin",
+                exprType((Node*)arg) == INT8OID ? "toInt64" : "toInt32"
+            );
+            deparseExpr(arg, context);
+            appendStringInfo(buf, ")%s), '^0+(.)', '\\\\1')", hex ? ")" : "");
+            return;
+        }
+        case CF_FLOAT_SIGN: {
+            /* ClickHouse sign() returns Int8 and gives 1 for NaN */
+            Expr* arg = linitial(node->args);
+
+            appendStringInfoString(buf, "toFloat64((");
+            deparseExpr(arg, context);
+            appendStringInfoString(buf, " > 0) - (");
+            deparseExpr(arg, context);
+            appendStringInfoString(buf, " < 0))");
+            return;
+        }
+        case CF_RIGHT:
+            /* ClickHouse before 25.1 returns whole string for negative constant */
+            appendStringInfoString(buf, "rightUTF8(");
+            deparseExpr(linitial(node->args), context);
+            appendStringInfoString(buf, ", materialize(");
+            deparseExpr(lsecond(node->args), context);
+            appendStringInfoString(buf, "))");
             return;
         case CF_ARRAY_POSITION:
             appendStringInfoChar(buf, '(');
