@@ -2418,6 +2418,68 @@ SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
  954335169.5484 | 954335169.54835
 (1 row)
 
+-- Run floor(), ceil(), and ceiling() in ClickHouse for float8 and numeric.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE floor(f64) = 20423;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((floor(f64) = 20423))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE floor(f64) = 20423;
+  i64  
+-------
+ 20423
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE ceil(f64) = 20424;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((ceil(f64) = 20424))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE ceil(f64) = 20424;
+  i64  
+-------
+ 20423
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE ceiling(f64) = 20424;
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Foreign Scan on public.t6
+   Output: i64
+   Remote SQL: SELECT i64 FROM functions_test.t6 WHERE ((ceiling(f64) = 20424))
+(3 rows)
+
+SELECT i64 FROM t6 WHERE ceiling(f64) = 20424;
+  i64  
+-------
+ 20423
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT floor(avg(f64::numeric)), ceil(avg(f64::numeric)), ceiling(avg(f64::numeric)) FROM t6;
+                                                                                                        QUERY PLAN                                                                                                         
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (floor(avg((f64)::numeric))), (ceil(avg((f64)::numeric))), (ceiling(avg((f64)::numeric)))
+   Relations: Aggregate on (t6)
+   Remote SQL: SELECT floor(avgOrNull(cast(f64, 'Nullable(Decimal(76, 38))'))), ceil(avgOrNull(cast(f64, 'Nullable(Decimal(76, 38))'))), ceiling(avgOrNull(cast(f64, 'Nullable(Decimal(76, 38))'))) FROM functions_test.t6
+(4 rows)
+
+SELECT floor(avg(f64::numeric)), ceil(avg(f64::numeric)), ceiling(avg(f64::numeric)) FROM t6;
+   floor   |   ceil    |  ceiling  
+-----------+-----------+-----------
+ 954335169 | 954335170 | 954335170
+(1 row)
+
 -- Trig functions push down at f64 = 0 where PG and CH agree exactly.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT i64 FROM t6 WHERE i64 = 0 AND sin(f64) = 0;
@@ -2722,6 +2784,77 @@ SELECT val FROM t4 WHERE length(val) = 3;
  val 
 -----
  Ωαβ
+(1 row)
+
+-- Count characters in ClickHouse with char_length() and character_length().
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE char_length(val) = 3;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((lengthUTF8(val) = 3))
+(3 rows)
+
+SELECT val FROM t4 WHERE char_length(val) = 3;
+ val 
+-----
+ Ωαβ
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE character_length(val) = 3;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Remote SQL: SELECT val FROM functions_test.t4 WHERE ((lengthUTF8(val) = 3))
+(3 rows)
+
+SELECT val FROM t4 WHERE character_length(val) = 3;
+ val 
+-----
+ Ωαβ
+(1 row)
+
+-- Run replace() in ClickHouse 24.10+, where an empty search string
+-- returns the original text, as in Postgres.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT replace(val, 'l', 'L'), count(*) FROM t4 WHERE val LIKE 'val%' GROUP BY 1 ORDER BY 1;
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ Sort
+   Output: (replace(val, 'l'::text, 'L'::text)), (count(*))
+   Sort Key: (replace(t4.val, 'l'::text, 'L'::text))
+   ->  HashAggregate
+         Output: (replace(val, 'l'::text, 'L'::text)), count(*)
+         Group Key: replace(t4.val, 'l'::text, 'L'::text)
+         ->  Foreign Scan on public.t4
+               Output: replace(val, 'l'::text, 'L'::text)
+               Remote SQL: SELECT val FROM functions_test.t4 WHERE ((val LIKE 'val%'))
+(9 rows)
+
+SELECT replace(val, 'l', 'L'), count(*) FROM t4 WHERE val LIKE 'val%' GROUP BY 1 ORDER BY 1;
+ replace | count 
+---------+-------
+ vaL1    |     1
+ vaL2    |     1
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE replace(val, '', 'x') = 'hello';
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Foreign Scan on public.t4
+   Output: val
+   Filter: (replace(t4.val, ''::text, 'x'::text) = 'hello'::text)
+   Remote SQL: SELECT val FROM functions_test.t4
+(4 rows)
+
+SELECT val FROM t4 WHERE replace(val, '', 'x') = 'hello';
+  val  
+-------
+ hello
 (1 row)
 
 -- length(bytea) pushes down as length (counts bytes).

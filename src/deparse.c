@@ -1106,6 +1106,12 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt, ExprTruthCtx ctx) {
             !server_version_ge(glob_cxt->root, glob_cxt->foreignrel, 23, 8)) {
             return false;
         }
+
+        /* ClickHouse replaceAll accepts an empty pattern starting in 24.10 */
+        if (fe->funcid == F_REPLACE &&
+            !server_version_ge(glob_cxt->root, glob_cxt->foreignrel, 24, 10)) {
+            return false;
+        }
     } break;
     case T_SQLValueFunction:
         /* All handled by deparseSQLValueFunction(). */

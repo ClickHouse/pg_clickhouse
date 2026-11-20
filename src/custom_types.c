@@ -403,11 +403,16 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         def->cf_type = CF_ENCODE;
         def->ch_name = "\1";
         return true;
+    case F_REPLACE:
+        def->ch_name = "replaceAll";
+        return true;
     case F_REVERSE_TEXT:
         def->ch_name = "reverseUTF8";
         return true;
         /* reverse code points, not bytes */
     case F_LENGTH_TEXT:
+    case F_CHAR_LENGTH_TEXT:
+    case F_CHARACTER_LENGTH_TEXT:
         def->ch_name = "lengthUTF8";
         return true;
         /* PG length(text) counts code points, CH length() counts */
@@ -686,6 +691,12 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     case F_ROUND_FLOAT8:
     case F_ROUND_NUMERIC:
     case F_ROUND_NUMERIC_INT4:
+    case F_FLOOR_FLOAT8:
+    case F_FLOOR_NUMERIC:
+    case F_CEIL_FLOAT8:
+    case F_CEIL_NUMERIC:
+    case F_CEILING_FLOAT8:
+    case F_CEILING_NUMERIC:
     case F_FACTORIAL:
         /* string functions: CH ltrim/rtrim/concat_ws are aliases */
     case F_LTRIM_TEXT:

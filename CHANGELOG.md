@@ -16,6 +16,9 @@ All notable changes to this project will be documented in this file. It uses the
     in Postgres for earlier ClickHouse versions. For array keys and other
     types that cannot be `Nullable`, grouping sets return empty values instead
     of `NULL` when leaving out those keys ([#465]).
+*   Run `char_length()`, `character_length()`, `floor()`, `ceil()`, and
+    `ceiling()` in ClickHouse. Run `replace()` there on ClickHouse 24.10+
+    ([#477]).
 
 ### 🐞 Bug Fixes
 
@@ -37,6 +40,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#475 Fix lag/lead with OVER"
   [#476]: https://github.com/ClickHouse/pg_clickhouse/pull/476
     "ClickHouse/pg_clickhouse#476 Fix casts through text to varchar and numeric"
+  [#477]: https://github.com/ClickHouse/pg_clickhouse/pull/477
+    "ClickHouse/pg_clickhouse#477 Run more text and rounding functions in ClickHouse"
 
 ## [v0.11.1] — 2026-11-09
 

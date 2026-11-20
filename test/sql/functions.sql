@@ -701,6 +701,20 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
 SELECT round(avg(f64::numeric), 4), avg(f64::numeric) FROM t6;
 
+-- Run floor(), ceil(), and ceiling() in ClickHouse for float8 and numeric.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE floor(f64) = 20423;
+SELECT i64 FROM t6 WHERE floor(f64) = 20423;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE ceil(f64) = 20424;
+SELECT i64 FROM t6 WHERE ceil(f64) = 20424;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT i64 FROM t6 WHERE ceiling(f64) = 20424;
+SELECT i64 FROM t6 WHERE ceiling(f64) = 20424;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT floor(avg(f64::numeric)), ceil(avg(f64::numeric)), ceiling(avg(f64::numeric)) FROM t6;
+SELECT floor(avg(f64::numeric)), ceil(avg(f64::numeric)), ceiling(avg(f64::numeric)) FROM t6;
+
 -- Trig functions push down at f64 = 0 where PG and CH agree exactly.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT i64 FROM t6 WHERE i64 = 0 AND sin(f64) = 0;
@@ -775,6 +789,23 @@ SELECT val FROM t4 WHERE substr(val::bytea, 2) = 'al1'::bytea;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT val FROM t4 WHERE length(val) = 3;
 SELECT val FROM t4 WHERE length(val) = 3;
+
+-- Count characters in ClickHouse with char_length() and character_length().
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE char_length(val) = 3;
+SELECT val FROM t4 WHERE char_length(val) = 3;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE character_length(val) = 3;
+SELECT val FROM t4 WHERE character_length(val) = 3;
+
+-- Run replace() in ClickHouse 24.10+, where an empty search string
+-- returns the original text, as in Postgres.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT replace(val, 'l', 'L'), count(*) FROM t4 WHERE val LIKE 'val%' GROUP BY 1 ORDER BY 1;
+SELECT replace(val, 'l', 'L'), count(*) FROM t4 WHERE val LIKE 'val%' GROUP BY 1 ORDER BY 1;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT val FROM t4 WHERE replace(val, '', 'x') = 'hello';
+SELECT val FROM t4 WHERE replace(val, '', 'x') = 'hello';
 
 -- length(bytea) pushes down as length (counts bytes).
 EXPLAIN (VERBOSE, COSTS OFF)

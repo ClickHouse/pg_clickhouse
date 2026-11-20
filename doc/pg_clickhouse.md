@@ -1799,6 +1799,8 @@ equivalents as follows:
 *   `mod` (int2/int4/int8/numeric): [modulo]
 *   `pow` & `power` (float8, not numeric): [pow]
 *   `round`: [round]
+*   `floor`: [floor]
+*   `ceil` & `ceiling`: [ceil]
 *   `sin`, `cos`, `tan`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`,
     `degrees`, `radians`, `pi`: [ClickHouse math functions] of the same name.
     `asin`, `acos`, `atanh`, `acosh` are not pushed down: PG raises on
@@ -1865,7 +1867,9 @@ equivalents as follows:
 *   `upper(text)`: [upperUTF8]
 *   `substring(text, ...)` & `substr(text, ...)`: [substringUTF8]
 *   `substring(bytea, ...)` & `substr(bytea, ...)`: [substring]
-*   `length(text)`: [lengthUTF8]
+*   `length(text)`, `char_length(text)` & `character_length(text)`:
+    [lengthUTF8]
+*   `replace`: [replaceAll], ClickHouse 24.10 and later
 *   `length(bytea)` & `octet_length`: [length]
 *   `reverse(text)`: [reverseUTF8]
 *   `reverse(bytea)`: [reverse]
@@ -2550,6 +2554,10 @@ Copyright (c) 2025-2026, ClickHouse.
     "ClickHouse Docs: pow"
   [round]: https://clickhouse.com/docs/sql-reference/functions/rounding-functions#round
     "ClickHouse Docs: round"
+  [floor]: https://clickhouse.com/docs/sql-reference/functions/rounding-functions#floor
+    "ClickHouse Docs: floor"
+  [ceil]: https://clickhouse.com/docs/sql-reference/functions/rounding-functions#ceil
+    "ClickHouse Docs: ceil"
   [ClickHouse math functions]: https://clickhouse.com/docs/sql-reference/functions/math-functions
     "ClickHouse Docs: ClickHouse math functions"
   [toDayOfMonth]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#toDayOfMonth
@@ -2679,6 +2687,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "ClickHouse Docs: base64Encode"
   [replaceRegexpAll]: https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceRegexpAll
     "ClickHouse Docs: replaceRegexpAll"
+  [replaceAll]: https://clickhouse.com/docs/sql-reference/functions/string-replace-functions#replaceAll
+    "ClickHouse Docs: replaceAll"
   [base64URLEncode]: https://clickhouse.com/docs/sql-reference/functions/encoding-functions#base64urlencode
     "ClickHouse Docs: base64URLEncode"
   [sub-column syntax]: https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns
