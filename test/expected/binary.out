@@ -316,9 +316,8 @@ ORDER BY c1;
 -- unknown driver is rejected
 CREATE SERVER binary_bogus FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(driver 'bogus');
-CREATE USER MAPPING FOR CURRENT_USER SERVER binary_bogus;
-SELECT * FROM clickhouse_query('binary_bogus', 'SELECT 1') AS t(x int);
-ERROR:  invalid ClickHouse connection driver
+ERROR:  invalid value for option "driver": "bogus"
+HINT:  Valid values are: binary, http.
 -- clickhouse_query: server-based typed rowset over the binary driver
 SELECT * FROM clickhouse_query(
     'binary_loopback', 'SELECT c1, c3 FROM ints ORDER BY c1 LIMIT 3'

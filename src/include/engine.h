@@ -2,12 +2,19 @@
 #define CLICKHOUSE_ENGINE_H
 
 #include "access/tupdesc.h"
+#include "clickhouse-compression.h"
 #include "kv_list.h"
 #include "pg-clickhouse-decode.h"
 
 /*
  * ch_connection_details defines the details for connecting to ClickHouse.
  */
+/* Connection driver for the "driver" FDW option */
+typedef enum {
+    CH_DRIVER_BINARY = 0, /* native protocol (default) */
+    CH_DRIVER_HTTP,
+} ch_driver;
+
 /* TLS mode for the "secure" FDW option (auto=heuristic, on=force, off=never) */
 typedef enum {
     CH_TLS_AUTO = 0, /* cloud-hostname heuristic (default) */
@@ -25,13 +32,13 @@ typedef enum {
 } tls_version;
 
 typedef struct {
-    char* driver; /* "http" or "binary" */
+    ch_driver driver;
     char* host;
     int port;
     char* username;
     char* password;
     char* dbname;
-    char* compression;
+    chc_compression compression; /* binary driver only; LZ4 when not specified */
     tls_mode tls;                /* TLS mode; CH_TLS_AUTO when not specified */
     tls_version min_tls_version; /* minimum TLS version; CH_TLS_DEFAULT
                                   * when not specified */

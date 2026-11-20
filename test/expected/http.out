@@ -1023,6 +1023,36 @@ CREATE SERVER http_min_tls_bad FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'http_test', driver 'http', min_tls_version 'TLSv2');
 ERROR:  invalid value for option "min_tls_version": "TLSv2"
 HINT:  Valid values are: TLSv1, TLSv1.1, TLSv1.2, TLSv1.3.
+/* ===== port option tests ===== */
+/* A port number should pass validation. */
+CREATE SERVER http_port_ok FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '8123');
+DROP SERVER http_port_ok;
+/* Anything other than an integer between 1 and 65535 must be rejected. */
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port 'abc');
+ERROR:  invalid value for option "port": "abc"
+HINT:  Valid values are integers between 1 and 65535.
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '8123abc');
+ERROR:  invalid value for option "port": "8123abc"
+HINT:  Valid values are integers between 1 and 65535.
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '');
+ERROR:  invalid value for option "port": ""
+HINT:  Valid values are integers between 1 and 65535.
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '0');
+ERROR:  invalid value for option "port": "0"
+HINT:  Valid values are integers between 1 and 65535.
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '65536');
+ERROR:  invalid value for option "port": "65536"
+HINT:  Valid values are integers between 1 and 65535.
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '0x1F90');
+ERROR:  invalid value for option "port": "0x1F90"
+HINT:  Valid values are integers between 1 and 65535.
 /* ===== Exceptions after ClickHouse starts sending data ===== */
 /* Report the exception, not a garbled decoder error. */
 CALL clickhouse_perform('http_admin', $$CREATE VIEW http_test.late_error AS

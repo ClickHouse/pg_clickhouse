@@ -41,30 +41,33 @@ _PG_init(void);
 typedef struct ChFdwOption {
     const char* keyword;
     Oid optcontext; /* OID of catalog in which option may appear */
-    bool is_ch_opt; /* true if it's used in clickhouseclient */
-    char dispchar[10];
 } ChFdwOption;
 
 /*
  * Valid options for clickhouse_fdw.
- * Allocated and filled in InitChFdwOptions.
  */
-static ChFdwOption* clickhouse_fdw_options;
-
-/*
- * Valid options for clickhouse client.
- * Allocated and filled in InitChFdwOptions.
- */
-static const ChFdwOption ch_options[] = {
-    { "host", 0, false },
-    { "secure", 0, false },
-    { "min_tls_version", 0, false },
-    { "port", 0, false },
-    { "dbname", 0, false },
-    { "user", 0, false },
-    { "password", 0, false },
-    { "compression", 0, false },
-    { NULL }
+static const ChFdwOption clickhouse_fdw_options[] = {
+    /* connection options */
+    { "host",                    ForeignServerRelationId },
+    { "secure",                  ForeignServerRelationId },
+    { "min_tls_version",         ForeignServerRelationId },
+    { "port",                    ForeignServerRelationId },
+    { "dbname",                  ForeignServerRelationId },
+    { "user",                    UserMappingRelationId   },
+    { "password",                UserMappingRelationId   },
+    { "compression",             ForeignServerRelationId },
+    /* FDW-specific options */
+    { "database",                ForeignTableRelationId  },
+    { "table_name",              ForeignTableRelationId  },
+    { "engine",                  ForeignTableRelationId  },
+    { "driver",                  ForeignServerRelationId },
+    { "encoding_check",          ForeignServerRelationId },
+    { "settings",                ForeignServerRelationId },
+    { "settings",                ForeignTableRelationId  },
+    { "aggregatefunction",       AttributeRelationId     },
+    { "simpleaggregatefunction", AttributeRelationId     },
+    { "column_name",             AttributeRelationId     },
+    { NULL,                      InvalidOid              }
 };
 
 /*
@@ -78,14 +81,18 @@ static bool ch_vector_planner_warnings   = true;
 /*
  * Helper functions
  */
-static void
-InitChFdwOptions(void);
 static bool
 is_valid_option(const char* keyword, Oid context);
 static bool
-is_ch_option(const char* keyword);
-static bool
 parse_min_tls_version(const char* val, tls_version* out);
+static ch_driver
+parse_driver(const char* val);
+static tls_mode
+parse_secure(const char* val);
+static int
+parse_port(const char* val);
+static chc_compression
+parse_compression(const char* val);
 
 /*
  * Validate the generic options given to a FOREIGN DATA WRAPPER, SERVER,
@@ -101,9 +108,6 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
     Oid catalog        = PG_GETARG_OID(1);
     ListCell* cell;
 
-    /* Build our options lists if we didn't yet. */
-    InitChFdwOptions();
-
     /*
      * Check that only options supported by clickhouse_fdw, and allowed for
      * the current object type, are given.
@@ -116,7 +120,7 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
              * Unknown option specified, complain about it. Provide a hint
              * with list of valid options for the object.
              */
-            ChFdwOption* opt;
+            const ChFdwOption* opt;
             StringInfoData buf;
 
             initStringInfo(&buf);
@@ -137,20 +141,7 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
         }
 
         if (strcmp(def->defname, "secure") == 0) {
-            const char* val = defGetString(def);
-
-            if (strcmp(val, "on") != 0 && strcmp(val, "true") != 0 &&
-                strcmp(val, "yes") != 0 && strcmp(val, "1") != 0 &&
-                strcmp(val, "off") != 0 && strcmp(val, "false") != 0 &&
-                strcmp(val, "no") != 0 && strcmp(val, "0") != 0 &&
-                strcmp(val, "auto") != 0) {
-                ereport(
-                    ERROR,
-                    errcode(ERRCODE_FDW_INVALID_STRING_FORMAT),
-                    errmsg("invalid value for option \"secure\": \"%s\"", val),
-                    errhint("Valid values are: on, off, auto.")
-                );
-            }
+            (void)parse_secure(defGetString(def));
         }
 
         if (strcmp(def->defname, "min_tls_version") == 0) {
@@ -165,6 +156,18 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
                     errhint("Valid values are: TLSv1, TLSv1.1, TLSv1.2, TLSv1.3.")
                 );
             }
+        }
+
+        if (strcmp(def->defname, "port") == 0) {
+            (void)parse_port(defGetString(def));
+        }
+
+        if (strcmp(def->defname, "driver") == 0) {
+            (void)parse_driver(defGetString(def));
+        }
+
+        if (strcmp(def->defname, "compression") == 0) {
+            (void)parse_compression(defGetString(def));
         }
 
         /* Check the syntax; ClickHouse checks the values */
@@ -191,76 +194,96 @@ clickhouse_fdw_validator(PG_FUNCTION_ARGS) {
 }
 
 /*
- * Initialize option lists.
+ * Map a driver option value to ch_driver. Raises an ERROR if the value is
+ * unrecognized.
  */
-static void
-InitChFdwOptions(void) {
-    int num_ch_opts;
-    const ChFdwOption* lopt;
-    ChFdwOption* popt;
-
-    /* non-clickhouseclient FDW-specific FDW options */
-    static const ChFdwOption non_ch_options[] = {
-        { "database",                ForeignTableRelationId,  false },
-        { "table_name",              ForeignTableRelationId,  false },
-        { "engine",                  ForeignTableRelationId,  false },
-        { "driver",                  ForeignServerRelationId, false },
-        { "encoding_check",          ForeignServerRelationId, true  },
-        { "settings",                ForeignServerRelationId, false },
-        { "settings",                ForeignTableRelationId,  false },
-        { "aggregatefunction",       AttributeRelationId,     false },
-        { "simpleaggregatefunction", AttributeRelationId,     false },
-        { "column_name",             AttributeRelationId,     false },
-        { NULL,                      InvalidOid,              false }
-    };
-
-    /* Prevent redundant initialization. */
-    if (clickhouse_fdw_options) {
-        return;
+static ch_driver
+parse_driver(const char* val) {
+    if (strcmp(val, "binary") == 0) {
+        return CH_DRIVER_BINARY;
+    }
+    if (strcmp(val, "http") == 0) {
+        return CH_DRIVER_HTTP;
     }
 
-    /* Count how many clickhouseclient options are available. */
-    num_ch_opts = 0;
-    for (lopt = ch_options; lopt->keyword; lopt++) {
-        num_ch_opts++;
-    }
-
-    /*
-     * We use plain malloc here to allocate clickhouse_fdw_options because it
-     * lives as long as the backend process does. Besides, keeping ch_options
-     * in memory allows us to avoid copying every keyword string.
-     */
-    clickhouse_fdw_options = (ChFdwOption*)malloc(
-        sizeof(ChFdwOption) * num_ch_opts + sizeof(non_ch_options)
+    ereport(
+        ERROR,
+        errcode(ERRCODE_FDW_INVALID_STRING_FORMAT),
+        errmsg("invalid value for option \"driver\": \"%s\"", val),
+        errhint("Valid values are: binary, http.")
     );
-    if (clickhouse_fdw_options == NULL) {
-        ereport(ERROR, errcode(ERRCODE_FDW_OUT_OF_MEMORY), errmsg("out of memory"));
+}
+
+/*
+ * Map a secure option value to tls_mode. Raises an ERROR if the value is
+ * unrecognized.
+ */
+static tls_mode
+parse_secure(const char* val) {
+    if (strcmp(val, "on") == 0 || strcmp(val, "true") == 0 || strcmp(val, "yes") == 0 ||
+        strcmp(val, "1") == 0) {
+        return CH_TLS_ON;
+    }
+    if (strcmp(val, "off") == 0 || strcmp(val, "false") == 0 ||
+        strcmp(val, "no") == 0 || strcmp(val, "0") == 0) {
+        return CH_TLS_OFF;
+    }
+    if (strcmp(val, "auto") == 0) {
+        return CH_TLS_AUTO;
     }
 
-    popt = clickhouse_fdw_options;
-    for (lopt = ch_options; lopt->keyword; lopt++) {
-        /* We don't have to copy keyword string, as described above. */
-        popt->keyword = lopt->keyword;
+    ereport(
+        ERROR,
+        errcode(ERRCODE_FDW_INVALID_STRING_FORMAT),
+        errmsg("invalid value for option \"secure\": \"%s\"", val),
+        errhint("Valid values are: on, off, auto.")
+    );
+}
 
-        /*
-         * "user" and any secret options are allowed only on user mappings.
-         * Everything else is a server option.
-         */
-        if (strcmp(lopt->keyword, "user") == 0 ||
-            strcmp(lopt->keyword, "password") == 0 || strchr(lopt->dispchar, '*')) {
-            popt->optcontext = UserMappingRelationId;
-        } else {
-            popt->optcontext = ForeignServerRelationId;
-        }
-        popt->is_ch_opt = true;
+/*
+ * Parse a port option value. Raises an ERROR unless the value is an integer
+ * between 1 and 65535.
+ */
+static int
+parse_port(const char* val) {
+    char* end;
+    long port = strtol(val, &end, 10);
 
-        popt++;
+    /* Decimal only: an out-of-range value saturates and fails the bounds. */
+    if (end == val || *end != '\0' || port < 1 || port > 65535) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_FDW_INVALID_STRING_FORMAT),
+            errmsg("invalid value for option \"port\": \"%s\"", val),
+            errhint("Valid values are integers between 1 and 65535.")
+        );
+    }
+    return port;
+}
+
+/*
+ * Map a compression option value to chc_compression, case-insensitively. An
+ * empty value means LZ4, ClickHouse's native network default. Raises an ERROR
+ * if the value is unrecognized.
+ */
+static chc_compression
+parse_compression(const char* val) {
+    if (val[0] == '\0' || pg_strcasecmp(val, "lz4") == 0) {
+        return CHC_COMP_LZ4;
+    }
+    if (pg_strcasecmp(val, "none") == 0) {
+        return CHC_COMP_NONE;
+    }
+    if (pg_strcasecmp(val, "zstd") == 0) {
+        return CHC_COMP_ZSTD;
     }
 
-    /* Append FDW-specific options and dummy terminator. */
-    memcpy(popt, non_ch_options, sizeof(non_ch_options));
-    popt->is_ch_opt = true;
-    popt++;
+    ereport(
+        ERROR,
+        errcode(ERRCODE_FDW_INVALID_STRING_FORMAT),
+        errmsg("invalid value for option \"compression\": \"%s\"", val),
+        errhint("Valid values are: none, lz4, zstd.")
+    );
 }
 
 /*
@@ -290,9 +313,7 @@ parse_min_tls_version(const char* val, tls_version* out) {
  */
 static bool
 is_valid_option(const char* keyword, Oid context) {
-    ChFdwOption* opt;
-
-    Assert(clickhouse_fdw_options); /* must be initialized already */
+    const ChFdwOption* opt;
 
     for (opt = clickhouse_fdw_options; opt->keyword; opt++) {
         if (context == opt->optcontext && strcmp(opt->keyword, keyword) == 0) {
@@ -304,98 +325,58 @@ is_valid_option(const char* keyword, Oid context) {
 }
 
 /*
- * Check whether the given option is one of the valid clickhouseclient options.
- */
-static bool
-is_ch_option(const char* keyword) {
-    ChFdwOption* opt;
-
-    Assert(clickhouse_fdw_options); /* must be initialized already */
-
-    for (opt = clickhouse_fdw_options; opt->keyword; opt++) {
-        if (opt->is_ch_opt && strcmp(opt->keyword, keyword) == 0) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/*
- * Generate key-value arrays which include only clickhouseclient options from the
- * given list (which can contain any kind of options). Caller must have
- * allocated large-enough arrays. Returns number of options found.
+ * Extract the connection options from the given list (which can contain any
+ * kind of options) into the non-NULL output parameters. Leaves an output
+ * untouched when the list does not contain its option. Raises an ERROR for an
+ * invalid driver, port, compression, or secure value.
  */
 void
 chfdw_extract_options(
     List* defelems,
-    char** driver,
+    ch_driver* driver,
     char** host,
     int* port,
     char** dbname,
     char** username,
     char** password,
-    char** compression,
+    chc_compression* compression,
     tls_mode* tls,
     tls_version* min_tls_version,
     pgch_encoding_check* encoding_check
 ) {
     ListCell* lc;
 
-    /* Build our options lists if we didn't yet. */
-    InitChFdwOptions();
-
     foreach (lc, defelems) {
         DefElem* def = (DefElem*)lfirst(lc);
 
         if (driver && strcmp(def->defname, "driver") == 0) {
-            *driver = defGetString(def);
+            /* The validator rejects invalid values; older servers may not. */
+            *driver = parse_driver(defGetString(def));
         } else if (encoding_check && strcmp(def->defname, "encoding_check") == 0) {
             /* invalid values rejected by the validator; ignore here */
             pgch_parse_encoding_check(defGetString(def), encoding_check);
-        }
-
-        if (is_ch_option(def->defname)) {
-            if (host && strcmp(def->defname, "host") == 0) {
-                *host = defGetString(def);
-            } else if (port && strcmp(def->defname, "port") == 0) {
-                char* endptr = NULL;
-                long val     = strtol(defGetString(def), &endptr, 10);
-
-                /* Just ignore invalid values. */
-                if (val <= INT_MAX && val > 0 && (!*endptr || *endptr == 0)) {
-                    *port = val;
-                }
-            } else if (username && strcmp(def->defname, "user") == 0) {
-                *username = defGetString(def);
-            } else if (password && strcmp(def->defname, "password") == 0) {
-                *password = defGetString(def);
-            } else if (compression && strcmp(def->defname, "compression") == 0) {
-                *compression = defGetString(def);
-            } else if (dbname && strcmp(def->defname, "dbname") == 0) {
-                *dbname = defGetString(def);
-                if (*dbname[0] == '\0') {
-                    *dbname = DEFAULT_DBNAME;
-                }
-            } else if (tls && strcmp(def->defname, "secure") == 0) {
-                const char* val = defGetString(def);
-
-                if (strcmp(val, "on") == 0 || strcmp(val, "true") == 0 ||
-                    strcmp(val, "yes") == 0 || strcmp(val, "1") == 0) {
-                    *tls = CH_TLS_ON;
-                } else if (
-                    strcmp(val, "off") == 0 || strcmp(val, "false") == 0 ||
-                    strcmp(val, "no") == 0 || strcmp(val, "0") == 0
-                ) {
-                    *tls = CH_TLS_OFF;
-                }
-                /* else: "auto" or anything else → CH_TLS_AUTO (already 0) */
-            } else if (
-                min_tls_version && strcmp(def->defname, "min_tls_version") == 0
-            ) {
-                /* invalid values rejected by the validator; ignore here */
-                parse_min_tls_version(defGetString(def), min_tls_version);
+        } else if (host && strcmp(def->defname, "host") == 0) {
+            *host = defGetString(def);
+        } else if (port && strcmp(def->defname, "port") == 0) {
+            /* The validator rejects invalid values; older servers may not. */
+            *port = parse_port(defGetString(def));
+        } else if (username && strcmp(def->defname, "user") == 0) {
+            *username = defGetString(def);
+        } else if (password && strcmp(def->defname, "password") == 0) {
+            *password = defGetString(def);
+        } else if (compression && strcmp(def->defname, "compression") == 0) {
+            /* The validator rejects invalid values; older servers may not. */
+            *compression = parse_compression(defGetString(def));
+        } else if (dbname && strcmp(def->defname, "dbname") == 0) {
+            *dbname = defGetString(def);
+            if (*dbname[0] == '\0') {
+                *dbname = DEFAULT_DBNAME;
             }
+        } else if (tls && strcmp(def->defname, "secure") == 0) {
+            *tls = parse_secure(defGetString(def));
+        } else if (min_tls_version && strcmp(def->defname, "min_tls_version") == 0) {
+            /* invalid values rejected by the validator; ignore here */
+            parse_min_tls_version(defGetString(def), min_tls_version);
         }
     }
 }

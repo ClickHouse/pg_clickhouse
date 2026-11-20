@@ -16,6 +16,11 @@ All notable changes to this project will be documented in this file. It uses the
     in Postgres for earlier ClickHouse versions. For array keys and other
     types that cannot be `Nullable`, grouping sets return empty values instead
     of `NULL` when leaving out those keys ([#465]).
+*   `CREATE SERVER` and `ALTER SERVER` now reject invalid `port`, `driver`,
+    and `compression` values, which were previously ignored or failed on
+    connect. A server that already stores an invalid value raises an error
+    on connect, and will not restore from a dump, until fixed with
+    `ALTER SERVER` ([#478]).
 
 ### 🚀 Distribution
 
@@ -24,6 +29,8 @@ All notable changes to this project will be documented in this file. It uses the
   [v0.11.2]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.1...v0.11.2
   [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
     "ClickHouse/pg_clickhouse#465 Support grouping sets"
+  [#478]: https://github.com/ClickHouse/pg_clickhouse/pull/478
+    "ClickHouse/pg_clickhouse#478 Validate port, driver, and compression server options"
 
 ## [v0.11.1] — 2026-11-09
 
