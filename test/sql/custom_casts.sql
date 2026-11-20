@@ -50,6 +50,12 @@ SELECT num FROM things WHERE toUint128(num) IN (8, 3, 5);
 EXPLAIN (VERBOSE, COSTS OFF) SELECT num FROM things WHERE toUint128(name) IN (1, 2, 3);
 SELECT num FROM things WHERE toUint128(name) IN (1, 2, 3);
 
+-- Cast through text to varchar without a length and numeric without a precision
+EXPLAIN (VERBOSE, COSTS OFF) SELECT num::varchar, count(*) FROM things WHERE num < 3 GROUP BY 1 ORDER BY 1;
+SELECT num::varchar, count(*) FROM things WHERE num < 3 GROUP BY 1 ORDER BY 1;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT num FROM things WHERE (name || '.5')::numeric = 3.5;
+SELECT num FROM things WHERE (name || '.5')::numeric = 3.5;
+
 DROP USER MAPPING FOR CURRENT_USER SERVER casts_loopback;
 CALL clickhouse_perform('casts_admin', 'DROP DATABASE casts_test');
 DROP SERVER casts_loopback CASCADE;

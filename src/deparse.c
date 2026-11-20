@@ -6825,7 +6825,7 @@ deparseCoerceViaIO(CoerceViaIO* node, deparse_expr_cxt* context) {
             appendStringInfoString(buf, "Nullable(");
         }
 
-        appendStringInfoString(buf, deparse_type_name(node->resulttype, 0));
+        appendStringInfoString(buf, deparse_type_name(node->resulttype, -1));
 
         if (node->resultcollid == 1) {
             appendStringInfoChar(buf, ')');

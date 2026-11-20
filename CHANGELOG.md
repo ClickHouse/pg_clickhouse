@@ -17,6 +17,12 @@ All notable changes to this project will be documented in this file. It uses the
     types that cannot be `Nullable`, grouping sets return empty values instead
     of `NULL` when leaving out those keys ([#465]).
 
+### 🐞 Bug Fixes
+
+*   Fixed ClickHouse errors when casting through `text` to `varchar` or `numeric`.
+    These casts previously sent `FixedString` without a length or `Decimal`
+    without a precision ([#476]).
+
 ### 🚀 Distribution
 
 *   Updated the Postgres 19 OCI image to rc2.
@@ -24,6 +30,8 @@ All notable changes to this project will be documented in this file. It uses the
   [v0.11.2]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.1...v0.11.2
   [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
     "ClickHouse/pg_clickhouse#465 Support grouping sets"
+  [#476]: https://github.com/ClickHouse/pg_clickhouse/pull/476
+    "ClickHouse/pg_clickhouse#476 Fix casts through text to varchar and numeric"
 
 ## [v0.11.1] — 2026-11-09
 
