@@ -374,6 +374,45 @@ SELECT entity_id, ts_event,
 FROM wf_bin.events
 WHERE event_name = 'lead_created';
 
+-- ============================================================
+-- Frame clause dropped for lead/lag, kept for sum
+-- ============================================================
+\echo -- lead with frame (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, ts_event,
+       lead(ts_event) OVER (PARTITION BY entity_id ORDER BY ts_event
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS next_event
+FROM wf_bin.events
+WHERE event_name = 'lead_created'
+ORDER BY entity_id, ts_event;
+
+SELECT entity_id, ts_event,
+       lead(ts_event) OVER (PARTITION BY entity_id ORDER BY ts_event
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS next_event
+FROM wf_bin.events
+WHERE event_name = 'lead_created'
+ORDER BY entity_id, ts_event;
+
+\echo -- lag and sum sharing framed window (binary)
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT entity_id, ts_event, amount,
+       sum(amount) OVER w AS running,
+       lag(amount) OVER w AS prev_amount
+FROM wf_bin.events
+WHERE event_name = 'lead_created'
+WINDOW w AS (PARTITION BY entity_id ORDER BY ts_event
+             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+ORDER BY entity_id, ts_event;
+
+SELECT entity_id, ts_event, amount,
+       sum(amount) OVER w AS running,
+       lag(amount) OVER w AS prev_amount
+FROM wf_bin.events
+WHERE event_name = 'lead_created'
+WINDOW w AS (PARTITION BY entity_id ORDER BY ts_event
+             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+ORDER BY entity_id, ts_event;
+
 -- Clean up.
 CALL clickhouse_perform('wf_admin', 'DROP DATABASE IF EXISTS wf_test');
 DROP USER MAPPING FOR CURRENT_USER SERVER wf_bin_svr;

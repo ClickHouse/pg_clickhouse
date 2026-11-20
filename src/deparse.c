@@ -6531,6 +6531,31 @@ deparseAggref(Aggref* node, deparse_expr_cxt* context) {
 }
 
 /*
+ * ClickHouse rejects frames on ranking functions and lead/lag, which ignore
+ * frames in Postgres
+ */
+static bool
+window_func_takes_frame(Oid winfnoid) {
+    switch (winfnoid) {
+    case F_ROW_NUMBER:
+    case F_RANK_:
+    case F_DENSE_RANK_:
+    case F_NTILE:
+    case F_CUME_DIST_:
+    case F_PERCENT_RANK_:
+    case F_LEAD_ANYELEMENT:
+    case F_LEAD_ANYELEMENT_INT4:
+    case F_LEAD_ANYCOMPATIBLE_INT4_ANYCOMPATIBLE:
+    case F_LAG_ANYELEMENT:
+    case F_LAG_ANYELEMENT_INT4:
+    case F_LAG_ANYCOMPATIBLE_INT4_ANYCOMPATIBLE:
+        return false;
+    default:
+        return true;
+    }
+}
+
+/*
  * Deparse a WindowFunc node into context->buf.
  *
  * Generates: func_name(args) OVER (PARTITION BY ... ORDER BY ... frame)
@@ -6617,15 +6642,8 @@ deparseWindowFunc(WindowFunc* node, deparse_expr_cxt* context) {
         }
     }
 
-    /*
-     * Frame clause.  Skip for ranking functions (row_number, rank,
-     * dense_rank, ntile, cume_dist, percent_rank) since ClickHouse does not
-     * accept frame specifications for these.  For other functions, emit
-     * non-default frames only.
-     */
-    if (node->winfnoid != F_ROW_NUMBER && node->winfnoid != F_RANK_ &&
-        node->winfnoid != F_DENSE_RANK_ && node->winfnoid != F_NTILE &&
-        node->winfnoid != F_CUME_DIST_ && node->winfnoid != F_PERCENT_RANK_ &&
+    /* Emit non-default frames only, for functions ClickHouse accepts them on */
+    if (window_func_takes_frame(node->winfnoid) &&
         wc->frameOptions != (FRAMEOPTION_DEFAULTS | FRAMEOPTION_NONDEFAULT) &&
         (wc->frameOptions & FRAMEOPTION_NONDEFAULT)) {
         appendStringInfoChar(buf, ' ');

@@ -351,5 +351,41 @@ DETAIL:  Remote Query: SELECT entity_id, amount, cume_dist() OVER (ORDER BY amou
  lead_300  | 2026-03-05 08:00:00+00 |   1 |   1
 (5 rows)
 
+-- lead with frame (binary)
+                                                                                                            QUERY PLAN                                                                                                             
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, ts_event, (lead(ts_event))
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, ts_event, lead(ts_event) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created')) ORDER BY entity_id ASC NULLS LAST, ts_event ASC NULLS LAST
+(4 rows)
+
+ entity_id |        ts_event        |       next_event       
+-----------+------------------------+------------------------
+ lead_100  | 2026-03-01 10:00:00+00 | 2026-03-15 14:00:00+00
+ lead_100  | 2026-03-15 14:00:00+00 | 1970-01-01 00:00:00+00
+ lead_200  | 2026-03-10 09:00:00+00 | 2026-03-20 11:00:00+00
+ lead_200  | 2026-03-20 11:00:00+00 | 1970-01-01 00:00:00+00
+ lead_300  | 2026-03-05 08:00:00+00 | 1970-01-01 00:00:00+00
+(5 rows)
+
+-- lag and sum sharing framed window (binary)
+                                                                                                                                                                        QUERY PLAN                                                                                                                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, ts_event, amount, (sum(amount)), (lag(amount))
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, ts_event, amount, sum(amount) OVER (PARTITION BY entity_id ORDER BY ts_event ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), lag(amount) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created')) ORDER BY entity_id ASC NULLS LAST, ts_event ASC NULLS LAST
+(4 rows)
+
+ entity_id |        ts_event        | amount | running | prev_amount 
+-----------+------------------------+--------+---------+-------------
+ lead_100  | 2026-03-01 10:00:00+00 |    100 |     100 |           0
+ lead_100  | 2026-03-15 14:00:00+00 |    200 |     300 |         100
+ lead_200  | 2026-03-10 09:00:00+00 |    150 |     150 |           0
+ lead_200  | 2026-03-20 11:00:00+00 |    300 |     450 |         150
+ lead_300  | 2026-03-05 08:00:00+00 |    250 |     250 |           0
+(5 rows)
+
 NOTICE:  drop cascades to foreign table wf_bin.events
 NOTICE:  drop cascades to foreign table wf_http.events

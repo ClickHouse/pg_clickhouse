@@ -317,5 +317,27 @@ DETAIL:  Remote Query: SELECT entity_id, amount, percent_rank() OVER (ORDER BY a
  lead_300  | 2026-03-05 08:00:00+00 |   1 |   1
 (5 rows)
 
+-- lead with frame (binary)
+                                                                                                            QUERY PLAN                                                                                                             
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, ts_event, (lead(ts_event))
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, ts_event, lead(ts_event) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created')) ORDER BY entity_id ASC NULLS LAST, ts_event ASC NULLS LAST
+(4 rows)
+
+ERROR:  pg_clickhouse: DB::Exception: Unknown aggregate function lead
+DETAIL:  Remote Query: SELECT entity_id, ts_event, lead(ts_event) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created')) ORDER BY entity_id ASC NULLS LAST, ts_event ASC NULLS LAST
+-- lag and sum sharing framed window (binary)
+                                                                                                                                                                        QUERY PLAN                                                                                                                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: entity_id, ts_event, amount, (sum(amount)), (lag(amount))
+   Relations: Window on (events)
+   Remote SQL: SELECT entity_id, ts_event, amount, sum(amount) OVER (PARTITION BY entity_id ORDER BY ts_event ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), lag(amount) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created')) ORDER BY entity_id ASC NULLS LAST, ts_event ASC NULLS LAST
+(4 rows)
+
+ERROR:  pg_clickhouse: DB::Exception: Unknown aggregate function lag
+DETAIL:  Remote Query: SELECT entity_id, ts_event, amount, sum(amount) OVER (PARTITION BY entity_id ORDER BY ts_event ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), lag(amount) OVER (PARTITION BY entity_id ORDER BY ts_event ASC) FROM wf_test.events WHERE ((event_name = 'lead_created')) ORDER BY entity_id ASC NULLS LAST, ts_event ASC NULLS LAST
 NOTICE:  drop cascades to foreign table wf_bin.events
 NOTICE:  drop cascades to foreign table wf_http.events

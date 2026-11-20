@@ -19,6 +19,9 @@ All notable changes to this project will be documented in this file. It uses the
 
 ### 🐞 Bug Fixes
 
+*   Fixed pushdown of `lead()` and `lag()` by omitting window frame clauses.
+    ClickHouse rejects these clauses, and Postgres ignores them for these
+    functions ([#475]).
 *   Fixed ClickHouse errors when casting through `text` to `varchar` or `numeric`.
     These casts previously sent `FixedString` without a length or `Decimal`
     without a precision ([#476]).
@@ -30,6 +33,8 @@ All notable changes to this project will be documented in this file. It uses the
   [v0.11.2]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.1...v0.11.2
   [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
     "ClickHouse/pg_clickhouse#465 Support grouping sets"
+  [#475]: https://github.com/ClickHouse/pg_clickhouse/pull/475
+    "ClickHouse/pg_clickhouse#475 Fix lag/lead with OVER"
   [#476]: https://github.com/ClickHouse/pg_clickhouse/pull/476
     "ClickHouse/pg_clickhouse#476 Fix casts through text to varchar and numeric"
 
