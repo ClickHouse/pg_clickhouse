@@ -442,6 +442,27 @@ DROP SERVER http_min_tls_v13;
 CREATE SERVER http_min_tls_bad FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(dbname 'http_test', driver 'http', min_tls_version 'TLSv2');
 
+/* ===== port option tests ===== */
+
+/* A port number should pass validation. */
+CREATE SERVER http_port_ok FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '8123');
+DROP SERVER http_port_ok;
+
+/* Anything other than an integer between 1 and 65535 must be rejected. */
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port 'abc');
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '8123abc');
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '');
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '0');
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '65536');
+CREATE SERVER http_port_bad FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS(dbname 'http_test', driver 'http', port '0x1F90');
+
 /* ===== Exceptions after ClickHouse starts sending data ===== */
 
 /* Report the exception, not a garbled decoder error. */

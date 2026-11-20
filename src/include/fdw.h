@@ -277,13 +277,13 @@ chfdw_vector_planner_warnings(void);
 extern void
 chfdw_extract_options(
     List* defelems,
-    char** driver,
+    ch_driver* driver,
     char** host,
     int* port,
     char** dbname,
     char** username,
     char** password,
-    char** compression,
+    chc_compression* compression,
     tls_mode* tls,
     tls_version* min_tls_version,
     pgch_encoding_check* encoding_check

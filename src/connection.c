@@ -78,9 +78,10 @@ static ch_connection
 clickhouse_connect(ForeignServer* server, UserMapping* user) {
     /* default settings */
     ch_connection_details details = {
-        .driver         = "binary",
+        .driver         = CH_DRIVER_BINARY,
         .host           = "127.0.0.1",
         .dbname         = "default",
+        .compression    = CHC_COMP_LZ4,
         .encoding_check = CHC_ENC_FAIL,
     };
 
@@ -111,17 +112,10 @@ clickhouse_connect(ForeignServer* server, UserMapping* user) {
         &details.encoding_check
     );
 
-    if (strcmp(details.driver, "http") == 0) {
+    if (details.driver == CH_DRIVER_HTTP) {
         return chfdw_http_connect(&details);
-    } else if (strcmp(details.driver, "binary") == 0) {
-        return chfdw_binary_connect(&details);
-    } else {
-        ereport(
-            ERROR,
-            errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
-            errmsg("invalid ClickHouse connection driver")
-        );
     }
+    return chfdw_binary_connect(&details);
 }
 
 static ConnCacheEntry*

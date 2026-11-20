@@ -16,6 +16,11 @@ All notable changes to this project will be documented in this file. It uses the
     in Postgres for earlier ClickHouse versions. For array keys and other
     types that cannot be `Nullable`, grouping sets return empty values instead
     of `NULL` when leaving out those keys ([#465]).
+*   `CREATE SERVER` and `ALTER SERVER` now reject invalid `port`, `driver`,
+    and `compression` values, which were previously ignored or failed on
+    connect. A server that already stores an invalid value raises an error
+    on connect, and will not restore from a dump, until fixed with
+    `ALTER SERVER`.
 
 ### 🐞 Bug Fixes
 
