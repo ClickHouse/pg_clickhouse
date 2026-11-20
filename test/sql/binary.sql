@@ -191,8 +191,6 @@ ORDER BY c1;
 -- unknown driver is rejected
 CREATE SERVER binary_bogus FOREIGN DATA WRAPPER clickhouse_fdw
     OPTIONS(driver 'bogus');
-CREATE USER MAPPING FOR CURRENT_USER SERVER binary_bogus;
-SELECT * FROM clickhouse_query('binary_bogus', 'SELECT 1') AS t(x int);
 
 -- clickhouse_query: server-based typed rowset over the binary driver
 SELECT * FROM clickhouse_query(

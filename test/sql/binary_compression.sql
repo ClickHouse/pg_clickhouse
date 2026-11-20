@@ -40,9 +40,8 @@ ALTER SERVER comp OPTIONS (SET compression 'zstd');
 INSERT INTO ft VALUES (100, 'inserted');
 SELECT * FROM ft WHERE c1 = 100;
 
--- Unknown value errors when the connection is opened.
+-- Unknown value is rejected.
 ALTER SERVER comp OPTIONS (SET compression 'bogus');
-SELECT * FROM ft ORDER BY c1;
 
 DROP FOREIGN TABLE ft;
 DROP USER MAPPING FOR CURRENT_USER SERVER comp;

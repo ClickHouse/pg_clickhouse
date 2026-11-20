@@ -72,11 +72,10 @@ SELECT * FROM ft WHERE c1 = 100;
  100 | inserted
 (1 row)
 
--- Unknown value errors when the connection is opened.
+-- Unknown value is rejected.
 ALTER SERVER comp OPTIONS (SET compression 'bogus');
-SELECT * FROM ft ORDER BY c1;
-ERROR:  pg_clickhouse: invalid compression "bogus"
-HINT:  valid values: none, lz4, zstd
+ERROR:  invalid value for option "compression": "bogus"
+HINT:  Valid values are: none, lz4, zstd.
 DROP FOREIGN TABLE ft;
 DROP USER MAPPING FOR CURRENT_USER SERVER comp;
 CALL clickhouse_perform('comp_admin', 'DROP DATABASE compression_test');
