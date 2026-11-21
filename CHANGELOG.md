@@ -33,7 +33,17 @@ All notable changes to this project will be documented in this file. It uses the
 
 *   Updated the Postgres 19 OCI image to 19.0.
 
+### 🐞 Bug Fixes
+
+*   Fixed the pushdown of `concat_ws()`, which returned NULL when any value
+    was NULL instead of skipping NULL values as Postgres does. A non-constant
+    separator, which ClickHouse rejected, and a `VARIADIC ARRAY[...]`
+    argument, which returned wrong results, now also push down correctly
+    ([#445]).
+
   [v0.11.2]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.1...v0.11.2
+  [#445]: https://github.com/ClickHouse/pg_clickhouse/pull/445
+    "ClickHouse/pg_clickhouse#445 Skip NULL values in pushed-down concat_ws()"
   [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
     "ClickHouse/pg_clickhouse#465 Support grouping sets"
   [#475]: https://github.com/ClickHouse/pg_clickhouse/pull/475
