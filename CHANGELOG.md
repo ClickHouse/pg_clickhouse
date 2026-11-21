@@ -19,6 +19,9 @@ All notable changes to this project will be documented in this file. It uses the
 *   Run `char_length()`, `character_length()`, `floor()`, `ceil()`, and
     `ceiling()` in ClickHouse. Run `replace()` there on ClickHouse 24.10+
     ([#477]).
+*   Run `erf()`, `erfc()`, `cbrt()`, `trunc(float8)`, `sign(float8)`,
+    `position()`, `left()`, `right()`, `crc32()`, `to_hex()`, and `to_bin()` in
+    ClickHouse ([#479]).
 
 ### 🐞 Bug Fixes
 
@@ -42,6 +45,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#476 Fix casts through text to varchar and numeric"
   [#477]: https://github.com/ClickHouse/pg_clickhouse/pull/477
     "ClickHouse/pg_clickhouse#477 Run more text and rounding functions in ClickHouse"
+  [#479]: https://github.com/ClickHouse/pg_clickhouse/pull/479
+    "ClickHouse/pg_clickhouse#479 Run more math, text, and encoding functions in ClickHouse"
 
 ## [v0.11.1] — 2026-11-09
 
