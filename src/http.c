@@ -650,86 +650,6 @@ ch_http_stream_request_time(HttpStream* stream) {
 }
 
 /*
- * take_body: transfer ownership of the response body.
- *
- * On return, *out_data is a malloc()'d buffer the caller must free(). When
- * status is CH_HTTP_STATUS_TRANSPORT_ERROR the body is the strdup'd libcurl
- * error message; otherwise it is the accumulated response bytes, NUL
- * terminated. *out_size is set to the length in bytes, excluding the NUL.
- * Sets *out_data to NULL and *out_size to 0 when there is nothing to hand
- * off. Safe to call at most once per stream; the stream itself should still
- * be released with ch_http_stream_end().
- */
-static void
-take_body(HttpStream* stream, char** out_data, size_t* out_size) {
-    if (stream->http_status == CH_HTTP_STATUS_TRANSPORT_ERROR && stream->error_msg) {
-        *out_data         = stream->error_msg;
-        *out_size         = strlen(stream->error_msg);
-        stream->error_msg = NULL;
-        return;
-    }
-
-    if (stream->write_pos == 0 || !stream->buf) {
-        *out_data = NULL;
-        *out_size = 0;
-        return;
-    }
-
-    *out_data   = stream->buf;
-    *out_size   = stream->write_pos;
-    stream->buf = NULL;
-}
-
-/*
- * ch_http_simple_query: buffer the full TabSeparated response in memory.
- *
- * Server default format is TabSeparated, so only its dialect needs pinning:
- * ISO timestamps, \N for NULL and LF line ends, as the text parsers expect.
- */
-ch_http_response_t*
-ch_http_simple_query(
-    ch_http_connection_t* conn,
-    const ch_query* query,
-    ch_cancel_check cancel
-) {
-    static const ch_setting tsv_overrides[] = {
-        { "date_time_output_format",            "iso" },
-        { "format_tsv_null_representation",     "\\N" },
-        { "output_format_tsv_crlf_end_of_line", "0"   },
-    };
-    const ch_http_request req = {
-        .query         = query,
-        .overrides     = tsv_overrides,
-        .num_overrides = lengthof(tsv_overrides),
-        .cancel        = cancel,
-    };
-    HttpStream* stream;
-    ch_http_response_t* resp;
-
-    stream = ch_http_stream_begin(conn, &req);
-    if (stream == NULL) {
-        return NULL;
-    }
-
-    resp = calloc(1, sizeof(*resp));
-    if (resp == NULL) {
-        ch_http_stream_end(stream);
-        return NULL;
-    }
-
-    resp->http_status = stream->http_status;
-    memcpy(resp->query_id, stream->query_id, CH_HTTP_QUERY_ID_LEN);
-    take_body(stream, &resp->data, &resp->datasize);
-
-    if (curl_verbose && !ch_http_status_ok(resp->http_status) && resp->data) {
-        fprintf(stderr, "%s", resp->data);
-    }
-
-    ch_http_stream_end(stream);
-    return resp;
-}
-
-/*
  * Copy error, dropping ` (version X.Y.Z.W (build))` suffix ClickHouse
  * appends to every exception, so messages stay stable across servers.
  */
@@ -774,18 +694,18 @@ ch_http_server_version(ch_http_connection_t* conn, ch_cancel_check cancel) {
     }
 
     if (!conn->version_fetched) {
-        ch_query query           = { .sql = "SELECT version()" };
-        ch_http_response_t* resp = ch_http_simple_query(conn, &query, cancel);
+        ch_query query            = { .sql = "SELECT version()" };
+        const ch_http_request req = { .query = &query, .cancel = cancel };
+        HttpStream* stream        = ch_http_stream_begin(conn, &req);
 
         conn->version_fetched = true;
-        if (resp != NULL) {
-            if (ch_http_status_ok(resp->http_status) && resp->data != NULL) {
+        if (stream != NULL) {
+            if (ch_http_status_ok(stream->http_status) && stream->write_pos > 0) {
                 int parsed, v_tweak;
                 char buf[32];
-                size_t n =
-                    resp->datasize < sizeof(buf) - 1 ? resp->datasize : sizeof(buf) - 1;
+                size_t n = Min(stream->write_pos, sizeof(buf) - 1);
 
-                memcpy(buf, resp->data, n);
+                memcpy(buf, stream->buf, n);
                 buf[n] = '\0';
 
                 /* Parse `major.minor.patch.tweak` from `version()` output. */
@@ -809,18 +729,9 @@ ch_http_server_version(ch_http_connection_t* conn, ch_cancel_check cancel) {
                     conn->version = none;
                 }
             }
-            ch_http_response_free(resp);
+            ch_http_stream_end(stream);
         }
     }
 
     return conn->version;
-}
-
-void
-ch_http_response_free(ch_http_response_t* resp) {
-    if (resp->data) {
-        free(resp->data);
-    }
-
-    free(resp);
 }

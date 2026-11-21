@@ -34,7 +34,7 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed errors in ClickHouse queries such as `current_date - date(ts)`.
     Since v0.11.1, casting a timestamp to `date` produces a `Date32` value.
     ClickHouse rejects `-` on `Date32`, so pg_clickhouse now uses `dateDiff()`
-    to count days between dates and sends date literals as `Date32`.
+    to count days between dates and sends date literals as `Date32` ([#483]).
 
 ### 🚀 Distribution
 
@@ -51,6 +51,8 @@ All notable changes to this project will be documented in this file. It uses the
     "ClickHouse/pg_clickhouse#477 Run more text and rounding functions in ClickHouse"
   [#479]: https://github.com/ClickHouse/pg_clickhouse/pull/479
     "ClickHouse/pg_clickhouse#479 Run more math, text, and encoding functions in ClickHouse"
+  [#483]: https://github.com/ClickHouse/pg_clickhouse/pull/483
+    "ClickHouse/pg_clickhouse#483 Fix date subtraction in ClickHouse"
 
 ## [v0.11.1] — 2026-11-09
 

@@ -1043,9 +1043,6 @@ $$;
 Some settings will be ignored in cases where they would interfere with the
 operation of pg_clickhouse itself. These include:
 
-*   `date_time_output_format`: the http driver requires it to be "iso"
-*   `format_tsv_null_representation`: the http driver requires the default
-*   `output_format_tsv_crlf_end_of_line` the http driver requires the default
 *   `session_timezone`: pg_clickhouse sets it to PostgreSQL's [TimeZone] on
     ClickHouse 23.6 and later
 

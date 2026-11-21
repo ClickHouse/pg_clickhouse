@@ -50,14 +50,6 @@ typedef struct ch_http_request {
     ch_cancel_check cancel; /* NULL leaves the transfer uninterruptible */
 } ch_http_request;
 
-/* Response body buffered whole, for callers with no incremental decoder. */
-typedef struct ch_http_response_t {
-    char* data;
-    size_t datasize;
-    long http_status;
-    char query_id[CH_HTTP_QUERY_ID_LEN];
-} ch_http_response_t;
-
 void
 ch_http_init(int verbose);
 /* Returns NULL and sets *error to a static message on failure. */
@@ -105,20 +97,11 @@ ch_http_stream_request_time(HttpStream* stream);
 void
 ch_http_copy_error(char* buf, size_t bufsize, const char* data, size_t len);
 
-ch_http_response_t*
-ch_http_simple_query(
-    ch_http_connection_t* conn,
-    const ch_query* query,
-    ch_cancel_check cancel
-);
 /*
  * Fetch and cache the server version, returning {0, 0, 0} when it cannot be
  * determined. Only the first call issues a query.
  */
 ch_server_version
 ch_http_server_version(ch_http_connection_t* conn, ch_cancel_check cancel);
-
-void
-ch_http_response_free(ch_http_response_t* resp);
 
 #endif /* CLICKHOUSE_HTTP_H */

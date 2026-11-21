@@ -210,7 +210,6 @@ http_server_version(void* conn) {
 
 static void
 kill_query(void* conn, const char* query_id) {
-    ch_http_response_t* resp;
     ch_query query = new_query(
         psprintf("kill query where query_id=%s", ch_quote_literal(query_id)),
         0,
@@ -221,9 +220,11 @@ kill_query(void* conn, const char* query_id) {
     );
 
     /* Not cancellable: it's the cleanup for an already cancelled query. */
-    resp = ch_http_simple_query(conn, &query, NULL);
-    if (resp != NULL) {
-        ch_http_response_free(resp);
+    const ch_http_request req = { .query = &query };
+    HttpStream* stream        = ch_http_stream_begin(conn, &req);
+
+    if (stream != NULL) {
+        ch_http_stream_end(stream);
     }
 }
 
@@ -286,41 +287,16 @@ report_http_stream_query_failure(
 
 static void
 http_simple_insert(void* conn, const ch_query* query) {
-    ch_http_response_t* resp = ch_http_simple_query(conn, query, http_canceled);
+    const ch_http_request req = { .query = query, .cancel = http_canceled };
+    HttpStream* stream        = ch_http_stream_begin(conn, &req);
 
-    if (resp == NULL) {
+    if (stream == NULL) {
         ereport(ERROR, errcode(ERRCODE_FDW_OUT_OF_MEMORY), errmsg("out of memory"));
     }
-
-    if (resp->http_status == CH_HTTP_STATUS_CANCELED) {
-        kill_query(conn, resp->query_id);
-        ch_http_response_free(resp);
-
-        CHECK_FOR_INTERRUPTS();
-        ereport(
-            ERROR,
-            errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-            errmsg("pg_clickhouse: query was aborted")
-        );
+    if (!ch_http_status_ok(ch_http_stream_status(stream))) {
+        report_http_stream_query_failure(conn, query, stream);
     }
-
-    if (!ch_http_status_ok(resp->http_status)) {
-        char error[CH_ERROR_MSG_LEN];
-        long status = resp->http_status;
-
-        ch_http_copy_error(error, sizeof(error), resp->data, resp->datasize);
-        ch_http_response_free(resp);
-
-        ereport(
-            ERROR,
-            errcode(ERRCODE_SQL_ROUTINE_EXCEPTION),
-            errmsg("pg_clickhouse: %s", error),
-            status < 404 ? 0 : errdetail_internal("Remote Query: %.64000s", query->sql),
-            errcontext("HTTP status code: %li", status)
-        );
-    }
-
-    ch_http_response_free(resp);
+    ch_http_stream_end(stream);
 }
 
 /* pgch_chunk_source cancellation poll, checked between reads. */
