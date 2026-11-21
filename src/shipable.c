@@ -388,6 +388,23 @@ chfdw_is_shippable(
                  * CF_REGEX_ICASE_MATCH, and CF_REGEX_ICASE_NO_MATCH.
                  */
             } break;
+            case CF_NUMERIC_SCALE: {
+                /*
+                 * Fetching needs a known scale. ClickHouse can round large
+                 * integers incorrectly below -19 and rejects scales above 32767.
+                 */
+                List* args = ((FuncExpr*)node)->args;
+
+                if (list_length(args) == 2) {
+                    Expr* scale = lsecond(args);
+
+                    if (!IsA(scale, Const) ||
+                        DatumGetInt32(((Const*)scale)->constvalue) < -19 ||
+                        DatumGetInt32(((Const*)scale)->constvalue) > PG_INT16_MAX) {
+                        return false;
+                    }
+                }
+            } break;
             case CF_REGR_AGG:
                 return chfdw_version_ge(chfdw_get_server_version(fpinfo->user), 26, 9);
             default:

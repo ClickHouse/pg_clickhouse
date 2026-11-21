@@ -772,9 +772,29 @@ SELECT sign(a::numeric - 5) s, trunc((a::numeric - 5) / 3) t
 FROM t3 GROUP BY s, t ORDER BY s, t;
 SELECT sign(a::numeric - 5) s, trunc((a::numeric - 5) / 3) t
 FROM t3 GROUP BY s, t ORDER BY s, t;
+
+-- Match Postgres decimal places in results. Keep ClickHouse scale for arithmetic.
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT count(*) FROM t9 WHERE trunc(-v, 4) = -1.2345 AND trunc(v, -1) = 0;
-SELECT count(*) FROM t9 WHERE trunc(-v, 4) = -1.2345 AND trunc(v, -1) = 0;
+SELECT trunc(-v, 4) t, trunc(v, -1) z, round(v, 38) r, ceil(v) c, floor(v) f
+FROM t9 WHERE round(v, 1) / 7 > 0.17 GROUP BY t, z, r, c, f;
+SELECT trunc(-v, 4) t, trunc(v, -1) z, round(v, 38) r, ceil(v) c, floor(v) f
+FROM t9 WHERE round(v, 1) / 7 > 0.17 GROUP BY t, z, r, c, f;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sum(round(v, 2)), min(trunc(v, 3)), max(ceil(v)) FROM t9;
+SELECT sum(round(v, 2)), min(trunc(v, 3)), max(ceil(v)) FROM t9;
+
+-- Compare against Decimal constants. Use Float64 for 2.5 before / and %.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE round(a::numeric / 3, 2) IN (1.67, 2.33)
+AND 2.5 / a::numeric < 1 AND 2.5 % a::numeric > 0.4 ORDER BY a;
+SELECT a FROM t3 WHERE round(a::numeric / 3, 2) IN (1.67, 2.33)
+AND 2.5 / a::numeric < 1 AND 2.5 % a::numeric > 0.4 ORDER BY a;
+
+-- Use Postgres for variable scales and scales outside -19 to 32767.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(v, 32768), trunc(v, -20) FROM t9 GROUP BY 1, 2;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT trunc(a::numeric / 3, b) FROM t3 GROUP BY 1;
 
 -- Run to_hex() in ClickHouse. Keep lowercase output and use all bits
 -- of the integer type for negative values, as in Postgres.

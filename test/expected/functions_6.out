@@ -2377,17 +2377,18 @@ SELECT a FROM t3 WHERE round(a::numeric) = 5;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
-                                                     QUERY PLAN                                                      
----------------------------------------------------------------------------------------------------------------------
+                                                             QUERY PLAN                                                             
+------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on public.t3
    Output: a
-   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round((cast(a, 'Nullable(Decimal(76, 38))') / 3), 2) = 1.67))
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE ((round((cast(a, 'Nullable(Decimal(76, 38))') / 3), 2) = 1.67::Decimal(3, 2)))
 (3 rows)
 
 SELECT a FROM t3 WHERE round((a::numeric) / 3, 2) = 1.67;
  a 
 ---
-(0 rows)
+ 5
+(1 row)
 
 -- round() pushes down over an aggregate.
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -2722,21 +2723,84 @@ FROM t3 GROUP BY s, t ORDER BY s, t;
   1 |  1
 (5 rows)
 
+-- Match Postgres decimal places in results. Keep ClickHouse scale for arithmetic.
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT count(*) FROM t9 WHERE trunc(-v, 4) = -1.2345 AND trunc(v, -1) = 0;
-                                                      QUERY PLAN                                                       
------------------------------------------------------------------------------------------------------------------------
+SELECT trunc(-v, 4) t, trunc(v, -1) z, round(v, 38) r, ceil(v) c, floor(v) f
+FROM t9 WHERE round(v, 1) / 7 > 0.17 GROUP BY t, z, r, c, f;
+                                                                                                                     QUERY PLAN                                                                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
-   Output: (count(*))
+   Output: (trunc((- v), 4)), (trunc(v, '-1'::integer)), (round(v, 38)), (ceil(v)), (floor(v))
    Relations: Aggregate on (t9)
-   Remote SQL: SELECT count(*) FROM functions_test.t9 WHERE ((trunc((- v), 4) = (-1.2345))) AND ((trunc(v, (-1)) = 0))
+   Remote SQL: SELECT trunc((- v), 4), trunc(v, (-1)), round(v, 38), ceil(v), floor(v) FROM functions_test.t9 WHERE (((round(v, 1) / 7) > 0.17::Decimal(3, 2))) GROUP BY (trunc((- v), 4)), (trunc(v, (-1))), (round(v, 38)), (ceil(v)), (floor(v))
 (4 rows)
 
-SELECT count(*) FROM t9 WHERE trunc(-v, 4) = -1.2345 AND trunc(v, -1) = 0;
- count 
--------
-     1
+SELECT trunc(-v, 4) t, trunc(v, -1) z, round(v, 38) r, ceil(v) c, floor(v) f
+FROM t9 WHERE round(v, 1) / 7 > 0.17 GROUP BY t, z, r, c, f;
+    t    | z |                    r                     | c | f 
+---------+---+------------------------------------------+---+---
+ -1.2345 | 0 | 1.23456789012345678900000000000000000000 | 2 | 1
 (1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sum(round(v, 2)), min(trunc(v, 3)), max(ceil(v)) FROM t9;
+                                                   QUERY PLAN                                                   
+----------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(round(v, 2))), (min(trunc(v, 3))), (max(ceil(v)))
+   Relations: Aggregate on (t9)
+   Remote SQL: SELECT sumOrNull(round(v, 2)), minOrNull(trunc(v, 3)), maxOrNull(ceil(v)) FROM functions_test.t9
+(4 rows)
+
+SELECT sum(round(v, 2)), min(trunc(v, 3)), max(ceil(v)) FROM t9;
+ sum  |  min  | max 
+------+-------+-----
+ 1.23 | 1.234 |   2
+(1 row)
+
+-- Compare against Decimal constants. Use Float64 for 2.5 before / and %.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM t3 WHERE round(a::numeric / 3, 2) IN (1.67, 2.33)
+AND 2.5 / a::numeric < 1 AND 2.5 % a::numeric > 0.4 ORDER BY a;
+                                                                                                                                                       QUERY PLAN                                                                                                                                                       
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.t3
+   Output: a
+   Remote SQL: SELECT a FROM functions_test.t3 WHERE (((2.5 / cast(a, 'Nullable(Decimal(76, 38))')) < 1)) AND (((2.5 % cast(a, 'Nullable(Decimal(76, 38))')) > 0.4::Decimal(2, 1))) AND ((round((cast(a, 'Nullable(Decimal(76, 38))') / 3), 2) IN (1.67::Decimal(3, 2),2.33::Decimal(3, 2)))) ORDER BY a ASC NULLS LAST
+(3 rows)
+
+SELECT a FROM t3 WHERE round(a::numeric / 3, 2) IN (1.67, 2.33)
+AND 2.5 / a::numeric < 1 AND 2.5 % a::numeric > 0.4 ORDER BY a;
+ a 
+---
+ 5
+ 7
+(2 rows)
+
+-- Use Postgres for variable scales and scales outside -19 to 32767.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT round(v, 32768), trunc(v, -20) FROM t9 GROUP BY 1, 2;
+                          QUERY PLAN                          
+--------------------------------------------------------------
+ HashAggregate
+   Output: (round(v, 32768)), (trunc(v, '-20'::integer))
+   Group Key: round(t9.v, 32768), trunc(t9.v, '-20'::integer)
+   ->  Foreign Scan on public.t9
+         Output: round(v, 32768), trunc(v, '-20'::integer)
+         Remote SQL: SELECT v FROM functions_test.t9
+(6 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT trunc(a::numeric / 3, b) FROM t3 GROUP BY 1;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ HashAggregate
+   Output: (trunc(((a)::numeric / '3'::numeric), b))
+   Group Key: trunc(((t3.a)::numeric / '3'::numeric), t3.b)
+   ->  Foreign Scan on public.t3
+         Output: trunc(((a)::numeric / '3'::numeric), b)
+         Remote SQL: SELECT a, b FROM functions_test.t3
+(6 rows)
 
 -- Run to_hex() in ClickHouse. Keep lowercase output and use all bits
 -- of the integer type for negative values, as in Postgres.

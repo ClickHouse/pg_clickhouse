@@ -3240,11 +3240,18 @@ chfdw_encode_timestamp(Timestamp timestamp, char* buf) {
 static void
 deparseNumberLiteral(StringInfo buf, Oid type, const char* extval) {
     if (strspn(extval, "0123456789+-eE.") == strlen(extval)) {
-        if (extval[0] == '+' || extval[0] == '-') {
-            appendStringInfo(buf, "(%s)", extval);
-        } else {
-            appendStringInfoString(buf, extval);
+        bool sign         = extval[0] == '+' || extval[0] == '-';
+        const char* point = strchr(extval, '.');
+        int scale         = point ? strlen(point + 1) : 0;
+        int precision     = strlen(extval) - sign - (point != NULL);
+
+        appendStringInfoString(buf, sign ? "(" : "");
+        appendStringInfoString(buf, extval);
+        /* ClickHouse reads fractional literals as Float64 and can lose precision. */
+        if (type == NUMERICOID && point && precision <= 76) {
+            appendStringInfo(buf, "::Decimal(%d, %d)", precision, scale);
         }
+        appendStringInfoString(buf, sign ? ")" : "");
     } else if (type == NUMERICOID) {
         deparseStringLiteral(buf, extval);
     } else if (strcmp(extval, "NaN") == 0) {
@@ -5458,7 +5465,16 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             goto cleanup;
         }
 
-        deparseExpr(lfirst(arg), context);
+        Const* dividend = lfirst(arg);
+        /* ClickHouse rejects a smaller Decimal scale on the left of / and %. */
+        if ((form->oprcode == F_NUMERIC_DIV || form->oprcode == F_NUMERIC_MOD) &&
+            IsA(dividend, Const) && !dividend->constisnull) {
+            char* extval = OidOutputFunctionCall(F_NUMERIC_OUT, dividend->constvalue);
+
+            deparseNumberLiteral(buf, FLOAT8OID, extval);
+        } else {
+            deparseExpr(lfirst(arg), context);
+        }
         appendStringInfoChar(buf, ' ');
     }
 

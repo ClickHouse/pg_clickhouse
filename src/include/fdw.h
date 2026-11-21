@@ -458,6 +458,7 @@ typedef enum {
     CF_TO_HEX,
     CF_TO_BIN,
     CF_FLOAT_SIGN,
+    CF_NUMERIC_SCALE,
     CF_RIGHT,
 } custom_object_type;
 

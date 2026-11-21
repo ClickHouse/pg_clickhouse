@@ -28,6 +28,11 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed pushdown of `lead()` and `lag()` by omitting window frame clauses.
     ClickHouse rejects these clauses, and Postgres ignores them for these
     functions ([#475]).
+*   Fixed the number of decimal places returned by `round()`, `trunc()`,
+    `floor()`, `ceil()`, and `ceiling()` on `numeric` values in ClickHouse.
+    This also applies to `sum()`, `min()`, and `max()` of those results.
+*   Fixed ClickHouse comparisons that could miss equal `numeric` values
+    because ClickHouse read fractional constants as floating-point numbers.
 *   Fixed ClickHouse errors when casting through `text` to `varchar` or `numeric`.
     These casts previously sent `FixedString` without a length or `Decimal`
     without a precision ([#476]).

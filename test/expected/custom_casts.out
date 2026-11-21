@@ -198,11 +198,11 @@ SELECT num::varchar, count(*) FROM things WHERE num < 3 GROUP BY 1 ORDER BY 1;
 (3 rows)
 
 EXPLAIN (VERBOSE, COSTS OFF) SELECT num FROM things WHERE (name || '.5')::numeric = 3.5;
-                                               QUERY PLAN                                                
----------------------------------------------------------------------------------------------------------
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
  Foreign Scan on casts_test.things
    Output: num
-   Remote SQL: SELECT num FROM casts_test.things WHERE ((CAST((name || '.5') AS Decimal(76, 38)) = 3.5))
+   Remote SQL: SELECT num FROM casts_test.things WHERE ((CAST((name || '.5') AS Decimal(76, 38)) = 3.5::Decimal(2, 1)))
 (3 rows)
 
 SELECT num FROM things WHERE (name || '.5')::numeric = 3.5;

@@ -1802,6 +1802,12 @@ equivalents as follows:
 *   `floor`: [floor]
 *   `ceil` & `ceiling`: [ceil]
 *   `trunc`: [trunc]
+*   For `numeric`, ClickHouse keeps the input's decimal places when it runs
+    `round`, `trunc`, `floor`, `ceil`, or `ceiling`. On return, pg_clickhouse
+    sets the number of decimal places to match Postgres, including for `sum`,
+    `min`, and `max` of those results. Postgres handles variable scales and
+    scales outside -19 to 32767 for `round` and `trunc`. ClickHouse can round
+    large integers incorrectly below that range and rejects scales above it.
 *   `sign(numeric)`: [sign]
 *   `sign(float8)`: Compare the input with zero and return a `Float64`.
     This gives `0` for `NaN`. ClickHouse [sign] returns `1` for `NaN`.
