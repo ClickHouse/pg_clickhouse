@@ -121,6 +121,32 @@ SELECT date_part('hour', ts AT TIME ZONE 'UTC') AS h,
        (ts AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS r
   FROM tz_bin.gap GROUP BY h, e, c, d, r;
 
+-- Subtract dates in ClickHouse, including dates before 1970.
+CALL clickhouse_perform('tz_admin', $$
+    CREATE TABLE tz_test.dates (ts DateTime('UTC'), d Date, d32 Date32)
+    ENGINE = MergeTree ORDER BY ts
+$$);
+CALL clickhouse_perform('tz_admin', $$
+    INSERT INTO tz_test.dates VALUES ('2020-03-08 02:30:00', '2020-01-01', '1950-01-01')
+$$);
+CREATE FOREIGN TABLE tz_bin.dates (ts timestamptz, d date, d32 date)
+    SERVER tz_bin_svr OPTIONS (database 'tz_test');
+CREATE FOREIGN TABLE tz_http.dates (ts timestamptz, d date, d32 date)
+    SERVER tz_http_svr OPTIONS (database 'tz_test');
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT d - d32 AS a, date(ts) - d AS b, ts::date - date '2020-01-01' AS c,
+       date '2020-01-01' - date(ts) AS e
+  FROM tz_bin.dates GROUP BY a, b, c, e;
+SELECT d - d32 AS a, date(ts) - d AS b, ts::date - date '2020-01-01' AS c,
+       date '2020-01-01' - date(ts) AS e
+  FROM tz_bin.dates GROUP BY a, b, c, e;
+SELECT d - d32 AS a, date(ts) - d AS b, ts::date - date '2020-01-01' AS c,
+       date '2020-01-01' - date(ts) AS e
+  FROM tz_http.dates GROUP BY a, b, c, e;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT count(*) FROM tz_bin.dates WHERE current_date - date(ts) > 0;
+SELECT count(*) FROM tz_bin.dates WHERE current_date - date(ts) > 0;
+
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER tz_bin_svr;
 DROP SERVER tz_bin_svr CASCADE;

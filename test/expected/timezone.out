@@ -311,12 +311,71 @@ SELECT date_part('hour', ts AT TIME ZONE 'UTC') AS h,
  2 | 1583634600 | 02:30 | 2020-03-08 | 2020-03-07 18:30:00-08
 (1 row)
 
+-- Subtract dates in ClickHouse, including dates before 1970.
+CALL clickhouse_perform('tz_admin', $$
+    CREATE TABLE tz_test.dates (ts DateTime('UTC'), d Date, d32 Date32)
+    ENGINE = MergeTree ORDER BY ts
+$$);
+CALL clickhouse_perform('tz_admin', $$
+    INSERT INTO tz_test.dates VALUES ('2020-03-08 02:30:00', '2020-01-01', '1950-01-01')
+$$);
+CREATE FOREIGN TABLE tz_bin.dates (ts timestamptz, d date, d32 date)
+    SERVER tz_bin_svr OPTIONS (database 'tz_test');
+CREATE FOREIGN TABLE tz_http.dates (ts timestamptz, d date, d32 date)
+    SERVER tz_http_svr OPTIONS (database 'tz_test');
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT d - d32 AS a, date(ts) - d AS b, ts::date - date '2020-01-01' AS c,
+       date '2020-01-01' - date(ts) AS e
+  FROM tz_bin.dates GROUP BY a, b, c, e;
+                                                                                                                                                                                                                                                                                                                     QUERY PLAN                                                                                                                                                                                                                                                                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: ((d - d32)), ((date(ts) - d)), (((ts)::date - '2020-01-01'::date)), (('2020-01-01'::date - date(ts)))
+   Relations: Aggregate on (dates)
+   Remote SQL: SELECT toInt32(dateDiff('day', d32, d)), toInt32(dateDiff('day', d, toDate32(ts, 'America/Los_Angeles'))), toInt32(dateDiff('day', cast('2020-01-01' as Date32), toDate32(ts, 'America/Los_Angeles'))), toInt32(dateDiff('day', toDate32(ts, 'America/Los_Angeles'), cast('2020-01-01' as Date32))) FROM tz_test.dates GROUP BY (toInt32(dateDiff('day', d32, d))), (toInt32(dateDiff('day', d, toDate32(ts, 'America/Los_Angeles')))), (toInt32(dateDiff('day', cast('2020-01-01' as Date32), toDate32(ts, 'America/Los_Angeles')))), (toInt32(dateDiff('day', toDate32(ts, 'America/Los_Angeles'), cast('2020-01-01' as Date32))))
+(4 rows)
+
+SELECT d - d32 AS a, date(ts) - d AS b, ts::date - date '2020-01-01' AS c,
+       date '2020-01-01' - date(ts) AS e
+  FROM tz_bin.dates GROUP BY a, b, c, e;
+   a   | b  | c  |  e  
+-------+----+----+-----
+ 25567 | 66 | 66 | -66
+(1 row)
+
+SELECT d - d32 AS a, date(ts) - d AS b, ts::date - date '2020-01-01' AS c,
+       date '2020-01-01' - date(ts) AS e
+  FROM tz_http.dates GROUP BY a, b, c, e;
+   a   | b  | c  |  e  
+-------+----+----+-----
+ 25567 | 66 | 66 | -66
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT count(*) FROM tz_bin.dates WHERE current_date - date(ts) > 0;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (count(*))
+   Relations: Aggregate on (dates)
+   Remote SQL: SELECT count(*) FROM tz_test.dates WHERE ((toInt32(dateDiff('day', toDate32(ts, 'America/Los_Angeles'), toDate(now('America/Los_Angeles')))) > 0))
+(4 rows)
+
+SELECT count(*) FROM tz_bin.dates WHERE current_date - date(ts) > 0;
+ count 
+-------
+     1
+(1 row)
+
 -- Clean up.
 DROP USER MAPPING FOR CURRENT_USER SERVER tz_bin_svr;
 DROP SERVER tz_bin_svr CASCADE;
-NOTICE:  drop cascades to 2 other objects
+NOTICE:  drop cascades to 3 other objects
 DETAIL:  drop cascades to foreign table tz_bin.ts
 drop cascades to foreign table tz_bin.gap
+drop cascades to foreign table tz_bin.dates
 DROP USER MAPPING FOR CURRENT_USER SERVER tz_http_svr;
 DROP SERVER tz_http_svr CASCADE;
-NOTICE:  drop cascades to foreign table tz_http.ts
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to foreign table tz_http.ts
+drop cascades to foreign table tz_http.dates

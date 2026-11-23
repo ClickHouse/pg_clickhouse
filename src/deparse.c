@@ -5251,6 +5251,16 @@ findFunction(Oid typoid, char* name) {
     return result;
 }
 
+/* ClickHouse infers literal types without an explicit cast. */
+static void
+deparseTypedExpr(Expr* node, deparse_expr_cxt* context) {
+    if (IsA(node, Const)) {
+        deparseConst((Const*)node, context, true);
+    } else {
+        deparseExpr(node, context);
+    }
+}
+
 /* Deparse dotProduct for <#>; callers negate or reverse sort direction. */
 static void
 deparseVectorDotProduct(OpExpr* node, deparse_expr_cxt* context) {
@@ -5331,6 +5341,14 @@ deparseOpExpr(OpExpr* node, deparse_expr_cxt* context) {
             );
             goto cleanup;
         } break;
+        case CF_DATE_MI:
+            /* ClickHouse rejects '-' on Date32. */
+            appendStringInfoString(buf, "toInt32(dateDiff('day', ");
+            deparseTypedExpr(lsecond(node->args), context);
+            appendStringInfoString(buf, ", ");
+            deparseTypedExpr(linitial(node->args), context);
+            appendStringInfoString(buf, "))");
+            goto cleanup;
         case CF_VECTOR_NEG_IP:
             /* pgvector's <#> is the negative inner product */
             appendStringInfoString(buf, "(-");
@@ -6834,11 +6852,7 @@ deparseRowExpr(RowExpr* node, deparse_expr_cxt* context) {
         }
 
         first = false;
-        if (IsA(lfirst(lc), Const)) {
-            deparseConst((Const*)lfirst(lc), context, true);
-        } else {
-            deparseExpr(lfirst(lc), context);
-        }
+        deparseTypedExpr(lfirst(lc), context);
     }
     appendStringInfoChar(buf, ')');
 }
@@ -6853,15 +6867,8 @@ deparseGroupingFunc(GroupingFunc* node, deparse_expr_cxt* context) {
         if (lc != list_head(node->args)) {
             appendStringInfoString(buf, ", ");
         }
-        if (IsA(lfirst(lc), Const)) {
-            /*
-             * deparseExpr passes false for deparseConst showtype,
-             * which is ambiguous with enable_positional_arguments.
-             */
-            deparseConst((Const*)lfirst(lc), context, true);
-        } else {
-            deparseExpr(lfirst(lc), context);
-        }
+        /* With enable_positional_arguments, bare integers can refer to SELECT items. */
+        deparseTypedExpr(lfirst(lc), context);
     }
     appendStringInfoChar(buf, ')');
 }
