@@ -993,6 +993,8 @@ classify_builtin_operator(Oid opoid, const char** ch_name) {
     case F_TIMESTAMPTZ_MI_INTERVAL:
     case F_TIMESTAMP_MI_INTERVAL:
         return CF_DATETIME_MI_INTERVAL;
+    case F_DATE_MI:
+        return CF_DATE_MI;
     case F_DPOW:
         *ch_name = "pow";
         break;

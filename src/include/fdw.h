@@ -406,6 +406,7 @@ typedef enum {
     CF_DATE_PART,            /* date_part function */
     CF_DATETIME_PL_INTERVAL, /* date/timestamp/timestamptz + interval */
     CF_DATETIME_MI_INTERVAL, /* date/timestamp/timestamptz - interval */
+    CF_DATE_MI,              /* date - date → dateDiff */
     CF_TIMEZONE,             /* timezone */
     CF_HSTORE_FETCHVAL,      /* -> operation on hstore */
     CF_INTARRAY_IDX,

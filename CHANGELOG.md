@@ -31,6 +31,10 @@ All notable changes to this project will be documented in this file. It uses the
 *   Fixed ClickHouse errors when casting through `text` to `varchar` or `numeric`.
     These casts previously sent `FixedString` without a length or `Decimal`
     without a precision ([#476]).
+*   Fixed errors in ClickHouse queries such as `current_date - date(ts)`.
+    Since v0.11.1, casting a timestamp to `date` produces a `Date32` value.
+    ClickHouse rejects `-` on `Date32`, so pg_clickhouse now uses `dateDiff()`
+    to count days between dates and sends date literals as `Date32`.
 
 ### 🚀 Distribution
 

@@ -1945,6 +1945,7 @@ equivalents as follows:
     syntax]. Pushdown requires a column with constant, non-NULL text
     subscripts. Integer, numeric text, and non-constant subscripts evaluate
     locally.
+*   `-` (date subtraction): [dateDiff]
 *   `/` (integer division): [intDiv]
 *   `^` (exponent): [pow]
 *   `|/` (square root): [sqrt]
@@ -2754,6 +2755,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "ClickHouse Docs: bitShiftLeft"
   [bitShiftRight]: https://clickhouse.com/docs/sql-reference/functions/bit-functions#bitShiftRight
     "ClickHouse Docs: bitShiftRight"
+  [dateDiff]: https://clickhouse.com/docs/sql-reference/functions/date-time-functions#dateDiff
+    "ClickHouse Docs: dateDiff"
   [dictGet]: https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull
     "ClickHouse Docs: dictGet"
   [extract]: https://clickhouse.com/docs/sql-reference/functions/string-search-functions#extract
