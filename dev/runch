@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Start and stop various versions of ClickHouse. Requires:
 #
@@ -20,23 +20,24 @@ The runch commands are:
 EOF
 }
 
-# https://stackoverflow.com/a/246128
-dir="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-name="$(basename "${BASH_SOURCE[0]}")"
+dir="$(CDPATH='' cd -- "$(dirname -- "$0")" >/dev/null 2>&1 && pwd)"
+name="$(basename "$0")"
 
 cfg_file() {
-    # Determine which file from ./configs to use.
-    local version="$1"
-    # Default config.
     fn=default
-    if [[ "$version" =~ [.][0-9]+$ ]] && [ "${version%%.*}" -lt 25 ]; then
-        fn=allow_object
-        # Enable the JSON type in release prior to 2025.
-        if [ "${version:0:4}" == "24.8" ]; then
-            # The setting was renamed.
-            fn=allow_json
-        fi
-    fi
+    major="${1%%.*}"
+    case "${1##*.}" in
+        ''|*[!0-9]*) ;;
+        *)
+            if [ "$major" != "$1" ] && [ "$major" -lt 25 ]; then
+                # Enable JSON before 25.0. ClickHouse renamed its setting in 24.8.
+                case "$1" in
+                    24.8*) fn=allow_json ;;
+                    *) fn=allow_object ;;
+                esac
+            fi
+            ;;
+    esac
 
     mkdir -p "$HOME/.clickhouse/configs"
     cp "$dir/configs/$fn.yaml" "$HOME/.clickhouse/configs/runch-$fn.yaml"
