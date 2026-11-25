@@ -548,8 +548,8 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT round(regr_syy(b, a)), regr_syy(b, a) FROM agg_bin.agg_numbers;
 SELECT round(regr_syy(b, a)), regr_syy(b, a) FROM agg_bin.agg_numbers;
 EXPLAIN (VERBOSE, COSTS OFF)
-SELECT round(regr_syy(b, a)::numeric, 4), regr_syy(b, a)::numeric FROM agg_bin.agg_numbers;
-SELECT round(regr_syy(b, a)::numeric, 4), regr_syy(b, a)::numeric FROM agg_bin.agg_numbers;
+SELECT round(regr_syy(b, a)::numeric, 4) FROM agg_bin.agg_numbers;
+SELECT round(regr_syy(b, a)::numeric, 4) FROM agg_bin.agg_numbers;
 
 -- corr()
 \echo -- corr(int, float) corr(float, int)

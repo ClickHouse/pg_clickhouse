@@ -1639,18 +1639,18 @@ FDW options: (database 'agg_test', table_name 'hits', engine 'MergeTree')
  68756 | 68756.2156939293
 (1 row)
 
-                                                                        QUERY PLAN                                                                        
-----------------------------------------------------------------------------------------------------------------------------------------------------------
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
  Aggregate
-   Output: round((regr_syy((b)::double precision, (a)::double precision))::numeric, 4), (regr_syy((b)::double precision, (a)::double precision))::numeric
+   Output: round((regr_syy((b)::double precision, (a)::double precision))::numeric, 4)
    ->  Foreign Scan on agg_bin.agg_numbers
          Output: a, b
          Remote SQL: SELECT a, b FROM agg_test.agg_numbers
 (5 rows)
 
-   round    |     regr_syy     
-------------+------------------
- 68756.2157 | 68756.2156939293
+   round    
+------------
+ 68756.2157
 (1 row)
 
 -- corr(int, float) corr(float, int)

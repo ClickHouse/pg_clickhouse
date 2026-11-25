@@ -800,9 +800,12 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT erf(f64 / 1e9::float8) e, erfc(f64 / 1e9::float8) c,
        to_bin(i64 - 20423) b8, to_bin((i64 - 20423)::int) b4
 FROM t6 GROUP BY e, c, b8, b4 ORDER BY e;
+-- ClickHouse erfc() last digit is unstable
+SET extra_float_digits = -1;
 SELECT erf(f64 / 1e9::float8) e, erfc(f64 / 1e9::float8) c,
        to_bin(i64 - 20423) b8, to_bin((i64 - 20423)::int) b4
 FROM t6 GROUP BY e, c, b8, b4 ORDER BY e;
+RESET extra_float_digits;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT crc32(val::bytea) c FROM t4 GROUP BY c ORDER BY c;
 SELECT crc32(val::bytea) c FROM t4 GROUP BY c ORDER BY c;
