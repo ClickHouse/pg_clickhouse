@@ -79,7 +79,8 @@ See [PostgreSQL Apt] for details on pulling from the PostgreSQL Apt repository.
 
 ```sh
 sudo apt install \
-  postgresql-server-19 \
+  postgresql-19 \
+  postgresql-server-dev-19 \
   libcurl4-openssl-dev \
   uuid-dev \
   liblz4-dev \

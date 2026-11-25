@@ -341,6 +341,60 @@ Some details to keep in mind:
 > To create objects with different names or all lowercase (and therefore
 > case-insensitive) names, use [CREATE FOREIGN TABLE](#create-foreign-table).
 
+#### Data Lake Catalogs
+
+ClickHouse 25.3 and later can connect to an Iceberg REST catalog through a
+[DataLakeCatalog] database. A catalog lists namespaces and tables and locates
+their metadata and data files. ClickHouse reads those files.
+
+To try an import, [build and install pg_clickhouse](../README.md#compile-from-source)
+for a local PostgreSQL instance. With Docker running, run these commands from
+repo root to start ClickHouse 26.3 with a sample catalog and create a catalog
+database:
+
+```sh
+./dev/choci start 26.3
+docker exec -i choci clickhouse client --multiquery <<'SQL'
+SET allow_experimental_database_iceberg = 1;
+CREATE DATABASE lake
+ENGINE = DataLakeCatalog('http://127.0.0.1:8181/v1')
+SETTINGS catalog_type = 'rest', warehouse = 'lake', vended_credentials = 0;
+SQL
+```
+
+Connect to an empty database on local PostgreSQL as a superuser and run:
+
+```sql
+CREATE EXTENSION pg_clickhouse;
+CREATE SERVER lake_srv FOREIGN DATA WRAPPER clickhouse_fdw
+    OPTIONS (driver 'binary', host '127.0.0.1', dbname 'lake');
+CREATE USER MAPPING FOR CURRENT_USER SERVER lake_srv OPTIONS (user 'default');
+CREATE SCHEMA lake;
+IMPORT FOREIGN SCHEMA lake LIMIT TO ("analytics.events") FROM SERVER lake_srv INTO lake;
+SELECT count(*) FROM lake."analytics.events";
+```
+
+Expect a count of `3`. Run `./dev/choci stop` to remove the sample warehouse
+and stop both containers. To connect to an existing catalog, configure its
+endpoint, warehouse, and storage access as described in [DataLakeCatalog].
+
+Catalog table names include their namespace, such as `analytics.events`.
+Nested namespaces add more dots, as in `analytics.sub.deep`. Import keeps
+this full name as both foreign table name and `table_name` option. Use double
+quotes in queries and in `LIMIT TO` and `EXCEPT` lists.
+
+PostgreSQL emits a notice when shortening table or column names longer than
+63 bytes. `LIMIT TO` and `EXCEPT` match names after truncation. Import creates
+only one foreign table for names with identical first 63 bytes. To import
+each of those tables, use [CREATE FOREIGN TABLE](#create-foreign-table) with a
+distinct PostgreSQL name and full catalog name in its `table_name` option.
+
+ClickHouse 25.7 through 26.7 write errors from listing catalog tables to server
+logs but let queries succeed. If catalog settings are wrong, `IMPORT` can create
+no tables without reporting an error. Check ClickHouse server logs for errors.
+If ClickHouse cannot read a selected table's metadata, `IMPORT` fails and reports
+that error. Use `EXCEPT` to skip tables whose metadata cannot be read.
+
 ### CREATE FOREIGN TABLE
 
 Use [CREATE FOREIGN TABLE] to create a foreign table that can query data from
@@ -2443,6 +2497,8 @@ Copyright (c) 2025-2026, ClickHouse.
     "PostgreSQL Docs: DROP USER MAPPING"
   [IMPORT FOREIGN SCHEMA]: https://www.postgresql.org/docs/current/sql-importforeignschema.html
     "PostgreSQL Docs: IMPORT FOREIGN SCHEMA"
+  [DataLakeCatalog]: https://clickhouse.com/docs/engines/database-engines/datalakecatalog
+    "ClickHouse Docs: DataLakeCatalog"
   [CREATE FOREIGN TABLE]: https://www.postgresql.org/docs/current/sql-createforeigntable.html
     "PostgreSQL Docs: CREATE FOREIGN TABLE"
   [table engine]: https://clickhouse.com/docs/engines/table-engines

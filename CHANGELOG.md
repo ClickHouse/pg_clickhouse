@@ -27,6 +27,8 @@ All notable changes to this project will be documented in this file. It uses the
     elements. Chained JSON paths such as `(data -> 'a') ->> 'b'` now
     evaluate in Postgres instead of failing in ClickHouse. Thanks to @deeox
     for the PR ([#470])!
+*   Added support for ClickHouse [DataLakeCatalog] databases to
+    `IMPORT FOREIGN SCHEMA`, including Iceberg REST catalogs ([#408]).
 
 ### 🐞 Bug Fixes
 
@@ -46,6 +48,10 @@ All notable changes to this project will be documented in this file. It uses the
 *   Updated the Postgres 19 OCI image to 19.0.
 
   [v0.11.2]: https://github.com/ClickHouse/pg_clickhouse/compare/v0.11.1...v0.11.2
+  [DataLakeCatalog]: https://clickhouse.com/docs/engines/database-engines/datalakecatalog
+    "ClickHouse Docs: DataLakeCatalog"
+  [#408]: https://github.com/ClickHouse/pg_clickhouse/pull/408
+    "ClickHouse/pg_clickhouse#408 Support IMPORT FOREIGN SCHEMA for DataLakeCatalog databases"
   [#465]: https://github.com/ClickHouse/pg_clickhouse/pull/465
     "ClickHouse/pg_clickhouse#465 Support grouping sets"
   [#470]: https://github.com/ClickHouse/pg_clickhouse/pull/470

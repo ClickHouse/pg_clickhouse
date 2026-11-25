@@ -44,15 +44,47 @@ cfg_file() {
     echo "runch-$fn"
 }
 
+lake_pid="${TMPDIR:-/tmp}/runch-lake.pid"
+lake_log="${TMPDIR:-/tmp}/runch-lake.log"
+
+stop_lake() {
+    if [ -f "$lake_pid" ]; then
+        kill "$(cat "$lake_pid")" 2> /dev/null || true
+        rm -f "$lake_pid"
+    fi
+}
+
+# Seed an Iceberg warehouse under server user_files, then serve its REST
+# catalog on port 8181 for test/sql/import_lake.sql
+start_lake() {
+    data="$(chctl local client "$1" -q "SELECT path FROM system.disks WHERE name = 'default'")"
+    bin="$HOME/.clickhouse/versions/$(chctl local client "$1" -q 'SELECT version()')"
+    warehouse="${data:?}user_files/pg_clickhouse_lake"
+    rm -rf "$warehouse"
+    # seed.sh exits 77 when ClickHouse is too old
+    PATH="$bin:$PATH" sh "$dir/../test/lake/seed.sh" "$warehouse" || return $(($? != 77))
+
+    printf 'Starting Iceberg catalog\n'
+    nohup python3 -I "$dir/../test/lake/catalog.py" 8181 "$warehouse" > "$lake_log" 2>&1 < /dev/null &
+    echo $! > "$lake_pid"
+    if ! curl -sf --retry 10 --retry-connrefused --retry-delay 1 -o /dev/null http://127.0.0.1:8181/v1/config; then
+        cat "$lake_log"
+        return 1
+    fi
+}
+
 case "$1" in
     stop)
         chctl local server stop-all # stop "$name"
+        stop_lake
         ;;
     start)
         version="${2:-26.6}"
 
         chctl local server stop-all # stop "$name"
+        stop_lake
         chctl local server start --name "$name-$version" --version "$version" --config-file "$(cfg_file "$version")"
+        start_lake "$name-$version"
         ;;
     status)
         chctl local server list
