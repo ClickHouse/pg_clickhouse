@@ -43,6 +43,7 @@
 #include "cursor.h"
 #include "fdw.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "version.h"
 
 /* Extension metadata for the server. */
@@ -110,6 +111,7 @@ typedef struct ChFdwScanState {
                                * for a foreign join scan. */
     TupleDesc tupdesc;        /* tuple descriptor of scan */
     AttInMetadata* attinmeta; /* attribute datatype conversion metadata */
+    int32* rounded_scales;    /* see rounded_scales() */
 
     /* extracted fdw_private data */
     char* query;           /* text of SELECT command */
@@ -1147,6 +1149,62 @@ foreign_scan_user_mapping(ForeignScanState* node) {
 }
 
 /*
+ * Return Postgres scale for rounded numeric results and their sum, min, or max.
+ * Return -1 for other expressions.
+ */
+static int32
+rounded_scale(Expr* expr) {
+    if (IsA(expr, Aggref)) {
+        Aggref* agg = (Aggref*)expr;
+
+        switch (agg->aggfnoid) {
+        case F_SUM_NUMERIC:
+        case F_MIN_NUMERIC:
+        case F_MAX_NUMERIC:
+            return rounded_scale(linitial_node(TargetEntry, agg->args)->expr);
+        default:
+            return -1;
+        }
+    }
+    if (!IsA(expr, FuncExpr)) {
+        return -1;
+    }
+    FuncExpr* func        = (FuncExpr*)expr;
+    CustomObjectDef* cdef = chfdw_check_for_custom_function(func->funcid);
+    if (cdef == NULL || cdef->cf_type != CF_NUMERIC_SCALE) {
+        return -1;
+    }
+    if (list_length(func->args) == 1) {
+        return 0;
+    }
+    Const* arg = lsecond(func->args);
+    return IsA(arg, Const) ? Max(DatumGetInt32(arg->constvalue), 0) : -1;
+}
+
+/* ClickHouse keeps the input's decimal places when rounding. */
+static int32*
+rounded_scales(List* tlist) {
+    int32* scales = NULL;
+    int attno     = 0;
+    ListCell* lc;
+
+    foreach (lc, tlist) {
+        int32 scale = rounded_scale(((TargetEntry*)lfirst(lc))->expr);
+
+        attno++;
+        if (scale < 0) {
+            continue;
+        }
+        if (scales == NULL) {
+            scales = palloc(list_length(tlist) * sizeof(int32));
+            memset(scales, -1, list_length(tlist) * sizeof(int32));
+        }
+        scales[attno - 1] = scale;
+    }
+    return scales;
+}
+
+/*
  * clickhouseBeginForeignScan
  *		Initiate an executor scan of a foreign PostgreSQL table.
  */
@@ -1205,8 +1263,9 @@ clickhouseBeginForeignScan(ForeignScanState* node, int eflags) {
         fsstate->rel     = node->ss.ss_currentRelation;
         fsstate->tupdesc = RelationGetDescr(fsstate->rel);
     } else {
-        fsstate->rel     = NULL;
-        fsstate->tupdesc = node->ss.ss_ScanTupleSlot->tts_tupleDescriptor;
+        fsstate->rel            = NULL;
+        fsstate->tupdesc        = node->ss.ss_ScanTupleSlot->tts_tupleDescriptor;
+        fsstate->rounded_scales = rounded_scales(fsplan->fdw_scan_tlist);
     }
 
     fsstate->attinmeta = TupleDescGetAttInMetadata(fsstate->tupdesc);
@@ -1279,6 +1338,15 @@ fetch_tuple(ChFdwScanState* fsstate, TupleDesc tupdesc) {
             MemoryContextSwitchTo(oldcontext);
             MemoryContextReset(fsstate->temp_cxt);
             return NULL;
+        }
+    }
+
+    /* Match Postgres scale after ClickHouse finishes calculating. */
+    for (int i = 0; fsstate->rounded_scales && i < tupdesc->natts; i++) {
+        if (fsstate->rounded_scales[i] >= 0 && !nulls[i]) {
+            values[i] = DirectFunctionCall2(
+                numeric_round, values[i], Int32GetDatum(fsstate->rounded_scales[i])
+            );
         }
     }
 

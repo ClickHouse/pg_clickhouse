@@ -377,6 +377,14 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
         def->cf_type = CF_FLOAT_SIGN;
         def->ch_name = "\1";
         return true;
+    case F_ROUND_NUMERIC:
+    case F_ROUND_NUMERIC_INT4:
+    case F_TRUNC_NUMERIC_INT4:
+    case F_FLOOR_NUMERIC:
+    case F_CEIL_NUMERIC:
+    case F_CEILING_NUMERIC:
+        def->cf_type = CF_NUMERIC_SCALE;
+        return true;
         /* bytea variant is byte-based; CH substring matches */
     case F_REGEXP_LIKE_TEXT_TEXT:
     case F_REGEXP_LIKE_TEXT_TEXT_TEXT:
@@ -728,16 +736,10 @@ lookup_builtin_func(Oid funcid, builtin_func_def* def) {
     case F_ABS_FLOAT8:
     case F_ABS_NUMERIC:
     case F_ROUND_FLOAT8:
-    case F_ROUND_NUMERIC:
-    case F_ROUND_NUMERIC_INT4:
-    case F_TRUNC_NUMERIC_INT4:
     case F_SIGN_NUMERIC:
     case F_FLOOR_FLOAT8:
-    case F_FLOOR_NUMERIC:
     case F_CEIL_FLOAT8:
-    case F_CEIL_NUMERIC:
     case F_CEILING_FLOAT8:
-    case F_CEILING_NUMERIC:
     case F_TRUNC_FLOAT8:
     case F_FACTORIAL:
         /* string functions: CH ltrim/rtrim/concat_ws are aliases */
