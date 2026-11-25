@@ -1864,7 +1864,9 @@ equivalents as follows:
 *   `btrim`: [trimBoth]
 *   `ltrim`: [trimLeft]
 *   `rtrim`: [trimRight]
-*   `concat_ws`: [concatWithSeparator]
+*   `concat_ws`: [concat] of each value prefixed with the separator, with
+    [ifNull] to skip `NULL` values and [substring] to remove the leading
+    separator.
 *   `lower(text)`: [lowerUTF8]
 *   `upper(text)`: [upperUTF8]
 *   `substring(text, ...)` & `substr(text, ...)`: [substringUTF8]
@@ -2665,8 +2667,10 @@ Copyright (c) 2025-2026, ClickHouse.
     "ClickHouse Docs: trimLeft"
   [trimRight]: https://clickhouse.com/docs/sql-reference/functions/string-functions#trimRight
     "ClickHouse Docs: trimRight"
-  [concatWithSeparator]: https://clickhouse.com/docs/sql-reference/functions/string-functions#concatwithseparator
-    "ClickHouse Docs: concatWithSeparator"
+  [concat]: https://clickhouse.com/docs/sql-reference/functions/string-functions#concat
+    "ClickHouse Docs: concat"
+  [ifNull]: https://clickhouse.com/docs/sql-reference/functions/functions-for-nulls#ifnull
+    "ClickHouse Docs: ifNull"
   [lowerUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-functions#lowerutf8
     "ClickHouse Docs: lowerUTF8"
   [upperUTF8]: https://clickhouse.com/docs/sql-reference/functions/string-functions#upperutf8
